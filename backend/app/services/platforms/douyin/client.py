@@ -29,11 +29,25 @@ from ..types import (
 )
 from .apis import (
     BASE_URL,
+    DEFAULT_AID,
+    DEFAULT_DEVICE_PLATFORM,
+    PROFILE_SELF,
     SEARCH_SINGLE,
     build_search_params,
 )
 
 logger = logging.getLogger("ylcraft.platforms.douyin")
+
+
+class PlatformUnavailableError(RuntimeError):
+    """平台对当前环境不可用（不是"没搜到"，是平台侧拒绝）。
+
+    典型场景：抖音对自动化环境整体降级——搜索返回空、
+    账号接口报「用户未登录」，但同一 Cookie 在真实浏览器里完全正常。
+
+    单独定义一个异常类型，是为了让上层**不要**把它当成"搜索失败"去降级重试：
+    重试只会再失败一次，并把"环境被风控"伪装成"找到 0 条结果"。
+    """
 
 
 @register_platform("douyin")
@@ -121,6 +135,16 @@ class DouyinClient(BasePlatformClient):
         data = await self._call(SEARCH_SINGLE, query)
 
         items = self._extract_items(data)
+
+        # ⚠️ 空的 data 有两种可能，必须区分开（2026-09-26 实测）：
+        #   1. 关键词真的没结果
+        #   2. 抖音对**自动化环境**整体降级——实测同一 cookie：
+        #        真实 Chrome  → count=5 有数据
+        #        Patchright   → count=0 且 profile/self 返回 code=8「用户未登录」
+        #      说明平台按环境判定，不是 cookie/UA/参数问题。
+        # 不区分会让用户看到"找到 0 条结果"，误以为是自己关键词的问题。
+        if not items:
+            await self._raise_if_environment_degraded()
         results: List[SearchResult] = []
         for item in items:
             parsed = parse_search_item(item)
@@ -151,6 +175,55 @@ class DouyinClient(BasePlatformClient):
             "cursor": data.get("cursor"),
             "has_more": bool(data.get("has_more")),
         }
+
+    async def _raise_if_environment_degraded(self) -> None:
+        """空结果时判断是不是"环境被降级"，是就抛出可读错误。
+
+        实测（2026-09-26）同一 cookie、同一时刻：
+            用户真实 Chrome  → 搜索返回 5 条
+            Patchright 自动化 → 搜索返回 0 条（data=[]，msg 为空）
+        而**账号接口可能是正常的**（实测 user=True）——
+        所以"账号正常"不能推出"搜索正常"。
+
+        这里的判据是：**搜索返回空 + 账号接口正常** →
+        说明 cookie 有效、登录态没问题，那空结果就不是"没登录"造成的，
+        而是抖音对自动化环境的搜索接口作了限制。
+        （如果账号接口也异常，那是 cookie 失效，走正常错误通道。）
+
+        不区分的话，用户只会看到"找到 0 条结果"，误以为关键词没结果。
+        """
+        try:
+            if self._http_client is None:
+                await self._init_http_client()
+            from .apis import BASE_URL
+
+            resp = await self._http_client.get(
+                f"{BASE_URL}{PROFILE_SELF}",
+                params={"aid": DEFAULT_AID, "device_platform": DEFAULT_DEVICE_PLATFORM},
+            )
+            body = resp.json()
+        except Exception:
+            return  # 探测失败就不下结论，交给上层按"确实没结果"处理
+
+        user = body.get("user") or {}
+        cookie_ok = bool(user.get("uid"))
+
+        if cookie_ok:
+            # cookie 有效却搜不到 → 搜索接口被限制（不是"没登录"）
+            raise PlatformUnavailableError(
+                "[douyin] 搜索接口未返回数据（data 为空），但账号接口正常，"
+                "说明 Cookie 有效、登录态没问题。"
+                "实测同一 Cookie 在真实 Chrome 里能搜到结果，"
+                "判断是抖音对自动化环境的搜索接口作了限制。"
+                "可稍后重试（该限制时有时无），或改用其它平台采集。"
+            )
+
+        raise PlatformUnavailableError(
+            "[douyin] 抖音未识别当前登录态："
+            f"账号接口报「{body.get('status_msg') or '未登录'}」"
+            f"（status_code={body.get('status_code')}）。"
+            "请在界面重新用「浏览器」方式获取一次抖音 Cookie。"
+        )
 
     @staticmethod
     def _extract_items(data: Dict[str, Any]) -> List[Dict[str, Any]]:
