@@ -14,6 +14,9 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from app.services.crawler.models import NoteDetail, SearchFilter, SearchEnhancedRequest, NoteDetailResponse, FetchNoWatermarkRequest
+# 平台"当前环境不可用"（如抖音对自动化降级）——要原样抛给上层，
+# 不能被当成"搜索失败"降级重试（那样会把风控伪装成"0 条结果"）。
+from app.services.platforms.douyin.client import PlatformUnavailableError
 
 logger = logging.getLogger("ylcraft.crawler")
 
@@ -120,9 +123,13 @@ class CrawlerService:
         # 1. 尝试新的 platforms 模块
         try:
             return await self._search_via_platforms(platform, keyword, max_results, search_type, sort_by, page, **kwargs)
+        except PlatformUnavailableError:
+            # 平台明确"不可用"（如抖音对本环境降级）时**不要**降级到 yt-dlp：
+            # yt-dlp 只会再返回一次空，最终让用户看到"找到 0 条结果"，
+            # 把"环境被风控"误报成"关键词没结果"。直接抛给上层显示可读原因。
+            raise
         except Exception as e:
             logger.warning(f"[search_videos] platforms module failed: {e}, falling back to yt-dlp")
-
         # 2. 降级方案：使用 yt-dlp 搜索
         return await self._search_via_ytdlp(platform, keyword, max_results)
 
@@ -212,6 +219,11 @@ class CrawlerService:
         except ImportError:
             logger.warning("[_search_via_platforms] platforms module not available")
             return []
+        except PlatformUnavailableError:
+            # 平台明确"当前环境不可用"（如抖音限制自动化环境的搜索接口）。
+            # 必须穿透出去——吞成 return [] 会让用户看到"找到 0 条结果"，
+            # 把"环境被限制"误报成"关键词没结果"。
+            raise
         except Exception as e:
             logger.error(f"[_search_via_platforms] Error: {e}")
             return []
