@@ -53,6 +53,19 @@ python scripts/check_platform_registry.py --allow-known  # 全量但放行已知
 3. **未抓包确认的能力要显式抛 `NotImplementedError`，不要静默返回空列表。**
    "返回空"会被上层理解成"没搜到"，属于假阴性，排查时最费时间。
 
+4. **解析器要用真实抓包样本回归，不要只测自己编的假数据。**
+   假数据只能证明代码不自相矛盾，证明不了它对**真实字段**有效。
+   做法：从浏览器抓一份真实响应，剥掉 URL 里的签名参数后存到 `.local/`，
+   测试读它跑解析器（`.local/` 已 gitignore）。
+   范例：`backend/tests/test_douyin_real_sample.py`、`test_xhs_real_sample.py`。
+   抖音那个样本立刻暴露了两个真实差异：`data` 既可能是数组也可能是
+   `{"0":...}` 索引对象；时长字段是**毫秒**。
+
+5. **搜索的 mode 要按平台选，不能一律 `api`。**
+   小红书搜索端点迁移+需要签名后，`api` 模式已不可用（旧地址返回 code:300011），
+   必须走 `patchright`；抖音/B站则正常走 `api`。见
+   `crawler/service.py::_search_via_platforms` 里的 mode 选择。
+
 ## 两个曾经踩过的陷阱
 
 > 实际已不止两个，下面每条都是真金白银换来的。**做小红书 / 抖音 / 任何新平台前先读一遍。**

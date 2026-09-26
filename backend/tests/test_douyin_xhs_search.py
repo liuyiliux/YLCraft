@@ -146,14 +146,14 @@ def test_xhs_search_patchright_reads_dom():
     assert "xsec_token" in src, "xsec_token 是跳转详情必需参数"
 
 
-def test_xhs_patchright_requires_browser_context():
-    """没有浏览器上下文时要明确报错，不能偷偷返回空列表。
+def test_xhs_patchright_requires_cookie_or_browser():
+    """既没有浏览器上下文、也没有 Cookie 时要明确报错，不能偷偷返回空列表。
 
     '返回空' 会被上层理解成 '没搜到'，属于假阴性。
     """
     import asyncio
 
-    from app.services.platforms.types import SearchParams
+    from app.services.platforms.types import ClientConfig, ClientMode, SearchParams
     from app.services.platforms.xiaohongshu.search_patchright import (
         search_via_patchright,
     )
@@ -161,14 +161,39 @@ def test_xhs_patchright_requires_browser_context():
     class FakeClient:
         _patchright_page = None
 
+        class config:
+            cookie = ""  # 没有 Cookie
+
     try:
         asyncio.get_event_loop().run_until_complete(
             search_via_patchright(FakeClient(), SearchParams(keyword="x"))
         )
     except RuntimeError as e:
-        assert "Patchright" in str(e) or "浏览器" in str(e)
+        msg = str(e)
+        assert "Cookie" in msg or "浏览器" in msg, f"错误信息不可读：{msg}"
     else:
-        raise AssertionError("缺浏览器上下文时应抛 RuntimeError")
+        raise AssertionError("缺浏览器和 Cookie 时应抛 RuntimeError")
+
+
+def test_xhs_html_card_extraction():
+    """从渲染后的 HTML 抽卡片：真实 href 形态必须能解析出 id 与 xsec_token。"""
+    from app.services.platforms.xiaohongshu.search_patchright import (
+        _parse_cards_from_html,
+    )
+
+    html = (
+        '<a class="cover" href="/search_result/6a088d4c000000003502bac3'
+        '?xsec_token=ABUNkf6Ebj14dve4-GR_TMcaWHMHoAIajgtYhQ8lM4Fm0=&xsec_source=">'
+        '</a>'
+        # 重复项要去重
+        '<a href="/search_result/6a088d4c000000003502bac3?xsec_token=SAME&xsec_source="></a>'
+        '<a href="/search_result/6ab22a730000000031002345?xsec_token=SECOND&xsec_source="></a>'
+    )
+    cards = _parse_cards_from_html(html)
+    assert len(cards) == 2, "应去重"
+    assert cards[0]["id"] == "6a088d4c000000003502bac3"
+    assert cards[0]["xsec_token"].startswith("ABUNkf6E")
+    assert cards[1]["xsec_token"] == "SECOND"
 
 
 def test_xhs_parse_count():

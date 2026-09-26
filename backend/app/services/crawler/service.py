@@ -144,10 +144,22 @@ class CrawlerService:
             logger.info(f"[{self.__class__.__name__}] Searching {platform}: {keyword} (type={search_type}, sort={sort_by})")
 
             # 调用 platforms 模块的搜索功能
+            #
+            # mode 按平台选择：小红书必须走 patchright。
+            # 实测（2026-09-26）：小红书搜索端点已迁移到 so.xiaohongshu.com/v2，
+            # 且需要 X-s/X-t 签名（签名函数是混淆 JS、跨域调用 406），
+            # 旧的 edith/v1 地址直接返回 code:300011。所以 API 模式对小红书已不可用，
+            # 硬走 api 只会得到一个"账号异常"的错误。
+            # 其他平台（B站/抖音/快手…）仍用 api。
+            mode = "patchright" if platform in ("xhs", "xiaohongshu") else "api"
+            logger.info(
+                "[_search_via_platforms] platform=%s mode=%s keyword=%s",
+                platform, mode, keyword,
+            )
             results = await platform_search(
                 platform=platform,
                 keyword=keyword,
-                mode="api",
+                mode=mode,
                 max_results=max_results,
                 search_type=search_type,
                 sort_by=sort_by,
