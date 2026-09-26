@@ -118,10 +118,31 @@ async def test_start_session_raises_instead_of_silently_succeeding(monkeypatch):
 
     修复前它只写 session.status=FAILED 就照常 return session_id，
     导致接口永远返回 success=true——浏览器没起来用户也看不出来。
+
+    注意：现在默认走**持久化 profile**（persistent_profile），
+    所以失败点在 `_runtime.new_context` 而不是 `ensure_browser`。
+    这里把 new_context 打桩抛错，验证异常照样穿出去。
     """
     from app.services.cookies.patchright_manager import PatchrightAcquisitionManager
 
     manager = PatchrightAcquisitionManager()
+
+    async def boom(*args, **kwargs):
+        raise NotImplementedError()
+
+    monkeypatch.setattr(manager._runtime, "new_context", boom)
+
+    with pytest.raises(NotImplementedError):
+        await manager.start_session(platform="fanqie", headless=True)
+
+
+@pytest.mark.asyncio
+async def test_start_session_raises_when_browser_launch_fails_non_persistent(monkeypatch):
+    """非持久化模式下（关掉开关），ensure_browser 失败同样必须抛出。"""
+    from app.services.cookies.patchright_manager import PatchrightAcquisitionManager
+
+    manager = PatchrightAcquisitionManager()
+    monkeypatch.setenv("YLCRAFT_BROWSER_PERSISTENT", "0")
 
     async def boom(headless=False):
         raise NotImplementedError()

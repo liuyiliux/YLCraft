@@ -84,6 +84,12 @@ backend/tmp_*
 .codebuddy/
 backend/migrate_assets_v2.py
 backend/data/cookies/
+
+# 持久化浏览器 profile（含**登录 Cookie**，绝不能入库）
+# 实测教训：加这个规则前 git add --dry-run 会把
+# backend/data/browser_profiles/<platform>/Default/Network/Cookies 列进提交，
+# 那等于把用户登录凭证推到远端。
+backend/data/browser_profiles/
 .trae/
 backend/.env
 backend/app/storage/images/
