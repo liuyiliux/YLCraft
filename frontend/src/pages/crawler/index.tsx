@@ -202,12 +202,12 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
     defaultSearchType: 'video',
   },
   xhs: {
-    // ⚠️ 只列**后端真正实现**的选项。
-    // 小红书搜索走浏览器（signature 限制），后端 search_patchright 目前
-    // 只按关键词打开搜索页读结果，**没有实现排序/筛选**。
-    // 之前这里列了「综合/最新/最热」等排序项，但选了不生效——
-    // 那正是"假选项"，比没有更糟（用户以为生效了）。
+    // 排序/筛选暂不列：后端 search_patchright 目前只按关键词搜索页读结果，
+    // 没有实现排序（小红书搜索页的 sort 参数值未经抓包确认，不猜）。
+    // 之前列过「综合/最新/最热」，选了不生效——那属于"假选项"，比没有更糟。
     // 等后端实现并实测确认后再加回来。
+    //
+    // 注：搜索本身已修好（实测能返回结果），这里只是还没有排序维度。
     searchTypes: [
       {
         value: 'note', label: '笔记', icon: <BookOutlined />,
