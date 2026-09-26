@@ -136,6 +136,50 @@ def test_xhs_old_v1_endpoint_is_documented_as_dead():
     assert "300011" in src or "失效" in src or "已迁移" in src, "应说明旧端点已失效"
 
 
+def test_xhs_api_mode_fails_loudly_not_silently():
+    """API 模式必须**明确报错**，不能静默返回空列表。
+
+    原实现把 HTTP 错误、code!=0、异常全部吞成 `return []`，
+    调用方只会看到"没搜到"，属于最费时间的假阴性。
+    实测该端点已返回 code:300011，API 模式本就不可用。
+    """
+    import asyncio
+
+    from app.services.platforms.types import SearchParams
+    from app.services.platforms.xiaohongshu.search import search_via_api
+
+    try:
+        asyncio.get_event_loop().run_until_complete(
+            search_via_api(None, SearchParams(keyword="小说"))
+        )
+    except RuntimeError as e:
+        msg = str(e)
+        assert "patchright" in msg.lower(), "错误信息要指出正确的替代方案"
+        assert "so.xiaohongshu.com" in msg or "签名" in msg, "要说明原因"
+    else:
+        raise AssertionError("API 模式已停用，应抛 RuntimeError 而不是返回空列表")
+
+
+def test_xhs_search_module_records_both_endpoints():
+    """真实端点与旧端点都要记录，方便后来者对照。"""
+    from app.services.platforms.xiaohongshu import search as search_mod
+
+    assert search_mod.REAL_V2_ENDPOINT == (
+        "https://so.xiaohongshu.com/api/sns/web/v2/search/notes"
+    )
+    assert "edith.xiaohongshu.com" in search_mod.DEAD_V1_ENDPOINT
+    assert "DEAD" in search_mod.DEAD_V1_ENDPOINT or "v1" in search_mod.DEAD_V1_ENDPOINT
+
+
+def test_crawler_uses_patchright_for_xhs():
+    """crawler 分发时必须给小红书选 patchright —— 选 api 会撞上已停用的端点。"""
+    from app.services.crawler import service as crawler_service
+
+    src = inspect.getsource(crawler_service.CrawlerService._search_via_platforms)
+    assert "patchright" in src, "crawler 应为小红书选 patchright 模式"
+    assert '"xhs"' in src or "'xhs'" in src
+
+
 def test_xhs_search_patchright_reads_dom():
     """Patchright 搜索必须走真实搜索页并解析 section.note-item。"""
     from app.services.platforms.xiaohongshu import search_patchright as sp

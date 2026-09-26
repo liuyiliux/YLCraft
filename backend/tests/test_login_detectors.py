@@ -155,3 +155,58 @@ async def test_xhs_avatar_means_logged_in():
         selectors={".user-info .avatar": True},
     )
     assert await XhsDetector().detect(page) is True
+
+
+# =============================================================================
+# 登录等待时长
+# =============================================================================
+
+def test_login_timeout_defaults_to_ten_minutes():
+    """默认等待要有 10 分钟。
+
+    实测教训：原值 300 秒（5 分钟）对扫码登录太短——用户要开手机 App、
+    找扫码入口、确认，中途还可能失败重来。用户在这个窗口内没完成，
+    会话被判 failed，而用户以为自己"登录了"，实际什么都没存上。
+    """
+    from app.services.cookies.patchright_manager import DEFAULT_LOGIN_TIMEOUT
+
+    assert DEFAULT_LOGIN_TIMEOUT >= 600, (
+        f"默认登录等待只有 {DEFAULT_LOGIN_TIMEOUT}s，扫码常常不够"
+    )
+
+
+def test_login_timeout_is_configurable_by_env():
+    """必须能用环境变量调大——否则慢的用户永远没机会。"""
+    import inspect
+
+    from app.services.cookies import patchright_manager
+
+    src = inspect.getsource(patchright_manager)
+    assert "YLCRAFT_LOGIN_TIMEOUT_SECONDS" in src, "应支持环境变量覆盖超时"
+
+
+def test_login_wait_uses_elapsed_time_not_iterations():
+    """等待上限必须按**真实流逝时间**算，不能按循环次数。
+
+    循环体里除 sleep(1) 还有一次 detector.detect()（页面查询/接口请求），
+    按次数算会让实际等待时间与预期严重不符。
+    """
+    import inspect
+
+    from app.services.cookies import patchright_manager as pm
+
+    src = inspect.getsource(pm.PatchrightAcquisitionManager._detect_login)
+    assert "monotonic" in src, "应按单调时钟计算流逝时间"
+    assert "for _ in range(DEFAULT_LOGIN_TIMEOUT)" not in src, (
+        "不应再按迭代次数当秒数"
+    )
+
+
+def test_timeout_error_message_is_actionable():
+    """超时提示要告诉用户怎么调大，不能只说"超时"。"""
+    import inspect
+
+    from app.services.cookies import patchright_manager as pm
+
+    src = inspect.getsource(pm.PatchrightAcquisitionManager._detect_login)
+    assert "YLCRAFT_LOGIN_TIMEOUT_SECONDS" in src, "超时提示应给出调大方法"
