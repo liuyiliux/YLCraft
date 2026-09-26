@@ -54,16 +54,17 @@ JS_PARSE_CARDS = """
 async def search_via_patchright(client, params: SearchParams) -> List[SearchResult]:
     """用 Patchright 打开小红书搜索页，读取渲染后的笔记卡片。
 
-    需要传入已登录的浏览器上下文；client 须提供 `patchright_page`
-    （由上层连接管理器注入）。没有浏览器时显式报错，不静默返回空。
+    两种入口：
+      1. client 已注入 `_patchright_page`（复用调用方的浏览器上下文）
+      2. 否则用 `search_with_runtime()` 自建浏览器 + 注入已保存的 Cookie
+         （client.config.cookie）
+
+    没有可用浏览器/Cookie 时显式报错，不静默返回空。
     """
     page = getattr(client, "_patchright_page", None)
     if page is None:
-        raise RuntimeError(
-            "[xhs] Patchright 搜索需要浏览器上下文（_patchright_page）。"
-            "请先在平台连接里用『浏览器』方式保存小红书 Cookie，"
-            "或在调用处注入已登录的 Page。"
-        )
+        # 没有现成页面就走自建浏览器路径（注入 client 的 Cookie）
+        return await search_with_runtime(client, params)
 
     url = SEARCH_URL.format(keyword=quote(params.keyword or ""))
     await page.goto(url, wait_until="domcontentloaded")
@@ -79,6 +80,75 @@ async def search_via_patchright(client, params: SearchParams) -> List[SearchResu
     results = [parse_card(c) for c in raw_cards[:max_n]]
     logger.info("[xhs] patchright search %r -> %d cards", params.keyword, len(results))
     return results
+
+
+async def search_with_runtime(client, params: SearchParams) -> List[SearchResult]:
+    """自建浏览器执行搜索：注入已保存的 Cookie，打开搜索页读卡片。
+
+    用 `patchright_runtime`（项目统一的浏览器出口），不自己 new 一个 playwright，
+    以便复用反爬初始化脚本与 worker-thread 处理。
+    """
+    cookie = getattr(getattr(client, "config", None), "cookie", "") or ""
+    if not cookie:
+        raise RuntimeError(
+            "[xhs] 小红书搜索需要登录 Cookie：请先在平台连接里用『浏览器』方式"
+            "保存小红书（未登录时该站会重定向到 /login，搜不到结果）。"
+        )
+
+    from app.services.browser.patchright_runtime import get_patchright_runtime
+
+    runtime = get_patchright_runtime()
+    url = SEARCH_URL.format(keyword=quote(params.keyword or ""))
+    # 用 Header 形态传 Cookie，由 runtime 转成浏览器 cookie（含正确的 domain）
+    result = await runtime.fetch_page(
+        url,
+        headers={"Cookie": cookie},
+        timeout_ms=60000,
+        wait_until="domcontentloaded",
+        headless=True,
+        settle_ms=6000,
+    )
+
+    # fetch_page 返回的是 HTML；卡片在渲染后的 DOM 里，直接对 HTML 做等价解析。
+    html = result.html or ""
+    if not html:
+        raise RuntimeError("[xhs] 搜索页未返回内容（Cookie 可能已失效）")
+
+    raw_cards = _parse_cards_from_html(html)
+    max_n = params.max_results or 20
+    results = [parse_card(c) for c in raw_cards[:max_n]]
+    logger.info(
+        "[xhs] runtime search %r -> %d cards (status=%s)",
+        params.keyword, len(results), result.status_code,
+    )
+    if not results and "/login" in (result.url or ""):
+        raise RuntimeError(
+            "[xhs] 被重定向到登录页：Cookie 已失效或未登录，请重新获取小红书 Cookie。"
+        )
+    return results
+
+
+def _parse_cards_from_html(html: str) -> List[Dict[str, Any]]:
+    """从渲染后的 HTML 里抽出卡片 id / xsec_token（不依赖浏览器 evaluate）。
+
+    只取稳定可得的两项：note id 与 xsec_token。
+    标题/作者/点赞在 HTML 里的结构随版本变化大，交给调用方按需再取，
+    避免在这里写死易碎的 HTML 结构。
+    """
+    import re
+
+    cards: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    # href 形如 /search_result/{24位hex}?xsec_token=...&xsec_source=
+    for m in re.finditer(
+        r'/search_result/([a-f0-9]{24})\?xsec_token=([^&"\']+)', html
+    ):
+        note_id, token = m.group(1), m.group(2)
+        if note_id in seen:
+            continue
+        seen.add(note_id)
+        cards.append({"id": note_id, "xsec_token": token})
+    return cards
 
 
 def parse_card(c: Dict[str, Any]) -> SearchResult:
