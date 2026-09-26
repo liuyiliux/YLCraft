@@ -237,27 +237,12 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
         value: 'note', label: '视频', icon: <VideoCameraOutlined />,
         sortOptions: [
           { value: 'default', label: '综合' },
-          { value: 'latest', label: '最新' },
-          { value: 'popular', label: '最热' },
         ],
         defaultSort: 'default',
       },
-      {
-        value: 'user', label: '用户', icon: <UserOutlined />,
-        sortOptions: [
-          { value: 'default', label: '综合' },
-          { value: 'fans', label: '粉丝数' },
-        ],
-        defaultSort: 'default',
-      },
-      {
-        value: 'live', label: '直播', icon: <GlobalOutlined />,
-        sortOptions: [
-          { value: 'default', label: '综合' },
-          { value: 'hot', label: '热门' },
-        ],
-        defaultSort: 'default',
-      },
+      // 用户/直播搜索未实现：后端 DouyinClient.search 只做了内容搜索
+      // （端点 /aweme/v1/web/general/search/single/ 已抓包确认）。
+      // 未抓包确认的链路不放进 UI，避免"点了没反应"。
     ],
     defaultSearchType: 'note',
   },

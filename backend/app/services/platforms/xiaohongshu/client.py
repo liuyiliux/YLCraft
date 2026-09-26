@@ -23,8 +23,18 @@ from ..types import (
 logger = logging.getLogger("ylcraft.platforms.xiaohongshu")
 
 # 导入子模块的逻辑函数
-from .search import search_via_api, search_via_patchright
+from .search import search_via_api
+from .search_patchright import search_via_patchright as _search_via_patchright_impl
 from .note import get_detail_via_api, get_detail_via_patchright
+
+
+def search_via_patchright(client, params):
+    """Patchright 搜索（页面搜索 → 读 DOM）。
+
+    实现为独立模块 search_patchright.py；此处转发以保持 client.search()
+    的既有调用面不变。需要 client._patchright_page（已登录浏览器）。
+    """
+    return _search_via_patchright_impl(client, params)
 
 
 # =============================================================================

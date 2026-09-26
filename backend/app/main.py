@@ -466,6 +466,13 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load fanqie router: {e}")
 
+    # 抖音平台路由（模块化结构；搜索也可走 /api/v1/crawler/search-enhanced?platform=douyin）
+    try:
+        from app.services.platforms.douyin.routes import router as douyin_router
+        app.include_router(douyin_router, prefix="/api/v1/douyin", tags=["Crawler — Douyin"])
+    except Exception as e:
+        logger.warning(f"Could not load douyin router: {e}")
+
     # Novel 小说路由
     try:
         from app.api.v1 import novels
