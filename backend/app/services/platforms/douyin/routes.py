@@ -2,17 +2,23 @@
 YLCraft — 抖音平台路由
 
 搜索主入口在 /api/v1/crawler/search-enhanced（platform=douyin），
-本文件提供抖音专属的轻量端点（客户端健康检查）。
+本文件提供抖音专属的轻量端点：
+  - GET /health            客户端注册自检
+  - POST /search           直连搜索（带 cursor/has_more 分页信息）
+  - GET /login-health      登录态体检（对齐 B站同名能力）
 """
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.user_auth import AuthenticatedPrincipal, get_authenticated_principal
+from app.services.platforms.douyin.health import router as health_router
 from app.services.platforms.types import ClientConfig, ClientMode
 
 router = APIRouter()
 
+# 登录态体检（/api/v1/douyin/login-health）
+router.include_router(health_router)
 
 def _get_conn_cookie_sync(conn_id: str) -> str:
     """取连接的 cookie（同步，仅读一行；调用方用 to_thread 包住）。"""

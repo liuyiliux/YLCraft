@@ -473,6 +473,13 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load douyin router: {e}")
 
+    # 小红书平台路由（登录态体检；搜索走 crawler 的 patchright 模式）
+    try:
+        from app.services.platforms.xiaohongshu.routes import router as xhs_router
+        app.include_router(xhs_router, prefix="/api/v1/xhs", tags=["Crawler — Xiaohongshu"])
+    except Exception as e:
+        logger.warning(f"Could not load xhs router: {e}")
+
     # Novel 小说路由
     try:
         from app.api.v1 import novels
