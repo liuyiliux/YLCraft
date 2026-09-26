@@ -37,13 +37,27 @@ JS_PARSE_CARDS = """
     // href 形如 /search_result/{id}?xsec_token=...&xsec_source=...
     const href = a ? (a.getAttribute('href') || '') : '';
     const m = href.match(/\\/search_result\\/([a-f0-9]+)/);
+
+    // 封面：卡片里**第一个 img** 就是封面图（实测确认），
+    // 第二个是作者头像（class 含 author-avatar），必须排除。
+    // 卡片的 id 也可从 data-note-id 直接取，比正则抠 href 更稳。
+    const imgs = [...c.querySelectorAll('img')];
+    let cover = '';
+    for (const img of imgs) {
+      const cls = (img.className || '').toString();
+      if (cls.indexOf('avatar') >= 0) continue;
+      const src = img.getAttribute('src') || img.getAttribute('data-src') || '';
+      if (src) { cover = src; break; }
+    }
+
     return {
-      id: m ? m[1] : '',
+      id: c.getAttribute('data-note-id') || (m ? m[1] : ''),
       xsec_token: (href.match(/xsec_token=([^&]+)/) || [])[1] || '',
       title: t ? t.innerText.trim() : '',
       author: au ? au.innerText.trim() : '',
       likes: lk ? lk.innerText.trim() : '0',
       is_video: hasVideo,
+      cover: cover,
       href: href,
     };
   }).filter(x => x.id);
@@ -92,7 +106,13 @@ async def _warmup(page) -> None:
 
 
 async def _search_on_page(page, params: SearchParams) -> List[SearchResult]:
-    """在已就绪的 page 上打开搜索页并读卡片。"""
+    """在已就绪的 page 上打开搜索页并读卡片。
+
+    小红书搜索页是**无限滚动**（没有 page 参数可用），所以翻页靠滚动加载：
+    要第 2 页就往下滚几次，让更多卡片渲染出来，再一起读。
+
+    实测：首屏约 10~30 张；滚到底会触发下一页请求。
+    """
     url = SEARCH_URL.format(keyword=quote(params.keyword or ""))
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=60000)
@@ -115,9 +135,53 @@ async def _search_on_page(page, params: SearchParams) -> List[SearchResult]:
         logger.warning("[xhs] 等待 note-item 超时，按当前 DOM 继续")
     await page.wait_for_timeout(1500)
 
-    raw_cards: List[Dict[str, Any]] = await page.evaluate(JS_PARSE_CARDS)
     max_n = params.max_results or 20
-    results = [parse_card(c) for c in raw_cards[:max_n]]
+    page_no = max(1, int(getattr(params, "page", 1) or 1))
+    page_size = max(1, max_n)
+
+    # 目标：累计拿到 page_no * page_size 张，滚动到够为止
+    target = page_no * page_size
+    if page_no > 1:
+        await _scroll_until(page, target)
+
+    raw_cards: List[Dict[str, Any]] = await page.evaluate(JS_PARSE_CARDS)
+
+    # 滚动后卡片是累计的，按页切片
+    start = (page_no - 1) * page_size
+    window = raw_cards[start:start + page_size]
+    results = [parse_card(c) for c in window]
+
+    # 把"已加载总数"当作平台总数（前端据此决定还能不能翻页）。
+    # 小红书不返回真实 total，只能给"当前已渲染的条数"这个下界。
+    if results and raw_cards:
+        results[0].raw_data["_total"] = len(raw_cards)
+    logger.info(
+        "[xhs] search %r page=%d -> %d/%d cards (已加载 %d)",
+        params.keyword, page_no, len(results), page_size, len(raw_cards),
+    )
+    return results
+
+
+async def _scroll_until(page, target: int, max_rounds: int = 12) -> None:
+    """向下滚动直到卡片数 >= target（或到达上限）。
+
+    小红书搜索页无限滚动，滚到底会异步加载下一页。
+    """
+    prev = 0
+    for i in range(max_rounds):
+        count = await page.evaluate(
+            "() => document.querySelectorAll('section.note-item').length"
+        )
+        if count >= target:
+            logger.info("[xhs] 滚动到 %d 张（目标 %d）", count, target)
+            return
+        if count == prev and i > 2:
+            # 连续两轮没增长，可能要等加载，再多等一会儿
+            await page.wait_for_timeout(1500)
+        prev = count
+        await page.evaluate("() => window.scrollBy(0, window.innerHeight * 2)")
+        await page.wait_for_timeout(1800)
+    logger.info("[xhs] 滚动结束，共 %d 张（目标 %d）", prev, target)
     logger.info("[xhs] search %r -> %d cards", params.keyword, len(results))
     return results
 
@@ -206,7 +270,11 @@ def parse_card(c: Dict[str, Any]) -> SearchResult:
     """把 DOM 卡片转成统一 SearchResult。
 
     xsec_token 是小红书详情/跳转的必要参数，放进 raw_data 和 URL；
-    不虚构 author_id/cover（DOM 卡片里没有，详情接口才有）。
+    author_id 取不到（搜索卡片 DOM 不含，详情页才有）。
+
+    封面：实测卡片里**第一个 img 就是封面图**（sns-webpic-qc.xhscdn.com），
+    第二个是作者头像。前端要经 /api/v1/proxy/image 代理才能显示
+    （xhscdn.com 有防盗链）。
     """
     note_id = c.get("id") or ""
     likes_raw = str(c.get("likes") or "0")
@@ -216,7 +284,7 @@ def parse_card(c: Dict[str, Any]) -> SearchResult:
         title=c.get("title") or "",
         author=c.get("author") or "",
         author_id="",  # 搜索卡片 DOM 不含作者 id，详情页才有
-        cover="",      # 卡片背景图是 CSS background，需要详情接口取
+        cover=c.get("cover") or "",
         url=(f"https://www.xiaohongshu.com/search_result/{note_id}"
              f"?xsec_token={token}&xsec_source="),
         platform="xiaohongshu",

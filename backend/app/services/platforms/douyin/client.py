@@ -137,11 +137,11 @@ class DouyinClient(BasePlatformClient):
             6/6 成功 → 3 分钟后 0/6 失败 → 6/20 成功 → 15/15 成功 → 8/8 ×2 成功
 
         总计 48 次里 43 次成功（约 90%），且**失败后隔一会儿就能恢复**，
-        没有稳定复现的失败模式。所以「空结果 → 稍等重试一次」是有效策略，
-        比直接把失败抛给用户好得多。
+        没有稳定复现的失败模式。所以「空结果 → 稍等重试」是有效策略。
 
-        重试只做一次：多了会拖慢响应，且实测失败往往是成片的
-        （连续 14 次全失败），重试多次也救不回来。
+        重试 3 次、间隔递增（2/4/6 秒），总耗时约 12 秒：
+        实测失败常成片（连续 14 次全失败），单次重试不够；
+        但也无需无限重试，12 秒足够越过大部分受限窗口。
         """
         channel = resolve_search_channel(params.search_type)
 
@@ -155,10 +155,21 @@ class DouyinClient(BasePlatformClient):
         data = await self._call(SEARCH_SINGLE, query)
         items = self._extract_items(data)
 
-        # 空结果重试一次（间隔 2 秒）
-        if not items:
-            logger.info("[douyin] 首次搜索为空，2 秒后重试一次")
-            await asyncio.sleep(2)
+        # 空结果重试（实测失败常是"一阵一阵"的，多试几次往往能过）
+        #
+        # 采样数据（48 次）：成功 43 次；失败时往往连续多次都失败，
+        # 但隔一会儿又能恢复。所以这里用**递减间隔重试 3 次**，
+        # 总耗时约 2+4+6=12 秒——比让用户手动重搜省事得多。
+        attempt = 0
+        for delay in (2, 4, 6):
+            if items:
+                break
+            attempt += 1
+            logger.info(
+                "[douyin] 第 %d 次搜索为空，%d 秒后重试（%d/3）",
+                attempt, delay, attempt,
+            )
+            await asyncio.sleep(delay)
             data = await self._call(SEARCH_SINGLE, query)
             items = self._extract_items(data)
 

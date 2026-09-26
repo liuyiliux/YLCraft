@@ -31,31 +31,34 @@ import inspect
 import pytest
 
 
-def test_search_retries_once_on_empty():
-    """空结果必须重试一次。"""
+def test_search_retries_on_empty():
+    """空结果必须重试（3 次，含首次共 4 次请求）。"""
     from app.services.platforms.douyin.client import DouyinClient
 
     src = inspect.getsource(DouyinClient.search)
-    # 应当调用两次 _call（首次 + 重试）
-    assert src.count("_call(SEARCH_SINGLE") == 2, "应对空结果重试一次"
+    assert src.count("_call(SEARCH_SINGLE") == 2, (
+        "应有 2 处 _call：首次 + 循环内重试"
+    )
+    assert "for delay in" in src, "应使用递增间隔重试"
 
 
-def test_retry_has_small_delay():
-    """重试之间要有间隔，不能立刻打第二次。"""
+def test_retry_has_increasing_delays():
+    """重试间隔应递增（2/4/6 秒）——固定间隔在受限窗口里效果差。"""
     from app.services.platforms.douyin.client import DouyinClient
 
     src = inspect.getsource(DouyinClient.search)
-    assert "asyncio.sleep" in src, "重试之间应有间隔"
+    assert "asyncio.sleep(delay)" in src
+    assert "2, 4, 6" in src, "间隔应为 2/4/6 秒"
 
 
 def test_retry_is_bounded():
-    """重试只能一次——实测失败往往成片（连续 14 次全失败），多次重试救不回来。"""
+    """重试次数必须有界，不能无限循环。"""
     from app.services.platforms.douyin.client import DouyinClient
 
     src = inspect.getsource(DouyinClient.search)
-    assert src.count("_call(SEARCH_SINGLE") <= 2, "重试次数应受控"
-    # 不应出现循环重试
-    assert "while" not in src, "不应使用循环重试"
+    assert "while" not in src, "不应使用 while 无限重试"
+    # for 循环最多 3 次
+    assert src.count("for delay in (2, 4, 6)") == 1
 
 
 def test_still_raises_after_retry_fails():
@@ -109,6 +112,6 @@ async def test_search_retry_actually_recovers(monkeypatch):
         return None
 
     results = await client.search(SearchParams(keyword="美食", max_results=5))
-    assert calls["n"] == 2, "应调用两次（首次 + 重试）"
+    assert calls["n"] == 2, "首次空 → 重试一次即命中，共 2 次调用"
     assert len(results) == 1
     assert results[0].title == "重试后的结果"
