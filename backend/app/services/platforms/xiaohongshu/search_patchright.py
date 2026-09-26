@@ -83,10 +83,24 @@ async def search_via_patchright(client, params: SearchParams) -> List[SearchResu
 
 
 async def search_with_runtime(client, params: SearchParams) -> List[SearchResult]:
-    """自建浏览器执行搜索：注入已保存的 Cookie，打开搜索页读卡片。
+    """自建浏览器执行搜索：注入 Cookie → **先预热首页** → 打开搜索页读卡片。
 
-    用 `patchright_runtime`（项目统一的浏览器出口），不自己 new 一个 playwright，
-    以便复用反爬初始化脚本与 worker-thread 处理。
+    ## 三个实测要点（2026-09-26，都是踩过才知道的）
+
+    1. **必须用 `add_cookies` 注入，不能用请求头传 Cookie。**
+       对照实测：`fetch_page(headers={"Cookie": ...})` → 0 张卡片；
+       `ctx.add_cookies(...)` → 27~30 张。小红书的登录态判断依赖
+       浏览器 cookie jar 里的域属性，光在请求头带不够。
+
+    2. **必须先访问首页"预热"，不能直接打开搜索页。**
+       对照实测：
+           先 goto /explore 再 goto 搜索页 → ✅ 27 张卡片
+           直接 goto 搜索页               → ❌ 超时 / 0 张
+       搜索页依赖首页建立的会话上下文，直接进会拿不到数据。
+
+    3. **不能用无头模式。** 实测无头会被甩到验证码/登录页。
+
+    用 `patchright_runtime` 的统一出口，不自己 new playwright。
     """
     cookie = getattr(getattr(client, "config", None), "cookie", "") or ""
     if not cookie:
@@ -98,34 +112,66 @@ async def search_with_runtime(client, params: SearchParams) -> List[SearchResult
     from app.services.browser.patchright_runtime import get_patchright_runtime
 
     runtime = get_patchright_runtime()
-    url = SEARCH_URL.format(keyword=quote(params.keyword or ""))
-    # 用 Header 形态传 Cookie，由 runtime 转成浏览器 cookie（含正确的 domain）
-    result = await runtime.fetch_page(
-        url,
-        headers={"Cookie": cookie},
-        timeout_ms=60000,
-        wait_until="domcontentloaded",
-        headless=True,
-        settle_ms=6000,
+    ctx = await runtime.new_context(
+        headless=False,  # 无头会被甩验证码页（实测）
+        viewport={"width": 1440, "height": 900},
     )
+    try:
+        # 要点 1：显式注入 cookie jar（Header 方式实测无效）
+        pairs = [p for p in cookie.split("; ") if "=" in p]
+        if pairs:
+            await ctx.add_cookies([
+                {
+                    "name": p.split("=", 1)[0],
+                    "value": p.split("=", 1)[1],
+                    "domain": ".xiaohongshu.com",
+                    "path": "/",
+                }
+                for p in pairs
+            ])
 
-    # fetch_page 返回的是 HTML；卡片在渲染后的 DOM 里，直接对 HTML 做等价解析。
-    html = result.html or ""
-    if not html:
-        raise RuntimeError("[xhs] 搜索页未返回内容（Cookie 可能已失效）")
+        page = await ctx.new_page()
 
-    raw_cards = _parse_cards_from_html(html)
-    max_n = params.max_results or 20
-    results = [parse_card(c) for c in raw_cards[:max_n]]
-    logger.info(
-        "[xhs] runtime search %r -> %d cards (status=%s)",
-        params.keyword, len(results), result.status_code,
-    )
-    if not results and "/login" in (result.url or ""):
-        raise RuntimeError(
-            "[xhs] 被重定向到登录页：Cookie 已失效或未登录，请重新获取小红书 Cookie。"
+        # 要点 2：先访问首页预热，否则搜索页拿不到数据（实测）
+        try:
+            await page.goto("https://www.xiaohongshu.com/explore",
+                            wait_until="domcontentloaded", timeout=60000)
+            await page.wait_for_timeout(6000)
+        except Exception as exc:
+            logger.warning("[xhs] 首页预热未完成（继续尝试搜索）：%s", exc)
+
+        url = SEARCH_URL.format(keyword=quote(params.keyword or ""))
+        try:
+            await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        except Exception as exc:
+            raise RuntimeError(
+                f"[xhs] 打开搜索页超时：{type(exc).__name__}。"
+                "通常是 Cookie 失效或平台限流，请重新获取小红书 Cookie 后重试。"
+            ) from exc
+
+        # 等卡片渲染（实测约 5~10s）
+        try:
+            await page.wait_for_selector("section.note-item", timeout=15000)
+        except Exception:
+            logger.warning("[xhs] 等待 note-item 超时，按当前 DOM 继续")
+        await page.wait_for_timeout(1500)
+
+        final_url = page.url or ""
+        if "/login" in final_url:
+            raise RuntimeError(
+                "[xhs] 被重定向到登录页：Cookie 已失效或未登录，"
+                "请重新获取小红书 Cookie。"
+            )
+
+        raw_cards: List[Dict[str, Any]] = await page.evaluate(JS_PARSE_CARDS)
+        max_n = params.max_results or 20
+        results = [parse_card(c) for c in raw_cards[:max_n]]
+        logger.info(
+            "[xhs] runtime search %r -> %d cards", params.keyword, len(results),
         )
-    return results
+        return results
+    finally:
+        await ctx.close()
 
 
 def _parse_cards_from_html(html: str) -> List[Dict[str, Any]]:
