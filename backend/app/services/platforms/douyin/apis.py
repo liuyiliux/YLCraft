@@ -10,6 +10,39 @@ YLCraft — 抖音 Web API 端点定义
 
 ⚠️ 抓包前不要猜端点。番茄那次就是因为只抓了一个入口，
    得出"没有建章接口"的错误否定结论（详见 ADDING_A_PLATFORM 陷阱⓪）。
+
+=============================================================================
+⚠️ 重要限制：抖音搜索在**自动化浏览器**里拿不到数据（2026-09-26 实测）
+=============================================================================
+
+同一账号、同一 Cookie、同一时刻的对照实验：
+
+    用户真实 Chrome（非自动化）    → count=5，有真实结果
+    Patchright 自动化浏览器        → count=0（data=[]，status_msg 为空）
+                                     且**账号接口可能是正常的**（user=True）
+
+即抖音限制的是「自动化环境的搜索接口」，不是 Cookie 失效。
+
+已排除的可能（都实测过，无改善）：
+  × Cookie 问题        —— 真实 Chrome 用同一 Cookie 能搜到
+  × 登录态问题         —— profile 接口有时返回 user=True
+  × UA 版本不匹配      —— 改成真实 Chrome/154 无效
+  × 启动参数暴露       —— 换成干净参数无效
+  × navigator.webdriver —— Patchright 已内置反检测，实测为 false
+  × navigator.languages / window.chrome.app —— 补齐后仍无效
+
+开源项目的做法（搜索结果，供后续参考）：
+  - MediaCrawler / TikTokDownloader 等都在实现 **a_bogus 签名**
+    （另有 x-bogus、X-Gnarly 等变体）
+  - 抖音前端把签名函数藏在闭包里，页面 window 上**取不到**
+    （实测 `window.byted_acrawler` 等均为 undefined）
+  - 因此要绕过需自行移植签名算法（数百行的 JS 逆向），
+    且算法会随版本变化，维护成本高
+
+当前的取舍：
+  **不实现签名，而是如实报错**（见 client.py 的 PlatformUnavailableError）。
+  用户看到的是"抖音限制了自动化环境的搜索接口，可稍后重试/改用其它平台"，
+  而不是误导性的"找到 0 条结果"。
 """
 from __future__ import annotations
 
