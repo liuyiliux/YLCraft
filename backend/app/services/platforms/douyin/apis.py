@@ -113,11 +113,49 @@ DEFAULT_PC_CLIENT_TYPE = "1"
 # 搜索类型：1=综合（视频+图文混合，页面默认）
 SEARCH_TYPE_GENERAL = 1
 
+# =============================================================================
+# 搜索范围（search_channel）——2026-09-26 由 URL 抓包确认
+# -----------------------------------------------------------------------------
+# 抖音搜索页有四类页签，点击后 URL 变成 ?type=xxx，对应请求的 search_channel：
+#     /search/小说?type=general   综合
+#     /search/小说?type=video     视频
+#     /search/小说?type=user      用户
+#     /search/小说?type=live      直播
+# 这些是**实测抓到的真实值**，不是猜的。
+# =============================================================================
+
+SEARCH_CHANNELS: dict[str, str] = {
+    "general": "aweme_general",          # 综合（默认）
+    "video": "aweme_video",              # 视频
+    "user": "aweme_user",                # 用户
+    "live": "aweme_live",                # 直播
+}
+
+# 前端传进来的 search_type 别名 → 上述键
+SEARCH_TYPE_ALIASES: dict[str, str] = {
+    "note": "general",      # 前端「笔记/视频」统称
+    "video": "video",
+    "user": "user",
+    "live": "live",
+    "general": "general",
+}
+
+
+def resolve_search_channel(search_type: str | None) -> str:
+    """把前端的 search_type 解析成抖音的 search_channel。
+
+    未知值回退到综合（不抛错——用户选了没实现的类型时，
+    给"综合"结果比给报错更有用）。
+    """
+    key = SEARCH_TYPE_ALIASES.get((search_type or "").strip().lower(), "general")
+    return SEARCH_CHANNELS.get(key, SEARCH_CHANNELS["general"])
+
 
 def build_search_params(
     keyword: str,
     offset: int = 0,
     count: int = 10,
+    search_channel: str = DEFAULT_SEARCH_CHANNEL,
 ) -> dict[str, str]:
     """构造搜索查询参数（抓包确认的最小可用集）。
 
@@ -129,7 +167,7 @@ def build_search_params(
         "aid": DEFAULT_AID,
         "device_platform": DEFAULT_DEVICE_PLATFORM,
         "channel": DEFAULT_CHANNEL,
-        "search_channel": DEFAULT_SEARCH_CHANNEL,
+        "search_channel": search_channel or DEFAULT_SEARCH_CHANNEL,
         "search_source": DEFAULT_SEARCH_SOURCE,
         "keyword": keyword,
         "search_type": str(SEARCH_TYPE_GENERAL),

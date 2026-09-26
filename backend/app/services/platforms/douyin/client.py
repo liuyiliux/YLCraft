@@ -34,6 +34,7 @@ from .apis import (
     PROFILE_SELF,
     SEARCH_SINGLE,
     build_search_params,
+    resolve_search_channel,
 )
 
 logger = logging.getLogger("ylcraft.platforms.douyin")
@@ -117,20 +118,24 @@ class DouyinClient(BasePlatformClient):
     # =========================================================================
 
     async def search(self, params: SearchParams) -> List[SearchResult]:
-        """搜索抖音内容（视频 / 图文）。
+        """搜索抖音内容。
 
-        只支持 SearchType.NOTE / VIDEO；搜用户等类型在抖音是另一条链路，
-        未抓包确认前不实现（不做未经验证的猜测）。
+        支持的 search_type（对应抖音搜索页四个页签，URL 抓包确认）：
+            note / general → 综合（视频+图文，默认）
+            video          → 视频
+            user           → 用户
+            live           → 直播
+
+        未实现的类型回退到「综合」，不抛错——用户选了没做完的类型时，
+        给综合结果比给一句报错更有用（且前端已按后端能力收敛选项）。
         """
-        if params.search_type not in (SearchType.NOTE, SearchType.VIDEO, None):
-            raise NotImplementedError(
-                f"[douyin] 暂不支持搜索类型 {params.search_type}（只实现了内容搜索）"
-            )
+        channel = resolve_search_channel(params.search_type)
 
         query = build_search_params(
             keyword=params.keyword,
             offset=0,
             count=min(params.max_results or 10, 20),
+            search_channel=channel,
         )
         data = await self._call(SEARCH_SINGLE, query)
 
@@ -138,10 +143,10 @@ class DouyinClient(BasePlatformClient):
 
         # ⚠️ 空的 data 有两种可能，必须区分开（2026-09-26 实测）：
         #   1. 关键词真的没结果
-        #   2. 抖音对**自动化环境**整体降级——实测同一 cookie：
-        #        真实 Chrome  → count=5 有数据
-        #        Patchright   → count=0 且 profile/self 返回 code=8「用户未登录」
-        #      说明平台按环境判定，不是 cookie/UA/参数问题。
+        #   2. 抖音对**自动化环境**整体降级——实测同一 cookie 连续两轮：
+        #        第一轮 6/6 成功、三分钟后 0/6 失败
+        #      即限制是**间歇性**的（与参数/签名/请求头都无关，
+        #      a_bogus 也试过：加上反而失败）。
         # 不区分会让用户看到"找到 0 条结果"，误以为是自己关键词的问题。
         if not items:
             await self._raise_if_environment_degraded()
