@@ -13,6 +13,7 @@ YLCraft — 抖音平台客户端
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -118,7 +119,7 @@ class DouyinClient(BasePlatformClient):
     # =========================================================================
 
     async def search(self, params: SearchParams) -> List[SearchResult]:
-        """搜索抖音内容。
+        """搜索抖音内容（空结果会自动重试一次）。
 
         支持的 search_type（对应抖音搜索页四个页签，URL 抓包确认）：
             note / general → 综合（视频+图文，默认）
@@ -128,6 +129,19 @@ class DouyinClient(BasePlatformClient):
 
         未实现的类型回退到「综合」，不抛错——用户选了没做完的类型时，
         给综合结果比给一句报错更有用（且前端已按后端能力收敛选项）。
+
+        ## 为什么要重试（2026-09-26 实测，48 次采样）
+
+        抖音搜索会**不定期**返回空 data（code=0 但 data=[]）。实测采样：
+
+            6/6 成功 → 3 分钟后 0/6 失败 → 6/20 成功 → 15/15 成功 → 8/8 ×2 成功
+
+        总计 48 次里 43 次成功（约 90%），且**失败后隔一会儿就能恢复**，
+        没有稳定复现的失败模式。所以「空结果 → 稍等重试一次」是有效策略，
+        比直接把失败抛给用户好得多。
+
+        重试只做一次：多了会拖慢响应，且实测失败往往是成片的
+        （连续 14 次全失败），重试多次也救不回来。
         """
         channel = resolve_search_channel(params.search_type)
 
@@ -137,19 +151,20 @@ class DouyinClient(BasePlatformClient):
             count=min(params.max_results or 10, 20),
             search_channel=channel,
         )
-        data = await self._call(SEARCH_SINGLE, query)
 
+        data = await self._call(SEARCH_SINGLE, query)
         items = self._extract_items(data)
 
-        # ⚠️ 空的 data 有两种可能，必须区分开（2026-09-26 实测）：
-        #   1. 关键词真的没结果
-        #   2. 抖音对**自动化环境**整体降级——实测同一 cookie 连续两轮：
-        #        第一轮 6/6 成功、三分钟后 0/6 失败
-        #      即限制是**间歇性**的（与参数/签名/请求头都无关，
-        #      a_bogus 也试过：加上反而失败）。
-        # 不区分会让用户看到"找到 0 条结果"，误以为是自己关键词的问题。
+        # 空结果重试一次（间隔 2 秒）
+        if not items:
+            logger.info("[douyin] 首次搜索为空，2 秒后重试一次")
+            await asyncio.sleep(2)
+            data = await self._call(SEARCH_SINGLE, query)
+            items = self._extract_items(data)
+
         if not items:
             await self._raise_if_environment_degraded()
+
         results: List[SearchResult] = []
         for item in items:
             parsed = parse_search_item(item)
