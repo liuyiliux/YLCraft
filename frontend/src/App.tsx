@@ -27,7 +27,6 @@ import AgentPage from './pages/agent'
 import AccountsPage from './pages/accounts'
 import PublishPage from './pages/publish'
 import CrawlerPage from './pages/crawler'
-import UpAnalyticsPage from './pages/up-analytics'
 import PlatformUsersPage from './pages/platform-users'
 import MyPlatformDataPage from './pages/my-platform-data'
 import MyDataPage from './pages/my-data'
@@ -104,7 +103,6 @@ export default function App() {
               <Route path="accounts" element={<AccountsPage />} />
               <Route path="publish" element={<PublishPage />} />
               <Route path="crawler" element={<CrawlerPage />} />
-              <Route path="up-analytics" element={<UpAnalyticsPage />} />
               <Route path="platform-users" element={<PlatformUsersPage />} />
               <Route path="my-platform-data" element={<MyPlatformDataPage />} />
               <Route path="my-data" element={<MyDataPage />} />
