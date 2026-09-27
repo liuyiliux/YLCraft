@@ -18,6 +18,7 @@ from ..types import (
     NoteDetail,
     SearchParams,
     SearchType,
+    UserProfile,
 )
 
 logger = logging.getLogger("ylcraft.platforms.xiaohongshu")
@@ -110,18 +111,54 @@ class XiaohongshuClient(BasePlatformClient):
         return await get_detail_via_api(self, item_id)
 
     # =========================================================================
-    # 可选方法（子类可选实现）
+    # 用户（搜索 / 资料 / 作品列表）——2026-09-27 实测实现
     # =========================================================================
 
-    async def get_user_profile(self, user_id: str) -> Dict[str, Any]:
-        """获取用户主页（可选）"""
-        # TODO: 实现获取用户主页
-        raise NotImplementedError(f"[{self.config.platform}] get_user_profile not implemented")
+    async def search_users(
+        self, keyword: str, max_results: int = 20
+    ) -> List[UserProfile]:
+        """按关键词搜用户。
 
-    async def get_user_notes(self, user_id: str, max_results: int = 20) -> List[SearchResult]:
-        """获取用户发布的笔记（可选）"""
-        # TODO: 实现获取用户笔记列表
-        raise NotImplementedError(f"[{self.config.platform}] get_user_notes not implemented")
+        ⚠️ 是 **POST + JSON body**（不像抖音是 GET query），
+        且必须带 `search_id`（由 signing.get_search_id() 生成）。
+        实测「美食」→ 20 个用户。
+        """
+        from .user import search_users as _impl
+
+        return await _impl(self, keyword, max_results)
+
+    async def get_user_profile(self, user_id: str) -> Optional[UserProfile]:
+        """查**他人**资料（GET `user/otherinfo` + 签名）。
+
+        实测（逸流AI）：昵称/red_id/简介/ip_location；
+        粉丝数在 `interactions` 数组里（不在 basic_info）。
+        """
+        from .user import get_user_profile as _impl
+
+        return await _impl(self, user_id)
+
+    async def get_user_notes(
+        self, user_id: str, max_results: int = 20
+    ) -> List[SearchResult]:
+        """取用户作品列表（GET `user_posted` + 签名，cursor 分页）。
+
+        实测（逸流AI）：20 条 + has_more + cursor。
+
+        注意：小红书叫 `get_user_notes`（历史命名），抖音叫 `get_user_videos`。
+        统一路由 `/api/v1/users/videos` 调的是后者，所以下面留一个别名，
+        避免"两个平台方法名不一致"导致运行时 AttributeError
+        （实测踩过：路由报 `object has no attribute 'get_user_videos'`）。
+        """
+        from .user import get_user_videos as _impl
+
+        return await _impl(self, user_id, max_results)
+
+    # 与抖音对齐的别名（统一路由用这个名字）
+    async def get_user_videos(
+        self, user_id: str, max_results: int = 20
+    ) -> List[SearchResult]:
+        """`get_user_notes` 的别名（与抖音命名对齐）。"""
+        return await self.get_user_notes(user_id, max_results)
 
     async def get_comments(self, item_id: str, max_results: int = 20) -> List[Dict[str, Any]]:
         """获取评论（可选）"""

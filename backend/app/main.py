@@ -452,6 +452,16 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load crawler router: {e}")
 
+    # 用户查询路由（抖音/小红书 的用户搜索 / 资料 / 作品列表）
+    #
+    # 统一成 /api/v1/users/*?platform=xxx，前端可共用同一个面板。
+    # B站保持既有 /api/v1/bilibili/up/* 不变（不破坏既有调用）。
+    try:
+        from app.api.v1 import users as users_api
+        app.include_router(users_api.router, prefix="/api/v1/users", tags=["Users"])
+    except Exception as e:
+        logger.warning(f"Could not load users router: {e}")
+
     # B站专属路由（模块化结构）
     try:
         from app.services.platforms.bilibili.routes import router as bili_router
