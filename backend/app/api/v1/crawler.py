@@ -270,6 +270,7 @@ async def search_enhanced(req: SearchEnhancedRequest):
             order_sort=req.order_sort,
             page=req.page,
             filters=req.filters,
+            conn_id=req.conn_id,
             cookie=_get_conn_cookie(req.conn_id) if req.conn_id else "",
         )
 

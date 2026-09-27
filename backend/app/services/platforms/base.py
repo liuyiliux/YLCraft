@@ -43,6 +43,10 @@ class BasePlatformClient(abc.ABC):
         self._http_client: Optional[httpx.AsyncClient] = None
         self._patchright_page = None
         self._patchright_context = None
+        # 浏览器上下文是否已交给 session_pool 管理。
+        # True = 所有权归池，客户端退出时**不能关**（否则复用中的会话被关死，
+        # 下次搜索报 TargetClosedError）。
+        self._patchright_pooled = False
         # 规范化后的 Cookie 头字符串（懒求值，见 header_cookie()）
         self._header_cookie_cache: Optional[str] = None
         
@@ -59,13 +63,38 @@ class BasePlatformClient(abc.ABC):
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """退出上下文，清理资源"""
+        """退出上下文，清理资源。
+
+        ⚠️ 浏览器上下文**一律不在这里关**——它由 session_pool 管理。
+
+        踩过两次（2026-09-27）：
+          1. 原来无条件 close() → 复用中的会话被关，下次又要重开浏览器（16 秒）
+          2. 按 `_patchright_owned` 判断 → 逻辑写反了：
+             自建的那个 owned=True 跳过关闭（对），
+             复用的那个 owned=False **反而去关**（错，把池里的会话关死了），
+             表现为第 3 次搜索报 TargetClosedError。
+
+        正确做法：只要注册进了池，所有权就归池，客户端退出时什么都不做。
+        池按空闲 TTL 回收。真正没登记进池的临时上下文才需要自己收尾。
+        """
         if self._http_client:
             await self._http_client.aclose()
+
+        # 已登记到池 → 生命周期归池，本客户端不碰
+        if getattr(self, "_patchright_pooled", False):
+            return
+
+        # 未经池管理的临时上下文（异常路径才会走到）——收尾释放
         if self._patchright_page:
-            await self._patchright_page.close()
+            try:
+                await self._patchright_page.close()
+            except Exception:
+                pass
         if self._patchright_context:
-            await self._patchright_context.close()
+            try:
+                await self._patchright_context.close()
+            except Exception:
+                pass
     
     # =========================================================================
     # 初始化方法
@@ -143,23 +172,51 @@ class BasePlatformClient(abc.ABC):
             )
 
             runtime = get_patchright_runtime()
-            self._patchright_context = await runtime.new_context(
-                headless=self.config.patchright_headless,
-                viewport={"width": 1440, "height": 900},
-                user_agent=self.config.user_agent or self._get_default_user_agent(),
-                persistent_platform=self.config.platform,
+            # 复用浏览器上下文：每次搜索都 new 一个 context 的代价是
+            # 开浏览器(2~3s) + 预热首页(6s)，实测单次搜索 16~19 秒。
+            # 用 session_pool 按 平台+连接 复用，预热也只做一次。
+            from app.services.platforms.session_pool import (
+                PooledSession,
+                get_session_pool,
             )
-            self._patchright_page = await self._patchright_context.new_page()
 
-            # 小红书等站点要求 cookie 进 cookie jar 才认登录态
-            # （实测：只放请求头无效）。所以这里显式 add_cookies。
-            if self.config.cookie:
-                await self._set_cookies_to_browser()
+            pool = get_session_pool()
+            conn_id = getattr(self.config, "conn_id", "") or ""
+            session_key = f"{self.config.platform}|{conn_id or '-'}"
 
-            logger.info(
-                "[%s] Patchright initialized (persistent profile)",
-                self.config.platform,
-            )
+            session = pool.get(session_key)
+            if session is not None:
+                self._patchright_context = session.ctx
+                self._patchright_page = session.page
+                # 复用的会话归池所有，退出时绝不能关
+                self._patchright_pooled = True
+                logger.info(
+                    "[%s] 复用浏览器会话 key=%s（空闲 %.0fs）",
+                    self.config.platform, session_key, session.idle_seconds(),
+                )
+            else:
+                self._patchright_context = await runtime.new_context(
+                    headless=self.config.patchright_headless,
+                    viewport={"width": 1440, "height": 900},
+                    user_agent=self.config.user_agent or self._get_default_user_agent(),
+                    persistent_platform=self.config.platform,
+                )
+                self._patchright_page = await self._patchright_context.new_page()
+
+                # 小红书等站点要求 cookie 进 cookie jar 才认登录态
+                # （实测：只放请求头无效）。所以这里显式 add_cookies。
+                if self.config.cookie:
+                    await self._set_cookies_to_browser()
+
+                # 登记到池里 → 所有权转移给池，本客户端退出时不关
+                self._patchright_pooled = True
+                pool.put(session_key, PooledSession(
+                    ctx=self._patchright_context, page=self._patchright_page,
+                ))
+                logger.info(
+                    "[%s] 新建浏览器会话 key=%s",
+                    self.config.platform, session_key,
+                )
 
         except ImportError as exc:
             logger.error(
