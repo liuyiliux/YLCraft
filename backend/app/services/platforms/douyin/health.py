@@ -22,8 +22,8 @@ from fastapi import APIRouter, Query
 
 from app.services.platforms.login_health import (
     cookie_names,
-    get_raw_cookie,
     health_item,
+    resolve_connection,
 )
 
 logger = logging.getLogger("ylcraft.platforms.douyin.health")
@@ -38,7 +38,9 @@ SESSION_COOKIE_NAMES = ("sessionid", "sessionid_ss", "sid_tt")
 async def douyin_login_health(conn_id: str = Query("", description="平台连接 ID")):
     """检查抖音连接保存的 Cookie 是否仍然可用。"""
     checks: Dict[str, Dict[str, Any]] = {}
-    cookie = get_raw_cookie(conn_id) if conn_id else ""
+    # 用 resolve_connection 兜底：用户重新登录后连接 ID 会变，
+    # 旧 ID 查不到时自动回退到该平台最新连接，避免误报"没有 Cookie"
+    actual_id, cookie = resolve_connection(conn_id, "DOUYIN")
     names = cookie_names(cookie)
 
     checks["cookie"] = health_item(

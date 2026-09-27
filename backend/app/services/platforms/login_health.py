@@ -9,7 +9,10 @@ B站有 `/api/v1/bilibili/login-health`，抖音/小红书原先**没有**——
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Optional
+
+logger = logging.getLogger("ylcraft.platforms.login_health")
 
 
 def get_raw_cookie(conn_id: str) -> str:
@@ -21,6 +24,75 @@ def get_raw_cookie(conn_id: str) -> str:
     try:
         row = session.get(PlatformConnection, conn_id)
         return (row.cookie_content or "") if row else ""
+    finally:
+        session.close()
+
+
+def resolve_connection(conn_id: str, platform: str = "") -> tuple[str, str]:
+    """解析连接，返回 (实际使用的 conn_id, cookie)。
+
+    为什么要兜底（2026-09-27 实测）：用户重新登录后连接 ID 会变，
+    而前端/脚本可能还拿着旧 ID。旧 ID 查不到就直接返回空 cookie，
+    界面显示"没有 Cookie，请先保存连接"——看起来像登录丢了，
+    实际只是引用了过期的 ID。
+
+    策略：
+      1. 传入的 ID 存在 → 用它
+      2. 不存在但给了 platform → 回退到该平台**最近更新**的连接
+      3. 都没有 → 返回 ("", "")
+    """
+    from app.db.database import SessionLocal
+    from app.db.models.platform_connection import PlatformConnection
+
+    session = SessionLocal()
+    try:
+        if conn_id:
+            row = session.get(PlatformConnection, conn_id)
+            if row:
+                return row.id, (row.cookie_content or "")
+
+        if platform:
+            from sqlmodel import select
+
+            # 平台名必须是 PG 枚举里的合法值，否则查询会抛
+            # `DataError: invalid input value for enum platformtype`
+            # （实测：传 "NOSUCHPLATFORM" 直接 500）。
+            #
+            # 注意枚举的 value 是**小写**（douyin/xhs），但调用方常传大写
+            # （DOUYIN/XHS，因为 PG 里存的是 name）。两种都接受。
+            from app.db.models.platform_connection import PlatformType
+
+            plat_enum = None
+            raw = (platform or "").strip()
+            for candidate in (raw, raw.lower(), raw.upper()):
+                try:
+                    plat_enum = PlatformType(candidate)
+                    break
+                except ValueError:
+                    continue
+            if plat_enum is None:
+                try:
+                    plat_enum = PlatformType[raw.upper()]
+                except KeyError:
+                    logger.warning(
+                        "[login-health] 非法平台名 %r，跳过兜底查询", platform,
+                    )
+                    return "", ""
+
+            stmt = (
+                select(PlatformConnection)
+                .where(PlatformConnection.platform == plat_enum)
+                .order_by(PlatformConnection.updated_at.desc())
+                .limit(1)
+            )
+            row = session.exec(stmt).first()
+            if row:
+                logger.info(
+                    "[login-health] conn_id=%s 不存在，回退到该平台最新连接 %s",
+                    conn_id, row.id,
+                )
+                return row.id, (row.cookie_content or "")
+        return "", ""
     finally:
         session.close()
 

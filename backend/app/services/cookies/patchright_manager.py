@@ -376,13 +376,20 @@ class PatchrightAcquisitionManager:
                 plat_enum = None
 
             if plat_enum:
+                # 找"同平台最近更新的连接"来复用。
+                #
+                # 曾用 last_used 倒序 + nulls_last —— **这是错的**：
+                # 新建连接的 last_used 是 NULL，而用过的有值，
+                # 于是每次都优先选中"最老的、用过的"那条，
+                # 新登录的 cookie 反而被写进旧记录，
+                # 界面上就会出现多条同平台连接、且有一条是过期的。
+                #
+                # 改为按 updated_at 倒序：取最近更新/新建的那条，
+                # 保证"重新登录 = 刷新同一条连接"，不留旧记录。
                 stmt = (
                     select(PlatformConnection)
-                    .where(
-                        PlatformConnection.platform == plat_enum,
-                        PlatformConnection.auth_type == AuthType.COOKIE,
-                    )
-                    .order_by(PlatformConnection.last_used.desc().nulls_last())
+                    .where(PlatformConnection.platform == plat_enum)
+                    .order_by(PlatformConnection.updated_at.desc())
                     .limit(1)
                 )
                 conn = db.exec(stmt).first()
