@@ -32,9 +32,9 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import {
   searchPlatformUsers, getPlatformUserProfile, getPlatformUserVideos,
-  listPlatformConnections,
+  listPlatformConnections, searchEnhanced,
 } from '../../api'
-import type { PlatformUserItem, PlatformUserVideo, PlatformConnectionResponse } from '../../api'
+import type { PlatformUserItem, PlatformUserVideo, PlatformConnectionResponse, CrawlerResult } from '../../api'
 import { useTheme } from '../../constants/theme'
 
 const { Title, Text } = Typography
@@ -72,6 +72,12 @@ export default function PlatformUserPage() {
   const [keyword, setKeyword] = useState('')
   const [searching, setSearching] = useState(false)
   const [users, setUsers] = useState<PlatformUserItem[]>([])
+  // 搜索维度：博主 or 作品
+  const [searchMode, setSearchMode] = useState<'user' | 'note'>('user')
+  // 作品搜索结果（复用 /crawler/search-enhanced）
+  const [notes, setNotes] = useState<CrawlerResult[]>([])
+  const [noteTotal, setNoteTotal] = useState(0)
+  const [notePage, setNotePage] = useState(1)
 
   const [selected, setSelected] = useState<PlatformUserItem | null>(null)
   const [profile, setProfile] = useState<PlatformUserItem | null>(null)
@@ -110,9 +116,40 @@ export default function PlatformUserPage() {
     if (!kw) { message.warning('请输入关键词'); return }
     setSearching(true)
     setUsers([])
+    setNotes([])
     setSelected(null)
     setProfile(null)
     setVideos([])
+    setNotePage(1)
+
+    // 作品搜索：复用已有的 /crawler/search-enhanced（不需要新后端接口）
+    if (searchMode === 'note') {
+      try {
+        const res: any = await searchEnhanced({
+          platform: platform === 'xiaohongshu' ? 'xhs' : platform,
+          keyword: kw,
+          search_type: 'note',
+          max_results: 20,
+          page: 1,
+          // ⚠️ 必须传 conn_id（2026-09-27 修）：不传的话后端拿不到 Cookie，
+          // 抖音会返回 status_code=2483（游客态）→ 结果恒为空。
+          // 实测表现："找到 0 条结果"，看起来像"关键词没内容"，
+          // 实际是没带登录态。
+          conn_id: connId,
+        })
+        const list: CrawlerResult[] = res?.results || []
+        setNotes(list)
+        setNoteTotal(Number(res?.total) || list.length)
+        if (list.length) message.success(`找到 ${list.length} 个作品`)
+        else message.info('没有找到作品')
+      } catch (e: any) {
+        message.error(e?.response?.data?.detail || '搜索作品失败')
+      } finally {
+        setSearching(false)
+      }
+      return
+    }
+
     try {
       const res: any = await searchPlatformUsers(platform, kw, 20)
       const list: PlatformUserItem[] = res?.data || []
@@ -128,7 +165,32 @@ export default function PlatformUserPage() {
     } finally {
       setSearching(false)
     }
-  }, [platform, keyword])
+  }, [platform, keyword, searchMode, connId])
+
+  /** 作品搜索翻页（服务端分页，要重新请求）。 */
+  const handleNotePage = useCallback(async (p: number) => {
+    const kw = keyword.trim()
+    if (!kw) return
+    setSearching(true)
+    try {
+      const res: any = await searchEnhanced({
+        platform: platform === 'xiaohongshu' ? 'xhs' : platform,
+        keyword: kw,
+        search_type: 'note',
+        max_results: 20,
+        page: p,
+        conn_id: connId,   // 同上：不传会退化成游客态
+      })
+      const list: CrawlerResult[] = res?.results || []
+      setNotes(list)
+      setNoteTotal(Number(res?.total) || list.length)
+      setNotePage(p)
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail || '翻页失败')
+    } finally {
+      setSearching(false)
+    }
+  }, [platform, keyword, connId])
 
   /** 加载选中用户的资料 + 作品。
    *
@@ -259,6 +321,52 @@ export default function PlatformUserPage() {
     },
   ]
 
+  // ===== 作品搜索结果表 =====
+  const noteColumns: ColumnsType<CrawlerResult> = [
+    {
+      title: '封面', dataIndex: 'cover', key: 'cover', width: 90,
+      render: (src: string) => (
+        <Image
+          src={src ? `/api/v1/proxy/image?url=${encodeURIComponent(src)}` : ''}
+          width={64} height={84} style={{ objectFit: 'cover', borderRadius: 4 }}
+          fallback="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NCIgaGVpZ2h0PSI4NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9Ijg0IiBmaWxsPSIjMWYyOTM3Ii8+PC9zdmc+"
+        />
+      ),
+    },
+    {
+      title: '标题', dataIndex: 'title', key: 'title',
+      render: (t: string, r) => (
+        <Space direction="vertical" size={2}>
+          <Text style={{ color: THEME.textPrimary }}>{t || '(无标题)'}</Text>
+          <Space size={6} wrap>
+            {r.type === 'video'
+              ? <Tag color="blue" style={{ margin: 0 }}>视频</Tag>
+              : <Tag color="cyan" style={{ margin: 0 }}>图文</Tag>}
+            {r.author && (
+              <Text style={{ fontSize: 12, color: THEME.textSecondary }}>
+                @{r.author}
+              </Text>
+            )}
+            <Text style={{ fontSize: 12, color: THEME.textSecondary }}>
+              <LikeOutlined /> {formatCount(r.likes)}
+            </Text>
+          </Space>
+        </Space>
+      ),
+    },
+    {
+      title: '操作', key: 'action', width: 90,
+      render: (_, r) => (
+        <Button
+          type="link" size="small" icon={<LinkOutlined />}
+          onClick={() => r.url && window.open(r.url, '_blank')}
+        >
+          打开
+        </Button>
+      ),
+    },
+  ]
+
   const platformLabel = PLATFORMS.find((p) => p.value === platform)?.label || platform
 
   return (
@@ -275,6 +383,20 @@ export default function PlatformUserPage() {
 
       {/* 搜索区 */}
       <Card style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}`, marginBottom: 16 }}>
+        {/* 搜索维度切换：博主 / 作品
+            「作品搜索」复用已有的 /crawler/search-enhanced（不需要新后端），
+            这样在这个页面就能完成"找人 + 找内容"两件事，不用来回切页面。 */}
+        <Tabs
+          size="small"
+          activeKey={searchMode}
+          onChange={(k) => setSearchMode(k as 'user' | 'note')}
+          items={[
+            { key: 'user', label: <Space size={4}><TeamOutlined />搜博主</Space> },
+            { key: 'note', label: <Space size={4}><VideoCameraOutlined />搜作品</Space> },
+          ]}
+          style={{ marginBottom: 4 }}
+        />
+
         <Row gutter={12} align="middle">
           <Col flex="140px">
             <Select
@@ -289,7 +411,11 @@ export default function PlatformUserPage() {
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               onPressEnter={handleSearch}
-              placeholder={`搜索${platformLabel}博主，例如「美食」「李子柒」`}
+              placeholder={
+                searchMode === 'user'
+                  ? `搜索${platformLabel}博主，例如「美食」「李子柒」`
+                  : `搜索${platformLabel}作品，例如「穿搭」「美食教程」`
+              }
               prefix={<SearchOutlined />}
               allowClear
             />
@@ -329,25 +455,50 @@ export default function PlatformUserPage() {
 
       {/* 结果区 */}
       <Row gutter={16}>
-        <Col span={selected ? 13 : 24}>
-          <Card
-            title={<Space><TeamOutlined />搜索结果<Text type="secondary" style={{ fontSize: 12 }}>{users.length ? `${users.length} 个` : ''}</Text></Space>}
-            style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}
-          >
-            <Table
-              rowKey="id"
-              size="small"
-              loading={searching}
-              columns={userColumns}
-              dataSource={users}
-              pagination={{ pageSize: 10, size: 'small' }}
-              locale={{ emptyText: <Empty description="输入关键词搜索博主" /> }}
-              onRow={(r) => ({ onClick: () => loadUserDetail(r), style: { cursor: 'pointer' } })}
-            />
-          </Card>
+        <Col span={selected && searchMode === 'user' ? 13 : 24}>
+          {searchMode === 'user' ? (
+            <Card
+              title={<Space><TeamOutlined />搜索结果<Text type="secondary" style={{ fontSize: 12 }}>{users.length ? `${users.length} 个` : ''}</Text></Space>}
+              style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}
+            >
+              <Table
+                rowKey="id"
+                size="small"
+                loading={searching}
+                columns={userColumns}
+                dataSource={users}
+                pagination={{ pageSize: 10, size: 'small' }}
+                locale={{ emptyText: <Empty description="输入关键词搜索博主" /> }}
+                onRow={(r) => ({ onClick: () => loadUserDetail(r), style: { cursor: 'pointer' } })}
+              />
+            </Card>
+          ) : (
+            <Card
+              title={<Space><VideoCameraOutlined />作品结果<Text type="secondary" style={{ fontSize: 12 }}>{noteTotal ? `共 ${formatCount(noteTotal)} 个` : ''}</Text></Space>}
+              style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}
+            >
+              <Table
+                rowKey="id"
+                size="small"
+                loading={searching}
+                columns={noteColumns}
+                dataSource={notes}
+                pagination={{
+                  pageSize: 20,
+                  // 服务端分页：total 必须传（否则永远 1 页）
+                  total: noteTotal,
+                  current: notePage,
+                  showSizeChanger: false,
+                  onChange: (p) => { void handleNotePage(p) },
+                  showTotal: (t) => `共 ${t} 个作品`,
+                }}
+                locale={{ emptyText: <Empty description="输入关键词搜索作品" /> }}
+              />
+            </Card>
+          )}
         </Col>
 
-        {selected && (
+        {selected && searchMode === 'user' && (
           <Col span={11}>
             <Card
               title={
