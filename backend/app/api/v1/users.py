@@ -177,6 +177,45 @@ async def search_users(
 
 
 @router.get(
+    "/me",
+    response_model=UserProfileResponse,
+    summary="获取自己账号的资料（抖音/小红书）",
+)
+async def get_self_profile(
+    platform: str = Query(..., description="平台：douyin / xiaohongshu"),
+):
+    """查**当前连接账号自己**的资料（「我的数据」用）。
+
+    与 `/users/profile` 的区别：不需要传 user_id / sec_uid，
+    直接用连接里的登录态。
+
+    实测：
+        抖音   逸流AI | 粉丝122 关注3 获赞2735 作品22
+        小红书 逸流AI | 粉丝195 关注2 获赞2930 作品73
+    """
+    client = await _client_for(platform)
+    if not hasattr(client, "get_self_profile"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{platform} 不支持查询自己的资料",
+        )
+    try:
+        async with client:
+            profile = await client.get_self_profile()
+        if profile is None:
+            return UserProfileResponse(
+                success=False, data=None,
+                message="未能获取自己的资料 —— 登录态可能已失效，请重新获取 Cookie",
+            )
+        return UserProfileResponse(success=True, data=_to_item(profile), message="获取成功")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("[users/me] %s 失败: %s", platform, exc)
+        raise HTTPException(status_code=500, detail=f"获取我的资料失败: {exc}")
+
+
+@router.get(
     "/profile",
     response_model=UserProfileResponse,
     summary="获取用户资料（抖音/小红书）",

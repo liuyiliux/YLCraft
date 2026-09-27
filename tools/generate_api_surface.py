@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import sys
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 MAIN = ROOT / "backend" / "app" / "main.py"
+APP_DIR = ROOT / "backend" / "app"
 API_DIR = ROOT / "backend" / "app" / "api" / "v1"
 BILI_ROUTES = ROOT / "backend" / "app" / "services" / "platforms" / "bilibili" / "routes.py"
 OUT_MD = ROOT / "docs" / "architecture" / "API_SURFACE.md"
@@ -69,9 +71,88 @@ def join_paths(prefix: str, local: str) -> str:
     return f"{prefix.rstrip('/')}/{local.lstrip('/')}"
 
 
+def _find_router_file(router_name: str, imports: dict[str, str] | None = None) -> Path | None:
+    """按 `include_router` 的变量名找到定义 `router` 的源文件。
+
+    **优先用 import 语句解析**（最可靠）—— main.py 里通常有
+
+        from app.services.platforms.xiaohongshu.routes import router as xhs_router
+
+    直接按模块路径换算即可，不依赖名字里有没有"平台关键字"
+    （`xhs_router` 指向 `xiaohongshu/` 目录，按名字猜是猜不到的）。
+
+    回退策略（没有对应 import 时）：
+      1. 常见位置精确命中
+      2. 全树扫描（要求路径含模块提示词）
+    """
+    # 1) 用 import 映射（最准）
+    if imports and router_name in imports:
+        mod = imports[router_name]          # 形如 app.services...routes
+        rel = Path(*mod.split("."))
+        for candidate in (
+            ROOT / "backend" / rel.with_suffix(".py"),
+            ROOT / "backend" / rel / "__init__.py",
+        ):
+            if candidate.exists():
+                return candidate
+
+    stem = router_name[:-7] if router_name.endswith("_router") else router_name
+
+    # 2) 常见位置精确命中
+    for candidate in (
+        BILI_ROUTES if stem == "bili" else None,
+        APP_DIR / "services" / "platforms" / stem / "routes.py",
+        APP_DIR / "api" / "v1" / f"{stem}.py",
+        APP_DIR / "api" / "v1" / f"{stem}_routes.py",
+    ):
+        if candidate and candidate.exists():
+            return candidate
+
+    # 3) 全树扫描兜底
+    try:
+        for path in APP_DIR.rglob("*.py"):
+            try:
+                text = path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            if "router = APIRouter" not in text:
+                continue
+            if stem and stem not in str(path).replace("\\", "/"):
+                continue
+            return path
+    except OSError:
+        pass
+    return None
+
+
+def _collect_router_imports() -> dict[str, str]:
+    """扫描 main.py 的 import，得到 `变量名 -> 模块路径` 映射。
+
+         from app.services.platforms.xiaohongshu.routes import router as xhs_router
+         → {"xhs_router": "app.services.platforms.xiaohongshu.routes"}
+
+    也支持不带别名的 `from ... import router`（变量名就是 `router`）。
+    """
+    mapping: dict[str, str] = {}
+    try:
+        tree = ast.parse(MAIN.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError):
+        return mapping
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom) or not node.module:
+            continue
+        for alias in node.names:
+            local = alias.asname or alias.name
+            if local.endswith("router") or alias.name == "router":
+                mapping[local] = node.module
+    return mapping
+
+
 def parse_mounts() -> list[RouterMount]:
     tree = ast.parse(MAIN.read_text(encoding="utf-8"))
     mounts: list[RouterMount] = []
+    router_imports = _collect_router_imports()
 
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -87,9 +168,17 @@ def parse_mounts() -> list[RouterMount]:
         if isinstance(router_arg, ast.Attribute) and isinstance(router_arg.value, ast.Name):
             name = router_arg.value.id
             file_path = API_DIR / f"{name}.py"
-        elif isinstance(router_arg, ast.Name) and router_arg.id == "bili_router":
-            name = "bilibili"
-            file_path = BILI_ROUTES
+        elif isinstance(router_arg, ast.Name):
+            # 形如 `app.include_router(douyin_router, ...)` ——
+            # 名字不是 `xxx.router`，得自己去源码里找它在哪个文件定义。
+            #
+            # 之前这里只硬编码了 `bili_router` 一个特例，于是
+            # `douyin_router` / `fanqie_router` / `xhs_router` 全被
+            # `file_path is None` 悄悄丢掉，**文档里少了一大块而没人发现**。
+            # 现在改成通用查找：按模块名去 app 树下找
+            # `router = APIRouter(...)` 所在文件。
+            name = router_arg.id
+            file_path = _find_router_file(name, router_imports)
         else:
             name = unparse(router_arg)
 
@@ -110,6 +199,27 @@ def parse_mounts() -> list[RouterMount]:
                     prefix=prefix,
                     tags=[str(tag) for tag in tags],
                 )
+            )
+        elif prefix:
+            # ⚠️ **不要静默跳过**。
+            #
+            # 实测踩过：`from app.api.v1 import users as users_api` +
+            # `app.include_router(users_api.router, ...)` 时，
+            # `router_arg.value.id` 是 `users_api`，于是去找
+            # `app/api/v1/users_api.py` —— 文件不存在，路由被
+            # `file_path.exists()` 悄悄丢掉，**文档里完全看不到这些端点**
+            # （3 个 /users/* 端点凭空消失，而生成器仍报"成功"）。
+            #
+            # 这类"文档少了一块但没人发现"的问题很难察觉，所以这里
+            # 显式打警告：有 prefix 说明是真要挂载的路由，找不到源文件
+            # 一定是解析姿势不对（起别名 / 动态 import）。
+            print(
+                f"WARNING: 已挂载 {prefix or '(无前缀)'} 但找不到源文件 "
+                f"{file_path}（router 名 {name!r}）。"
+                "这条路由不会出现在 API 文档里 —— "
+                "请把 main.py 里的 include_router 改成 `xxx.router` 形式"
+                "（不要起别名），或在此处补充映射。",
+                file=sys.stderr,
             )
 
     return mounts

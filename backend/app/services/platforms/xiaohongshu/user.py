@@ -177,6 +177,71 @@ async def get_user_profile(client, user_id: str) -> Optional[UserProfile]:
     return parse_user_otherinfo(body, user_id)
 
 
+async def get_self_profile(client) -> Optional[UserProfile]:
+    """查**自己**的资料（做「我的数据」用）。
+
+    ## 两步走（实测 2026-09-27）
+
+    `GET /api/sns/web/v2/user/me` 只返回基础资料：
+
+        {user_id, nickname, desc, gender, imageb, red_id, guest, xsec_token}
+
+    **没有粉丝数/关注数/作品数** —— 所以拿到 user_id 后还要再调
+    `user/otherinfo` 补全统计（那个接口有 `interactions` 数组）。
+
+    实测：
+        v2/user/me       → 昵称=逸流AI, red_id=95645311698, desc=分享ai知识
+        user/otherinfo   → 粉丝=195, 关注=2, 获赞与收藏=2930, 作品=73
+    """
+    from .apis_user import USER_SELFINFO
+
+    cookie = getattr(getattr(client, "config", None), "cookie", "") or ""
+    if not cookie:
+        return None
+
+    # 1) 先拿自己的基础资料（含 user_id）
+    data = await _get_json(client, USER_SELFINFO, {}, cookie)
+    _check_code(data, "查询自己")
+    me = data.get("data") or {}
+    if not me:
+        return None
+
+    user_id = str(me.get("user_id") or "")
+    base = UserProfile(
+        id=user_id,
+        name=me.get("nickname") or "",
+        avatar=me.get("imageb") or me.get("images") or "",
+        platform="xiaohongshu",
+        desc=me.get("desc") or "",
+        raw_data={
+            "red_id": me.get("red_id") or "",
+            "xsec_token": me.get("xsec_token") or "",
+            "guest": me.get("guest"),
+            "me": me,
+        },
+    )
+
+    # 2) 用 user_id 补统计（v2/user/me 里没有）
+    if user_id:
+        try:
+            full = await get_user_profile(client, user_id)
+            if full:
+                base.followers = full.followers
+                base.following = full.following
+                base.total_likes = full.total_likes
+                base.total_videos = full.total_videos
+                # otherinfo 的简介/IP 属地更完整，覆盖 self 的
+                if full.desc:
+                    base.desc = full.desc
+                base.raw_data["ip_location"] = (full.raw_data or {}).get("ip_location", "")
+                base.raw_data["interactions"] = (full.raw_data or {}).get("interactions", [])
+        except Exception as exc:
+            logger.warning("[xhs] 补统计失败（保留基础资料）：%s: %s",
+                           type(exc).__name__, exc)
+
+    return base
+
+
 async def get_user_videos(
     client,
     user_id: str,

@@ -6,9 +6,9 @@
 
 ## Summary
 
-- Router mounts: 54
-- Endpoints: 693
-- Public schema endpoints: 692
+- Router mounts: 58
+- Endpoints: 709
+- Public schema endpoints: 708
 - Hidden compatibility endpoints: 1
 
 ## Router Mounts
@@ -31,7 +31,7 @@
 | `/api/v1/assets` | Assets | `assets` | `backend/app/api/v1/assets.py` |
 | `/api/v1/auth` | Authentication | `auth` | `backend/app/api/v1/auth.py` |
 | `/api/v1/bgm` | BGM | `bgm` | `backend/app/api/v1/bgm.py` |
-| `/api/v1/bilibili` | Crawler — Bilibili | `bilibili` | `backend/app/services/platforms/bilibili/routes.py` |
+| `/api/v1/bilibili` | Crawler — Bilibili | `bili_router` | `backend/app/services/platforms/bilibili/routes.py` |
 | `/api/v1/book-sources` | Book Sources | `book_sources` | `backend/app/api/v1/book_sources.py` |
 | `/api/v1/breaker` | Breaker | `breaker` | `backend/app/api/v1/breaker.py` |
 | `/api/v1/canvas` | Creative Canvas | `canvas` | `backend/app/api/v1/canvas.py` |
@@ -43,9 +43,11 @@
 | `/api/v1/crawler` | Crawler | `crawler` | `backend/app/api/v1/crawler.py` |
 | `/api/v1/creative-projects` | Creative Projects | `creative_projects` | `backend/app/api/v1/creative_projects.py` |
 | `/api/v1/creative-projects` | Creative Projects — Fanqie | `creative_fanqie` | `backend/app/api/v1/creative_fanqie.py` |
+| `/api/v1/douyin` | Crawler — Douyin | `douyin_router` | `backend/app/services/platforms/douyin/routes.py` |
 | `/api/v1/download` | Download | `download` | `backend/app/api/v1/download.py` |
 | `/api/v1/ebook` | Ebook | `ebook` | `backend/app/api/v1/ebook.py` |
 | `/api/v1/external-api-keys` | External API Keys | `external_api_keys` | `backend/app/api/v1/external_api_keys.py` |
+| `/api/v1/fanqie` | Crawler — Fanqie | `fanqie_router` | `backend/app/services/platforms/fanqie/routes.py` |
 | `/api/v1/image-editor` | Image Editor | `image_editor` | `backend/app/api/v1/image_editor.py` |
 | `/api/v1/image-prompts` | Image Prompt References | `image_prompts` | `backend/app/api/v1/image_prompts.py` |
 | `/api/v1/images` | Images | `images` | `backend/app/api/v1/images.py` |
@@ -65,10 +67,12 @@
 | `/api/v1/tasks` | Tasks | `tasks` | `backend/app/api/v1/tasks.py` |
 | `/api/v1/torrents` | Torrents | `torrents` | `backend/app/api/v1/torrents.py` |
 | `/api/v1/tts` | TTS | `tts` | `backend/app/api/v1/tts.py` |
+| `/api/v1/users` | Users | `users` | `backend/app/api/v1/users.py` |
 | `/api/v1/videos` | Videos | `videos` | `backend/app/api/v1/videos.py` |
 | `/api/v1/wechat-mp` | Wechat MP | `wechat_mp` | `backend/app/api/v1/wechat_mp.py` |
 | `/api/v1/writing-styles` | Writing Styles | `writing_styles` | `backend/app/api/v1/writing_styles.py` |
 | `/api/v1/ws` | WebSocket | `ws` | `backend/app/api/v1/ws.py` |
+| `/api/v1/xhs` | Crawler — Xiaohongshu | `xhs_router` | `backend/app/services/platforms/xiaohongshu/routes.py` |
 
 ## Endpoints
 
@@ -423,14 +427,14 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `POST` | `/api/v1/crawler/fetch-no-watermark` | 批量获取无水印资源 | `fetch_no_watermark` | `backend/app/api/v1/crawler.py:374` |
-| `POST` | `/api/v1/crawler/import` | 导入到素材库 | `import_to_assets` | `backend/app/api/v1/crawler.py:199` |
-| `GET` | `/api/v1/crawler/note-detail` | 获取笔记详情（无水印） | `get_note_detail` | `backend/app/api/v1/crawler.py:298` |
-| `GET` | `/api/v1/crawler/options` | 获取采集配置选项 | `get_options` | `backend/app/api/v1/crawler.py:160` |
-| `GET` | `/api/v1/crawler/platforms` | 获取支持的平台列表 | `get_platforms` | `backend/app/api/v1/crawler.py:154` |
-| `POST` | `/api/v1/crawler/search` | 搜索视频/图文素材 | `search_materials` | `backend/app/api/v1/crawler.py:169` |
-| `POST` | `/api/v1/crawler/search-enhanced` | 增强搜索（支持笔记/用户） | `search_enhanced` | `backend/app/api/v1/crawler.py:243` |
-| `GET` | `/api/v1/crawler/tasks/{task_id}` | 查询采集任务状态 | `get_task_status` | `backend/app/api/v1/crawler.py:228` |
+| `POST` | `/api/v1/crawler/fetch-no-watermark` | 批量获取无水印资源 | `fetch_no_watermark` | `backend/app/api/v1/crawler.py:396` |
+| `POST` | `/api/v1/crawler/import` | 导入到素材库 | `import_to_assets` | `backend/app/api/v1/crawler.py:204` |
+| `GET` | `/api/v1/crawler/note-detail` | 获取笔记详情（无水印） | `get_note_detail` | `backend/app/api/v1/crawler.py:320` |
+| `GET` | `/api/v1/crawler/options` | 获取采集配置选项 | `get_options` | `backend/app/api/v1/crawler.py:165` |
+| `GET` | `/api/v1/crawler/platforms` | 获取支持的平台列表 | `get_platforms` | `backend/app/api/v1/crawler.py:159` |
+| `POST` | `/api/v1/crawler/search` | 搜索视频/图文素材 | `search_materials` | `backend/app/api/v1/crawler.py:174` |
+| `POST` | `/api/v1/crawler/search-enhanced` | 增强搜索（支持笔记/用户） | `search_enhanced` | `backend/app/api/v1/crawler.py:265` |
+| `GET` | `/api/v1/crawler/tasks/{task_id}` | 查询采集任务状态 | `get_task_status` | `backend/app/api/v1/crawler.py:250` |
 
 ### Crawler — Bilibili
 
@@ -461,6 +465,33 @@
 | `GET` | `/api/v1/bilibili/up/videos` | 获取UP主视频列表 | `get_up_videos` | `backend/app/services/platforms/bilibili/routes.py:812` |
 | `GET` | `/api/v1/bilibili/up/{uid}/favorites` | 获取UP主公开收藏夹列表 | `get_up_favorite_list` | `backend/app/services/platforms/bilibili/routes.py:980` |
 | `GET` | `/api/v1/bilibili/video/info` | 获取B站视频信息 | `get_video_info` | `backend/app/services/platforms/bilibili/routes.py:693` |
+
+### Crawler — Douyin
+
+| Method | Path | Summary | Handler | Source |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/v1/douyin/health` | 抖音客户端健康检查 | `douyin_health` | `backend/app/services/platforms/douyin/routes.py:37` |
+| `POST` | `/api/v1/douyin/search` | 抖音搜索（直连） | `douyin_search` | `backend/app/services/platforms/douyin/routes.py:50` |
+
+### Crawler — Fanqie
+
+| Method | Path | Summary | Handler | Source |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/v1/fanqie/book/{book_id}/chapters` | 章节列表 | `book_chapters` | `backend/app/services/platforms/fanqie/routes.py:198` |
+| `GET` | `/api/v1/fanqie/book/{book_id}/drafts` | 草稿箱列表 | `book_drafts` | `backend/app/services/platforms/fanqie/routes.py:231` |
+| `POST` | `/api/v1/fanqie/book/{book_id}/drafts` | 新建番茄草稿（自动建章） | `create_book_draft` | `backend/app/services/platforms/fanqie/routes.py:263` |
+| `GET` | `/api/v1/fanqie/book/{book_id}/stats` | 单本书数据统计 | `book_stats` | `backend/app/services/platforms/fanqie/routes.py:110` |
+| `GET` | `/api/v1/fanqie/book/{book_id}/volumes` | 卷列表 | `book_volumes` | `backend/app/services/platforms/fanqie/routes.py:176` |
+| `GET` | `/api/v1/fanqie/earnings` | 收益分析 | `earnings` | `backend/app/services/platforms/fanqie/routes.py:304` |
+| `GET` | `/api/v1/fanqie/hot-list` | 热门故事 / 开书灵感 | `hot_list` | `backend/app/services/platforms/fanqie/routes.py:130` |
+| `GET` | `/api/v1/fanqie/my/books` | 我的书籍列表（番茄作家后台） | `my_books` | `backend/app/services/platforms/fanqie/routes.py:93` |
+| `GET` | `/api/v1/fanqie/my/profile` | 作家资料 | `my_profile` | `backend/app/services/platforms/fanqie/routes.py:150` |
+
+### Crawler — Xiaohongshu
+
+| Method | Path | Summary | Handler | Source |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/v1/xhs/login-health` | 小红书登录态体检 | `xhs_login_health` | `backend/app/services/platforms/xiaohongshu/routes.py:30` |
 
 ### Creative Canvas
 
@@ -561,13 +592,13 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/download/cover-proxy` | 封面图代理（弃用，请使用 /api/v1/proxy/image） | `cover_proxy` | `backend/app/api/v1/download.py:1364` |
-| `POST` | `/api/v1/download/download` | 通过 yt-dlp 下载视频（返回文件流） | `download_video` | `backend/app/api/v1/download.py:846` |
-| `POST` | `/api/v1/download/download-images` | 下载图集图片到本地 | `download_images` | `backend/app/api/v1/download.py:1395` |
-| `POST` | `/api/v1/download/open-folder` | 打开文件夹并选中文件（Windows） | `open_folder` | `backend/app/api/v1/download.py:1353` |
-| `POST` | `/api/v1/download/parse` | 解析视频链接 | `parse_download_url` | `backend/app/api/v1/download.py:460` |
-| `POST` | `/api/v1/download/tasks` | 创建下载任务（后台，后台轮询） | `create_download_task` | `backend/app/api/v1/download.py:1305` |
-| `GET` | `/api/v1/download/tasks/{task_id}` | 查询下载任务状态 | `get_download_task` | `backend/app/api/v1/download.py:1329` |
+| `GET` | `/api/v1/download/cover-proxy` | 封面图代理（弃用，请使用 /api/v1/proxy/image） | `cover_proxy` | `backend/app/api/v1/download.py:1400` |
+| `POST` | `/api/v1/download/download` | 通过 yt-dlp 下载视频（返回文件流） | `download_video` | `backend/app/api/v1/download.py:882` |
+| `POST` | `/api/v1/download/download-images` | 下载图集图片到本地 | `download_images` | `backend/app/api/v1/download.py:1431` |
+| `POST` | `/api/v1/download/open-folder` | 打开文件夹并选中文件（Windows） | `open_folder` | `backend/app/api/v1/download.py:1389` |
+| `POST` | `/api/v1/download/parse` | 解析视频链接 | `parse_download_url` | `backend/app/api/v1/download.py:464` |
+| `POST` | `/api/v1/download/tasks` | 创建下载任务（后台，后台轮询） | `create_download_task` | `backend/app/api/v1/download.py:1341` |
+| `GET` | `/api/v1/download/tasks/{task_id}` | 查询下载任务状态 | `get_download_task` | `backend/app/api/v1/download.py:1365` |
 
 ### Ebook
 
@@ -983,6 +1014,15 @@
 | `POST` | `/api/v1/torrents/{download_id}/refresh-metadata` | Retry torrent metadata discovery | `refresh_torrent_metadata` | `backend/app/api/v1/torrents.py:274` |
 | `POST` | `/api/v1/torrents/{download_id}/resume` | Resume torrent task | `resume_torrent` | `backend/app/api/v1/torrents.py:263` |
 | `POST` | `/api/v1/torrents/{download_id}/select-files` | Select files | `select_files` | `backend/app/api/v1/torrents.py:209` |
+
+### Users
+
+| Method | Path | Summary | Handler | Source |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/v1/users/me` | 获取自己账号的资料（抖音/小红书） | `get_self_profile` | `backend/app/api/v1/users.py:184` |
+| `GET` | `/api/v1/users/profile` | 获取用户资料（抖音/小红书） | `get_user_profile` | `backend/app/api/v1/users.py:223` |
+| `GET` | `/api/v1/users/search` | 搜索用户（抖音/小红书） | `search_users` | `backend/app/api/v1/users.py:155` |
+| `GET` | `/api/v1/users/videos` | 获取用户作品列表（抖音/小红书） | `get_user_videos` | `backend/app/api/v1/users.py:260` |
 
 ### Videos
 
