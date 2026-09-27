@@ -534,37 +534,45 @@ async def parse(url_or_text: str) -> VideoInfo:
         except Exception as e:
             logger.warning(f"[parser] B站 API 解析异常，fallback 到 yt-dlp: {e}")
 
-    # 抖音使用 iesdouyin.com 移动端方案（无需 Cookie）
+    # 抖音：改用官方详情接口（2026-09-27 实测发现）
+    #
+    # ⚠️ 旧的 iesdouyin 分享页方案**已失效**——抖音把数据改成前端异步加载，
+    #    页面 HTML 里 videoInfoRes/aweme_detail/play_addr 出现次数均为 0。
+    #
+    # 现用真实端点（域名是 www-hj.douyin.com，**不是** www.douyin.com）：
+    #     GET /aweme/v1/web/aweme/detail/?aweme_id=...
+    #     → aweme_detail{desc,author,statistics,images[{download_url_list}],
+    #                    video{play_addr,cover,duration}}
+    #
+    # 图文笔记的每张图优先取 download_url_list（原图，实测 2160x2880），
+    # 回退 url_list（压缩图 q75.webp）。
     if platform == "douyin":
         try:
-            from app.services.video.parser_douyin import parse_douyin
-            result = await parse_douyin(url)
-            if result.get("video_url") or result.get("images"):
-                info.video_url = result.get("video_url", "")
-                info.cover_url = result.get("cover_url", "")
-                info.title = result.get("title", "")
-                info.author_name = result.get("author_name", "")
-                info.author_uid = result.get("author_uid", "")
-                info.author_avatar = result.get("author_avatar", "")
-                info.duration = result.get("duration", 0)
-                info.width = result.get("width", 0)
-                info.height = result.get("height", 0)
-                info.like_count = result.get("like_count", 0)
-                info.comment_count = result.get("comment_count", 0)
-                info.share_count = result.get("share_count", 0)
-                info.play_count = result.get("play_count", 0)
-                info.content_type = result.get("content_type", "video")
-                info.images = result.get("images", [])
-                info.qualities = result.get("qualities", [])
-                info.parse_method = result.get("parse_method", "iesdouyin")
-                info.raw = result.get("raw", {})
-                # 覆盖为 iesdouyin 分享页 URL（yt-dlp 下载必须用这个）
-                info.original_url = result.get("original_url") or info.original_url
+            from app.services.platforms.douyin.detail_adapter import (
+                fetch_douyin_detail,
+            )
+
+            detail = await fetch_douyin_detail(url)
+            if detail and (detail.get("video_url") or detail.get("images")):
+                info.video_url = detail.get("video_url", "")
+                info.cover_url = detail.get("cover_url", "")
+                info.title = detail.get("title", "")
+                info.author_name = detail.get("author_name", "")
+                info.author_uid = detail.get("author_uid", "")
+                info.duration = detail.get("duration", 0)
+                info.width = detail.get("width", 0)
+                info.height = detail.get("height", 0)
+                info.like_count = detail.get("like_count", 0)
+                info.comment_count = detail.get("comment_count", 0)
+                info.share_count = detail.get("share_count", 0)
+                info.collect_count = detail.get("collect_count", 0)
+                info.content_type = detail.get("content_type", "video")
+                info.images = detail.get("images", [])
+                info.parse_method = "douyin_web_api"
                 return info
-            else:
-                logger.warning("[parser] iesdouyin 解析失败，fallback 到 yt-dlp")
+            logger.warning("[parser] 抖音详情接口未返回可用数据，fallback 到 yt-dlp")
         except Exception as e:
-            logger.warning(f"[parser] iesdouyin 解析异常，fallback 到 yt-dlp: {e}")
+            logger.warning(f"[parser] 抖音详情解析异常，fallback 到 yt-dlp: {e}")
 
     # 所有平台统一用 yt-dlp 兜底
     ytdlp_info = await _parse_with_ytdlp(url, platform)

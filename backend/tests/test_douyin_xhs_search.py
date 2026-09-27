@@ -108,12 +108,17 @@ def test_douyin_parse_skips_entries_without_aweme_info():
     assert parse_search_item(None) is None
 
 
-def test_douyin_get_detail_not_implemented_loudly():
-    """未抓包确认的能力要显式报错，不能静默返回 None。"""
+def test_douyin_get_detail_uses_real_api():
+    """详情已实现（2026-09-27 找到真实端点），不能再是 NotImplementedError。
+
+    端点：GET https://www-hj.douyin.com/aweme/v1/web/aweme/detail/
+    （域名是 www-hj，不是 www —— 这是长期没找到的原因。）
+    """
     from app.services.platforms.douyin.client import DouyinClient
 
     src = inspect.getsource(DouyinClient.get_detail)
-    assert "NotImplementedError" in src
+    assert "AWEME_DETAIL" in src or "aweme/detail" in src, "应调真实详情接口"
+    assert "NotImplementedError" not in src, "详情已实现，不该再抛未实现"
 
 
 def test_douyin_routes_mounted():

@@ -128,6 +128,33 @@ SEARCH_STREAM = "/aweme/v1/web/general/search/stream/"
 PROFILE_SELF = "/aweme/v1/web/user/profile/self/"
 
 # =============================================================================
+# 作品详情（GET）——2026-09-27 实测发现
+# =============================================================================
+
+# ⚠️ 关键是**域名不同**：详情接口在 `www-hj.douyin.com`，**不是** www.douyin.com。
+#    自己拼 www.douyin.com/aweme/v1/web/aweme/detail/ 拿不到数据，
+#    这也是这条路径长期没被找到的原因。
+#
+# 发现方式：用 Playwright 的 page.on('request') 监听**全部**请求
+# （含 worker 发起的），在打开笔记页时抓到：
+#     GET https://www-hj.douyin.com/aweme/v1/web/aweme/detail/  → 200 JSON
+#
+# 实测返回（作品 7656457812507817841，图文笔记）：
+#   {"status_code":0,
+#    "aweme_detail":{"aweme_id":"...","desc":"...","author":{...},
+#                    "statistics":{"digg_count":17261,"comment_count":48,
+#                                  "share_count":5043,"collect_count":2418},
+#                    "images":[{url_list:[缩略图], download_url_list:[原图]}, ...],
+#                    "video":{"play_addr":{url_list:[...]},"cover":{...},
+#                             "duration":...,"width":...,"height":...}}}
+#
+# 图文笔记的两种地址（实测确认，别混用）：
+#   · image.url_list          → 压缩图（q75.webp），适合列表展示
+#   · image.download_url_list → **原图**（如 2160x2880），这才是"无水印下载"要的
+DETAIL_BASE_URL = "https://www-hj.douyin.com"
+AWEME_DETAIL = "/aweme/v1/web/aweme/detail/"
+
+# =============================================================================
 # 固定请求参数（抓包得到的稳定值，非签名）
 # -----------------------------------------------------------------------------
 # 与番茄不同：抖音这组搜索接口实测**不需要** msToken / a_bogus / X-Bogus 签名，

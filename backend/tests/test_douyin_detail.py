@@ -123,11 +123,11 @@ def test_detail_from_raw_accepts_bare_aweme_info():
 
 
 @pytest.mark.asyncio
-async def test_get_detail_requires_raw():
-    """没有 raw 时要显式报错，并说明该怎么办。
+async def test_get_detail_falls_back_to_api_without_raw(monkeypatch):
+    """没有 raw 时应调用**真实详情接口**（2026-09-27 找到），而不是报"未实现"。
 
-    不静默返回空——空详情会让前端以为"笔记不存在"，
-    实际只是缺了搜索时的原始数据。
+    端点：GET https://www-hj.douyin.com/aweme/v1/web/aweme/detail/
+    （域名是 www-hj，不是 www。）
     """
     from app.services.platforms.douyin.client import DouyinClient
     from app.services.platforms.types import ClientConfig, ClientMode
@@ -135,11 +135,47 @@ async def test_get_detail_requires_raw():
     client = DouyinClient(
         ClientConfig(platform="douyin", mode=ClientMode.API, cookie="probe=1")
     )
-    with pytest.raises(NotImplementedError) as exc:
+    called: dict = {}
+
+    async def fake_absolute(url, params=None):
+        called["url"] = url
+        called["params"] = params or {}
+        return {
+            "status_code": 0,
+            "aweme_detail": {
+                "aweme_id": "123", "desc": "x",
+                "author": {"nickname": "a", "uid": "1"},
+                "statistics": {"digg_count": 1},
+                "images": [{"download_url_list": ["https://x/o.webp"]}],
+            },
+        }
+
+    monkeypatch.setattr(client, "_call_absolute", fake_absolute)
+
+    d = await client.get_detail("123")
+    assert "www-hj.douyin.com" in called["url"], "应调 www-hj 域名"
+    assert called["params"].get("aweme_id") == "123"
+    assert d.images == ["https://x/o.webp"]
+
+
+@pytest.mark.asyncio
+async def test_get_detail_raises_when_api_returns_nothing(monkeypatch):
+    """接口返回空时要给可读错误，不返回空详情。"""
+    from app.services.platforms.douyin.client import DouyinClient
+    from app.services.platforms.types import ClientConfig, ClientMode
+
+    client = DouyinClient(
+        ClientConfig(platform="douyin", mode=ClientMode.API, cookie="probe=1")
+    )
+
+    async def fake_absolute(url, params=None):
+        return {"status_code": -1, "status_msg": "blocked"}
+
+    monkeypatch.setattr(client, "_call_absolute", fake_absolute)
+
+    with pytest.raises(RuntimeError) as exc:
         await client.get_detail("123")
-    msg = str(exc.value)
-    assert "raw" in msg.lower(), "应说明需要 raw_data"
-    assert "不猜" in msg or "未抓包" in msg, "应说明为什么不按 id 反查"
+    assert "aweme_detail" in str(exc.value)
 
 
 @pytest.mark.asyncio

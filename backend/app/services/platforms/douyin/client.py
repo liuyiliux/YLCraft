@@ -30,9 +30,14 @@ from ..types import (
     SearchType,
 )
 from .apis import (
+    AWEME_DETAIL,
     BASE_URL,
     DEFAULT_AID,
+    DEFAULT_CHANNEL,
     DEFAULT_DEVICE_PLATFORM,
+    DEFAULT_PC_CLIENT_TYPE,
+    DEFAULT_PLATFORM,
+    DETAIL_BASE_URL,
     PROFILE_SELF,
     SEARCH_SINGLE,
     SINGLE_PAGE_MAX,
@@ -310,27 +315,66 @@ class DouyinClient(BasePlatformClient):
     # =========================================================================
 
     async def get_detail(self, item_id: str, **kwargs) -> NoteDetail:
-        """获取详情。
+        """获取作品详情（视频 / 图文）。
 
-        抖音**没有**单独的"详情"接口需要调用——搜索结果里的 `aweme_info`
-        已经包含详情所需的一切（描述、作者、统计、视频地址、图集）。
+        三条路径，按优先级：
 
-        所以有两条路径：
-          1. 调用方把搜索时的原始条目通过 `raw` 传进来 → 直接解析
-          2. 没传 `raw` → 显式报错，说明该怎么办
+          1. **调用方已带 `raw`**（搜索时的原始条目）→ 直接解析，零请求。
+             搜索结果的 `aweme_info` 已含详情所需的一切。
 
-        ## 为什么不按 item_id 反查（2026-09-27）
+          2. **否则调真实详情接口**（2026-09-27 实测发现）：
+                 GET https://www-hj.douyin.com/aweme/v1/web/aweme/detail/
+             ⚠️ 域名是 `www-hj.douyin.com`，不是 www.douyin.com ——
+             自己拼 www 域名会拿不到数据（这也是它长期没被找到的原因）。
 
-        抖音确实有按 id 取视频的接口，但**未抓包确认就不猜路径**（仓库硬规则）。
-        而且搜索已经拿到完整数据，再请求一次既慢又容易撞上风控受限窗口。
+          3. 接口也失败 → 抛可读错误。
+
+        ## 图文笔记的地址选择（实测确认）
+
+        每张图有两个地址，**别混用**：
+          · `url_list`          → 压缩图（q75.webp），列表展示用
+          · `download_url_list` → **原图**（实测 2160x2880），无水印下载用
+        这里优先取 `download_url_list`。
         """
         raw = (kwargs or {}).get("raw")
-        if not raw:
-            raise NotImplementedError(
-                "[douyin] 详情需要搜索时的原始数据：请在结果里带上 raw_data。"
-                "抖音按 item_id 反查详情的接口尚未抓包确认，不猜路径。"
+        if raw:
+            return _detail_from_raw(raw, item_id)
+
+        params = {
+            "device_platform": DEFAULT_DEVICE_PLATFORM,
+            "aid": DEFAULT_AID,
+            "channel": DEFAULT_CHANNEL,
+            "pc_client_type": DEFAULT_PC_CLIENT_TYPE,
+            "platform": DEFAULT_PLATFORM,
+            "aweme_id": item_id,
+        }
+        data = await self._call_absolute(
+            f"{DETAIL_BASE_URL}{AWEME_DETAIL}", params
+        )
+        detail = data.get("aweme_detail") or {}
+        if not detail:
+            raise RuntimeError(
+                f"[douyin] 详情接口未返回 aweme_detail（status_code="
+                f"{data.get('status_code')}, msg={data.get('status_msg') or '-'}）。"
+                "可能是作品不存在、已删除，或需要登录态。"
             )
-        return _detail_from_raw(raw, item_id)
+        return _detail_from_aweme(detail, item_id)
+
+    async def _call_absolute(
+        self,
+        url: str,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """请求**绝对 URL**（详情接口在另一个域名上，不能走 _call 的 BASE_URL 拼接）。
+
+        与 `_call` 的区别：不校验 status_code（详情接口有场景返回非 0
+        但仍有可用数据；由调用方判断 aweme_detail 是否存在）。
+        """
+        if self._http_client is None:
+            await self._init_http_client()
+        resp = await self._http_client.get(url, params=params or {})
+        resp.raise_for_status()
+        return resp.json()
 
 
 # =============================================================================
@@ -486,6 +530,96 @@ def _detail_from_raw(raw: Dict[str, Any], item_id: str) -> NoteDetail:
         create_time=_format_ts(info.get("create_time")),
         raw_data=raw,
     )
+
+
+def _detail_from_aweme(detail: Dict[str, Any], item_id: str) -> NoteDetail:
+    """从 aweme/detail 接口的 `aweme_detail` 构造详情。
+
+    实测结构（图文笔记）：
+        {"aweme_id","desc","create_time","author":{...},
+         "statistics":{"digg_count","comment_count","share_count","collect_count"},
+         "images":[{"url_list":[...], "download_url_list":[...], "width","height"}],
+         "video":{"play_addr":{"url_list":[...]},"cover":{...},"duration",...}}
+
+    图片地址优先级：**download_url_list（原图）> url_list（压缩图）**。
+    实测 download_url_list 给的是 2160x2880 的原图，正是"无水印下载"要的。
+    """
+    aweme_id = str(detail.get("aweme_id") or item_id or "")
+    desc = detail.get("desc") or ""
+
+    author = ""
+    author_id = ""
+    a = detail.get("author")
+    if isinstance(a, dict):
+        author = a.get("nickname") or ""
+        author_id = str(a.get("uid") or a.get("sec_uid") or "")
+
+    stats = detail.get("statistics") or {}
+    video = detail.get("video") or {}
+    if not isinstance(video, dict):
+        video = {}
+
+    # 图集：优先原图
+    images: List[str] = []
+    for img in (detail.get("images") or []):
+        if not isinstance(img, dict):
+            continue
+        url = _first_url(img.get("download_url_list")) or _first_url(img.get("url_list"))
+        if url:
+            images.append(url)
+
+    # 视频地址与封面。
+    #
+    # ⚠️ 图文笔记**不要**取 video_url：实测它的 `video.play_addr` 指向的其实是
+    #    配乐（`ies-music-hj/xxx.mp3`），当成视频地址会让前端误判成视频作品。
+    #    所以有 images 时直接跳过视频地址。
+    video_url = ""
+    if not images:
+        for key in ("play_addr", "play_addr_h264", "download_addr"):
+            candidate = _first_url(video.get(key))
+            # 排除音频地址（实测图文笔记的 play_addr 会是 mp3/m4a）
+            if candidate and not _looks_like_audio(candidate):
+                video_url = candidate
+                break
+
+    cover = _first_url(video.get("cover")) or _first_url(video.get("origin_cover"))
+    if not cover and images:
+        cover = images[0]
+
+    duration_ms = _to_int(video.get("duration"))
+
+    return NoteDetail(
+        id=aweme_id,
+        title=desc,
+        desc=desc,
+        author=author,
+        author_id=author_id,
+        platform="douyin",
+        # 有 images 就是图文，否则是视频
+        type="note" if images else "video",
+        images=images,
+        video=video_url,
+        video_cover=cover,
+        duration=duration_ms // 1000 if duration_ms else 0,
+        likes=_to_int(stats.get("digg_count")),
+        comments=_to_int(stats.get("comment_count")),
+        shares=_to_int(stats.get("share_count")),
+        collects=_to_int(stats.get("collect_count")),
+        views=_to_int(stats.get("play_count")),
+        create_time=_format_ts(detail.get("create_time")),
+        raw_data=detail,
+    )
+
+
+def _looks_like_audio(url: str) -> bool:
+    """判断地址是不是音频文件。
+
+    实测坑：图文笔记的 `video.play_addr` 指向的是**配乐**
+    （`lf9-music-east.douyinstatic.com/obj/ies-music-hj/xxx.mp3`），
+    把它当视频地址会让前端误判成视频作品。
+    """
+    low = (url or "").lower()
+    return any(ext in low for ext in (".mp3", ".m4a", ".aac", "ies-music"))
 
 
 def _to_int(value: Any) -> int:
