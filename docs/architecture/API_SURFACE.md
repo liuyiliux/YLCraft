@@ -7,8 +7,8 @@
 ## Summary
 
 - Router mounts: 54
-- Endpoints: 692
-- Public schema endpoints: 691
+- Endpoints: 693
+- Public schema endpoints: 692
 - Hidden compatibility endpoints: 1
 
 ## Router Mounts
@@ -423,9 +423,9 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `POST` | `/api/v1/crawler/fetch-no-watermark` | 批量获取无水印资源 | `fetch_no_watermark` | `backend/app/api/v1/crawler.py:373` |
+| `POST` | `/api/v1/crawler/fetch-no-watermark` | 批量获取无水印资源 | `fetch_no_watermark` | `backend/app/api/v1/crawler.py:374` |
 | `POST` | `/api/v1/crawler/import` | 导入到素材库 | `import_to_assets` | `backend/app/api/v1/crawler.py:199` |
-| `GET` | `/api/v1/crawler/note-detail` | 获取笔记详情（无水印） | `get_note_detail` | `backend/app/api/v1/crawler.py:297` |
+| `GET` | `/api/v1/crawler/note-detail` | 获取笔记详情（无水印） | `get_note_detail` | `backend/app/api/v1/crawler.py:298` |
 | `GET` | `/api/v1/crawler/options` | 获取采集配置选项 | `get_options` | `backend/app/api/v1/crawler.py:160` |
 | `GET` | `/api/v1/crawler/platforms` | 获取支持的平台列表 | `get_platforms` | `backend/app/api/v1/crawler.py:154` |
 | `POST` | `/api/v1/crawler/search` | 搜索视频/图文素材 | `search_materials` | `backend/app/api/v1/crawler.py:169` |
@@ -561,12 +561,13 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/download/cover-proxy` | 封面图代理（弃用，请使用 /api/v1/proxy/image） | `cover_proxy` | `backend/app/api/v1/download.py:1343` |
-| `POST` | `/api/v1/download/download` | 通过 yt-dlp 下载视频（返回文件流） | `download_video` | `backend/app/api/v1/download.py:825` |
-| `POST` | `/api/v1/download/open-folder` | 打开文件夹并选中文件（Windows） | `open_folder` | `backend/app/api/v1/download.py:1332` |
-| `POST` | `/api/v1/download/parse` | 解析视频链接 | `parse_download_url` | `backend/app/api/v1/download.py:451` |
-| `POST` | `/api/v1/download/tasks` | 创建下载任务（后台，后台轮询） | `create_download_task` | `backend/app/api/v1/download.py:1284` |
-| `GET` | `/api/v1/download/tasks/{task_id}` | 查询下载任务状态 | `get_download_task` | `backend/app/api/v1/download.py:1308` |
+| `GET` | `/api/v1/download/cover-proxy` | 封面图代理（弃用，请使用 /api/v1/proxy/image） | `cover_proxy` | `backend/app/api/v1/download.py:1364` |
+| `POST` | `/api/v1/download/download` | 通过 yt-dlp 下载视频（返回文件流） | `download_video` | `backend/app/api/v1/download.py:846` |
+| `POST` | `/api/v1/download/download-images` | 下载图集图片到本地 | `download_images` | `backend/app/api/v1/download.py:1395` |
+| `POST` | `/api/v1/download/open-folder` | 打开文件夹并选中文件（Windows） | `open_folder` | `backend/app/api/v1/download.py:1353` |
+| `POST` | `/api/v1/download/parse` | 解析视频链接 | `parse_download_url` | `backend/app/api/v1/download.py:460` |
+| `POST` | `/api/v1/download/tasks` | 创建下载任务（后台，后台轮询） | `create_download_task` | `backend/app/api/v1/download.py:1305` |
+| `GET` | `/api/v1/download/tasks/{task_id}` | 查询下载任务状态 | `get_download_task` | `backend/app/api/v1/download.py:1329` |
 
 ### Ebook
 

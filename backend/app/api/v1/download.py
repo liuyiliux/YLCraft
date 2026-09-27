@@ -349,6 +349,15 @@ class ParseResponse(BaseModel):
     page_url: str = ""   # 原始分享页 URL（yt-dlp 下载用）
     error: str = ""
 
+    # 图文图集（2026-09-27 新增）
+    #
+    # 此前没有这两个字段，导致**图集的图片列表在响应里被丢掉**：
+    # 抖音图文笔记解析出 9 张原图，前端却只拿到一张封面。
+    # 现在一并返回，前端可据此渲染图集并提供逐张下载。
+    content_type: str = "video"   # "video" | "image"
+    images: list[str] = []        # 图集的图片地址（已优先取原图）
+    image_count: int = 0          # 图片数量（方便前端判断是否图集）
+
 
 class ParseRequest(BaseModel):
     url: str = Field(..., description="视频链接")
@@ -601,8 +610,15 @@ async def parse_download_url(req: ParseRequest):
     duration = info.get("duration", 0) or 0
     duration_str = _format_duration(duration)
 
+    # 图文图集：把图片列表带出来（2026-09-27）
+    #
+    # 此前响应模型没有 images 字段，抖音图文解析出的 9 张原图
+    # 到前端只剩一张封面。这里取出来一并返回。
+    parse_images = [u for u in (info.get("images") or []) if u]
+    content_type = "image" if parse_images else "video"
+
     # 检查解析是否真的成功！
-    is_valid = bool(video_url) or bool(info.get("images"))
+    is_valid = bool(video_url) or bool(parse_images)
     if not is_valid:
         logger.warning(f"[parse] 解析结果无效（无 video_url 和 images），返回失败: url={url[:80]}")
         
@@ -624,7 +640,9 @@ async def parse_download_url(req: ParseRequest):
         )
 
     qualities: list[VideoQuality] = []
-    if url:
+    # 图文笔记没有视频可枚举清晰度——跳过 yt-dlp，
+    # 也**不要**把页面 URL 塞进 video_url（那会让前端误判成视频）。
+    if url and not parse_images:
         qualities = await _get_qualities(url, title, platform)
         if not qualities:
             video_url = video_url or url
@@ -693,6 +711,9 @@ async def parse_download_url(req: ParseRequest):
         video_url=video_url,
         qualities=qualities,
         page_url=page_url,
+        content_type=content_type,
+        images=parse_images,
+        image_count=len(parse_images),
     )
 
 
@@ -1347,3 +1368,125 @@ async def cover_proxy(url: str):
     if not url:
         raise HTTPException(status_code=400, detail="url 参数不能为空")
     return RedirectResponse(url=f"/api/v1/proxy/image?url={url}")
+
+
+# =============================================================================
+# 图文图集下载（2026-09-27 新增）
+# =============================================================================
+
+class DownloadImagesRequest(BaseModel):
+    urls: list[str] = Field(..., description="图片地址列表")
+    title: str = Field("图集", description="作品标题（用于建目录/文件名）")
+    platform: str = Field("", description="平台标识")
+
+
+class DownloadImagesResponse(BaseModel):
+    success: bool
+    saved: list[str] = Field(default_factory=list, description="已保存的本地路径")
+    failed: list[dict] = Field(default_factory=list, description="失败的项 {url, error}")
+    dir_path: str = ""
+
+
+@router.post(
+    "/download-images",
+    response_model=DownloadImagesResponse,
+    summary="下载图集图片到本地",
+)
+async def download_images(req: DownloadImagesRequest):
+    """把图集的图片逐张下载到本地目录。
+
+    ## 为什么需要这个端点
+
+    抖音/小红书的图文笔记是**多图作品**：解析后拿到的是 N 个图片地址，
+    但原来没有任何入口能把这套图存下来（只能一张张手动右键）。
+    前端图集卡片点「全部下载」会调这里。
+
+    ## 落盘位置
+
+    `backend/downloads/{平台}/{标题}/`，文件名 `{序号}_{原文件名}`。
+    与视频下载的目录约定一致，用户能在同一个地方找到。
+
+    ## 失败处理
+
+    单张失败**不中断**其余下载（网络抖动很常见），
+    返回里带上失败清单，前端可以提示"成功 N 张 / 失败 M 张"。
+    """
+    import re
+
+    import httpx
+
+    if not req.urls:
+        raise HTTPException(status_code=400, detail="图片列表为空")
+
+    # 下载目录：downloads/{平台}/{安全标题}/
+    safe_title = re.sub(r'[\\/:*?"<>|\r\n\t]', "_", (req.title or "图集")).strip()[:60] or "图集"
+    base = ensure_download_path(req.platform or "images")
+    out_dir = Path(base) / safe_title
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # 图床有防盗链，必须带 Referer
+    referers = {
+        "douyin": "https://www.douyin.com/",
+        "xiaohongshu": "https://www.xiaohongshu.com/",
+        "bilibili": "https://www.bilibili.com/",
+    }
+    referer = referers.get(req.platform, "https://www.douyin.com/")
+
+    saved: list[str] = []
+    failed: list[dict] = []
+
+    async with httpx.AsyncClient(
+        timeout=60.0, follow_redirects=True,
+        headers={"User-Agent": _BROWSER_UA, "Referer": referer},
+    ) as client:
+        for idx, img_url in enumerate(req.urls, start=1):
+            if not img_url or not img_url.startswith("http"):
+                failed.append({"url": img_url, "error": "非法地址"})
+                continue
+            try:
+                resp = await client.get(img_url)
+                resp.raise_for_status()
+
+                # 扩展名：优先 Content-Type，其次 URL 里的后缀
+                ctype = (resp.headers.get("content-type") or "").lower()
+                ext = ".jpg"
+                if "webp" in ctype:
+                    ext = ".webp"
+                elif "png" in ctype:
+                    ext = ".png"
+                elif "gif" in ctype:
+                    ext = ".gif"
+                elif "jpeg" in ctype or "jpg" in ctype:
+                    ext = ".jpg"
+                else:
+                    m = re.search(r"\.(jpe?g|png|webp|gif)", img_url.lower())
+                    if m:
+                        ext = "." + m.group(1).replace("jpeg", "jpg")
+
+                # 文件名尽量沿用原图名，便于溯源；重名时加序号前缀
+                stem = ""
+                m = re.search(r"/([^/?]+?)\.(jpe?g|png|webp|gif)", img_url, re.I)
+                if m:
+                    stem = re.sub(r'[\\/:*?"<>|]', "_", m.group(1))[:40]
+                filename = f"{idx:02d}_{stem}{ext}" if stem else f"{idx:02d}{ext}"
+
+                file_path = out_dir / filename
+                file_path.write_bytes(resp.content)
+                saved.append(str(file_path))
+                logger.info(
+                    "[download-images] %d/%d 已保存 %s（%d KB）",
+                    idx, len(req.urls), file_path.name, len(resp.content) // 1024,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "[download-images] 第 %d 张失败：%s: %s",
+                    idx, type(exc).__name__, exc,
+                )
+                failed.append({"url": img_url, "error": f"{type(exc).__name__}: {exc}"})
+
+    return DownloadImagesResponse(
+        success=len(saved) > 0,
+        saved=saved,
+        failed=failed,
+        dir_path=str(out_dir),
+    )

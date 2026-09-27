@@ -4990,7 +4990,7 @@
       "summary": "批量获取无水印资源",
       "function": "fetch_no_watermark",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 373,
+      "line": 374,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5022,7 +5022,7 @@
       "summary": "获取笔记详情（无水印）",
       "function": "get_note_detail",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 297,
+      "line": 298,
       "response_model": "NoteDetailResponse",
       "include_in_schema": true
     },
@@ -6350,7 +6350,7 @@
       "summary": "封面图代理（弃用，请使用 /api/v1/proxy/image）",
       "function": "cover_proxy",
       "file": "backend/app/api/v1/download.py",
-      "line": 1343,
+      "line": 1364,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6366,8 +6366,24 @@
       "summary": "通过 yt-dlp 下载视频（返回文件流）",
       "function": "download_video",
       "file": "backend/app/api/v1/download.py",
-      "line": 825,
+      "line": 846,
       "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/download/download-images",
+      "router": "download",
+      "prefix": "/api/v1/download",
+      "local_path": "/download-images",
+      "tags": [
+        "Download"
+      ],
+      "summary": "下载图集图片到本地",
+      "function": "download_images",
+      "file": "backend/app/api/v1/download.py",
+      "line": 1395,
+      "response_model": "DownloadImagesResponse",
       "include_in_schema": true
     },
     {
@@ -6382,7 +6398,7 @@
       "summary": "打开文件夹并选中文件（Windows）",
       "function": "open_folder",
       "file": "backend/app/api/v1/download.py",
-      "line": 1332,
+      "line": 1353,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6398,7 +6414,7 @@
       "summary": "解析视频链接",
       "function": "parse_download_url",
       "file": "backend/app/api/v1/download.py",
-      "line": 451,
+      "line": 460,
       "response_model": "ParseResponse",
       "include_in_schema": true
     },
@@ -6414,7 +6430,7 @@
       "summary": "创建下载任务（后台，后台轮询）",
       "function": "create_download_task",
       "file": "backend/app/api/v1/download.py",
-      "line": 1284,
+      "line": 1305,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6430,7 +6446,7 @@
       "summary": "查询下载任务状态",
       "function": "get_download_task",
       "file": "backend/app/api/v1/download.py",
-      "line": 1308,
+      "line": 1329,
       "response_model": "",
       "include_in_schema": true
     },
