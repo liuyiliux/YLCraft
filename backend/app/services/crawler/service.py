@@ -114,6 +114,7 @@ class CrawlerService:
         search_type: str = "note",
         sort_by: str = "",
         page: int = 1,
+        conn_id: str = "",
         **kwargs,
     ) -> list[CrawlerResult]:
         """
@@ -122,7 +123,10 @@ class CrawlerService:
         """
         # 1. 尝试新的 platforms 模块
         try:
-            return await self._search_via_platforms(platform, keyword, max_results, search_type, sort_by, page, **kwargs)
+            return await self._search_via_platforms(
+                platform, keyword, max_results, search_type, sort_by, page,
+                conn_id=conn_id, **kwargs,
+            )
         except PlatformUnavailableError:
             # 平台明确"不可用"（如抖音对本环境降级）时**不要**降级到 yt-dlp：
             # yt-dlp 只会再返回一次空，最终让用户看到"找到 0 条结果"，
@@ -141,6 +145,7 @@ class CrawlerService:
         search_type: str = "note",
         sort_by: str = "",
         page: int = 1,
+        conn_id: str = "",
         **kwargs,
     ) -> list[CrawlerResult]:
         """通过新的 platforms 模块搜索"""
@@ -171,6 +176,7 @@ class CrawlerService:
                 search_type=search_type,
                 sort_by=sort_by,
                 page=page,
+                conn_id=conn_id,
                 **kwargs,
             )
 

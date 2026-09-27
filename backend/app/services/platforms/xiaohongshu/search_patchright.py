@@ -72,17 +72,53 @@ async def search_via_patchright(client, params: SearchParams) -> List[SearchResu
       1. client 已注入 `_patchright_page`（复用调用方的浏览器上下文）
       2. 否则用 `search_with_runtime()` 自建浏览器 + 注入已保存的 Cookie
 
-    **两条路径都必须先预热首页**（见 search_with_runtime 的说明）。
-    这里把预热逻辑复用过来，避免两条路径行为不一致——
-    实测就踩过：注入页那条分支少了预热，表现是 Page.goto 超时。
+    **缓存加在这里**（共享入口），两条分支都受益。
+    之前只加在 search_with_runtime 里是错的——实际调用走的是注入页分支
+    （base._init_patchright 会先建好 page），缓存压根没生效，
+    实测三次搜索耗时都是 16 秒，完全没有命中。
+
+    因为加了缓存，这个函数不再叫 `_via_patchright` 那么"纯浏览器"了，
+    但保持函数名不变以免影响既有调用面。
     """
+    from .cache import get_result_cache
+
+    cache = get_result_cache()
+    nav = _cache_keys(client, params)
+    cache_key = nav["key"]
+
+    # 命中就直接返回，完全不碰浏览器
+    cached = cache.get(cache_key)
+    if cached is not None:
+        logger.info("[xhs] 命中结果缓存，跳过浏览器 key=%s", cache_key)
+        return cached
+
     page = getattr(client, "_patchright_page", None)
     if page is None:
-        # 没有现成页面就走自建浏览器路径（注入 client 的 Cookie）
-        return await search_with_runtime(client, params)
+        results = await search_with_runtime(client, params)
+    else:
+        await _warmup(page)
+        results = await _search_on_page(page, params)
 
-    await _warmup(page)
-    return await _search_on_page(page, params)
+    if results:
+        cache.set(cache_key, results)
+    return results
+
+
+def _cache_keys(client, params: SearchParams) -> Dict[str, Any]:
+    """算缓存键（含连接 ID，不同账号结果不能互相串）。"""
+    from .cache import get_result_cache
+
+    conn_id = getattr(getattr(client, "config", None), "conn_id", "") or ""
+    max_n = params.max_results or 20
+    page_no = max(1, int(getattr(params, "page", 1) or 1))
+    search_type = str(getattr(params, "search_type", "") or "note")
+    cache = get_result_cache()
+    return {
+        "key": cache.make_key(
+            "xhs", params.keyword or "", page_no, max_n, search_type, conn_id,
+        ),
+        "conn_id": conn_id,
+    }
 
 
 async def _warmup(page) -> None:
@@ -187,24 +223,27 @@ async def _scroll_until(page, target: int, max_rounds: int = 12) -> None:
 
 
 async def search_with_runtime(client, params: SearchParams) -> List[SearchResult]:
-    """自建浏览器执行搜索：注入 Cookie → **先预热首页** → 打开搜索页读卡片。
+    """自建浏览器执行搜索：**结果缓存 → 会话复用 → 预热 → 搜索**。
 
-    ## 三个实测要点（2026-09-26，都是踩过才知道的）
+    ## 为什么要缓存（用户实测反馈）
+
+    "小红书应该加个缓存，这样切换分页再切回来时候不用重新打开浏览器查询"
+
+    原实现每次搜索的代价：开浏览器(2~3s) → 预热首页(6s) → 开搜索页(5~10s)
+    → 读卡片 → 关浏览器，单次 15~20 秒。翻页、切回、重复搜都要重来，
+    用户看到的就是"又弹了个浏览器窗口"。
+
+    结果缓存加在 **search_via_patchright**（共享入口），两条分支都受益；
+    这里负责**会话复用**（按连接复用浏览器，省掉开浏览器 + 预热 ~9 秒）。
+
+    ## 三个实测要点（都是踩过才知道的）
 
     1. **必须用 `add_cookies` 注入，不能用请求头传 Cookie。**
        对照实测：`fetch_page(headers={"Cookie": ...})` → 0 张卡片；
-       `ctx.add_cookies(...)` → 27~30 张。小红书的登录态判断依赖
-       浏览器 cookie jar 里的域属性，光在请求头带不够。
-
+       `ctx.add_cookies(...)` → 27~30 张。
     2. **必须先访问首页"预热"，不能直接打开搜索页。**
-       对照实测：
-           先 goto /explore 再 goto 搜索页 → ✅ 27 张卡片
-           直接 goto 搜索页               → ❌ 超时 / 0 张
-       搜索页依赖首页建立的会话上下文，直接进会拿不到数据。
-
+       先 goto /explore 再搜 → ✅ 27 张；直接搜 → ❌ 超时 / 0 张。
     3. **不能用无头模式。** 实测无头会被甩到验证码/登录页。
-
-    用 `patchright_runtime` 的统一出口，不自己 new playwright。
     """
     cookie = getattr(getattr(client, "config", None), "cookie", "") or ""
     if not cookie:
@@ -213,34 +252,65 @@ async def search_with_runtime(client, params: SearchParams) -> List[SearchResult
             "保存小红书（未登录时该站会重定向到 /login，搜不到结果）。"
         )
 
+    conn_id = getattr(getattr(client, "config", None), "conn_id", "") or ""
+
+    # ---- 复用浏览器会话（省掉开浏览器 + 预热首页那 ~9 秒）----
+    #
+    # 用**跨平台的** session_pool（platforms/session_pool.py）。
+    # 注意 key 必须与 base._init_patchright 用的一致，
+    # 否则两边各自建会话，复用的收益就没了。
     from app.services.browser.patchright_runtime import get_patchright_runtime
+    from app.services.platforms.session_pool import PooledSession, get_session_pool
 
-    runtime = get_patchright_runtime()
-    ctx = await runtime.new_context(
-        headless=False,  # 无头会被甩验证码页（实测）
-        viewport={"width": 1440, "height": 900},
-    )
-    try:
-        # 要点 1：显式注入 cookie jar（Header 方式实测无效）
-        pairs = [p for p in cookie.split("; ") if "=" in p]
-        if pairs:
-            await ctx.add_cookies([
-                {
-                    "name": p.split("=", 1)[0],
-                    "value": p.split("=", 1)[1],
-                    "domain": ".xiaohongshu.com",
-                    "path": "/",
-                }
-                for p in pairs
-            ])
+    pool = get_session_pool()
+    session_key = f"xhs|{conn_id or '-'}"
 
-        page = await ctx.new_page()
+    async with pool.lock_for(session_key):
+        session = pool.get(session_key)
 
-        # 要点 2：先首页预热，再搜（复用共享逻辑，与注入页分支一致）
-        await _warmup(page)
-        return await _search_on_page(page, params)
-    finally:
-        await ctx.close()
+        if session is None:
+            runtime = get_patchright_runtime()
+            ctx = await runtime.new_context(
+                headless=False,  # 无头会被甩验证码页（实测）
+                viewport={"width": 1440, "height": 900},
+            )
+            # 要点 1：显式注入 cookie jar（Header 方式实测无效）
+            pairs = [p for p in cookie.split("; ") if "=" in p]
+            if pairs:
+                await ctx.add_cookies([
+                    {
+                        "name": p.split("=", 1)[0],
+                        "value": p.split("=", 1)[1],
+                        "domain": ".xiaohongshu.com",
+                        "path": "/",
+                    }
+                    for p in pairs
+                ])
+            page = await ctx.new_page()
+            session = PooledSession(ctx=ctx, page=page)
+            pool.put(session_key, session)
+            logger.info("[xhs] 新建浏览器会话 key=%s", session_key)
+        else:
+            logger.info(
+                "[xhs] 复用浏览器会话 key=%s（空闲 %.0fs）",
+                session_key, session.idle_seconds(),
+            )
+
+        try:
+            # 要点 2：预热只需一次（复用时跳过，省 ~6 秒）
+            if not session.warmed:
+                await _warmup(session.page)
+                session.warmed = True
+            session.touch()
+
+            results = await _search_on_page(session.page, params)
+            session.touch()
+        except Exception:
+            # 出错就丢掉这个会话，避免把坏状态留给下一次
+            await pool.close(session_key)
+            raise
+
+    return results
 
 
 def _parse_cards_from_html(html: str) -> List[Dict[str, Any]]:

@@ -190,7 +190,12 @@ class ClientConfig:
     platform: str
     mode: ClientMode = ClientMode.API
     cookie: str = ""
-    
+
+    # 平台连接 ID。用于：
+    #   · 缓存键的一部分（不同账号结果不同，不能互相串）
+    #   · 浏览器会话复用（同一连接复用同一个浏览器上下文）
+    conn_id: str = ""
+
     # Patchright 特定
     use_patchright: bool = False
     patchright_headless: bool = False

@@ -100,6 +100,7 @@ async def search(
     search_type: str = "note",
     sort_by: str = "",
     page: int = 1,
+    conn_id: str = "",
     **kwargs
 ) -> list[SearchResult]:
     """
@@ -113,6 +114,8 @@ async def search(
         max_results: 最大结果数
         search_type: "note", "user", "article", "series", "bangumi", "movie", "live"
         sort_by: 排序方式（各平台自定义，如 B站：totalrank/click/pubdate/dm/stow）
+        conn_id: 平台连接 ID。用于缓存键与浏览器会话复用
+            （不同账号结果不同，必须区分）
         **kwargs: 平台特定参数，可包含 filters 字典
     
     Returns:
@@ -130,6 +133,9 @@ async def search(
     config_keys = {'timeout', 'proxy', 'headless', 'user_agent', 'debug'}
     config_kwargs = {k: v for k, v in kwargs.items() if k in config_keys}
     search_kwargs = {k: v for k, v in kwargs.items() if k not in config_keys}
+    # conn_id 单独传：它属于 ClientConfig，供缓存键/会话复用使用
+    if conn_id:
+        config_kwargs['conn_id'] = conn_id
     
     client = create_client(platform, mode, cookie, **config_kwargs)
     if not client:
