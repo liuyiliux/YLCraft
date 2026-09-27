@@ -84,7 +84,12 @@ _crawler_tasks: dict[str, dict] = {}
 # =============================================================================
 
 def crawler_result_asset_type(result: CrawlerResult):
-    """Map crawler content semantics to the matching Asset Hub type."""
+    """Map crawler content semantics to the matching Asset Hub type.
+
+    ⚠️ 图文（多图笔记）**不在这里返回 IMAGE**——见
+    `is_multi_image_post()`：多图会建成 COLLECTION 容器 + 每张图一个 IMAGE 子节点，
+    否则一整套图片只会剩下一张封面（用户反馈过"图文下载需要优化"）。
+    """
     from app.db.models.asset_hub import AssetType
 
     content_type = str(result.type or '').strip().lower()
@@ -95,6 +100,18 @@ def crawler_result_asset_type(result: CrawlerResult):
     if content_type in {'audio', 'music', 'podcast'}:
         return AssetType.AUDIO
     return AssetType.VIDEO
+
+
+def is_multi_image_post(result: CrawlerResult) -> bool:
+    """是否"多图图文"——需要建成集合。
+
+    判据（实测）：
+      · 有 images 列表且多于 1 张
+      · 且没有视频（有视频的多图是"视频+封面图"，不是图集）
+    """
+    images = list(getattr(result, "images", None) or [])
+    has_video = bool(getattr(result, "video_url", "") or "")
+    return len(images) > 1 and not has_video
 
 class CrawlerService:
     """
@@ -414,6 +431,15 @@ class CrawlerService:
                         asset_ids.append(str(existing_id))
                         continue
 
+                    # 多图图文 → 建成集合（容器 + 每张图一个子节点）。
+                    # 否则一整套图片只会剩一张封面，用户拿不到原图。
+                    if is_multi_image_post(result):
+                        node = await self._import_image_collection(
+                            node_service, result
+                        )
+                        asset_ids.append(str(node.id))
+                        continue
+
                     # 创建新素材节点。采集结果多为远端素材卡片，未必有本地文件。
                     node = await node_service.create(
                         name=result.title or "未命名素材",
@@ -436,6 +462,9 @@ class CrawlerService:
                             "shares": result.shares,
                             "followers": result.followers,
                             "videos": result.videos,
+                            "image_count": len(result.images or []),
+                            "images": list(result.images or []),
+                            "is_collection": False,
                             "raw_data": result.raw_data,
                         },
                         tags=["crawler", result.platform],
@@ -445,6 +474,91 @@ class CrawlerService:
                     logger.error(f"[import_to_asset_library] Failed to import {result.id}: {e}")
 
         return asset_ids
+
+    async def _import_image_collection(self, node_service, result: CrawlerResult):
+        """把多图图文导入成"集合 + 子图"两层结构。
+
+        ## 为什么这样设计（2026-09-27）
+
+        用户反馈"图文下载需要优化"。原来一条图文笔记只建**一个** IMAGE 节点，
+        只存封面——图集里的其它原图全丢了。
+
+        资产库本身已经支持这套结构（无需改表）：
+          · `AssetType.COLLECTION` + `AssetNode.parent_id` → 父子层级
+          · `AssetNodeService.list_children(parent_id)` → 直接列出集合里的图
+          · 子节点各自带 `metadata_json.remote_url` → 指向远端原图
+
+        对齐开源项目的常见做法（XHS-Downloader / douyin-downloader 等
+        都是"作品 → 图片列表"两级：作品一条记录，图片各自一条）。
+
+        选择"远端 URL 存 metadata"而不是"下载到本地再引用"：
+          · 采集阶段不应产生大量本地文件（用户还没决定要哪张）
+          · 用户点"下载"时再落盘，与现有下载流程一致
+        子节点保留 remote_url，后续下载/导入都能直接用。
+
+        没有用 RelationType.CONTAINS 建关系表——层级已经由 parent_id 表达，
+        再加一张关系表是重复信息（AssetNodeService 也没有 add_relation 方法）。
+        """
+        from app.db.models.asset_hub import AssetType
+
+        images = list(result.images or [])
+        container = await node_service.create(
+            name=result.title or f"{result.platform} 图集",
+            asset_type=AssetType.COLLECTION,
+            thumbnail_url=result.cover or (images[0] if images else None),
+            metadata={
+                "source": "crawler",
+                "source_url": result.url,
+                "crawler": True,
+                "platform": result.platform,
+                "author": result.author,
+                "author_id": result.author_id,
+                "description": result.desc or "",
+                "external_id": result.id,
+                "create_time": result.create_time,
+                "likes": result.likes,
+                "comments": result.comments,
+                "shares": result.shares,
+                "image_count": len(images),
+                "images": images,
+                "is_collection": True,
+                "cover_url": result.cover,
+                "raw_data": result.raw_data,
+            },
+            tags=["crawler", result.platform, "图集"],
+        )
+
+        # 每张图一个子节点，挂在集合下面
+        for idx, url in enumerate(images, start=1):
+            try:
+                await node_service.create(
+                    name=f"{result.title or '图集'} - 图{idx}",
+                    asset_type=AssetType.IMAGE,
+                    parent_id=str(container.id),
+                    thumbnail_url=url,
+                    metadata={
+                        "source": "crawler",
+                        "crawler": True,
+                        "platform": result.platform,
+                        "external_id": result.id,
+                        "remote_url": url,
+                        "index": idx,
+                        "parent_url": result.url,
+                        "author": result.author,
+                        "is_collection_child": True,
+                    },
+                    tags=["crawler", result.platform, "图集图片"],
+                )
+            except Exception as img_err:
+                logger.warning(
+                    "[import_to_asset_library] 图 %d 导入失败：%s", idx, img_err,
+                )
+
+        logger.info(
+            "[import_to_asset_library] 图集导入完成：%s（%d 张）",
+            container.id, len(images),
+        )
+        return container
 
 
 # =============================================================================

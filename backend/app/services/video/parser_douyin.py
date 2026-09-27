@@ -10,6 +10,40 @@
 - https://www.douyin.com/video/7323448304087831819
 - https://www.douyin.com/jingxuan?modal_id=7616681950870326537
 - https://www.iesdouyin.com/share/video/7323448304087831819/
+
+=============================================================================
+⚠️ 该方案已于 2026-09-27 实测**失效**（抖音改了前端）
+=============================================================================
+
+实测（视频 7656457812507817841）：
+
+    HTTP 200，页面能打开，_ROUTER_DATA 也在
+    但 loaderData['video_(id)/page'] 里只剩：
+        ['ua','isSpider','webId','query','renderInSSR','lastPath']
+    **没有 videoInfoRes** —— 视频数据不在 SSR 里了
+
+进一步确认（在整页 HTML 里数出现次数）：
+    videoInfoRes   0 次
+    aweme_detail   0 次
+    play_addr      0 次
+    item_list      0 次
+
+即：**页面里完全没有视频数据**，抖音把它改成前端异步加载了。
+所以本模块的 `parse_douyin()` 现在必然走到 "item_list 为空" 并返回 {}，
+外层 fallback 到 yt-dlp（对抖音通常也无效）。
+
+## 待办方向（未实现，需要抓包确认后再写，不猜）
+
+用带登录态的真实浏览器打开笔记页时：
+  · 页面**能正常渲染**（实测 2 个 video 元素、标题也拿得到）
+  · URL 会重定向到 /note/{id}（图文笔记）
+  · 但视频 src 是空的（延迟加载 / blob），DOM 直接取不可靠
+  · 在导航前注入 fetch/XHR hook **也没抓到**数据请求
+    （可能走 worker 或页面内自执行脚本）
+
+下一步应尝试：CDP 层面监听全部网络（含 worker），
+或从页面的 webpack 模块里反查数据源。
+**在拿到真实接口前不要编造路径**（仓库硬规则）。
 """
 
 from __future__ import annotations
