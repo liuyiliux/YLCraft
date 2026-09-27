@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -34,6 +35,7 @@ from .apis import (
     DEFAULT_DEVICE_PLATFORM,
     PROFILE_SELF,
     SEARCH_SINGLE,
+    SINGLE_PAGE_MAX,
     build_search_params,
     resolve_search_channel,
 )
@@ -119,7 +121,7 @@ class DouyinClient(BasePlatformClient):
     # =========================================================================
 
     async def search(self, params: SearchParams) -> List[SearchResult]:
-        """搜索抖音内容（空结果会自动重试一次）。
+        """搜索抖音内容（自动翻页 + 空结果重试）。
 
         支持的 search_type（对应抖音搜索页四个页签，URL 抓包确认）：
             note / general → 综合（视频+图文，默认）
@@ -130,60 +132,87 @@ class DouyinClient(BasePlatformClient):
         未实现的类型回退到「综合」，不抛错——用户选了没做完的类型时，
         给综合结果比给一句报错更有用（且前端已按后端能力收敛选项）。
 
+        ## 为什么要翻页（2026-09-27 实测）
+
+        用户反馈"抖音搜索显示很多，我们只有九条"。原因是原实现
+        **只请求一次、count 固定 10**，所以永远只有 9~10 条。
+
+        实测抖音接口支持 offset/count 翻页（同一 keyword 下
+        offset=0/20/40 返回的 cursor 依次为 0/40/60，说明分页参数生效）。
+
+        现在按需求条数自动翻页：单页最多 20（实测上限），
+        需要更多就按 offset 递增继续取，直到够数或 has_more=0。
+
         ## 为什么要重试（2026-09-26 实测，48 次采样）
 
         抖音搜索会**不定期**返回空 data（code=0 但 data=[]）。实测采样：
 
             6/6 成功 → 3 分钟后 0/6 失败 → 6/20 成功 → 15/15 成功 → 8/8 ×2 成功
 
-        总计 48 次里 43 次成功（约 90%），且**失败后隔一会儿就能恢复**，
-        没有稳定复现的失败模式。所以「空结果 → 稍等重试」是有效策略。
-
-        重试 3 次、间隔递增（2/4/6 秒），总耗时约 12 秒：
-        实测失败常成片（连续 14 次全失败），单次重试不够；
-        但也无需无限重试，12 秒足够越过大部分受限窗口。
+        总计 48 次里 43 次成功（约 90%），且**失败后隔一会儿就能恢复**。
+        重试 3 次、间隔递增（2/4/6 秒），总耗时约 12 秒。
         """
         channel = resolve_search_channel(params.search_type)
+        want = max(1, params.max_results or 10)
 
-        query = build_search_params(
-            keyword=params.keyword,
-            offset=0,
-            count=min(params.max_results or 10, 20),
-            search_channel=channel,
-        )
+        # 单页上限 20（实测；请求更多也不会多给）
+        page_size = min(want, SINGLE_PAGE_MAX)
+        offset = 0
+        collected: List[SearchResult] = []
+        seen: set[str] = set()
+        max_pages = max(1, math.ceil(want / page_size))
 
-        data = await self._call(SEARCH_SINGLE, query)
-        items = self._extract_items(data)
-
-        # 空结果重试（实测失败常是"一阵一阵"的，多试几次往往能过）
-        #
-        # 采样数据（48 次）：成功 43 次；失败时往往连续多次都失败，
-        # 但隔一会儿又能恢复。所以这里用**递减间隔重试 3 次**，
-        # 总耗时约 2+4+6=12 秒——比让用户手动重搜省事得多。
-        attempt = 0
-        for delay in (2, 4, 6):
-            if items:
-                break
-            attempt += 1
-            logger.info(
-                "[douyin] 第 %d 次搜索为空，%d 秒后重试（%d/3）",
-                attempt, delay, attempt,
+        for page_idx in range(max_pages):
+            query = build_search_params(
+                keyword=params.keyword,
+                offset=offset,
+                count=page_size,
+                search_channel=channel,
             )
-            await asyncio.sleep(delay)
+
             data = await self._call(SEARCH_SINGLE, query)
             items = self._extract_items(data)
 
-        if not items:
-            await self._raise_if_environment_degraded()
+            # 空结果重试（失败常是"一阵一阵"的，多试几次往往能过）
+            # 注意：只在**第一页**重试。翻页中途为空通常是真的到底了，
+            # 再重试只是白等。
+            if not items and page_idx == 0:
+                for delay in (2, 4, 6):
+                    logger.info("[douyin] 首页搜索为空，%d 秒后重试", delay)
+                    await asyncio.sleep(delay)
+                    data = await self._call(SEARCH_SINGLE, query)
+                    items = self._extract_items(data)
+                    if items:
+                        break
 
-        results: List[SearchResult] = []
-        for item in items:
-            parsed = parse_search_item(item)
-            if parsed is not None:
-                results.append(parsed)
-            if len(results) >= (params.max_results or 10):
+            if not items:
+                if page_idx == 0:
+                    await self._raise_if_environment_degraded()
+                break  # 后续页为空 = 到底了
+
+            for item in items:
+                parsed = parse_search_item(item)
+                if parsed is None or parsed.id in seen:
+                    continue
+                seen.add(parsed.id)
+                collected.append(parsed)
+
+            if len(collected) >= want:
                 break
-        return results
+
+            # 用响应里的 cursor 推进（比自算 offset 更贴合服务端）
+            cursor = data.get("cursor")
+            next_offset = int(cursor) if isinstance(cursor, int) and cursor > offset \
+                else offset + page_size
+            if not data.get("has_more") and not cursor:
+                break
+            offset = next_offset
+            logger.info(
+                "[douyin] 已取 %d/%d 条，继续翻页 offset=%d",
+                len(collected), want, offset,
+            )
+
+        return collected[:want]
 
     async def search_page(
         self,
