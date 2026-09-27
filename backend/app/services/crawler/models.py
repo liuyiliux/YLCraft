@@ -49,13 +49,27 @@ class SearchFilter(BaseModel):
 # =============================================================================
 
 class SearchRequest(BaseModel):
-    """搜索请求"""
+    """搜索请求。
+
+    ⚠️ 这里和 `service.py::SearchRequest` **并存**，路由用的是 service.py 那份
+    （`services/crawler/__init__.py` 从 service 导出）。
+
+    踩过两次坑，都记下来避免再犯：
+      1. 我曾给这份加 conn_id，但路由用的是 service 那份 →
+         报 `AttributeError: 'SearchRequest' object has no attribute 'conn_id'`
+      2. 于是把这里改成 `from service import SearchRequest` → **循环导入**
+         （service 又 import 本模块），整个 /api/v1/crawler 路由挂掉、全部 404
+
+    所以这里保持**独立定义**（不 import service），但字段要与 service 那份
+    **保持一致**（platform / keyword / max_results / conn_id）。
+    """
+    platform: str = Field(..., description="平台: xhs/dy/ks/bili/wb/zhihu")
     keyword: str = Field(..., description="搜索关键词")
-    platform: str = Field(..., description="平台")
-    search_type: str = Field("search", description="搜索类型")
-    page: int = Field(1, description="页码")
-    page_size: int = Field(20, description="每页数量")
-    filter: Optional[SearchFilter] = None
+    max_results: int = Field(20, description="最大结果数", ge=1, le=100)
+    crawl_type: str = Field("search", description="采集类型")
+    # 平台连接 ID：后端据此取 Cookie。缺了它抖音会退化成游客态
+    # （status_code=2483）→ 结果恒为空。
+    conn_id: str = Field("", description="平台连接 ID（用于取登录态）")
 
 
 # =============================================================================

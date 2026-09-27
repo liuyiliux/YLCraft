@@ -49,6 +49,7 @@ import {
   listAssets,
   listCanvasDocuments,
   listConnectors,
+  listPlatformConnections,
   saveCanvasDocument,
   saveCanvasImageAsset,
   searchCrawler,
@@ -1599,6 +1600,22 @@ export default function CanvasPage() {
   const [llmConnectors, setLlmConnectors] = useState<ConnectorOption[]>([])
   const [imageConnectors, setImageConnectors] = useState<ConnectorOption[]>([])
   const [platforms, setPlatforms] = useState<PlatformOption[]>([])
+  // 平台连接（供 platform_search 节点带登录态搜索用）
+  //
+  // ⚠️ 之前画布没有连接态，platform_search 不传 conn_id，
+  //    抖音会退化成游客态（status_code=2483）→ 结果恒为 0。
+  const [platformConns, setPlatformConns] = useState<any[]>([])
+
+  useEffect(() => {
+    listPlatformConnections()
+      .then((res: any) => {
+        // 接口返回 {success, connections:[...]}（不是 data）
+        setPlatformConns(
+          (res?.connections || []).filter((c: any) => c.status === 'active'),
+        )
+      })
+      .catch(() => setPlatformConns([]))
+  }, [])
   const [assetPickerOpen, setAssetPickerOpen] = useState(false)
   const [promptReferencePickerOpen, setPromptReferencePickerOpen] = useState(false)
   const [assetSearch, setAssetSearch] = useState('')
@@ -3134,10 +3151,29 @@ export default function CanvasPage() {
           patchNodeMetadata(runtimeNode.id, { status: 'error', error: '缺少关键词', lastRunAt: nowIso() })
           return false
         }
+        const platform = String(meta.platform || 'bili')
+        // ⚠️ 必须传 conn_id（2026-09-27 修）：
+        // 不传的话后端拿不到 Cookie，抖音会返回 status_code=2483（游客态）
+        // → 结果恒为空。表现是"找到 0 条结果"，
+        //   看起来像关键词没内容，实际是没带登录态。
+        //
+        // 连接存在平台搜索节点的 metadata 里（用户在该节点上选），
+        // 没有就用同平台的第一个活跃连接兜底。
+        const connId = String(meta.connId || '')
+          || platformConns.find((c: any) => c.platform === platform)?.id
+          || ''
+        if (!connId) {
+          message.warning(`没有可用的${platform}连接 —— 请先到「账号中心」保存登录态`)
+          patchNodeMetadata(runtimeNode.id, {
+            status: 'error', error: '缺少平台连接', lastRunAt: nowIso(),
+          })
+          return false
+        }
         const res = await searchCrawler({
-          platform: String(meta.platform || 'bili'),
+          platform,
           keyword,
           max_results: Number(meta.maxResults || 10),
+          conn_id: connId,
         })
         const results = Array.isArray(res?.results) ? res.results : (Array.isArray(res?.data) ? res.data : [])
         const output = normalizeCanvasSearchEnvelope(results, {
@@ -3982,6 +4018,24 @@ export default function CanvasPage() {
                   value={String(editingNode.metadata?.searchKeyword || '')}
                   onChange={(event) => updateEditingMetadata({ searchKeyword: event.target.value })}
                   placeholder="搜索关键词"
+                />
+                {/* 平台连接：搜索必须带登录态，否则抖音会退化成游客态
+                    （status_code=2483）→ 结果恒为 0。
+                    不填时会自动用该平台的第一个活跃连接。 */}
+                <Select
+                  allowClear
+                  placeholder="平台连接（不填则自动选）"
+                  style={{ minWidth: 180 }}
+                  value={String(editingNode.metadata?.connId || '') || undefined}
+                  onChange={(value) => updateEditingMetadata({ connId: value || '' })}
+                  options={platformConns
+                    .filter((c: any) =>
+                      c.platform === String(editingNode.metadata?.platform || 'bili'),
+                    )
+                    .map((c: any) => ({
+                      value: c.id,
+                      label: c.account_name || c.name || c.id.slice(0, 8),
+                    }))}
                 />
               </>
             ) : null}

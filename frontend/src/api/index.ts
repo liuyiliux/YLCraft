@@ -1151,6 +1151,14 @@ export interface SearchCrawlerRequest {
   platform: string
   keyword: string
   max_results?: number
+  /**
+   * 平台连接 ID。后端据此取该连接的 Cookie。
+   *
+   * ⚠️ 不传的话后端拿不到 Cookie，抖音会返回 status_code=2483（游客态）
+   *    → 结果恒为空（表现为"找到 0 条结果"，看起来像关键词没内容）。
+   *    画布的 platform_search 节点曾漏传这个字段（2026-09-27 修）。
+   */
+  conn_id?: string
 }
 
 /** 获取支持的平台列表 */

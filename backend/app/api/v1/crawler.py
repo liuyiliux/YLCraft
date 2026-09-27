@@ -175,8 +175,22 @@ async def search_materials(req: SearchRequest):
     """
     搜索素材
     优先使用 MediaCrawler，失败则降级到 yt-dlp
+
+    ⚠️ 必须带登录态（2026-09-27 修）：
+    这个端点**原本不传 conn_id / cookie**，于是平台搜索拿不到 Cookie，
+    抖音返回 status_code=2483（游客态）→ **结果恒为 0**。
+
+    表现是"找到 0 条结果"，看起来像关键词没内容 ——
+    而同一时刻 `search_enhanced`（会传 cookie）能正常返回，
+    所以很容易误判成"这个端点坏了"或"抖音又风控了"。
+
+    画布的 platform_search 节点走的就是这个端点，
+    因此画布搜抖音一直为空，直到这里补上登录态。
     """
-    logger.info(f"[search] platform={req.platform} keyword={req.keyword} max={req.max_results}")
+    logger.info(
+        "[search] platform=%s keyword=%s max=%s conn=%s",
+        req.platform, req.keyword, req.max_results, bool(req.conn_id),
+    )
 
     try:
         service = get_crawler_service()
@@ -184,6 +198,8 @@ async def search_materials(req: SearchRequest):
             platform=req.platform,
             keyword=req.keyword,
             max_results=req.max_results,
+            conn_id=req.conn_id,
+            cookie=_get_conn_cookie(req.conn_id) if req.conn_id else "",
         )
 
         return SearchResponse(
