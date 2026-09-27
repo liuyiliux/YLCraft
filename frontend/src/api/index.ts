@@ -1358,6 +1358,65 @@ export const getSupportedPlatforms = () => request('/platforms/supported')
 /** 列出所有平台连接 */
 export const listPlatformConnections = () => request('/platforms')
 
+// ===== 用户查询（抖音 / 小红书 的用户搜索、资料、作品列表）=====
+//
+// 后端统一成 /users/*?platform=xxx（B站仍用 /bilibili/up/* 那一套）
+// 实测：抖音搜索「李子柒」→5657万粉；小红书搜索「美食」→140.9万粉博主。
+
+export interface PlatformUserItem {
+  id: string
+  name: string
+  avatar: string
+  platform: string
+  followers: number
+  following: number
+  total_likes: number
+  total_videos: number
+  desc: string
+  verified: boolean
+  /** 抖音专用：查资料/作品列表时必须用它（数字 uid 会得到空页面） */
+  sec_uid?: string
+  /** 小红书：部分接口需要 */
+  xsec_token?: string
+  raw_data?: Record<string, any>
+}
+
+export interface PlatformUserVideo {
+  id: string
+  title: string
+  cover: string
+  url: string
+  type: string
+  likes: number
+}
+
+export const searchPlatformUsers = (platform: string, keyword: string, maxResults = 20) =>
+  request(
+    `/users/search?platform=${encodeURIComponent(platform)}` +
+    `&keyword=${encodeURIComponent(keyword)}&max_results=${maxResults}`,
+  )
+
+export const getPlatformUserProfile = (
+  platform: string,
+  opts: { userId?: string; secUid?: string },
+) => {
+  const sp = new URLSearchParams({ platform })
+  if (opts.userId) sp.set('user_id', opts.userId)
+  if (opts.secUid) sp.set('sec_uid', opts.secUid)
+  return request(`/users/profile?${sp}`)
+}
+
+export const getPlatformUserVideos = (
+  platform: string,
+  opts: { userId?: string; secUid?: string; maxResults?: number },
+) => {
+  const sp = new URLSearchParams({ platform })
+  if (opts.userId) sp.set('user_id', opts.userId)
+  if (opts.secUid) sp.set('sec_uid', opts.secUid)
+  sp.set('max_results', String(opts.maxResults ?? 20))
+  return request(`/users/videos?${sp}`)
+}
+
 /** 获取单个连接详情 */
 export const getPlatformConnection = (id: string) => request(`/platforms/${id}`)
 
