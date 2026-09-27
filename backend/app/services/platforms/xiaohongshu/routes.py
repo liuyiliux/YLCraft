@@ -14,9 +14,9 @@ from fastapi import APIRouter, Query
 
 from app.services.platforms.login_health import (
     cookie_names,
-    get_raw_cookie,
     health_item,
     netscape_to_header,
+    resolve_connection,
 )
 
 logger = logging.getLogger("ylcraft.platforms.xiaohongshu.health")
@@ -34,7 +34,8 @@ async def xhs_login_health(conn_id: str = Query("", description="平台连接 ID
     已登录则停在 /explore 并渲染出用户头像。
     """
     checks: Dict[str, Dict[str, Any]] = {}
-    cookie = get_raw_cookie(conn_id) if conn_id else ""
+    # 兜底：重新登录后连接 ID 会变，旧 ID 自动回退到该平台最新连接
+    actual_id, cookie = resolve_connection(conn_id, "XHS")
     names = cookie_names(cookie)
 
     checks["cookie"] = health_item(

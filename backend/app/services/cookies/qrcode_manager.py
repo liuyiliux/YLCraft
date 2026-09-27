@@ -276,7 +276,13 @@ class QrcodeAcquisitionManager:
                 elif account_info.get("account_name"):
                     stmt = stmt.where(PlatformConnection.account_name == account_info["account_name"])
                 
-                stmt = stmt.order_by(PlatformConnection.last_used.desc().nulls_last()).limit(1)
+                # 优先按账号匹配（相同账号覆盖）。
+                #
+                # 兜底排序改为 updated_at 倒序：原用 last_used + nulls_last，
+                # 而新建连接的 last_used 是 NULL，会被排到最后，
+                # 于是每次都复用"最老的、用过的"那条，新 cookie 写进旧记录，
+                # 库里就堆出多条同平台连接（其中一条是过期的）。
+                stmt = stmt.order_by(PlatformConnection.updated_at.desc()).limit(1)
                 conn = db.exec(stmt).first()
             else:
                 conn = None

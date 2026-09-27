@@ -154,7 +154,8 @@ async def test_health_reports_not_ready_without_cookie(monkeypatch):
     """没有 Cookie 时 ready 必须是 False，且各项都给出可读原因。"""
     from app.services.platforms.douyin import health as dy_health
 
-    monkeypatch.setattr(dy_health, "get_raw_cookie", lambda _cid: "")
+    # resolve_connection 返回 (实际conn_id, cookie)，无 cookie 时两者都空
+    monkeypatch.setattr(dy_health, "resolve_connection", lambda _cid, _plat: ("", ""))
     result = await dy_health.douyin_login_health(conn_id="")
     data = result["data"]
     assert data["ready"] is False
@@ -167,7 +168,9 @@ async def test_health_reports_not_ready_without_cookie(monkeypatch):
 async def test_xhs_health_reports_not_ready_without_cookie(monkeypatch):
     from app.services.platforms.xiaohongshu import routes as xhs_routes
 
-    monkeypatch.setattr(xhs_routes, "get_raw_cookie", lambda _cid: "")
+    monkeypatch.setattr(
+        xhs_routes, "resolve_connection", lambda _cid, _plat: ("", ""),
+    )
     result = await xhs_routes.xhs_login_health(conn_id="")
     data = result["data"]
     assert data["ready"] is False
@@ -196,7 +199,9 @@ async def test_xhs_health_flags_guest_cookie_without_network(monkeypatch):
         async def close(self):
             return None
 
-    monkeypatch.setattr(xhs_routes, "get_raw_cookie", lambda _cid: guest_cookie)
+    monkeypatch.setattr(
+        xhs_routes, "resolve_connection", lambda _cid, _plat: ("conn-x", guest_cookie),
+    )
     monkeypatch.setattr(
         "app.services.browser.patchright_runtime.get_patchright_runtime",
         lambda: _FakeRuntime(),
