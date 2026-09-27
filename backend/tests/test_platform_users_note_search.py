@@ -129,6 +129,56 @@ def test_dependencies_include_conn_id():
 
 
 # =============================================================================
+# 批量导入素材库（本轮新增）
+# =============================================================================
+
+def test_import_uses_same_endpoint_as_crawler():
+    """导入复用 /crawler/import（与「内容搜索」页同一套，不新造接口）。"""
+    src = _read("pages/platform-users/index.tsx")
+    assert "importCrawler" in src, "应调用 importCrawler"
+
+
+def test_import_sends_required_fields():
+    """导入要带齐字段（id/platform/title/cover/url…），否则入库后缺信息。"""
+    src = _read("pages/platform-users/index.tsx")
+    i = src.find("importCrawler({")
+    assert i != -1, "缺少 importCrawler 调用"
+    seg = src[i:i + 450]
+    for f in ("id:", "platform:", "title:", "cover:", "url:"):
+        assert f in seg, f"导入载荷缺 {f}"
+
+
+def test_row_selection_enabled():
+    """要有行多选（否则没法批量选作品）。"""
+    src = _read("pages/platform-users/index.tsx")
+    assert "rowSelection" in src, "作品表应支持多选"
+
+
+def test_import_button_exists():
+    src = _read("pages/platform-users/index.tsx")
+    assert "导入素材库" in src, "缺少导入按钮"
+    assert "DatabaseOutlined" in src, "应有图标"
+
+
+def test_import_disabled_without_selection():
+    """没勾选时按钮要禁用（避免误触导入空列表）。"""
+    src = _read("pages/platform-users/index.tsx")
+    assert "selectedNotes.length === 0" in src, "空选时应禁用"
+
+
+def test_selection_cleared_on_new_search_and_platform_switch():
+    """**回归**：新搜索 / 切平台要清掉勾选。
+
+    否则会导入上一次（已不在当前结果里）的行。
+    """
+    src = _read("pages/platform-users/index.tsx")
+    code = _strip_line_comments(src)
+    assert code.count("setSelectedNotes([])") >= 2, (
+        "handleSearch 与切平台 effect 都要清空勾选"
+    )
+
+
+# =============================================================================
 # 后端连接来源差异（钉住，避免误解）
 # =============================================================================
 

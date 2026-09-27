@@ -28,11 +28,12 @@ import {
 import {
   SearchOutlined, UserOutlined, VideoCameraOutlined, FireOutlined,
   LikeOutlined, TeamOutlined, LinkOutlined, ReloadOutlined,
+  DatabaseOutlined,
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import {
   searchPlatformUsers, getPlatformUserProfile, getPlatformUserVideos,
-  listPlatformConnections, searchEnhanced,
+  listPlatformConnections, searchEnhanced, importCrawler,
 } from '../../api'
 import type { PlatformUserItem, PlatformUserVideo, PlatformConnectionResponse, CrawlerResult } from '../../api'
 import { useTheme } from '../../constants/theme'
@@ -78,6 +79,9 @@ export default function PlatformUserPage() {
   const [notes, setNotes] = useState<CrawlerResult[]>([])
   const [noteTotal, setNoteTotal] = useState(0)
   const [notePage, setNotePage] = useState(1)
+  // 多选（用于批量导入素材库）
+  const [selectedNotes, setSelectedNotes] = useState<CrawlerResult[]>([])
+  const [importing, setImporting] = useState(false)
 
   const [selected, setSelected] = useState<PlatformUserItem | null>(null)
   const [profile, setProfile] = useState<PlatformUserItem | null>(null)
@@ -105,6 +109,10 @@ export default function PlatformUserPage() {
     // 切换平台时清空上一次的结果 —— 否则会看到"用小红书标签展示抖音用户"
     // 这种错位（实测踩过：切到小红书后表格里还是抖音搜出来的李子柒）。
     setUsers([])
+    setNotes([])
+    setNoteTotal(0)
+    setNotePage(1)
+    setSelectedNotes([])
     setSelected(null)
     setProfile(null)
     setVideos([])
@@ -117,6 +125,7 @@ export default function PlatformUserPage() {
     setSearching(true)
     setUsers([])
     setNotes([])
+    setSelectedNotes([])   // 新搜索要清掉勾选，否则会导入上一次的行
     setSelected(null)
     setProfile(null)
     setVideos([])
@@ -367,6 +376,30 @@ export default function PlatformUserPage() {
     },
   ]
 
+  /** 把选中的作品批量导入素材库。
+
+  与「内容搜索」页同一套接口（`POST /crawler/import`），
+  这样搜到的作品可以就地入库，不用来回切页面。
+  */
+  const handleImport = useCallback(async () => {
+    if (selectedNotes.length === 0) { message.warning('请先勾选作品'); return }
+    setImporting(true)
+    try {
+      const res: any = await importCrawler({
+        results: selectedNotes.map((r) => ({
+          id: r.id, platform: r.platform, title: r.title, desc: r.desc,
+          cover: r.cover, video_url: r.video_url, author: r.author, url: r.url,
+        })),
+      })
+      message.success(`已导入 ${res?.imported_count || 0} 条素材`)
+      setSelectedNotes([])
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail || '导入失败')
+    } finally {
+      setImporting(false)
+    }
+  }, [selectedNotes])
+
   const platformLabel = PLATFORMS.find((p) => p.value === platform)?.label || platform
 
   return (
@@ -475,6 +508,18 @@ export default function PlatformUserPage() {
           ) : (
             <Card
               title={<Space><VideoCameraOutlined />作品结果<Text type="secondary" style={{ fontSize: 12 }}>{noteTotal ? `共 ${formatCount(noteTotal)} 个` : ''}</Text></Space>}
+              extra={
+                <Button
+                  type="primary"
+                  size="small"
+                  icon={<DatabaseOutlined />}
+                  loading={importing}
+                  disabled={selectedNotes.length === 0}
+                  onClick={handleImport}
+                >
+                  导入素材库{selectedNotes.length ? ` (${selectedNotes.length})` : ''}
+                </Button>
+              }
               style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}
             >
               <Table
@@ -483,6 +528,10 @@ export default function PlatformUserPage() {
                 loading={searching}
                 columns={noteColumns}
                 dataSource={notes}
+                rowSelection={{
+                  selectedRowKeys: selectedNotes.map((r) => r.id),
+                  onChange: (_keys, rows) => setSelectedNotes(rows as CrawlerResult[]),
+                }}
                 pagination={{
                   pageSize: 20,
                   // 服务端分页：total 必须传（否则永远 1 页）

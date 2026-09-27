@@ -315,5 +315,87 @@ def test_parse_count_handles_wan_and_yi():
     assert parse_count("1128") == 1128
     assert parse_count("2.3万") == 23000
     assert parse_count("1.5亿") == 150000000
+    assert parse_count("2.9K") == 2900
     assert parse_count("") == 0
     assert parse_count("abc") == 0
+
+
+def test_parse_count_is_single_implementation():
+    """**回归**：note 与 user 必须共用**同一份** parse_count。
+
+    曾经有两份实现且**行为不一致**：note 那份不支持 "K" 后缀
+    （'2.9K' → 0），而 engage-bar / like-wrapper 会给带后缀的字符串。
+    """
+    from app.services.platforms.xiaohongshu import note as note_mod
+    from app.services.platforms.xiaohongshu import user as user_mod
+
+    assert note_mod.parse_count is user_mod.parse_count, (
+        "note.parse_count 应直接复用 user.parse_count，不要各写一份"
+    )
+
+
+def test_parse_note_dom_reads_interactions():
+    """DOM 详情要带互动数（赞/收藏/评论）——2026-09-27 新增。
+
+    实测 `.engage-bar` 给出 "1419 71 55"（赞/收藏/评论）。
+    """
+    from app.services.platforms.xiaohongshu.note import parse_note_dom
+
+    d = parse_note_dom({
+        "title": "古早波点穿搭",
+        "desc": "搭配分享",
+        "author": "禾子盒盒",
+        "images": ["https://x/1.webp", "https://x/2.webp", "https://x/3.webp"],
+        "videos": [],
+        "indicator": "1/3",
+        "indicatorTotal": 3,
+        "engage": {"likes": "1419", "collects": "71", "comments": "55"},
+        "likeWrapper": "1419",
+    }, "6a27e457000000001702e352")
+
+    assert d.likes == 1419
+    assert d.collects == 71
+    assert d.comments == 55
+    assert len(d.images) == 3
+
+
+def test_parse_note_dom_falls_back_to_like_wrapper():
+    """engage-bar 拿不到时，退到 .like-wrapper 给的点赞数。"""
+    from app.services.platforms.xiaohongshu.note import parse_note_dom
+
+    d = parse_note_dom({
+        "title": "x", "images": [], "videos": [],
+        "engage": {},                     # engage-bar 没解析到
+        "likeWrapper": "1.5万",           # 但 like-wrapper 有
+    }, "id")
+    assert d.likes == 15000
+
+
+def test_parse_note_dom_tolerates_missing_interactions():
+    """没有互动数时不能崩（留 0）。"""
+    from app.services.platforms.xiaohongshu.note import parse_note_dom
+
+    d = parse_note_dom({"title": "x", "images": ["https://x/1.webp"]}, "id")
+    assert d.likes == 0
+    assert d.collects == 0
+    assert d.comments == 0
+
+
+def test_js_reads_engage_bar():
+    """JS 提取脚本要读 .engage-bar 的三个数字。"""
+    from app.services.platforms.xiaohongshu.note import JS_PARSE_NOTE
+
+    assert ".engage-bar" in JS_PARSE_NOTE, "应读 engage-bar"
+    assert ".like-wrapper" in JS_PARSE_NOTE, "应读 like-wrapper 作兜底"
+    assert "likes:" in JS_PARSE_NOTE
+    assert "collects:" in JS_PARSE_NOTE
+    assert "comments:" in JS_PARSE_NOTE
+
+
+def test_js_filters_numeric_only():
+    """engage-bar 里混有"说点什么..."等非数字文本，要过滤。"""
+    from app.services.platforms.xiaohongshu.note import JS_PARSE_NOTE
+
+    assert r"[\d.,]+[万亿Kk]?" in JS_PARSE_NOTE, (
+        "应只匹配数字（含万/K 后缀）"
+    )
