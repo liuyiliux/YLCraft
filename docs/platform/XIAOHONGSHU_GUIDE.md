@@ -210,6 +210,60 @@ Get-CimInstance Win32_Process -Filter "Name = 'chrome.exe'" |
 
 ---
 
+## 七、用户搜索与个人主页（2026-09-27 实测，**尚未实现**）
+
+用户问"小红书能不能做 UP主搜索和个人中心数据"。实测结论**与抖音不同**：
+
+### 用户搜索：❌ 做不了
+
+小红书的搜索接口只有一个：
+
+```
+so.xiaohongshu.com/api/sns/web/v2/search/notes
+```
+
+用 `type=54`（用户搜索）请求时，**返回的仍然是笔记**：
+
+```
+model_type 分布: {'note': 20, 'hot_query': 2}   ← 没有 user
+```
+
+页面上虽然渲染出了 31 个 `/user/profile/` 链接，但**没有独立的
+用户列表接口**被调用——用户数据是混在笔记响应的 `note_card.user` 里
+（只有昵称/头像，没有粉丝数）。
+
+### 个人主页：✅ 可以做（资料读 DOM + 作品走接口）
+
+实测打开 `/user/profile/{user_id}`：
+
+```
+页面正常渲染：title="逸流AI - 小红书"、30 个笔记链接
+DOM 里能直接读到资料：
+    {"fans":"195 粉丝","follows":"2 关注","liked":"2930 获赞",
+     "nickname":"逸流AI","desc":"分享ai知识，入口，提示词"}
+```
+
+作品列表接口（实测捕获）：
+
+```
+GET https://edith.xiaohongshu.com/api/sns/web/v1/user_posted
+```
+
+> ⚠️ **没有找到"查他人资料"的接口**——遍历主页产生的 29 个 JSON 响应，
+> 只有 `v2/user/me`（查自己）。所以资料只能**读 DOM**，
+> 与笔记详情同一个套路。
+
+### 与抖音的差异一览
+
+| 能力 | 抖音 | 小红书 |
+|------|------|--------|
+| 用户搜索 | ✅ `discover/search`（有独立接口） | ❌ 无独立接口 |
+| 用户资料 | ✅ `profile/other`（有接口） | ⚠️ 只能读 DOM |
+| 作品列表 | ✅ `aweme/post` | ✅ `user_posted` |
+| 主页标识 | **必须 `sec_uid`**（uid 打开是空页） | `user_id`（`/user/profile/{id}`） |
+
+---
+
 ## 八、相关文件
 
 | 文件 | 职责 |
