@@ -218,6 +218,36 @@ JS_PARSE_NOTE = r"""
     const videos = [...document.querySelectorAll('video')]
         .map(v => v.src || v.currentSrc || '').filter(Boolean);
 
+    // 互动数（点赞 / 收藏 / 评论）——2026-09-27 补
+    //
+    // 实测：`.engage-bar` 里是 **"点赞 收藏 评论" 三个数字连在一起**
+    //       （例如 '1419 71 55' = 1419赞 / 71收藏 / 55评论）
+    //       另外 `.like-wrapper` 单独给出点赞数（如 '1419' 或 '1.5万'）
+    //
+    // 注意：数字可能带"万"后缀（实测 '1.5万'），解析时要处理。
+    const engage = (() => {
+        const bar = document.querySelector('.engage-bar');
+        if (!bar) return { likes: '', collects: '', comments: '' };
+        // 只取直接的数字 span / 文本节点，排除"说点什么..."输入框等
+        const nums = [];
+        for (const el of bar.querySelectorAll('span, div, em')) {
+            const t = (el.innerText || '').trim();
+            if (!t) continue;
+            if (/^[\d.,]+[万亿Kk]?$/.test(t)) nums.push(t);
+        }
+        // 去重后取前 3 个（赞/收藏/评论 顺序）
+        const uniq = nums.filter((v, i) => nums.indexOf(v) === i);
+        return {
+            likes: uniq[0] || '',
+            collects: uniq[1] || '',
+            comments: uniq[2] || '',
+        };
+    })();
+    const likeWrapper = (() => {
+        const el = document.querySelector('.like-wrapper');
+        return el ? (el.innerText || '').trim().replace(/\s+/g, '') : '';
+    })();
+
     return JSON.stringify({
         notFound: bodyText.includes('暂时无法浏览') || bodyText.includes('当前笔记'),
         needsLogin: bodyText.includes('手机号登录') || bodyText.includes('登录后查看'),
@@ -229,6 +259,8 @@ JS_PARSE_NOTE = r"""
         indicator,
         indicatorTotal,
         videos,
+        engage,
+        likeWrapper,
         // 页面内的 token 会比 URL 里那个新（实测会轮换）
         tokenInPage: (document.documentElement.innerHTML
             .match(/xsec_token=([A-Za-z0-9_\-]+)/) || [])[1] || '',
@@ -258,6 +290,13 @@ def parse_note_dom(data: Dict[str, Any], item_id: str) -> NoteDetail:
             len(images), indicator_total, data.get("indicator"),
         )
 
+    # 互动数：优先用 .engage-bar 的三个数字（赞/收藏/评论）。
+    # 拿不到就退到 .like-wrapper 单独给的点赞数。
+    engage = data.get("engage") or {}
+    likes = parse_count(engage.get("likes"))
+    if not likes:
+        likes = parse_count(data.get("likeWrapper"))
+
     return NoteDetail(
         id=item_id,
         title=title,
@@ -269,6 +308,9 @@ def parse_note_dom(data: Dict[str, Any], item_id: str) -> NoteDetail:
         images=images,
         video=videos[0] if videos else "",
         video_cover=images[0] if images else "",
+        likes=likes,
+        comments=parse_count(engage.get("comments")),
+        collects=parse_count(engage.get("collects")),
         raw_data=data,
     )
 
@@ -368,14 +410,10 @@ def _pick_image_url(img: Dict[str, Any]) -> str:
     return ""
 
 
-def parse_count(s: str) -> int:
-    """'2.3万' -> 23000；'1128' -> 1128。"""
-    s = (s or "").strip()
-    try:
-        if "万" in s:
-            return int(float(s.replace("万", "")) * 10000)
-        if "亿" in s:
-            return int(float(s.replace("亿", "")) * 100000000)
-        return int(s)
-    except (ValueError, TypeError):
-        return 0
+# 计数解析**统一复用** `user.py` 里那份更完整的实现：
+#   支持 "195" / "140.9万" / "2.9K" / "1.5亿" / 千分位逗号。
+#
+# ⚠️ 不要在这里再写第二份。曾经这里有个只支持"万/亿"的旧实现，
+#    与 user.py 那份**行为不一致**（'2.9K' 在这边是 0，那边是 2900），
+#    而 engage-bar / like-wrapper 都可能给带后缀的字符串。
+from .user import parse_count  # noqa: F401  (本模块内部继续使用这个名字)
