@@ -547,6 +547,12 @@ export default function UpAnalyticsPage() {
   // UP主搜索结果
   const [upResults, setUpResults] = useState<any[]>([])
   const [upLoading, setUpLoading] = useState(false)
+  // 搜索结果总数（后端在 response.total 里给，B站实测 numResults=1000）。
+  // 必须单独存：antd 的 pagination 不传 total 时只用当前页条数，永远 1 页。
+  const [upTotal, setUpTotal] = useState(0)
+  // 当前页码。原来 page 只是 handleSearchUp 的默认参数（恒为 1），
+  // 没有 state，所以点分页器翻不了页。
+  const [upPage, setUpPage] = useState(1)
   
   // UP主详情
   const [selectedUp, setSelectedUp] = useState<any>(null)
@@ -611,12 +617,16 @@ export default function UpAnalyticsPage() {
   }, [searchParams, selectedConn])
   
   // 搜索 UP主
-  const handleSearchUp = async (page: number = 1) => {
+  //
+  // `page` 默认用当前 state；用户点分页器时由 pagination.onChange 调 setUpPage
+  // 并重新触发本函数（见下面 Table 的 onChange）。
+  // 新关键词搜索时应从第 1 页开始，由 handleSearchUp 的调用方传 1 保证。
+  const handleSearchUp = async (page: number = upPage) => {
     if (!keyword.trim()) {
       message.warning('请输入关键词')
       return
     }
-    
+
     setUpLoading(true)
     try {
       const data = await searchEnhanced({
@@ -627,6 +637,10 @@ export default function UpAnalyticsPage() {
         page,
       })
       setUpResults(data.results || [])
+      // 后端在 response.total 里给总数（B站实测 numResults=1000）。
+      // 没有它分页器只会渲染 1 页 —— 实测表现为"共 20 个用户 < 1 >"。
+      setUpTotal(Number(data.total) || 0)
+      setUpPage(page)
     } catch (e: any) {
       message.error(e?.response?.data?.detail || '搜索失败')
     } finally {
@@ -876,6 +890,16 @@ export default function UpAnalyticsPage() {
                 loading={upLoading}
                 pagination={{
                   pageSize: 20,
+                  // ⚠️ 必须显式传 total（2026-09-27 修）：
+                  // 不传的话 antd 用 dataSource.length（=当前页条数）当总数，
+                  // 于是永远只显示 1 页（实测表现："共 20 个用户 < 1 >"），
+                  // 即使后端返回的是 numResults=1000 / numPages=50。
+                  total: upTotal,
+                  current: upPage,
+                  showSizeChanger: false,
+                  // 翻页要**重新请求**（结果分页在服务端），
+                  // 不是前端切片 —— 所以这里发起新搜索而不是改本地切片。
+                  onChange: (p) => { void handleSearchUp(p) },
                   showTotal: (t) => `共 ${t} 个用户`,
                 }}
                 size="middle"
