@@ -155,6 +155,52 @@ DETAIL_BASE_URL = "https://www-hj.douyin.com"
 AWEME_DETAIL = "/aweme/v1/web/aweme/detail/"
 
 # =============================================================================
+# 用户搜索 与 用户主页（GET）——2026-09-27 实测确认
+# =============================================================================
+
+# ⚠️ 用户搜索**不在** general/search/single 上。
+#    实测：给它加 `search_channel=aweme_user` **完全不生效** ——
+#    返回结果与 aweme_general 一模一样（同一条 aweme_id）。
+#    用户搜索有独立端点：
+#
+#        GET https://www.douyin.com/aweme/v1/web/discover/search/
+#            ?keyword=美食&count=10&offset=0
+#            &search_channel=aweme_user&search_source=normal_search
+#            &query_correct_type=1
+#        → {"user_list":[{"user_info":{uid, sec_uid, nickname, signature,
+#                                      avatar_thumb, follower_count,
+#                                      total_favorited, unique_id, custom_verify}}]}
+#
+#    实测：「美食」9 条（阿蔡美食教学 3112万粉…）
+#          「李子柒」10 条（李子柒 5657万粉…）
+DISCOVER_SEARCH = "/aweme/v1/web/discover/search/"
+
+# 用户资料（查**他人**；查自己用 PROFILE_SELF）
+#
+#     GET /aweme/v1/web/user/profile/other/?sec_user_id={sec_uid}
+#     → {"user":{nickname, uid, sec_uid, follower_count, following_count,
+#                total_favorited, aweme_count, signature, avatar_168x168, ...}}
+#
+#     ⚠️ 参数是 **sec_user_id**（那串 `MS4wLjABAAAA…`），不是数字 uid。
+#        实测用数字 uid 打开 `/user/{uid}` 得到的是空页面
+#        （title 显示「的抖音」、视频链接数 0）；
+#        用 sec_uid 则正常（title「李子柒的抖音」、43 个视频链接）。
+#        sec_uid 从 DISCOVER_SEARCH 的 user_info.sec_uid 里拿。
+PROFILE_OTHER = "/aweme/v1/web/user/profile/other/"
+
+# 用户作品列表（GET）
+#
+#     GET /aweme/v1/web/aweme/post/?sec_user_id={sec_uid}&max_cursor=0&count=10
+#     → {"aweme_list":[...], "has_more":1, "max_cursor":1627632695000}
+#
+#     分页：把上次响应的 max_cursor 作为下次请求的 max_cursor。
+#     实测李子柒：9 条 / has_more=1 / max_cursor=1627632695000
+USER_POST = "/aweme/v1/web/aweme/post/"
+
+# 用户主页作品列表的默认页大小
+USER_POST_PAGE_MAX = 20
+
+# =============================================================================
 # 固定请求参数（抓包得到的稳定值，非签名）
 # -----------------------------------------------------------------------------
 # 与番茄不同：抖音这组搜索接口实测**不需要** msToken / a_bogus / X-Bogus 签名，
@@ -170,6 +216,17 @@ DEFAULT_SEARCH_SOURCE = "normal_search"
 DEFAULT_LIST_TYPE = "single"
 DEFAULT_PLATFORM = "PC"
 DEFAULT_PC_CLIENT_TYPE = "1"
+
+# 用户搜索的 search_channel。
+#
+# 调研（MediaCrawler / TikTokDownloader / DouYin_Spider 三家一致）：正确值是
+# `aweme_user_web`。**我方实测 `aweme_user` 与 `aweme_user_web` 都能返回结果**
+# （李子柒 5 条，两个值都通），所以这里采用开源项目一致的 `aweme_user_web`
+# 作为主值——与社区保持一致，出问题时更容易对照。
+USER_SEARCH_CHANNEL = "aweme_user_web"
+
+# 备用值。实测同样可用（2026-09-27）。保留以便主值失效时切换。
+USER_SEARCH_CHANNEL_ALT = "aweme_user"
 
 # 搜索类型：1=综合（视频+图文混合，页面默认）
 SEARCH_TYPE_GENERAL = 1
@@ -244,4 +301,77 @@ def build_search_params(
         "enable_history": "1",
         "offset": str(offset),
         "count": str(count),
+    }
+
+
+def build_user_search_params(
+    keyword: str,
+    offset: int = 0,
+    count: int = 10,
+) -> dict[str, str]:
+    """构造**用户搜索**参数（discover/search 专用）。
+
+    与 `build_search_params` 的区别：
+      · 端点不同（discover/search 而不是 general/search/single）
+      · `search_channel` 固定 `aweme_user`
+      · **不带** `search_type` / `list_type`（那是内容搜索的参数，
+        带上反而不对）
+    """
+    return {
+        "aid": DEFAULT_AID,
+        "device_platform": DEFAULT_DEVICE_PLATFORM,
+        "channel": DEFAULT_CHANNEL,
+        "search_channel": USER_SEARCH_CHANNEL,
+        "search_source": DEFAULT_SEARCH_SOURCE,
+        "keyword": keyword,
+        "pc_client_type": DEFAULT_PC_CLIENT_TYPE,
+        "platform": DEFAULT_PLATFORM,
+        "query_correct_type": "1",
+        "is_filter_search": "0",
+        "offset": str(offset),
+        "count": str(count),
+    }
+
+
+def build_user_profile_params(sec_user_id: str) -> dict[str, str]:
+    """构造用户资料参数。
+
+    ⚠️ 必须是 `sec_user_id`（`MS4wLjABAAAA…`），不是数字 uid。
+    """
+    return {
+        "aid": DEFAULT_AID,
+        "device_platform": DEFAULT_DEVICE_PLATFORM,
+        "channel": DEFAULT_CHANNEL,
+        "pc_client_type": DEFAULT_PC_CLIENT_TYPE,
+        "platform": DEFAULT_PLATFORM,
+        "sec_user_id": sec_user_id,
+        "personal_center_strategy": "1",
+    }
+
+
+def build_user_post_params(
+    sec_user_id: str,
+    max_cursor: int = 0,
+    count: int = 10,
+) -> dict[str, str]:
+    """构造用户作品列表参数。
+
+    分页：把上次响应的 `max_cursor` 原样作为下次请求的 `max_cursor`。
+    """
+    return {
+        "aid": DEFAULT_AID,
+        "device_platform": DEFAULT_DEVICE_PLATFORM,
+        "channel": DEFAULT_CHANNEL,
+        "pc_client_type": DEFAULT_PC_CLIENT_TYPE,
+        "platform": DEFAULT_PLATFORM,
+        "sec_user_id": sec_user_id,
+        "max_cursor": str(max_cursor),
+        "count": str(count),
+        "locate_query": "false",
+        "show_live_replay_strategy": "1",
+        "need_time_list": "1",
+        "time_list_query": "0",
+        "whale_cut_token": "",
+        "cut_version": "1",
+        "publish_video_strategy_type": "2",
     }

@@ -32,3 +32,6 @@ openai>=1.0.0
 google-genai>=1.0.0
 patchright>=1.60.1
 ebooklib>=0.18.0
+
+# 小红书 API 签名（纯 Python 复现 X-s/X-s-common，MIT）
+xhshow>=0.2.0

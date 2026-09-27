@@ -28,6 +28,7 @@ from ..types import (
     SearchParams,
     SearchResult,
     SearchType,
+    UserProfile,
 )
 from .apis import (
     AWEME_DETAIL,
@@ -38,10 +39,17 @@ from .apis import (
     DEFAULT_PC_CLIENT_TYPE,
     DEFAULT_PLATFORM,
     DETAIL_BASE_URL,
+    DISCOVER_SEARCH,
+    PROFILE_OTHER,
     PROFILE_SELF,
     SEARCH_SINGLE,
     SINGLE_PAGE_MAX,
+    USER_POST,
+    USER_POST_PAGE_MAX,
     build_search_params,
+    build_user_post_params,
+    build_user_profile_params,
+    build_user_search_params,
     resolve_search_channel,
 )
 
@@ -85,9 +93,23 @@ class DouyinClient(BasePlatformClient):
         }
 
     def _get_default_user_agent(self) -> str:
+        """默认 UA。
+
+        ⚠️ **版本号很关键**（2026-09-27 实测）：
+
+            Chrome/154 → ✓ 正常返回
+            Chrome/120 → ✗ **返回空 body（HTTP 200，len=0）**
+            不带 UA    → ✓ 正常返回（httpx 默认 UA 反而能过）
+
+        原来写的 Chrome/120 会让 `aweme/post`（用户作品列表）**静默失败**——
+        响应不是 JSON，解析时报 `Expecting value: line 1 column 1`，
+        看起来像"接口坏了"，实际是 UA 版本被拒。
+
+        这里跟抓包时浏览器的真实版本保持一致。
+        """
         return (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "(KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
         )
 
     def _get_platform_domain(self) -> str:
@@ -105,13 +127,52 @@ class DouyinClient(BasePlatformClient):
         """GET 抖音 Web API 并校验 status_code。
 
         Raises:
+            PlatformUnavailableError: 被风控拦截（403 + ArgusSecurityPlugin）。
             RuntimeError: 接口返回非 0（含登录态失效）。
+
+        ## 为什么要单独识别 403（2026-09-27，调研发现）
+
+        抖音有个 **ArgusSecurityPlugin** 边缘网关，对**白名单路径**做概率性拦截
+        （社区实测约 5/8 被拦）。响应体是：
+
+            Blocked by ArgusSecurityPlugin Uifid Not Found
+            Blocked by ArgusSecurityPlugin Signature Not Found
+
+        **这是"风控失败"，不是"没有数据"。** 如果不区分，
+        用户会看到"这个 UP 主没有作品"——把风控失败静默吞成空结果，
+        属于最费时间的那类假阴性。
+
+        实测（我方环境，2026-09-27）：`aweme/post` 与 `profile/other`
+        目前**不带签名也能返回数据**（多次调用均 status_code=0），
+        所以这条分支暂时不会触发；但网关策略会变，必须提前区分。
         """
         if self._http_client is None:
             await self._init_http_client()
         url = f"{BASE_URL}{path}"
         resp = await self._http_client.get(url, params=params or {})
+
+        if resp.status_code == 403:
+            body = (resp.text or "")[:200]
+            raise PlatformUnavailableError(
+                f"[douyin] 请求 {path} 被风控拦截（HTTP 403）：{body}。"
+                "这是 ArgusSecurityPlugin 网关的概率性拦截（实测社区约 5/8），"
+                "**不是「该用户没有数据」**——请稍后重试，或检查登录态是否失效。"
+            )
+
         resp.raise_for_status()
+
+        # 空 body：抖音会用「HTTP 200 + 空响应体」表示拒绝
+        # （实测：UA 版本过旧时 aweme/post 就是这种表现）。
+        # 不识别的话，json() 会抛 `Expecting value: line 1 column 1`，
+        # 看起来像"接口坏了"，实际是请求特征被拒。
+        if not (resp.text or "").strip():
+            raise PlatformUnavailableError(
+                f"[douyin] 请求 {path} 返回了空响应体（HTTP 200）。"
+                "抖音会用这种形式表示拒绝——常见原因是 User-Agent 版本过旧"
+                "（实测 Chrome/120 被拒、Chrome/154 正常），"
+                "或需要重新获取登录态。**不是「该用户没有数据」**。"
+            )
+
         data = resp.json()
         code = data.get("status_code")
         if code != 0:
@@ -311,6 +372,119 @@ class DouyinClient(BasePlatformClient):
         return items
 
     # =========================================================================
+    # 用户（搜索 / 资料 / 作品列表）——2026-09-27 实测实现
+    # =========================================================================
+
+    async def search_users(self, keyword: str, max_results: int = 20) -> List[UserProfile]:
+        """按关键词搜抖音用户。
+
+        ⚠️ 走的是 `discover/search`，**不是** general/search/single。
+        实测给后者加 `search_channel=aweme_user` 完全不生效
+        （返回结果与 aweme_general 一模一样）。
+
+        实测：「美食」9 条、「李子柒」10 条。
+        返回里带 `sec_uid`，是后续查资料/作品列表的必需参数。
+        """
+        want = max(1, max_results)
+        page_size = min(want, SINGLE_PAGE_MAX)
+        offset = 0
+        out: List[UserProfile] = []
+        seen: set[str] = set()
+
+        while len(out) < want:
+            data = await self._call(
+                DISCOVER_SEARCH,
+                build_user_search_params(keyword, offset=offset, count=page_size),
+            )
+            users = data.get("user_list") or []
+            if not users:
+                if offset == 0:
+                    logger.info("[douyin] 用户搜索无结果（keyword=%r）", keyword)
+                break
+
+            for entry in users:
+                u = entry.get("user_info") if isinstance(entry, dict) else None
+                if not isinstance(u, dict):
+                    continue
+                uid = str(u.get("uid") or "")
+                if not uid or uid in seen:
+                    continue
+                seen.add(uid)
+                out.append(parse_user_info(u))
+                if len(out) >= want:
+                    break
+
+            if not data.get("has_more") and not data.get("cursor"):
+                break
+            offset += page_size
+
+        return out[:want]
+
+    async def get_user_profile(self, sec_user_id: str) -> Optional[UserProfile]:
+        """查用户资料。
+
+        ⚠️ 参数必须是 **sec_user_id**（`MS4wLjABAAAA…`），不是数字 uid。
+        实测用数字 uid 打开主页是空页面；sec_user_id 则正常。
+        该方法由 B 站客户端同名方法对齐。
+
+        实测（李子柒）：粉丝 4830万 / 关注 1 / 获赞 2.55亿 / 作品 774。
+        """
+        if not sec_user_id:
+            return None
+        data = await self._call(
+            PROFILE_OTHER, build_user_profile_params(sec_user_id)
+        )
+        user = data.get("user")
+        if not isinstance(user, dict) or not user:
+            logger.warning("[douyin] 用户资料为空（sec_user_id=%s）", sec_user_id[:24])
+            return None
+        return parse_user_info(user)
+
+    async def get_user_videos(
+        self,
+        sec_user_id: str,
+        max_results: int = 20,
+    ) -> List[SearchResult]:
+        """取用户的作品列表（含图文与视频）。
+
+        分页：把上次响应的 `max_cursor` 原样作为下次请求的 `max_cursor`。
+
+        实测（李子柒）：9 条 / has_more=1 / max_cursor=1627632695000。
+        """
+        want = max(1, max_results)
+        page_size = min(want, USER_POST_PAGE_MAX)
+        cursor = 0
+        out: List[SearchResult] = []
+        seen: set[str] = set()
+
+        while len(out) < want:
+            data = await self._call(
+                USER_POST,
+                build_user_post_params(sec_user_id, max_cursor=cursor, count=page_size),
+            )
+            items = data.get("aweme_list") or []
+            if not items:
+                break
+
+            for item in items:
+                parsed = parse_search_item(item)
+                if parsed is None or parsed.id in seen:
+                    continue
+                seen.add(parsed.id)
+                out.append(parsed)
+                if len(out) >= want:
+                    break
+
+            if not data.get("has_more"):
+                break
+            next_cursor = data.get("max_cursor")
+            if not isinstance(next_cursor, int) or next_cursor == cursor:
+                break
+            cursor = next_cursor
+
+        return out[:want]
+
+    # =========================================================================
     # 详情
     # =========================================================================
 
@@ -382,18 +556,30 @@ class DouyinClient(BasePlatformClient):
 # =============================================================================
 
 def parse_search_item(item: Dict[str, Any]) -> Optional[SearchResult]:
-    """解析搜索结果条目。
+    """解析一条作品条目（**兼容两种结构**）。
 
-    抓包确认的条目结构：
-        {type: 1, aweme_info: {aweme_id, desc, create_time, author,
-                               statistics, video, image_infos, ...}}
+    抖音有两个接口返回作品，但**结构不同**（实测 2026-09-27）：
 
-    注意：不是每条都有 aweme_info（会有广告/运营卡片），这类条目跳过。
+      · 搜索接口（general/search/single）
+            `data[] = {type: 1, aweme_info: {aweme_id, desc, ...}}`
+        → 作品数据**包在 `aweme_info` 里**，外层还有广告/运营卡片需跳过
+
+      · 用户作品列表（aweme/post）
+            `aweme_list[] = {aweme_id, desc, author, video, ...}`
+        → **裸的 aweme 对象，没有 `aweme_info` 包装**
+
+    早先这里只认第一种，导致 `get_user_videos()` 明明拿到 5 条数据，
+    却因为解析返回 None 而被过滤成 **0 条**（表现为"这个 UP 主没有作品"）。
+    现在两种都认。
     """
     if not isinstance(item, dict):
         return None
+
+    # 优先取 aweme_info 包装；没有就认为本身就是裸 aweme 对象
     info = item.get("aweme_info")
-    if not isinstance(info, dict) or not info.get("aweme_id"):
+    if not isinstance(info, dict):
+        info = item
+    if not info.get("aweme_id"):
         return None
 
     aweme_id = str(info.get("aweme_id"))
@@ -608,6 +794,42 @@ def _detail_from_aweme(detail: Dict[str, Any], item_id: str) -> NoteDetail:
         views=_to_int(stats.get("play_count")),
         create_time=_format_ts(detail.get("create_time")),
         raw_data=detail,
+    )
+
+
+def parse_user_info(u: Dict[str, Any]) -> UserProfile:
+    """把抖音的 user / user_info 结构转成统一 UserProfile。
+
+    两种来源的字段名一致（实测）：
+      · 用户搜索：`user_list[].user_info`
+      · 用户资料：`user`
+
+    实测字段：uid, sec_uid, nickname, signature, avatar_thumb,
+              follower_count, following_count, total_favorited,
+              aweme_count, unique_id, custom_verify, enterprise_verify_reason
+
+    注意 `sec_uid` 放在 raw_data 里（后续查作品列表要用它）。
+    """
+    return UserProfile(
+        id=str(u.get("uid") or ""),
+        name=u.get("nickname") or "",
+        avatar=_first_url(u.get("avatar_thumb")) or _first_url(u.get("avatar_168x168")),
+        platform="douyin",
+        followers=_to_int(u.get("follower_count")),
+        following=_to_int(u.get("following_count")),
+        total_likes=_to_int(u.get("total_favorited")),
+        total_videos=_to_int(u.get("aweme_count")),
+        desc=u.get("signature") or "",
+        # 认证：自定义认证文案或企业认证文案非空即视为已认证
+        verified=bool(u.get("custom_verify") or u.get("enterprise_verify_reason")),
+        raw_data={
+            "sec_uid": u.get("sec_uid") or "",
+            "unique_id": u.get("unique_id") or "",
+            "custom_verify": u.get("custom_verify") or "",
+            "enterprise_verify_reason": u.get("enterprise_verify_reason") or "",
+            "short_id": u.get("short_id") or "",
+            "user": u,
+        },
     )
 
 

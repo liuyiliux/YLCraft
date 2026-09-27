@@ -210,57 +210,91 @@ Get-CimInstance Win32_Process -Filter "Name = 'chrome.exe'" |
 
 ---
 
-## 七、用户搜索与个人主页（2026-09-27 实测，**尚未实现**）
+## 七、用户搜索与个人主页（2026-09-27 实测打通 ✅）
 
-用户问"小红书能不能做 UP主搜索和个人中心数据"。实测结论**与抖音不同**：
+> ⚠️ **本节结论经过一次推翻重写。**
+> 我最初用「监听响应 + 按响应体字段（nickname/follower_count）过滤」的方法，
+> **没命中**就错误地断言"小红书做不了用户搜索/资料"。
+> 后来通过开源项目调研 + 按 **URL 路径**重新过滤，发现**两个接口都存在且可用**。
+>
+> **教训：按 URL 路径过滤，不要按响应体字段猜。**
 
-### 用户搜索：❌ 做不了
-
-小红书的搜索接口只有一个：
-
-```
-so.xiaohongshu.com/api/sns/web/v2/search/notes
-```
-
-用 `type=54`（用户搜索）请求时，**返回的仍然是笔记**：
+### 用户搜索 ✅
 
 ```
-model_type 分布: {'note': 20, 'hot_query': 2}   ← 没有 user
+POST https://edith.xiaohongshu.com/api/sns/web/v1/search/usersearch
+body: {"search_user_request": {
+          "keyword": "美食",
+          "search_id": <必需，见 signing.get_search_id()>,
+          "page": 1, "page_size": 20,
+          "biz_type": "web_search_user",
+          "request_id": "<时间戳>"}}
+→ {"code":1000,"success":true,
+   "data":{"users":[{id,name,image,fans,sub_title,xsec_token,...}],
+           "has_more":bool}}
 ```
 
-页面上虽然渲染出了 31 个 `/user/profile/` 链接，但**没有独立的
-用户列表接口**被调用——用户数据是混在笔记响应的 `note_card.user` 里
-（只有昵称/头像，没有粉丝数）。
+实测「美食」→ 20 个用户（吕小厨爱美食 140.9万粉、妞妞儿美食 195.3万粉…）。
 
-### 个人主页：✅ 可以做（资料读 DOM + 作品走接口）
+**关键点**：
 
-实测打开 `/user/profile/{user_id}`：
+- 是 **POST + JSON body**，不是 GET query
+- **`type=54` 是死路** —— 那只是前端路由参数，不影响接口调用。
+  区分"搜用户/搜笔记"靠 **URI 路径**（`usersearch` vs `notes`）
+  和 body 里的 `biz_type`
+- `search_id` 是必需参数，需自行生成
+
+### 用户资料 ✅
 
 ```
-页面正常渲染：title="逸流AI - 小红书"、30 个笔记链接
-DOM 里能直接读到资料：
-    {"fans":"195 粉丝","follows":"2 关注","liked":"2930 获赞",
-     "nickname":"逸流AI","desc":"分享ai知识，入口，提示词"}
+GET https://edith.xiaohongshu.com/api/sns/web/v1/user/otherinfo?target_user_id={user_id}
+→ {"code":0,"data":{"basic_info":{nickname, red_id, desc, images,
+                                  imageb, gender, ip_location},
+                    "interactions":[{type,count},...],
+                    "posted":73, "liked":…, "collected":…}}
 ```
 
-作品列表接口（实测捕获）：
+实测（逸流AI）：昵称=逸流AI、red_id=95645311698、简介、ip_location=辽宁。
+
+> ⚠️ **粉丝数不在 `basic_info` 里** —— 在 `interactions` 数组里按
+> `type` 找：`"follows"` / `"fans"` / `"interaction"`，
+> 且 count 是**字符串**（可能是 `"140.9万"` 这种带后缀的）。
+
+### 作品列表 ✅
 
 ```
 GET https://edith.xiaohongshu.com/api/sns/web/v1/user_posted
+    ?num=20&cursor=&user_id={user_id}&image_scenes=FD_WM_WEBP
+→ {"code":0,"data":{"notes":[...],"has_more":true,"cursor":"69b1…"}}
 ```
 
-> ⚠️ **没有找到"查他人资料"的接口**——遍历主页产生的 29 个 JSON 响应，
-> 只有 `v2/user/me`（查自己）。所以资料只能**读 DOM**，
-> 与笔记详情同一个套路。
+分页：首页 `cursor` 传**空串**，之后用响应里的 `cursor`。
+实测（逸流AI）：20 条 / `has_more=True`。
+
+### 签名：`xhshow`（纯 Python）—— 这是与抖音最大的区别
+
+小红书**所有** API 都要求 `X-s` / `X-s-common` / `xsc` 签名，
+缺签名返回 `{"code": -1, "msg": "create invalid signature"}`。
+（抖音实测当前**不需要**签名。）
+
+- **`Cloxl/xhshow`** —— 纯 Python 复现，MIT，零 JS 文件。
+  `pip install xhshow`（v0.2.0，仅依赖 pycryptodome）。
+  MediaCrawler 与 XHS-Downloader 都已迁移到它。
+- **依赖 cookie 里的 `a1`**，且必须与 cookie 一致，否则签名一直错。
+- **浏览器内签名不可行**（我方实测）：已登录页面里
+  `window._webmsxyw` / `webmsxyw` / `sign` **全部是 `undefined`**
+  —— 被打包进闭包了，不能直接调用。所以只能走 xhshow。
 
 ### 与抖音的差异一览
 
 | 能力 | 抖音 | 小红书 |
 |------|------|--------|
-| 用户搜索 | ✅ `discover/search`（有独立接口） | ❌ 无独立接口 |
-| 用户资料 | ✅ `profile/other`（有接口） | ⚠️ 只能读 DOM |
+| 用户搜索 | ✅ `discover/search`（GET query） | ✅ `search/usersearch`（**POST body**） |
+| 用户资料 | ✅ `user/profile/other` | ✅ `user/otherinfo` |
 | 作品列表 | ✅ `aweme/post` | ✅ `user_posted` |
-| 主页标识 | **必须 `sec_uid`**（uid 打开是空页） | `user_id`（`/user/profile/{id}`） |
+| **签名** | **不需要** | **必须**（xhshow） |
+| 主页标识 | **`sec_uid`** | `user_id` |
+| 粉丝数字段 | `user.follower_count`（int） | `interactions[]` 里 `type="fans"`（**字符串**） |
 
 ---
 

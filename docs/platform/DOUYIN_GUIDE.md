@@ -262,17 +262,17 @@ COLLECTION「回到千禧年」
 
 ---
 
-## 七之二、用户搜索与个人中心（2026-09-27 实测发现，**尚未实现**）
+## 七之二、用户搜索与个人中心（2026-09-27 **已实现** ✅）
 
-用户问"抖音能不能做 UP主搜索和个人中心数据"。**接口已全部找到并验证可用**，
-但**代码尚未实现**（本轮只做探测，未接线）。
+用户问"抖音能不能做 UP主搜索和个人中心数据"。**接口全部实测可用，已实现**，
+统一路由：`/api/v1/users/search|profile|videos?platform=douyin`。
 
 ### 用户搜索
 
 ```
 GET https://www.douyin.com/aweme/v1/web/discover/search/
     ?keyword=美食&count=10&offset=0
-    &search_channel=aweme_user&search_source=normal_search&query_correct_type=1
+    &search_channel=aweme_user_web&search_source=normal_search&query_correct_type=1
 → {"user_list":[{"user_info":{uid, sec_uid, nickname, signature,
                               avatar_thumb, follower_count,
                               total_favorited, unique_id, custom_verify}}]}
@@ -281,9 +281,21 @@ GET https://www.douyin.com/aweme/v1/web/discover/search/
 实测：「美食」→ 9 条（阿蔡美食教学 3112万粉、家味美食 2513万粉…）；
 「李子柒」→ 10 条（李子柒 5657万粉…）。
 
-> ⚠️ **注意**：`search_channel=aweme_user` 加在
-> `general/search/single` 上**不生效**——实测返回结果与 `aweme_general`
-> 完全相同（同一个 `aweme_id`）。用户搜索必须用 `discover/search`。
+> ⚠️ **`search_channel` 与路径一一绑定**（四个 tab 各有独立路径 + channel）：
+>
+> | tab | 路径 | channel |
+> |---|---|---|
+> | 综合 | `general/search/single/` | `aweme_general` |
+> | 视频 | `search/item/` | `aweme_video_web` |
+> | 用户 | **`discover/search/`** | **`aweme_user_web`** |
+> | 直播 | `live/search/` | `aweme_live` |
+>
+> 把用户 channel 传给 `general/search/single` 是**无效操作** ——
+> 该接口只认 `aweme_general`，返回综合结果是**预期行为，不是 bug**。
+
+**取值差异备注**：社区（MediaCrawler / TikTokDownloader / DouYin_Spider）
+一致用 `aweme_user_web`；**我方实测 `aweme_user` 与 `aweme_user_web` 都能返回结果**
+（李子柒 5 条，两个值都通）。代码采用社区一致的 `aweme_user_web`。
 
 ### 个人中心数据
 
@@ -296,19 +308,64 @@ GET https://www.douyin.com/aweme/v1/web/discover/search/
 
 ```
 资料：4830万粉 | 关注1 | 获赞2.55亿 | 作品774 | 简介完整 | 有头像
-作品：9 条 + hasMore=1 + max_cursor（可翻页）
+作品：5 条（赞1168万/703万/1251万）+ has_more + max_cursor（可翻页）
 ```
 
-### ⚠️ 关键坑：主页必须用 `sec_uid`，不能用 `uid`
+### ⚠️ 三个必须知道的坑
 
-实测对照：
+**1. 主页必须用 `sec_uid`，不能用 `uid`**
 
 ```
 /user/{uid}       → title="的抖音"      videoLinks=0    ❌ 空页面
 /user/{sec_uid}   → title="李子柒的抖音"  videoLinks=43   ✅ 正常
 ```
 
-`sec_uid` 从**用户搜索接口**里拿（`user_info.sec_uid`），所以链路是通的。
+原因：数字 uid 会变，sec_id 不会。`sec_uid` 从**用户搜索接口**里拿
+（`user_info.sec_uid`），所以链路是通的。
+
+**2. 作品列表返回的是「裸 aweme 对象」，与搜索接口结构不同**
+
+```python
+搜索接口：data[]      = {type: 1, aweme_info: {aweme_id, desc, ...}}   # 有包装
+作品列表：aweme_list[] = {aweme_id, desc, author, video, ...}          # 裸对象
+```
+
+`parse_search_item()` 必须**两种都认**。早先只认第一种，
+导致 `get_user_videos()` 明明拿到 5 条数据，却因为解析返回 `None`
+被过滤成 **0 条** —— 表现为"这个 UP 主没有作品"（最费时间的那类假阴性）。
+
+**3. UA 版本必须够新（最隐蔽）**
+
+实测对照：
+
+```
+Chrome/154 → ✓ 正常返回
+Chrome/120 → ✗ **返回空 body（HTTP 200，len=0）**
+不带 UA    → ✓ 正常返回
+```
+
+旧 UA 会让 `aweme/post` **静默失败**：`json()` 抛
+`Expecting value: line 1 column 1`，看起来像"接口坏了"。
+现在 `_call()` 会把空 body 显式报成"被拒绝"，并提示 UA 版本这个常见原因。
+
+### 签名
+
+调研称 `aweme/post` 与 `aweme/detail` 在抖音的 ArgusSecurityPlugin
+**保护白名单**里（社区实测约 5/8 被 403 拦截）。
+
+**我方实测（2026-09-27，多次调用）：全部 `status_code=0`，
+`aweme/post`、`profile/other`、`discover/search`、`aweme/detail`
+都不需要签名**；`aweme/post` 连打 10 次 **10/10 成功**；
+加不加 `x-tt-argus` 头也没差别。
+
+结论：**当前环境下抖音全链路无需签名**。但网关策略会变，
+所以代码里**单独识别两种失败**，都报成"被拒绝"而不是"没有数据"：
+
+| 现象 | 含义 |
+|------|------|
+| HTTP 403 + `ArgusSecurityPlugin` | 风控拦截 |
+| HTTP 200 + 空 body | 请求特征被拒（如 UA 过旧） |
+| HTTP 200 + `aweme_list: []` | **真的**没有作品 |
 
 ### 发现方式（可复用）
 
@@ -316,12 +373,16 @@ GET https://www.douyin.com/aweme/v1/web/discover/search/
 
 | 尝试 | 结果 |
 |------|------|
-| 猜端点 `/aweme/v1/web/query/user/` | ❌ 返回的是**埋点数据**（firebase_instance_id/user_agent），不是用户列表 |
+| 猜端点 `/aweme/v1/web/query/user/` | ❌ 返回的是**埋点数据**（firebase_instance_id/user_agent） |
 | 只监听 `/user/`、`/search` 关键字 | ❌ 漏掉了 `discover/search` |
 
 **成功的方式**：监听**所有** JSON 响应，直接找响应体里同时含
-`nickname` + `follower_count` 的——一次就命中了 `discover/search` 与
+`nickname` + `follower_count` 的——一次命中 `discover/search` 与
 `profile/other` + `aweme/post`。
+
+（注：这个方法在抖音上有效，但在小红书上**失效**——
+因为小红书那两个接口的字段名是 `name`/`fans`，不是 `nickname`/`follower_count`。
+详见 `docs/research/user_api_cross_validation.md` 的方法论教训。）
 
 ---
 
