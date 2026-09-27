@@ -200,3 +200,46 @@ def test_old_parser_documents_failure():
     doc = parser_douyin.__doc__ or ""
     assert "失效" in doc, "应标注已失效"
     assert "videoInfoRes" in doc or "异步加载" in doc, "应说明原因"
+
+
+# =============================================================================
+# 「去水印解析」响应必须带图集
+# =============================================================================
+
+def test_parse_response_has_image_fields():
+    """ParseResponse 必须有 images/content_type。
+
+    踩过：响应模型缺这两个字段，抖音图文解析出 9 张原图，
+    到前端却只剩一张封面（字段被 Pydantic 丢弃）。
+    """
+    from app.api.v1.download import ParseResponse
+
+    fields = ParseResponse.model_fields
+    assert "images" in fields, "应有 images"
+    assert "content_type" in fields, "应有 content_type"
+    assert "image_count" in fields, "应有 image_count"
+
+
+def test_parse_endpoint_returns_images():
+    """端点构造响应时必须填 images，且图文不填 video_url。
+
+    图文笔记没有视频——把页面 URL 塞进 video_url 会让前端误判成视频。
+    """
+    import inspect
+
+    from app.api.v1 import download as dl
+
+    src = inspect.getsource(dl.parse_download_url)
+    assert "images=parse_images" in src, "应传 images"
+    assert "content_type=content_type" in src, "应传 content_type"
+    assert "not parse_images" in src, "图文时应跳过 yt-dlp 清晰度枚举"
+
+
+def test_parse_response_defaults_are_video():
+    """默认仍是视频，避免影响既有平台。"""
+    from app.api.v1.download import ParseResponse
+
+    r = ParseResponse(success=True)
+    assert r.content_type == "video"
+    assert r.images == []
+    assert r.image_count == 0
