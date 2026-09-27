@@ -1,25 +1,24 @@
 /**
- * 博主中心（抖音 / 小红书）
+ * 博主中心（B站 / 抖音 / 小红书）
  *
- * ## 为什么单独开一个页面，而不是复用 /up-analytics
+ * ## 三个平台、一个入口（2026-09-27 合并）
  *
- * `/up-analytics` 是 B 站专属的（1100+ 行，用了 B 站的收藏夹/合集/弹幕等
- * 独有能力，接口也是 `/bilibili/up/*`）。抖音/小红书只有三件事：
- * 用户搜索、用户资料、作品列表。硬塞进去会互相污染。
+ * 原先 B站有独立的 /up-analytics 页面，与本页功能重复（都是"搜人 → 看作品"），
+ * 用户要在两个入口间来回找。现合并到本页：三平台共用一套布局，按 platform 切换。
  *
- * 后端已经把两平台统一成 `/api/v1/users/*?platform=xxx`，所以
- * **一个页面 + 平台切换**就够了。
+ * ## 三个平台的关键差异（实测）
  *
- * ## 两个平台的关键差异（实测，2026-09-27）
+ * | | B站 | 抖音 | 小红书 |
+ * |---|---|---|---|
+ * | 搜索接口 | /crawler/search-enhanced (search_type=user) | /users/search | /users/search |
+ * | 用户标识 | uid | **必须 sec_uid**（数字 uid 打开是空页面） | user_id |
+ * | 详情接口 | /bilibili/up/* | /users/* | /users/* |
+ * | 签名 | — | 不需要 | 必须（后端已用 xhshow 处理） |
  *
- * | | 抖音 | 小红书 |
- * |---|---|---|
- * | 用户标识 | **必须 sec_uid**（数字 uid 打开是空页面） | user_id |
- * | 签名 | 不需要 | 必须（后端已用 xhshow 处理） |
- *
- * 所以这里的 `sec_uid` 从搜索结果里取，再传给资料/作品接口。
+ * 所以 B站的搜索与详情在本页有**单独分支**（接口和字段名都不同，
+ * 见 adaptBiliProfile / adaptBiliVideo 的字段映射）。
  */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   Card, Input, Button, Select, Table, Tag, message, Space, Row, Col,
@@ -34,6 +33,7 @@ import type { ColumnsType } from 'antd/es/table'
 import {
   searchPlatformUsers, getPlatformUserProfile, getPlatformUserVideos,
   listPlatformConnections, searchEnhanced, importCrawler,
+  getBiliUpProfile, getBiliUpVideos,
 } from '../../api'
 import type { PlatformUserItem, PlatformUserVideo, PlatformConnectionResponse, CrawlerResult } from '../../api'
 import { useTheme } from '../../constants/theme'
@@ -47,8 +47,14 @@ const { Title, Text } = Typography
  * 实测：`/api/v1/platforms` 返回小红书连接时用的是 **`xhs`**，
  * 而用户接口用的 platform 参数是 `xiaohongshu` —— 两者不一致。
  * 只按 `xiaohongshu` 筛会显示"未找到小红书连接"（实际连接是好的）。
+ *
+ * ⚠️ B站走的是**另一套接口**（`/api/v1/bilibili/up/*`，含收藏夹/合集等
+ *    独有能力），所以它的搜索与详情由本页单独分支处理（见 bili 标记）。
+ *    原先 B站有独立的 /up-analytics 页面，与这里功能重复（都是
+ *    "搜人 → 看作品"），已合并到本页，避免用户在两个入口间来回找。
  */
 const PLATFORMS = [
+  { value: 'bili', label: 'B站', connKeys: ['bili', 'bilibili'] },
   { value: 'douyin', label: '抖音', connKeys: ['douyin'] },
   { value: 'xiaohongshu', label: '小红书', connKeys: ['xiaohongshu', 'xhs'] },
 ]
@@ -61,18 +67,86 @@ function formatCount(n: number | undefined | null): string {
   return String(v)
 }
 
+/** 把 B站搜索结果适配成统一的 PlatformUserItem。
+ *
+ * ⚠️ B站把昵称放在 `title` 里（后端 `_parse_user_result` 用
+ * `title=item["uname"]`），而抖音/小红书放在 `name`。
+ * 不转换的话界面会全显示"(无昵称)"——实测踩过。
+ *
+ * 另外 B站的粉丝数在 `followers`（后端已归一），作品数在 `videos`。
+ */
+function adaptBiliUser(raw: any): PlatformUserItem {
+  return {
+    id: String(raw?.id || raw?.mid || ''),
+    // 昵称：优先 name（统一形状），回退 title（B站后端放这儿）
+    name: raw?.name || raw?.title || raw?.uname || '',
+    avatar: raw?.avatar || raw?.cover || '',
+    platform: 'bili',
+    followers: Number(raw?.followers || raw?.fans || 0),
+    following: Number(raw?.following || 0),
+    total_likes: Number(raw?.likes || 0),
+    total_videos: Number(raw?.videos || raw?.total_videos || 0),
+    desc: raw?.desc || raw?.usign || '',
+    verified: Boolean(raw?.official_verify?.type === 0 || raw?.verified),
+    raw_data: raw,
+  }
+}
+
+/** 把 B站 UP 资料适配成统一的 PlatformUserItem。
+ *
+ * B站字段名与抖音/小红书**不同**（实测）：
+ *     B站      name / avatar / sign / fans / following / likes / archive_count
+ *     统一形状  name / avatar / desc / followers / following / total_likes / total_videos
+ * 不转换的话界面会因为读不到 followers 而全显示 0。
+ */
+function adaptBiliProfile(raw: any): PlatformUserItem {
+  return {
+    id: String(raw?.uid || ''),
+    name: raw?.name || '',
+    avatar: raw?.avatar || '',
+    platform: 'bili',
+    followers: Number(raw?.fans || 0),
+    following: Number(raw?.following || 0),
+    total_likes: Number(raw?.likes || 0),
+    total_videos: Number(raw?.archive_count || 0),
+    desc: raw?.sign || '',
+    verified: Boolean(raw?.official_verify?.type && raw.official_verify.type !== -1),
+    raw_data: raw,
+  }
+}
+
+/** 把 B站 UP 视频适配成统一的 PlatformUserVideo。 */
+function adaptBiliVideo(raw: any): PlatformUserVideo {
+  const bvid = String(raw?.bvid || raw?.id || '')
+  return {
+    id: bvid,
+    title: raw?.title || '',
+    cover: raw?.pic || raw?.cover || '',
+    url: raw?.url || (bvid ? `https://www.bilibili.com/video/${bvid}` : ''),
+    type: 'video',
+    likes: Number(raw?.stat?.like || raw?.like || 0),
+  }
+}
+
 export default function PlatformUserPage() {
   // 注意解构名：useTheme() 返回 { theme, themeId }，主题对象叫 theme
   const { theme: THEME } = useTheme()
   const [searchParams] = useSearchParams()
 
-  const [platform, setPlatform] = useState<string>(searchParams.get('platform') || 'douyin')
+  // 支持 ?platform=bili&uid=123 直达某人的详情
+  // （「我的数据」页点 UP 主卡片就是这个 URL —— 合并页面后要保持可用）
+  const [platform, setPlatform] = useState<string>(
+    searchParams.get('platform') || (searchParams.get('uid') ? 'bili' : 'douyin'),
+  )
   const [connId, setConnId] = useState<string>('')
   const [conns, setConns] = useState<PlatformConnectionResponse[]>([])
 
   const [keyword, setKeyword] = useState('')
   const [searching, setSearching] = useState(false)
   const [users, setUsers] = useState<PlatformUserItem[]>([])
+  // 用户搜索的分页状态（B站走 search-enhanced，服务端分页、有 total）
+  const [userTotal, setUserTotal] = useState(0)
+  const [userPage, setUserPage] = useState(1)
   // 搜索维度：博主 or 作品
   const [searchMode, setSearchMode] = useState<'user' | 'note'>('user')
   // 作品搜索结果（复用 /crawler/search-enhanced）
@@ -109,6 +183,8 @@ export default function PlatformUserPage() {
     // 切换平台时清空上一次的结果 —— 否则会看到"用小红书标签展示抖音用户"
     // 这种错位（实测踩过：切到小红书后表格里还是抖音搜出来的李子柒）。
     setUsers([])
+    setUserTotal(0)
+    setUserPage(1)
     setNotes([])
     setNoteTotal(0)
     setNotePage(1)
@@ -160,13 +236,32 @@ export default function PlatformUserPage() {
     }
 
     try {
-      const res: any = await searchPlatformUsers(platform, kw, 20)
-      const list: PlatformUserItem[] = res?.data || []
-      setUsers(list)
-      if (list.length) {
-        message.success(`找到 ${list.length} 个用户`)
+      if (platform === 'bili') {
+        // B站走 /crawler/search-enhanced（search_type=user），
+        // 与抖音/小红的 /users/search 不是同一套接口。
+        const res: any = await searchEnhanced({
+          platform: 'bili',
+          keyword: kw,
+          search_type: 'user',
+          max_results: 20,
+          page: 1,
+          conn_id: connId,
+        })
+        const list: PlatformUserItem[] = ((res?.results || []) as any[]).map(adaptBiliUser)
+        setUsers(list)
+        setUserTotal(Number(res?.total) || list.length)
+        setUserPage(1)
+        message[list.length ? 'success' : 'info'](
+          list.length ? `找到 ${list.length} 个用户` : '没有找到用户',
+        )
       } else {
-        message.info('没有找到用户')
+        const res: any = await searchPlatformUsers(platform, kw, 20)
+        const list: PlatformUserItem[] = res?.data || []
+        setUsers(list)
+        setUserTotal(list.length)
+        message[list.length ? 'success' : 'info'](
+          list.length ? `找到 ${list.length} 个用户` : '没有找到用户',
+        )
       }
     } catch (e: any) {
       const msg = e?.response?.data?.detail || '搜索失败'
@@ -175,6 +270,28 @@ export default function PlatformUserPage() {
       setSearching(false)
     }
   }, [platform, keyword, searchMode, connId])
+
+  /** B站 UP主搜索翻页（服务端分页）。 */
+  const handleUserPage = useCallback(async (p: number) => {
+    if (platform !== 'bili') return
+    const kw = keyword.trim()
+    if (!kw) return
+    setSearching(true)
+    try {
+      const res: any = await searchEnhanced({
+        platform: 'bili', keyword: kw, search_type: 'user',
+        max_results: 20, page: p, conn_id: connId,
+      })
+      const list: PlatformUserItem[] = ((res?.results || []) as any[]).map(adaptBiliUser)
+      setUsers(list)
+      setUserTotal(Number(res?.total) || list.length)
+      setUserPage(p)
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail || '翻页失败')
+    } finally {
+      setSearching(false)
+    }
+  }, [platform, keyword, connId])
 
   /** 作品搜索翻页（服务端分页，要重新请求）。 */
   const handleNotePage = useCallback(async (p: number) => {
@@ -203,22 +320,36 @@ export default function PlatformUserPage() {
 
   /** 加载选中用户的资料 + 作品。
    *
-   * ⚠️ 抖音必须传 sec_uid（数字 uid 打开是空页面），
-   *    所以这里优先用搜索结果里的 sec_uid。
+   * 三个平台走两套接口：
+   *   · 抖音/小红书 → `/api/v1/users/{profile,videos}`（后端自己取连接）
+   *   · B站        → `/api/v1/bilibili/up/{profile,videos}`
+   *
+   * ⚠️ 抖音必须传 sec_uid（数字 uid 打开是空页面），所以优先用搜索结果里的。
    */
   const loadUserDetail = useCallback(async (user: PlatformUserItem) => {
     setSelected(user)
     setActiveTab('profile')
-    const opts = { userId: user.id, secUid: user.sec_uid || '' }
 
     setLoadingProfile(true)
     setProfile(null)
     try {
-      const res: any = await getPlatformUserProfile(platform, opts)
-      if (res?.success && res.data) {
-        setProfile(res.data)
+      if (platform === 'bili') {
+        // 注意 getBiliUpProfile 是 (uid, connId) 位置参数
+        const res: any = await getBiliUpProfile(user.id, connId)
+        if (res?.success && res.data) {
+          setProfile(adaptBiliProfile(res.data))
+        } else {
+          message.warning(res?.message || '未能获取该 UP 主资料')
+        }
       } else {
-        message.warning(res?.message || '未能获取该用户资料')
+        const res: any = await getPlatformUserProfile(platform, {
+          userId: user.id, secUid: user.sec_uid || '',
+        })
+        if (res?.success && res.data) {
+          setProfile(res.data)
+        } else {
+          message.warning(res?.message || '未能获取该用户资料')
+        }
       }
     } catch (e: any) {
       message.error(e?.response?.data?.detail || '获取资料失败')
@@ -229,14 +360,37 @@ export default function PlatformUserPage() {
     setLoadingVideos(true)
     setVideos([])
     try {
-      const res: any = await getPlatformUserVideos(platform, { ...opts, maxResults: 20 })
-      setVideos(res?.data || [])
+      if (platform === 'bili') {
+        const res: any = await getBiliUpVideos({
+          uid: user.id, page: 1, page_size: 20, conn_id: connId,
+        })
+        const rawList = res?.data?.videos || res?.data?.list || res?.data || []
+        const list: PlatformUserVideo[] = (Array.isArray(rawList) ? rawList : []).map(adaptBiliVideo)
+        setVideos(list)
+      } else {
+        const res: any = await getPlatformUserVideos(platform, {
+          userId: user.id, secUid: user.sec_uid || '', maxResults: 20,
+        })
+        setVideos(res?.data || [])
+      }
     } catch (e: any) {
       message.error(e?.response?.data?.detail || '获取作品失败')
     } finally {
       setLoadingVideos(false)
     }
-  }, [platform])
+  }, [platform, connId])
+
+  // `?uid=xxx` 直达某人详情（「我的数据」页点 UP 主卡片走这个 URL）。
+  // 等连接就绪后再加载 —— B站详情接口需要 conn_id。
+  // 放在 loadUserDetail 之后，避免"used before its declaration"。
+  const deepLinkUid = searchParams.get('uid') || ''
+  const deepLinkDone = useRef(false)
+  useEffect(() => {
+    if (!deepLinkUid || deepLinkDone.current || conns.length === 0) return
+    deepLinkDone.current = true
+    void loadUserDetail({ id: deepLinkUid, name: '', avatar: '' } as PlatformUserItem)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkUid, conns, loadUserDetail])
 
   // ===== 用户列表 =====
   const userColumns: ColumnsType<PlatformUserItem> = [
@@ -500,7 +654,16 @@ export default function PlatformUserPage() {
                 loading={searching}
                 columns={userColumns}
                 dataSource={users}
-                pagination={{ pageSize: 10, size: 'small' }}
+                // B站是服务端分页（search-enhanced 返回 total=1000），
+                // 必须传 total，否则永远 1 页 —— 和作品表同一个坑。
+                pagination={platform === 'bili'
+                  ? {
+                      pageSize: 20, total: userTotal, current: userPage,
+                      showSizeChanger: false,
+                      onChange: (p) => { void handleUserPage(p) },
+                      showTotal: (t) => `共 ${t} 个用户`,
+                    }
+                  : { pageSize: 10, size: 'small' }}
                 locale={{ emptyText: <Empty description="输入关键词搜索博主" /> }}
                 onRow={(r) => ({ onClick: () => loadUserDetail(r), style: { cursor: 'pointer' } })}
               />
