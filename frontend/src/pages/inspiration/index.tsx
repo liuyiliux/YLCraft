@@ -42,6 +42,9 @@ type Conn = {
   name: string
   platform: string
   account_name?: string
+  // 接口返回小写状态（active/unknown…）。
+  // 筛连接时要按它过滤：只有 active 的连接才能用。
+  status?: string
 }
 
 type HotItem = {
@@ -85,8 +88,13 @@ export default function InspirationPage() {
     setLoadingConns(true)
     listPlatformConnections()
       .then((res: any) => {
-        const list: Conn[] = (res?.data || []).filter(
-          (c: Conn) => c.platform === 'fanqie',
+        // ⚠️ 接口返回的是 `{success, connections: [...]}`，
+        // **不是** `data`（2026-09-27 修）。
+        // 原来读 `res?.data` 恒为 undefined → 连接列表永远为空 →
+        // 界面一直显示"未找到番茄连接"，即使库里已有一条有效的番茄连接。
+        // 其它页面（crawler/download/my-data 等）用的都是 res.connections。
+        const list: Conn[] = (res?.connections || []).filter(
+          (c: Conn) => c.platform === 'fanqie' && c.status === 'active',
         )
         setConns(list)
         if (list.length && !connId) setConnId(list[0].id)

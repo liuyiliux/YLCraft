@@ -262,6 +262,69 @@ COLLECTION「回到千禧年」
 
 ---
 
+## 七之二、用户搜索与个人中心（2026-09-27 实测发现，**尚未实现**）
+
+用户问"抖音能不能做 UP主搜索和个人中心数据"。**接口已全部找到并验证可用**，
+但**代码尚未实现**（本轮只做探测，未接线）。
+
+### 用户搜索
+
+```
+GET https://www.douyin.com/aweme/v1/web/discover/search/
+    ?keyword=美食&count=10&offset=0
+    &search_channel=aweme_user&search_source=normal_search&query_correct_type=1
+→ {"user_list":[{"user_info":{uid, sec_uid, nickname, signature,
+                              avatar_thumb, follower_count,
+                              total_favorited, unique_id, custom_verify}}]}
+```
+
+实测：「美食」→ 9 条（阿蔡美食教学 3112万粉、家味美食 2513万粉…）；
+「李子柒」→ 10 条（李子柒 5657万粉…）。
+
+> ⚠️ **注意**：`search_channel=aweme_user` 加在
+> `general/search/single` 上**不生效**——实测返回结果与 `aweme_general`
+> 完全相同（同一个 `aweme_id`）。用户搜索必须用 `discover/search`。
+
+### 个人中心数据
+
+| 用途 | 端点 |
+|------|------|
+| 用户资料 | `GET https://www.douyin.com/aweme/v1/web/user/profile/other/?sec_user_id={sec_uid}` |
+| 作品列表 | `GET https://www.douyin.com/aweme/v1/web/aweme/post/?sec_user_id={sec_uid}&max_cursor=0&count=10` |
+
+实测（李子柒 `sec_uid=MS4wLjABAAAAPCnTQLqza4Xqu-uO7KZHcKuILkO7RRz2oapyOC04AQ0`）：
+
+```
+资料：4830万粉 | 关注1 | 获赞2.55亿 | 作品774 | 简介完整 | 有头像
+作品：9 条 + hasMore=1 + max_cursor（可翻页）
+```
+
+### ⚠️ 关键坑：主页必须用 `sec_uid`，不能用 `uid`
+
+实测对照：
+
+```
+/user/{uid}       → title="的抖音"      videoLinks=0    ❌ 空页面
+/user/{sec_uid}   → title="李子柒的抖音"  videoLinks=43   ✅ 正常
+```
+
+`sec_uid` 从**用户搜索接口**里拿（`user_info.sec_uid`），所以链路是通的。
+
+### 发现方式（可复用）
+
+前两次尝试都失败：
+
+| 尝试 | 结果 |
+|------|------|
+| 猜端点 `/aweme/v1/web/query/user/` | ❌ 返回的是**埋点数据**（firebase_instance_id/user_agent），不是用户列表 |
+| 只监听 `/user/`、`/search` 关键字 | ❌ 漏掉了 `discover/search` |
+
+**成功的方式**：监听**所有** JSON 响应，直接找响应体里同时含
+`nickname` + `follower_count` 的——一次就命中了 `discover/search` 与
+`profile/other` + `aweme/post`。
+
+---
+
 ## 八、图文下载的完整链路（2026-09-27）
 
 用户从「内容去水印解析」页贴链接到拿到图片，经过：
