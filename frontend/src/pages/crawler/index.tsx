@@ -1225,6 +1225,14 @@ export default function CrawlerPage() {
       setDetailLoading(false)
       return
     }
+    // 抖音：搜索结果里已经包含详情所需的全部字段（描述/作者/统计/封面/时长），
+    // 后端也没有按 item_id 反查详情的接口（未抓包确认，不猜路径）。
+    // 所以直接用结果里的数据渲染，不再请求后端——既快又不会撞上风控受限窗口。
+    if (record.platform === 'douyin') {
+      setDetailNote(prev => prev ? { ...prev, ...record, raw_data: record.raw_data } : null)
+      setDetailLoading(false)
+      return
+    }
     try {
       const detailConnectionId = record.platform === 'bili' ? selectedBiliConn : selectedSearchConn
       const detail = await getNoteDetail(record.platform, record.id, detailConnectionId)

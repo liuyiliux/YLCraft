@@ -340,6 +340,10 @@ class CrawlerService:
         """
         获取笔记详情（无水印）
         返回包含无水印图片/视频 URL 的字典
+
+        注：抖音没有"按 id 反查详情"的已确认接口，其详情数据在搜索结果里
+        就已完整（前端因此直接用结果渲染，不走这里）。
+        若确实调到这里且缺少原始数据，会抛出可读错误而不是静默返回空。
         """
         try:
             from app.services.platforms import create_client

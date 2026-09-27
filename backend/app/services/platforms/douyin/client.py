@@ -306,11 +306,31 @@ class DouyinClient(BasePlatformClient):
         return items
 
     # =========================================================================
-    # 未实现的能力：显式声明，不静默返回空
+    # 详情
     # =========================================================================
 
     async def get_detail(self, item_id: str, **kwargs) -> NoteDetail:
-        raise NotImplementedError("[douyin] get_detail 暂未实现（未抓包确认，不猜端点）")
+        """获取详情。
+
+        抖音**没有**单独的"详情"接口需要调用——搜索结果里的 `aweme_info`
+        已经包含详情所需的一切（描述、作者、统计、视频地址、图集）。
+
+        所以有两条路径：
+          1. 调用方把搜索时的原始条目通过 `raw` 传进来 → 直接解析
+          2. 没传 `raw` → 显式报错，说明该怎么办
+
+        ## 为什么不按 item_id 反查（2026-09-27）
+
+        抖音确实有按 id 取视频的接口，但**未抓包确认就不猜路径**（仓库硬规则）。
+        而且搜索已经拿到完整数据，再请求一次既慢又容易撞上风控受限窗口。
+        """
+        raw = (kwargs or {}).get("raw")
+        if not raw:
+            raise NotImplementedError(
+                "[douyin] 详情需要搜索时的原始数据：请在结果里带上 raw_data。"
+                "抖音按 item_id 反查详情的接口尚未抓包确认，不猜路径。"
+            )
+        return _detail_from_raw(raw, item_id)
 
 
 # =============================================================================
@@ -387,6 +407,84 @@ def parse_search_item(item: Dict[str, Any]) -> Optional[SearchResult]:
         create_time=create_time,
         duration=duration,
         raw_data=item,
+    )
+
+
+def _detail_from_raw(raw: Dict[str, Any], item_id: str) -> NoteDetail:
+    """从搜索结果的原始条目构造详情。
+
+    搜索响应里的 `aweme_info` 已包含详情所需的一切，所以这里不重新请求。
+
+    能取到：
+      · 描述/标题、作者、统计（赞/评/转/藏/播放）
+      · 封面、时长
+      · **无水印视频地址**（play_addr 优先于 download_addr）
+      · 图集（image_infos 里的图片列表）
+
+    取不到的不编造（留空）。
+    """
+    info = (raw or {}).get("aweme_info") or {}
+    if not info:
+        # 容错：调用方可能直接传了 aweme_info
+        info = raw or {}
+
+    aweme_id = str(info.get("aweme_id") or item_id or "")
+    desc = info.get("desc") or ""
+
+    author = ""
+    author_id = ""
+    a = info.get("author")
+    if isinstance(a, dict):
+        author = a.get("nickname") or ""
+        author_id = str(a.get("uid") or a.get("sec_uid") or "")
+
+    stats = info.get("statistics") or {}
+    video = info.get("video") or {}
+    if not isinstance(video, dict):
+        video = {}
+
+    # 无水印视频：play_addr 通常是可直链的；退而求其次用 download_addr
+    video_url = ""
+    for key in ("play_addr", "play_addr_h264", "download_addr"):
+        video_url = _first_url(video.get(key))
+        if video_url:
+            break
+
+    cover = _first_url(video.get("cover")) or _first_url(video.get("origin_cover"))
+
+    # 图集（图文笔记）
+    images: List[str] = []
+    image_infos = info.get("image_infos")
+    if isinstance(image_infos, list):
+        for img in image_infos:
+            url = _first_url(img.get("url_list") if isinstance(img, dict) else img)
+            if url:
+                images.append(url)
+    if not cover and images:
+        cover = images[0]
+
+    duration_ms = _to_int(video.get("duration"))
+    is_image = bool(images)
+
+    return NoteDetail(
+        id=aweme_id,
+        title=desc,
+        desc=desc,
+        author=author,
+        author_id=author_id,
+        platform="douyin",
+        type="note" if is_image else "video",
+        images=images,
+        video=video_url,
+        video_cover=cover,
+        duration=duration_ms // 1000 if duration_ms else 0,
+        likes=_to_int(stats.get("digg_count")),
+        comments=_to_int(stats.get("comment_count")),
+        shares=_to_int(stats.get("share_count")),
+        collects=_to_int(stats.get("collect_count")),
+        views=_to_int(stats.get("play_count")),
+        create_time=_format_ts(info.get("create_time")),
+        raw_data=raw,
     )
 
 
