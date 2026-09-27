@@ -34,6 +34,8 @@ def extract_aweme_id(url: str) -> Optional[str]:
       https://www.douyin.com/note/7656457812507817841
       https://www.douyin.com/jingxuan?modal_id=7656457812507817841
       https://www.iesdouyin.com/share/video/7656457812507817841/
+
+    短链（v.douyin.com）需要先重定向，由 `_resolve_short_link` 处理。
     """
     if not url:
         return None
@@ -48,11 +50,61 @@ def extract_aweme_id(url: str) -> Optional[str]:
     return m.group(1) if m else None
 
 
+# 需要跟随重定向才能拿到 ID 的短链域名
+SHORT_LINK_HOSTS = ("v.douyin.com", "xhslink.com", "b23.tv", "t.cn")
+
+
+async def _resolve_short_link(url: str) -> str:
+    """跟随重定向拿到真实 URL。
+
+    实测（2026-09-27）：
+        https://v.douyin.com/iRNBho6u/  → 302 →
+        https://www.iesdouyin.com/share/video/7298145681699622182/?…
+    从中即可取出作品 ID。
+
+    不在已知短链域名上时**原样返回**（不做无谓请求）。
+    失败也原样返回，让上层走"提取不到 ID"的分支给可读错误。
+    """
+    if not any(h in (url or "") for h in SHORT_LINK_HOSTS):
+        return url
+
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(
+            follow_redirects=False,
+            timeout=20,
+            headers={"User-Agent": _DESKTOP_UA},
+        ) as client:
+            resp = await client.get(url)
+            location = resp.headers.get("location") or ""
+            if location:
+                logger.info(
+                    "[douyin_detail] 短链重定向: %s -> %s",
+                    url[:60], location[:90],
+                )
+                return location
+    except Exception as exc:
+        logger.warning(
+            "[douyin_detail] 短链重定向失败：%s: %s", type(exc).__name__, exc
+        )
+    return url
+
+
+_DESKTOP_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
+)
+
+
 async def fetch_douyin_detail(url: str) -> Dict[str, Any]:
     """取抖音作品详情，返回老 parser 期望的 dict。
 
     失败返回 {}（外层会 fallback 到 yt-dlp）。
     """
+    # 短链先重定向（实测 v.douyin.com 302 → iesdouyin.com/share/video/{id}）
+    url = await _resolve_short_link(url)
+
     aweme_id = extract_aweme_id(url)
     if not aweme_id:
         logger.warning("[douyin_detail] 无法从 URL 提取作品 ID: %s", url[:120])
