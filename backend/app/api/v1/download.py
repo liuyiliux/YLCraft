@@ -30,7 +30,11 @@ from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse, StreamingResponse, Response
 
 from app.services.breaker.service import parse_video_url
-from app.services.video.parser import get_cookie_manager, _detect_platform
+from app.services.video.parser import (
+    get_cookie_manager,
+    _detect_platform,
+    _extract_url_from_text,
+)
 from app.core.config import ensure_download_path, get_ffmpeg_path
 from app.services.download import parse_with_manager, download_with_manager, get_supported_platforms
 
@@ -458,8 +462,16 @@ async def _get_qualities(url: str, title: str, platform: str) -> list[VideoQuali
 
 @router.post("/parse", response_model=ParseResponse, summary="解析视频链接")
 async def parse_download_url(req: ParseRequest):
-    """解析视频链接，返回元数据 + 多清晰度列表"""
-    url = req.url
+    """解析视频链接，返回元数据 + 多清晰度列表。
+
+    入参可以是**纯链接**，也可以是**平台分享文本**——
+    真实用户常用后者（"7.43 复制打开抖音，看看…https://v.douyin.com/xxx/"）。
+    见 `_extract_url_from_text`。
+    """
+    # 从分享文本里提取链接（纯链接会原样返回）
+    url = _extract_url_from_text(req.url)
+    if url != req.url.strip():
+        logger.info("[parse] 从分享文本提取到链接: %s", url[:120])
     parsed_asset_id = ""
 
     # 0. 检测微信公众号文章链接
@@ -623,14 +635,38 @@ async def parse_download_url(req: ParseRequest):
         logger.warning(f"[parse] 解析结果无效（无 video_url 和 images），返回失败: url={url[:80]}")
         
         # 智能错误提示
+        #
+        # 原则：**按平台给出可操作的原因**。
+        # 原来只有一句通用的"未找到视频或图片数据"，用户完全不知道
+        # 是链接错了、还是平台不支持、还是缺 token（实测用户会困惑）。
         error_msg = "未找到视频或图片数据，请检查链接是否正确，或尝试使用其他平台的链接"
         url_lower = url.lower()
-        
+
         if "twitter.com" in url_lower or "x.com" in url_lower:
             error_msg = "未能解析 Twitter/X 内容，可能需要登录或内容不公开"
         elif "telegram.org" in url_lower or "t.me" in url_lower:
             error_msg = "未能解析 Telegram 内容，可能需要登录或内容不公开"
-        
+        elif "xiaohongshu.com" in url_lower or "xhslink.com" in url_lower:
+            # 小红书最常见的失败原因是**缺 xsec_token**
+            if "xsec_token=" not in url_lower:
+                error_msg = (
+                    "小红书链接缺少 xsec_token，无法打开笔记。"
+                    "请在 YLCraft「采集与下载」页搜索小红书，"
+                    "然后从结果里点开笔记、复制完整链接（含 xsec_token）再解析。"
+                )
+            else:
+                error_msg = (
+                    "未能解析小红书笔记。可能是笔记已删除/私密，"
+                    "或登录态失效——可在「账号中心」检查小红书连接状态。"
+                )
+        elif "douyin.com" in url_lower:
+            error_msg = (
+                "未能解析抖音作品。可能是作品已删除、仅作者可见，"
+                "或登录态失效——可在「账号中心」检查抖音连接状态。"
+            )
+        elif "bilibili.com" in url_lower or "b23.tv" in url_lower:
+            error_msg = "未能解析 B 站内容，可能是视频已失效或仅限登录用户观看"
+
         return ParseResponse(
             success=False,
             title=title,
