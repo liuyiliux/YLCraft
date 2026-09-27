@@ -41,6 +41,12 @@ class SearchRequest(BaseModel):
     keyword: str = Field(..., description="搜索关键词")
     max_results: int = Field(20, description="最大结果数", ge=1, le=100)
     crawl_type: str = Field("search", description="采集类型")
+    # 平台连接 ID：后端据此取 Cookie。
+    #
+    # ⚠️ 缺了它抖音会退化成游客态（status_code=2483）→ **结果恒为空**。
+    #    画布的 platform_search 节点走 /crawler/search（本模型），
+    #    此前没有这个字段，于是画布搜抖音一直是 0（2026-09-27 修）。
+    conn_id: str = Field("", description="平台连接 ID（用于取登录态）")
 
 class CrawlerResult(BaseModel):
     """采集结果项"""
