@@ -259,3 +259,40 @@ COLLECTION「回到千禧年」
 | `services/cookies/platforms/douyin.py` | 登录态检测器 |
 
 测试：`tests/test_douyin_*.py`（搜索类型 / 重试 / 翻页 / 详情 / 详情接口 / 体检）
+
+---
+
+## 八、图文下载的完整链路（2026-09-27）
+
+用户从「内容去水印解析」页贴链接到拿到图片，经过：
+
+```
+前端 /download 页
+  → POST /api/v1/download/parse
+      → services/video/parser.py::parse()
+          → platforms/douyin/detail_adapter.py::fetch_douyin_detail()
+              → platforms/douyin/client.py::get_detail()   ← 真实详情接口
+  → 响应带 content_type=image + images[N]
+前端渲染图集卡片
+  → POST /api/v1/download/download-images
+      → 后端带 Referer 逐张下载 → backend/downloads/douyin/{标题}/
+```
+
+### 图片显示 vs 图片下载的代理关系
+
+两处**都靠 Referer 绕过图床防盗链**，只是执行位置不同：
+
+| 场景 | 链路 |
+|------|------|
+| 界面显示缩略图 | 前端 → `/api/v1/proxy/image?url=…` → 后端加 Referer → CDN |
+| 下载图片到本地 | 前端 → `/api/v1/download/download-images` → 后端加 Referer → CDN |
+
+白名单在 `backend/app/api/v1/proxy.py`（`douyinpic.com` / `xhscdn.com` 等），
+下载端点内也有一份等价的平台→Referer 映射。**没有另起一套代理。**
+
+### 实测结果
+
+| 平台 | 解析 | 下载 |
+|------|------|------|
+| 抖音图文 | 9 张（原图 2160×2880） | 383 / 311 / 292 KB，`RIFF….WEBP` |
+| 小红书图文 | 3 张（与页面 `1/3` 指示器一致） | 107 KB，`RIFF….WEBP` |

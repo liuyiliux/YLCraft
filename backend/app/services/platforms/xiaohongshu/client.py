@@ -96,12 +96,18 @@ class XiaohongshuClient(BasePlatformClient):
 
     async def get_detail(self, item_id: str, **kwargs) -> Optional[NoteDetail]:
         """
-        获取笔记详情
+        获取笔记详情。
+
+        ⚠️ API 模式已失效（端点废弃 + 签名限制），会显式报错。
+        详情走 patchright（浏览器打开笔记页读 DOM）。
+
+        kwargs 可带：
+          · `url`        —— 原链接（含 xsec_token，最可靠）
+          · `xsec_token` —— 单独传 token（会拼成 /explore/{id}?xsec_token=…）
         """
         if self.config.mode == ClientMode.PATCHRIGHT:
-            return await get_detail_via_patchright(self, item_id)
-        else:
-            return await get_detail_via_api(self, item_id)
+            return await get_detail_via_patchright(self, item_id, **kwargs)
+        return await get_detail_via_api(self, item_id)
 
     # =========================================================================
     # 可选方法（子类可选实现）

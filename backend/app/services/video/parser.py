@@ -534,6 +534,37 @@ async def parse(url_or_text: str) -> VideoInfo:
         except Exception as e:
             logger.warning(f"[parser] B站 API 解析异常，fallback 到 yt-dlp: {e}")
 
+    # 小红书：走笔记详情（2026-09-27 新增）
+    #
+    # 小红书 API 端点已失效（edith…/v1/feed 返回 code:300011，缺 X-s/X-t 签名），
+    # 所以走浏览器打开笔记页读 DOM。
+    # ⚠️ 必须带链接里的 xsec_token，否则页面显示「当前笔记暂时无法浏览」。
+    if platform == "xiaohongshu":
+        try:
+            from app.services.platforms.xiaohongshu.detail_adapter import (
+                fetch_xhs_detail,
+            )
+
+            detail = await fetch_xhs_detail(url)
+            if detail and (detail.get("video_url") or detail.get("images")):
+                info.video_url = detail.get("video_url", "")
+                info.cover_url = detail.get("cover_url", "")
+                info.title = detail.get("title", "")
+                info.author_name = detail.get("author_name", "")
+                info.author_uid = detail.get("author_uid", "")
+                info.duration = detail.get("duration", 0)
+                info.like_count = detail.get("like_count", 0)
+                info.comment_count = detail.get("comment_count", 0)
+                info.share_count = detail.get("share_count", 0)
+                info.collect_count = detail.get("collect_count", 0)
+                info.content_type = detail.get("content_type", "note")
+                info.images = detail.get("images", [])
+                info.parse_method = "xiaohongshu_patchright"
+                return info
+            logger.warning("[parser] 小红书详情未返回可用数据，fallback 到 yt-dlp")
+        except Exception as e:
+            logger.warning(f"[parser] 小红书详情解析异常，fallback 到 yt-dlp: {e}")
+
     # 抖音：改用官方详情接口（2026-09-27 实测发现）
     #
     # ⚠️ 旧的 iesdouyin 分享页方案**已失效**——抖音把数据改成前端异步加载，
