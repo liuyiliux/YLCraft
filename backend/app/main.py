@@ -456,9 +456,14 @@ def _register_routes():
     #
     # 统一成 /api/v1/users/*?platform=xxx，前端可共用同一个面板。
     # B站保持既有 /api/v1/bilibili/up/* 不变（不破坏既有调用）。
+    #
+    # ⚠️ 这里必须写成 `users.router`（不能起别名如 `users_api.router`）：
+    # `tools/generate_api_surface.py` 靠 `xxx.router` 里的 `xxx` 找
+    # `app/api/v1/{xxx}.py`，起了别名它会找不到文件、**静默漏掉这些路由**
+    # （实测：起了别名后 3 个端点全都没进 API_SURFACE.md）。
     try:
-        from app.api.v1 import users as users_api
-        app.include_router(users_api.router, prefix="/api/v1/users", tags=["Users"])
+        from app.api.v1 import users
+        app.include_router(users.router, prefix="/api/v1/users", tags=["Users"])
     except Exception as e:
         logger.warning(f"Could not load users router: {e}")
 

@@ -29,6 +29,7 @@ import PublishPage from './pages/publish'
 import CrawlerPage from './pages/crawler'
 import UpAnalyticsPage from './pages/up-analytics'
 import PlatformUsersPage from './pages/platform-users'
+import MyPlatformDataPage from './pages/my-platform-data'
 import MyDataPage from './pages/my-data'
 import ComfyUIPage from './pages/comfyui'
 import ImageEditorPage from './pages/image-editor'
@@ -105,6 +106,7 @@ export default function App() {
               <Route path="crawler" element={<CrawlerPage />} />
               <Route path="up-analytics" element={<UpAnalyticsPage />} />
               <Route path="platform-users" element={<PlatformUsersPage />} />
+              <Route path="my-platform-data" element={<MyPlatformDataPage />} />
               <Route path="my-data" element={<MyDataPage />} />
               <Route path="inspiration" element={<InspirationPage />} />
               <Route path="image-editor" element={<ImageEditorPage />} />

@@ -127,6 +127,17 @@ class XiaohongshuClient(BasePlatformClient):
 
         return await _impl(self, keyword, max_results)
 
+    async def get_self_profile(self) -> Optional[UserProfile]:
+        """查**自己**的资料（做「我的数据」用）。
+
+        两步走：`v2/user/me` 拿基础资料（**无粉丝数**）→
+        用 user_id 调 `user/otherinfo` 补统计。
+        实测：昵称=逸流AI / 粉丝=195 / 关注=2 / 获赞与收藏=2930 / 作品=73。
+        """
+        from .user import get_self_profile as _impl
+
+        return await _impl(self)
+
     async def get_user_profile(self, user_id: str) -> Optional[UserProfile]:
         """查**他人**资料（GET `user/otherinfo` + 签名）。
 

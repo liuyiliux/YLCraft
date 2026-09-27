@@ -92,6 +92,7 @@ const menuItems: MenuProps['items'] = [
       { key: '/breaker', label: navLabel('爆款拆解', '实验') },
       { key: '/up-analytics', label: navLabel('UP主分析', '实验') },
       { key: '/platform-users', label: navLabel('博主中心', '实验') },
+      { key: '/my-platform-data', label: navLabel('我的数据(抖音/小红书)', '实验') },
       { key: '/my-data', label: navLabel('我的数据', '实验') },
       { key: '/inspiration', label: navLabel('灵感广场', '实验') },
       { key: '/provenance-clean', icon: <SafetyCertificateOutlined />, label: '审计去水印' },

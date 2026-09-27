@@ -321,11 +321,43 @@
       ]
     },
     {
-      "name": "bilibili",
+      "name": "users",
+      "file": "backend/app/api/v1/users.py",
+      "prefix": "/api/v1/users",
+      "tags": [
+        "Users"
+      ]
+    },
+    {
+      "name": "bili_router",
       "file": "backend/app/services/platforms/bilibili/routes.py",
       "prefix": "/api/v1/bilibili",
       "tags": [
         "Crawler — Bilibili"
+      ]
+    },
+    {
+      "name": "fanqie_router",
+      "file": "backend/app/services/platforms/fanqie/routes.py",
+      "prefix": "/api/v1/fanqie",
+      "tags": [
+        "Crawler — Fanqie"
+      ]
+    },
+    {
+      "name": "douyin_router",
+      "file": "backend/app/services/platforms/douyin/routes.py",
+      "prefix": "/api/v1/douyin",
+      "tags": [
+        "Crawler — Douyin"
+      ]
+    },
+    {
+      "name": "xhs_router",
+      "file": "backend/app/services/platforms/xiaohongshu/routes.py",
+      "prefix": "/api/v1/xhs",
+      "tags": [
+        "Crawler — Xiaohongshu"
       ]
     },
     {
@@ -2773,7 +2805,7 @@
     {
       "method": "POST",
       "path": "/api/v1/bilibili/comment/send",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/comment/send",
       "tags": [
@@ -2789,7 +2821,7 @@
     {
       "method": "GET",
       "path": "/api/v1/bilibili/comments",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/comments",
       "tags": [
@@ -2805,7 +2837,7 @@
     {
       "method": "GET",
       "path": "/api/v1/bilibili/danmaku",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/danmaku",
       "tags": [
@@ -2821,7 +2853,7 @@
     {
       "method": "GET",
       "path": "/api/v1/bilibili/favorites",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/favorites",
       "tags": [
@@ -2837,7 +2869,7 @@
     {
       "method": "GET",
       "path": "/api/v1/bilibili/favorites/{media_id}",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/favorites/{media_id}",
       "tags": [
@@ -2853,7 +2885,7 @@
     {
       "method": "GET",
       "path": "/api/v1/bilibili/followings",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/followings",
       "tags": [
@@ -2869,7 +2901,7 @@
     {
       "method": "GET",
       "path": "/api/v1/bilibili/history",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/history",
       "tags": [
@@ -2885,7 +2917,7 @@
     {
       "method": "GET",
       "path": "/api/v1/bilibili/history/search",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/history/search",
       "tags": [
@@ -2901,7 +2933,7 @@
     {
       "method": "GET",
       "path": "/api/v1/bilibili/login-health",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/login-health",
       "tags": [
@@ -2917,7 +2949,7 @@
     {
       "method": "GET",
       "path": "/api/v1/bilibili/paid-course/detail",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/paid-course/detail",
       "tags": [
@@ -2933,7 +2965,7 @@
     {
       "method": "GET",
       "path": "/api/v1/bilibili/paid-course/download",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/paid-course/download",
       "tags": [
@@ -2949,7 +2981,7 @@
     {
       "method": "POST",
       "path": "/api/v1/bilibili/paid-course/download-task",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/paid-course/download-task",
       "tags": [
@@ -2965,7 +2997,7 @@
     {
       "method": "GET",
       "path": "/api/v1/bilibili/paid-course/download-task/{task_id}",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/paid-course/download-task/{task_id}",
       "tags": [
@@ -2981,7 +3013,7 @@
     {
       "method": "GET",
       "path": "/api/v1/bilibili/paid-course/playurl",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/paid-course/playurl",
       "tags": [
@@ -2997,7 +3029,7 @@
     {
       "method": "GET",
       "path": "/api/v1/bilibili/paid-courses",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/paid-courses",
       "tags": [
@@ -3013,7 +3045,7 @@
     {
       "method": "GET",
       "path": "/api/v1/bilibili/series/{series_id}",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/series/{series_id}",
       "tags": [
@@ -3029,7 +3061,7 @@
     {
       "method": "GET",
       "path": "/api/v1/bilibili/stats",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/stats",
       "tags": [
@@ -3045,7 +3077,7 @@
     {
       "method": "GET",
       "path": "/api/v1/bilibili/subtitle/download",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/subtitle/download",
       "tags": [
@@ -3061,7 +3093,7 @@
     {
       "method": "GET",
       "path": "/api/v1/bilibili/subtitles",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/subtitles",
       "tags": [
@@ -3077,7 +3109,7 @@
     {
       "method": "GET",
       "path": "/api/v1/bilibili/up/profile",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/up/profile",
       "tags": [
@@ -3093,7 +3125,7 @@
     {
       "method": "GET",
       "path": "/api/v1/bilibili/up/ranking",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/up/ranking",
       "tags": [
@@ -3109,7 +3141,7 @@
     {
       "method": "GET",
       "path": "/api/v1/bilibili/up/series",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/up/series",
       "tags": [
@@ -3125,7 +3157,7 @@
     {
       "method": "GET",
       "path": "/api/v1/bilibili/up/videos",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/up/videos",
       "tags": [
@@ -3141,7 +3173,7 @@
     {
       "method": "GET",
       "path": "/api/v1/bilibili/up/{uid}/favorites",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/up/{uid}/favorites",
       "tags": [
@@ -3157,7 +3189,7 @@
     {
       "method": "GET",
       "path": "/api/v1/bilibili/video/info",
-      "router": "bilibili",
+      "router": "bili_router",
       "prefix": "/api/v1/bilibili",
       "local_path": "/video/info",
       "tags": [
@@ -4990,7 +5022,7 @@
       "summary": "批量获取无水印资源",
       "function": "fetch_no_watermark",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 374,
+      "line": 396,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5006,7 +5038,7 @@
       "summary": "导入到素材库",
       "function": "import_to_assets",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 199,
+      "line": 204,
       "response_model": "ImportResponse",
       "include_in_schema": true
     },
@@ -5022,7 +5054,7 @@
       "summary": "获取笔记详情（无水印）",
       "function": "get_note_detail",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 298,
+      "line": 320,
       "response_model": "NoteDetailResponse",
       "include_in_schema": true
     },
@@ -5038,7 +5070,7 @@
       "summary": "获取采集配置选项",
       "function": "get_options",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 160,
+      "line": 165,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5054,7 +5086,7 @@
       "summary": "获取支持的平台列表",
       "function": "get_platforms",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 154,
+      "line": 159,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5070,7 +5102,7 @@
       "summary": "搜索视频/图文素材",
       "function": "search_materials",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 169,
+      "line": 174,
       "response_model": "SearchResponse",
       "include_in_schema": true
     },
@@ -5086,7 +5118,7 @@
       "summary": "增强搜索（支持笔记/用户）",
       "function": "search_enhanced",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 243,
+      "line": 265,
       "response_model": "SearchResponse",
       "include_in_schema": true
     },
@@ -5102,7 +5134,7 @@
       "summary": "查询采集任务状态",
       "function": "get_task_status",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 228,
+      "line": 250,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6340,6 +6372,38 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/douyin/health",
+      "router": "douyin_router",
+      "prefix": "/api/v1/douyin",
+      "local_path": "/health",
+      "tags": [
+        "Crawler — Douyin"
+      ],
+      "summary": "抖音客户端健康检查",
+      "function": "douyin_health",
+      "file": "backend/app/services/platforms/douyin/routes.py",
+      "line": 37,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/douyin/search",
+      "router": "douyin_router",
+      "prefix": "/api/v1/douyin",
+      "local_path": "/search",
+      "tags": [
+        "Crawler — Douyin"
+      ],
+      "summary": "抖音搜索（直连）",
+      "function": "douyin_search",
+      "file": "backend/app/services/platforms/douyin/routes.py",
+      "line": 50,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/download/cover-proxy",
       "router": "download",
       "prefix": "/api/v1/download",
@@ -6350,7 +6414,7 @@
       "summary": "封面图代理（弃用，请使用 /api/v1/proxy/image）",
       "function": "cover_proxy",
       "file": "backend/app/api/v1/download.py",
-      "line": 1364,
+      "line": 1400,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6366,7 +6430,7 @@
       "summary": "通过 yt-dlp 下载视频（返回文件流）",
       "function": "download_video",
       "file": "backend/app/api/v1/download.py",
-      "line": 846,
+      "line": 882,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6382,7 +6446,7 @@
       "summary": "下载图集图片到本地",
       "function": "download_images",
       "file": "backend/app/api/v1/download.py",
-      "line": 1395,
+      "line": 1431,
       "response_model": "DownloadImagesResponse",
       "include_in_schema": true
     },
@@ -6398,7 +6462,7 @@
       "summary": "打开文件夹并选中文件（Windows）",
       "function": "open_folder",
       "file": "backend/app/api/v1/download.py",
-      "line": 1353,
+      "line": 1389,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6414,7 +6478,7 @@
       "summary": "解析视频链接",
       "function": "parse_download_url",
       "file": "backend/app/api/v1/download.py",
-      "line": 460,
+      "line": 464,
       "response_model": "ParseResponse",
       "include_in_schema": true
     },
@@ -6430,7 +6494,7 @@
       "summary": "创建下载任务（后台，后台轮询）",
       "function": "create_download_task",
       "file": "backend/app/api/v1/download.py",
-      "line": 1305,
+      "line": 1341,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6446,7 +6510,7 @@
       "summary": "查询下载任务状态",
       "function": "get_download_task",
       "file": "backend/app/api/v1/download.py",
-      "line": 1329,
+      "line": 1365,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6799,6 +6863,150 @@
       "function": "revoke_external_api_key",
       "file": "backend/app/api/v1/external_api_keys.py",
       "line": 68,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fanqie/book/{book_id}/chapters",
+      "router": "fanqie_router",
+      "prefix": "/api/v1/fanqie",
+      "local_path": "/book/{book_id}/chapters",
+      "tags": [
+        "Crawler — Fanqie"
+      ],
+      "summary": "章节列表",
+      "function": "book_chapters",
+      "file": "backend/app/services/platforms/fanqie/routes.py",
+      "line": 198,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fanqie/book/{book_id}/drafts",
+      "router": "fanqie_router",
+      "prefix": "/api/v1/fanqie",
+      "local_path": "/book/{book_id}/drafts",
+      "tags": [
+        "Crawler — Fanqie"
+      ],
+      "summary": "草稿箱列表",
+      "function": "book_drafts",
+      "file": "backend/app/services/platforms/fanqie/routes.py",
+      "line": 231,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/fanqie/book/{book_id}/drafts",
+      "router": "fanqie_router",
+      "prefix": "/api/v1/fanqie",
+      "local_path": "/book/{book_id}/drafts",
+      "tags": [
+        "Crawler — Fanqie"
+      ],
+      "summary": "新建番茄草稿（自动建章）",
+      "function": "create_book_draft",
+      "file": "backend/app/services/platforms/fanqie/routes.py",
+      "line": 263,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fanqie/book/{book_id}/stats",
+      "router": "fanqie_router",
+      "prefix": "/api/v1/fanqie",
+      "local_path": "/book/{book_id}/stats",
+      "tags": [
+        "Crawler — Fanqie"
+      ],
+      "summary": "单本书数据统计",
+      "function": "book_stats",
+      "file": "backend/app/services/platforms/fanqie/routes.py",
+      "line": 110,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fanqie/book/{book_id}/volumes",
+      "router": "fanqie_router",
+      "prefix": "/api/v1/fanqie",
+      "local_path": "/book/{book_id}/volumes",
+      "tags": [
+        "Crawler — Fanqie"
+      ],
+      "summary": "卷列表",
+      "function": "book_volumes",
+      "file": "backend/app/services/platforms/fanqie/routes.py",
+      "line": 176,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fanqie/earnings",
+      "router": "fanqie_router",
+      "prefix": "/api/v1/fanqie",
+      "local_path": "/earnings",
+      "tags": [
+        "Crawler — Fanqie"
+      ],
+      "summary": "收益分析",
+      "function": "earnings",
+      "file": "backend/app/services/platforms/fanqie/routes.py",
+      "line": 304,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fanqie/hot-list",
+      "router": "fanqie_router",
+      "prefix": "/api/v1/fanqie",
+      "local_path": "/hot-list",
+      "tags": [
+        "Crawler — Fanqie"
+      ],
+      "summary": "热门故事 / 开书灵感",
+      "function": "hot_list",
+      "file": "backend/app/services/platforms/fanqie/routes.py",
+      "line": 130,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fanqie/my/books",
+      "router": "fanqie_router",
+      "prefix": "/api/v1/fanqie",
+      "local_path": "/my/books",
+      "tags": [
+        "Crawler — Fanqie"
+      ],
+      "summary": "我的书籍列表（番茄作家后台）",
+      "function": "my_books",
+      "file": "backend/app/services/platforms/fanqie/routes.py",
+      "line": 93,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fanqie/my/profile",
+      "router": "fanqie_router",
+      "prefix": "/api/v1/fanqie",
+      "local_path": "/my/profile",
+      "tags": [
+        "Crawler — Fanqie"
+      ],
+      "summary": "作家资料",
+      "function": "my_profile",
+      "file": "backend/app/services/platforms/fanqie/routes.py",
+      "line": 150,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10676,6 +10884,70 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/users/me",
+      "router": "users",
+      "prefix": "/api/v1/users",
+      "local_path": "/me",
+      "tags": [
+        "Users"
+      ],
+      "summary": "获取自己账号的资料（抖音/小红书）",
+      "function": "get_self_profile",
+      "file": "backend/app/api/v1/users.py",
+      "line": 184,
+      "response_model": "UserProfileResponse",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/users/profile",
+      "router": "users",
+      "prefix": "/api/v1/users",
+      "local_path": "/profile",
+      "tags": [
+        "Users"
+      ],
+      "summary": "获取用户资料（抖音/小红书）",
+      "function": "get_user_profile",
+      "file": "backend/app/api/v1/users.py",
+      "line": 223,
+      "response_model": "UserProfileResponse",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/users/search",
+      "router": "users",
+      "prefix": "/api/v1/users",
+      "local_path": "/search",
+      "tags": [
+        "Users"
+      ],
+      "summary": "搜索用户（抖音/小红书）",
+      "function": "search_users",
+      "file": "backend/app/api/v1/users.py",
+      "line": 155,
+      "response_model": "UserSearchResponse",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/users/videos",
+      "router": "users",
+      "prefix": "/api/v1/users",
+      "local_path": "/videos",
+      "tags": [
+        "Users"
+      ],
+      "summary": "获取用户作品列表（抖音/小红书）",
+      "function": "get_user_videos",
+      "file": "backend/app/api/v1/users.py",
+      "line": 260,
+      "response_model": "UserVideosResponse",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/videos/backends",
       "router": "videos",
       "prefix": "/api/v1/videos",
@@ -11519,6 +11791,22 @@
       "function": "ws_status",
       "file": "backend/app/api/v1/ws.py",
       "line": 84,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/xhs/login-health",
+      "router": "xhs_router",
+      "prefix": "/api/v1/xhs",
+      "local_path": "/login-health",
+      "tags": [
+        "Crawler — Xiaohongshu"
+      ],
+      "summary": "小红书登录态体检",
+      "function": "xhs_login_health",
+      "file": "backend/app/services/platforms/xiaohongshu/routes.py",
+      "line": 30,
       "response_model": "",
       "include_in_schema": true
     }

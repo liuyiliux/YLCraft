@@ -420,6 +420,28 @@ class DouyinClient(BasePlatformClient):
 
         return out[:want]
 
+    async def get_self_profile(self) -> Optional[UserProfile]:
+        """查**自己**的资料（做「我的数据」用）。
+
+        实测（账号本人）：
+            昵称=逸流AI  抖音号=46906933844
+            粉丝=122  关注=3  获赞=2735  作品=22
+
+        与 `get_user_profile(sec_uid)` 的区别：这个不需要参数，
+        用当前 Cookie 的登录态。
+        """
+        data = await self._call(
+            PROFILE_SELF,
+            {"aid": DEFAULT_AID, "device_platform": DEFAULT_DEVICE_PLATFORM},
+        )
+        user = data.get("user")
+        if not isinstance(user, dict) or not user:
+            logger.warning("[douyin] profile/self 未返回 user（可能未登录）")
+            return None
+        profile = parse_user_info(user)
+        # 自查接口给的是 uid 而非 sec_uid 时，sec_uid 也在 user 里
+        return profile
+
     async def get_user_profile(self, sec_user_id: str) -> Optional[UserProfile]:
         """查用户资料。
 

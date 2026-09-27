@@ -1396,6 +1396,13 @@ export const searchPlatformUsers = (platform: string, keyword: string, maxResult
     `&keyword=${encodeURIComponent(keyword)}&max_results=${maxResults}`,
   )
 
+/**
+ * 查**自己账号**的资料（不需要传 user_id，用连接里的登录态）。
+ * 实测：抖音 粉丝122/作品22；小红书 粉丝195/作品73。
+ */
+export const getMyPlatformProfile = (platform: string) =>
+  request(`/users/me?platform=${encodeURIComponent(platform)}`)
+
 export const getPlatformUserProfile = (
   platform: string,
   opts: { userId?: string; secUid?: string },

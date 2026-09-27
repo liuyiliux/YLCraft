@@ -72,8 +72,21 @@ USER_SEARCH = "/api/sns/web/v1/search/usersearch"
 #       （每项 {count, type}，type 如 "fans"/"follows"/"interaction"）。
 USER_OTHERINFO = "/api/sns/web/v1/user/otherinfo"
 
-# 查自己（GET）。保留常量以便后续做"我的数据"。
-USER_SELFINFO = "/api/sns/web/v1/user/selfinfo"
+# 查自己（GET，无需参数）。
+#
+#   GET /api/sns/web/v2/user/me
+#   → {"code":0,"data":{user_id, nickname, desc, gender, imageb,
+#                       red_id, guest, xsec_token, images}}
+#
+# ⚠️ **不含粉丝数/关注数/作品数** —— 拿到 user_id 后要再调
+#    `USER_OTHERINFO` 补统计（见 user.get_self_profile）。
+#
+# 实测（账号本人）：昵称=逸流AI  red_id=95645311698
+#                   desc=分享ai知识，入口，提示词
+USER_SELFINFO = "/api/sns/web/v2/user/me"
+
+# 旧版自查端点（保留常量以便对照，未使用）
+USER_SELFINFO_V1 = "/api/sns/web/v1/user/selfinfo"
 
 # 用户作品列表（GET）
 #
