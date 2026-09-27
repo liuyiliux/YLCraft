@@ -414,6 +414,17 @@ export const getLineageGraphData = (assetId?: string) => {
 export const parseDownloadUrl = (url: string) =>
   request('/download/parse', { method: 'POST', body: JSON.stringify({ url }) })
 
+/**
+ * 下载图集图片到本地（2026-09-27）。
+ * 抖音/小红书图文笔记是多图作品，解析后拿到 N 个地址，
+ * 这里一次性落盘到 backend/downloads/{平台}/{标题}/。
+ */
+export const downloadImages = (urls: string[], title?: string, platform?: string) =>
+  request('/download/download-images', {
+    method: 'POST',
+    body: JSON.stringify({ urls, title: title || '图集', platform: platform || '' }),
+  })
+
 export const createDownloadTask = (url: string, quality?: string, title?: string, pageUrl?: string, assetId?: string) =>
   request('/download/tasks', { method: 'POST', body: JSON.stringify({ url, quality, title, page_url: pageUrl, asset_id: assetId }) })
 

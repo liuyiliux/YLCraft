@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import {
-  Alert, Card, Input, Button, Typography, Tag, Spin, message, Space, Divider, Progress, Table, Upload, Modal,
+  Alert, Card, Input, Button, Typography, Tag, Spin, message, Space, Divider, Progress, Table, Upload, Modal, Image,
 } from 'antd'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -28,6 +28,7 @@ import {
   selectTorrentFiles,
   uploadTorrentFile,
   createDownloadTask,
+  downloadImages,
   getDownloadTask,
   wechatMpDownloadSingle,
 } from '../../api'
@@ -873,6 +874,10 @@ export default function DownloadPage() {
   const [result, setResult] = useState<DownloadParseResponse | null>(null)
   const [error, setError] = useState('')
   const [downloading, setDownloading] = useState(false)
+  // 图集下载状态（2026-09-27 新增）
+  const [downloadingImages, setDownloadingImages] = useState(false)
+  const [downloadingImageIndex, setDownloadingImageIndex] = useState<number | null>(null)
+  const [downloadedImages, setDownloadedImages] = useState<string[]>([])
   const [dlProgress, setDlProgress] = useState(0)
   const [dlError, setDlError] = useState('')
   const [savedFilePath, setSavedFilePath] = useState('')
@@ -915,6 +920,27 @@ export default function DownloadPage() {
 
   const urlHint = getUrlHint(url)
 
+  /**
+   * 图集图片走后端代理：抖音/小红书的图床有防盗链（Referer 校验），
+   * 直接 <img src> 会 403，必须经 `/api/v1/proxy/image` 带正确 Referer 取。
+   */
+  const proxyImage = (u: string) => {
+    if (!u) return ''
+    const needProxy = ['douyinpic.com', 'douyin.com', 'xhscdn.com', 'hdslb.com', 'mmbiz.qpic.cn']
+      .some((d) => u.includes(d))
+    return needProxy ? `/api/v1/proxy/image?url=${encodeURIComponent(u)}` : u
+  }
+
+  // 图片加载失败时的占位（避免整块空白）
+  const FALLBACK_IMG =
+    'data:image/svg+xml;base64,' +
+    btoa(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="140" height="186">' +
+      '<rect width="140" height="186" fill="#1f2937"/>' +
+      '<text x="70" y="93" fill="#6b7280" font-size="12" text-anchor="middle">加载失败</text>' +
+      '</svg>'
+    )
+
   const handleParse = async () => {
     if (!url.trim()) { message.warning('请输入视频链接'); return }
     const trimmed = url.trim()
@@ -933,6 +959,49 @@ export default function DownloadPage() {
   const openSavedFolder = async (filePath: string) => {
     if (!filePath) return
     try { await openFolder(filePath) } catch { message.error('无法打开文件夹') }
+  }
+
+  /** 下载图集里的**单张**图片。 */
+  const handleDownloadImage = async (imgUrl: string, index: number) => {
+    if (!result || !imgUrl) return
+    setDownloadingImageIndex(index)
+    try {
+      const res = await downloadImages([imgUrl], result.title, result.platform)
+      if (res?.saved?.length) {
+        setDownloadedImages((prev) => [...prev, ...res.saved])
+        message.success(`第 ${index} 张已保存`)
+      } else {
+        message.error(res?.failed?.[0]?.error || '下载失败')
+      }
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail || '下载失败')
+    } finally {
+      setDownloadingImageIndex(null)
+    }
+  }
+
+  /** 下载图集里的**全部**图片。 */
+  const handleDownloadAllImages = async () => {
+    if (!result?.images?.length) return
+    setDownloadingImages(true)
+    try {
+      const res = await downloadImages(result.images, result.title, result.platform)
+      const okCount = res?.saved?.length || 0
+      const failCount = res?.failed?.length || 0
+      if (okCount) {
+        setDownloadedImages((prev) => [...prev, ...res.saved])
+      }
+      if (failCount) {
+        // 部分失败要如实告知，不能只报"成功"
+        message.warning(`成功 ${okCount} 张，失败 ${failCount} 张`)
+      } else if (okCount) {
+        message.success(`已下载 ${okCount} 张到本地`)
+      }
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail || '下载失败')
+    } finally {
+      setDownloadingImages(false)
+    }
   }
 
   const handleDownload = async (quality: VideoQuality | null, isAudio = false) => {
@@ -1200,6 +1269,75 @@ export default function DownloadPage() {
               </div>
             </div>
           </Card>
+
+          {/* 图文图集（多图笔记）——2026-09-27 新增
+              此前后端不返回 images、前端也没有展示区，
+              抖音/小红书解析出的整套原图无处可见。
+              这里逐张展示，并支持单张下载与「全部下载」。 */}
+          {result.images && result.images.length > 0 && (
+            <Card
+              title={
+                <Space>
+                  <PictureOutlined style={{ color: '#22d3ee' }} />
+                  <Text style={{ color: '#22d3ee' }}>图文图集</Text>
+                  <Tag color="cyan">{result.images.length} 张</Tag>
+                </Space>
+              }
+              extra={
+                <Button
+                  type="primary"
+                  icon={<CloudDownloadOutlined />}
+                  loading={downloadingImages}
+                  onClick={handleDownloadAllImages}
+                >
+                  全部下载
+                </Button>
+              }
+              style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}
+            >
+              <Image.PreviewGroup>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  {result.images.map((imgUrl: string, i: number) => (
+                    <div key={i} style={{ width: 140 }}>
+                      <div style={{ position: 'relative' }}>
+                        <Image
+                          src={proxyImage(imgUrl)}
+                          width={140}
+                          height={186}
+                          style={{ objectFit: 'cover', borderRadius: 6 }}
+                          fallback={FALLBACK_IMG}
+                        />
+                        <Button
+                          size="small"
+                          icon={<DownloadOutlined />}
+                          onClick={() => handleDownloadImage(imgUrl, i + 1)}
+                          loading={downloadingImageIndex === i + 1}
+                          style={{ position: 'absolute', right: 6, bottom: 6 }}
+                        />
+                      </div>
+                      <Text style={{ fontSize: 11, color: THEME.textSecondary, display: 'block', marginTop: 4 }}>
+                        第 {i + 1} 张
+                      </Text>
+                    </div>
+                  ))}
+                </div>
+              </Image.PreviewGroup>
+
+              {downloadedImages.length > 0 && (
+                <Alert
+                  type="success"
+                  showIcon
+                  style={{ marginTop: 12 }}
+                  message={`已下载 ${downloadedImages.length} 张图片`}
+                  description={
+                    <Text style={{ fontSize: 12, wordBreak: 'break-all' }}>
+                      {downloadedImages[0]}
+                    </Text>
+                  }
+                />
+              )}
+            </Card>
+          )}
 
           {/* 视频下载（仅在有视频时显示） */}
           {(result.qualities.length > 0 || result.video_url) && !(result.images && result.images.length > 0) && (
