@@ -7,6 +7,7 @@ YLCraft — 素材采集服务
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from typing import Optional
@@ -398,7 +399,18 @@ class CrawlerService:
             logger.error(f"[get_note_detail] Error: {e}")
             return {}
 
-    async def import_to_asset_library(self, results: list[CrawlerResult]) -> list[str]:
+    async def import_to_asset_library(
+        self,
+        results: list[CrawlerResult],
+        owner_user_id: str | None = None,
+    ) -> list[str]:
+        """把采集结果导入素材库。
+
+        `owner_user_id` **必须传**（普通登录用户场景）：
+        素材库列表按 owner 过滤，owner 为 NULL 的记录登录用户看不到 ——
+        实测表现为"导入返回成功但素材库一直空的"。
+        仅 Agent 内部调用等无用户场景才允许为 None（legacy NULL）。
+        """
         """
         将采集结果导入到 YLCraft 素材库
         返回导入的素材 ID 列表
@@ -428,6 +440,25 @@ class CrawlerService:
                     )
                     existing_id = existing.scalar_one_or_none()
                     if existing_id:
+                        # 已存在。但**多图图文要检查是不是该升级成集合**。
+                        #
+                        # 踩过的坑（2026-09-27）：用户在「去水印解析」页解析时，
+                        # parse 会先建一条该 source_url 的单节点记录（类型是
+                        # VIDEO/TEXT）。之后点「导入素材库」走 crawler/import，
+                        # 这里的去重直接命中那条旧记录并 continue ——
+                        # 于是**集合结构根本没建**，图集里的图一张都进不来，
+                        # 素材库里只能看到一条标题。
+                        #
+                        # 现在：命中旧记录时，如果这条其实是多图图文、
+                        # 而旧记录又不是集合，就把它**升级**为集合。
+                        if is_multi_image_post(result):
+                            upgraded = await self._upgrade_to_collection(
+                                db_session, node_service, result,
+                                str(existing_id), owner_user_id,
+                            )
+                            if upgraded:
+                                asset_ids.append(str(upgraded))
+                                continue
                         asset_ids.append(str(existing_id))
                         continue
 
@@ -435,7 +466,7 @@ class CrawlerService:
                     # 否则一整套图片只会剩一张封面，用户拿不到原图。
                     if is_multi_image_post(result):
                         node = await self._import_image_collection(
-                            node_service, result
+                            node_service, result, owner_user_id
                         )
                         asset_ids.append(str(node.id))
                         continue
@@ -444,6 +475,7 @@ class CrawlerService:
                     node = await node_service.create(
                         name=result.title or "未命名素材",
                         asset_type=crawler_result_asset_type(result),
+                        owner_user_id=owner_user_id,
                         thumbnail_url=result.cover or None,
                         metadata={
                             "source": "crawler",
@@ -475,7 +507,159 @@ class CrawlerService:
 
         return asset_ids
 
-    async def _import_image_collection(self, node_service, result: CrawlerResult):
+    async def _upgrade_to_collection(
+        self,
+        db_session,
+        node_service,
+        result: CrawlerResult,
+        existing_node_id: str,
+        owner_user_id: str | None = None,
+    ):
+        """把一条已存在的单节点记录**升级**成"集合 + 子图"。
+
+        场景：用户在「去水印解析」页解析（parse 建了单节点），
+        之后点「导入素材库」，去重命中旧记录 →
+        如果这其实是多图图文，就把旧记录就地改成 COLLECTION，
+        并补建子图节点。
+
+        返回集合节点 id；失败返回 None（调用方回退到旧行为）。
+
+        为什么"就地改类型"而不是"删了重建"：
+          · 保留原 id，其它地方（画布引用、发布记录）不会失效
+          · 用户看到的还是同一条素材，只是从"一张封面"变成完整图集
+        """
+        from app.db.models.asset_hub import AssetType
+        from sqlalchemy import text as _sql_text
+
+        images = [u for u in (result.images or []) if u]
+        if not images:
+            return None
+
+        try:
+            # 1) 把旧节点改成集合，并补上完整元数据
+            #
+            # 两个踩过的坑：
+            #   × `CAST(:imgs AS jsonb)` 用 SQLAlchemy `text(":name")` 占位时，
+            #     PostgreSQL 推断不出参数类型 →
+            #     `IndeterminateDatatypeError: could not determine data type
+            #      of parameter $3`
+            #   × `AsyncSession` **没有** `exec_driver_sql`（那是同步 Session 的），
+            #     用它报 `AttributeError`
+            #   × `id` 列是 **UUID** 类型，把 `nid` 标成 TEXT 会报
+            #     `operator does not exist: uuid = character varying`
+            #
+            # 正解：用 `text()` + `:name`，并用 `bindparams` 显式标注每个参数的
+            # 类型——注意 `id` 必须标成 UUID 而不是 TEXT。
+            from sqlalchemy import bindparam, types
+            from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+
+            stmt = _sql_text(
+                """
+                UPDATE asset_nodes
+                SET asset_type = :atype,
+                    thumbnail_url = COALESCE(thumbnail_url, :thumb),
+                    metadata_json = metadata_json
+                        || jsonb_build_object(
+                             'is_collection', true,
+                             'image_count', CAST(:icount AS integer),
+                             'images', CAST(:imgs AS jsonb),
+                             'crawler', true
+                           )
+                WHERE id = :nid
+                """
+            ).bindparams(
+                bindparam("imgs", type_=types.Text),
+                bindparam("icount", type_=types.Integer),
+                bindparam("thumb", type_=types.Text),
+                bindparam("atype", type_=types.Text),
+                bindparam("nid", type_=PG_UUID(as_uuid=False)),
+            )
+
+            await db_session.execute(
+                stmt,
+                {
+                    "atype": AssetType.COLLECTION.value,
+                    "thumb": result.cover or images[0],
+                    "icount": len(images),
+                    "imgs": json.dumps(images, ensure_ascii=False),
+                    "nid": existing_node_id,
+                },
+            )
+            # 顺手补上 owner：旧记录可能 owner 为 NULL（parse 阶段建的），
+            # 不补的话用户导入后仍然看不到。
+            if owner_user_id:
+                await db_session.execute(
+                    _sql_text(
+                        "UPDATE asset_nodes SET owner_user_id = :owner "
+                        "WHERE id = :nid AND owner_user_id IS NULL"
+                    ).bindparams(
+                        bindparam("owner", type_=types.Text),
+                        bindparam("nid", type_=PG_UUID(as_uuid=False)),
+                    ),
+                    {"owner": owner_user_id, "nid": existing_node_id},
+                )
+            await db_session.commit()
+
+            # 2) 补建子图（已存在的子节点不重复建）
+            existing_children = await db_session.execute(
+                _sql_text(
+                    "SELECT metadata_json->>'remote_url' FROM asset_nodes "
+                    "WHERE parent_id = :pid"
+                ),
+                {"pid": existing_node_id},
+            )
+            have = {r[0] for r in existing_children.all() if r[0]}
+
+            added = 0
+            for idx, url in enumerate(images, start=1):
+                if url in have:
+                    continue
+                try:
+                    await node_service.create(
+                        name=f"{result.title or '图集'} - 图{idx}",
+                        asset_type=AssetType.IMAGE,
+                        parent_id=existing_node_id,
+                        owner_user_id=owner_user_id,
+                        thumbnail_url=url,
+                        metadata={
+                            "source": "crawler",
+                            "crawler": True,
+                            "platform": result.platform,
+                            "external_id": result.id,
+                            "remote_url": url,
+                            "index": idx,
+                            "parent_url": result.url,
+                            "author": result.author,
+                            "is_collection_child": True,
+                        },
+                        tags=["crawler", result.platform, "图集图片"],
+                    )
+                    added += 1
+                except Exception as img_err:
+                    logger.warning(
+                        "[import_to_asset_library] 升级补图失败（第 %d 张）：%s",
+                        idx, img_err,
+                    )
+
+            logger.info(
+                "[import_to_asset_library] 已把 %s 升级为集合（补建 %d/%d 张图）",
+                existing_node_id, added, len(images),
+            )
+            return existing_node_id
+        except Exception as exc:
+            await db_session.rollback()
+            logger.warning(
+                "[import_to_asset_library] 升级为集合失败（回退到旧行为）：%s: %s",
+                type(exc).__name__, exc,
+            )
+            return None
+
+    async def _import_image_collection(
+        self,
+        node_service,
+        result: CrawlerResult,
+        owner_user_id: str | None = None,
+    ):
         """把多图图文导入成"集合 + 子图"两层结构。
 
         ## 为什么这样设计（2026-09-27）
@@ -505,6 +689,7 @@ class CrawlerService:
         container = await node_service.create(
             name=result.title or f"{result.platform} 图集",
             asset_type=AssetType.COLLECTION,
+            owner_user_id=owner_user_id,
             thumbnail_url=result.cover or (images[0] if images else None),
             metadata={
                 "source": "crawler",
@@ -535,6 +720,7 @@ class CrawlerService:
                     name=f"{result.title or '图集'} - 图{idx}",
                     asset_type=AssetType.IMAGE,
                     parent_id=str(container.id),
+                    owner_user_id=owner_user_id,
                     thumbnail_url=url,
                     metadata={
                         "source": "crawler",
