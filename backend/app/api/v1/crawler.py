@@ -20,10 +20,15 @@ import time
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict
 
+from app.core.resource_auth import principal_owner_user_id
+from app.core.user_auth import (
+    AuthenticatedPrincipal,
+    get_authenticated_principal_optional,
+)
 from app.services.crawler import (
     CrawlerService,
     CrawlerResult,
@@ -196,11 +201,26 @@ async def search_materials(req: SearchRequest):
 
 
 @router.post("/import", summary="导入到素材库", response_model=ImportResponse)
-async def import_to_assets(req: ImportRequest):
+async def import_to_assets(
+    req: ImportRequest,
+    principal: AuthenticatedPrincipal | None = Depends(
+        get_authenticated_principal_optional
+    ),
+):
     """
     将采集结果导入到 YLCraft 素材库
+
+    **必须带上 owner_user_id**（2026-09-27 修）：
+    素材库列表按登录用户过滤（`owner_user_id`）。原来这里不传 owner，
+    导入的记录 owner 为 NULL —— 结果就是**导入成功但用户在界面上看不到**，
+    实测表现为"素材库一直是空的"。legacy NULL 记录只在
+    `apply_owner_filter` 关闭时才可见，普通登录用户看不到。
     """
-    logger.info(f"[import] Importing {len(req.results)} results to asset library")
+    owner_user_id = principal_owner_user_id(principal)
+    logger.info(
+        f"[import] Importing {len(req.results)} results to asset library "
+        f"(owner={owner_user_id})"
+    )
 
     try:
         # 转换 dict 到 CrawlerResult
@@ -211,7 +231,9 @@ async def import_to_assets(req: ImportRequest):
 
     try:
         service = get_crawler_service()
-        asset_ids = await service.import_to_asset_library(results)
+        asset_ids = await service.import_to_asset_library(
+            results, owner_user_id=owner_user_id,
+        )
 
         return ImportResponse(
             success=True,
