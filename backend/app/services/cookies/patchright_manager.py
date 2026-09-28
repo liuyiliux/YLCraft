@@ -38,6 +38,17 @@ logger = logging.getLogger("ylcraft.cookies.patchright")
 # 会话直接判 failed，用户以为"登录了"其实没存上。
 DEFAULT_LOGIN_TIMEOUT = int(os.getenv("YLCRAFT_LOGIN_TIMEOUT_SECONDS", "600"))
 
+# 检测到"已登录"并保存 Cookie 后，窗口再保留多久（秒）。
+#
+# 为什么需要：持久化 profile 里会残留上次的登录态，检测器可能**第一秒**
+# 就判"已登录"并立刻关窗口 —— 实测窗口只存在 4 秒，用户**来不及扫码**
+# 换账号（用户反馈"扫码登录后关掉浏览器，再搜索就不弹浏览器了"）。
+#
+# 保留一段确认窗口期：想换账号的用户有时间扫码覆盖，
+# 不操作的话到点自动关，不影响正常流程。
+# 设为 0 可关闭这个行为。
+LOGIN_CONFIRM_SECONDS = int(os.getenv("YLCRAFT_LOGIN_CONFIRM_SECONDS", "45"))
+
 
 class PatchrightAcquisitionManager:
     """Patchright Cookie 获取管理器（内置 Stealth 反检测）
@@ -267,6 +278,27 @@ class PatchrightAcquisitionManager:
                     session.status = AcquisitionStatus.SUCCESS
                     session.updated_at = __import__('datetime').datetime.now()
                     logger.info(f"[PatchrightManager] Session {session_id} success, connector_id={connector_id}")
+
+                    # ⚠️ 不要立刻关窗口 —— 给用户一个"确认/覆盖"的机会。
+                    #
+                    # 用户反馈"扫码登录后关掉浏览器，再搜索就不弹浏览器了"。
+                    # 根因：持久化 profile 里**残留上次的登录态**，
+                    # 检测器第一秒就判"已登录" → 立刻 close() →
+                    # **窗口只存在 4 秒**，用户根本来不及重新扫码。
+                    #
+                    # 所以：已保存成功后，再留 `LOGIN_CONFIRM_SECONDS` 秒。
+                    # 用户若发现"这不是我要的账号"，这段时间足够他扫码覆盖；
+                    # 不操作的话到点自动关，不影响正常流程。
+                    confirm = LOGIN_CONFIRM_SECONDS
+                    if confirm > 0:
+                        session.status = AcquisitionStatus.WAITING_FOR_LOGIN
+                        session.updated_at = __import__('datetime').datetime.now()
+                        logger.info(
+                            "[PatchrightManager] 已保存 Cookie，窗口保留 %ds "
+                            "供用户确认/覆盖（可设 YLCRAFT_LOGIN_CONFIRM_SECONDS 调整）",
+                            confirm,
+                        )
+                        await asyncio.sleep(confirm)
 
                     # 关闭浏览器上下文
                     try:
