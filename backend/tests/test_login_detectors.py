@@ -65,13 +65,25 @@ def test_detector_docstring_records_the_correction():
 # 行为约束：假 page 下必须判为未登录
 # =============================================================================
 
+class _FakeContext:
+    """最小假 context：只提供 `cookies()`（小红书检测器要用它查 web_session）。"""
+
+    def __init__(self, cookies=None):
+        self._cookies = cookies or []
+
+    async def cookies(self):
+        return self._cookies
+
+
 class _FakePage:
     """最小假 page：可指定 URL、元素命中表和 evaluate 返回。"""
 
-    def __init__(self, url="", selectors=None, eval_result=None):
+    def __init__(self, url="", selectors=None, eval_result=None, cookies=None):
         self.url = url
         self._selectors = selectors or {}
         self._eval_result = eval_result
+        # 默认空 context（没 cookie）—— 小红书检测器会据此判未登录
+        self.context = _FakeContext(cookies or [])
 
     async def query_selector(self, sel):
         return object() if self._selectors.get(sel) else None
@@ -192,14 +204,39 @@ async def test_xhs_explore_without_avatar_is_logged_out():
 
 @pytest.mark.asyncio
 async def test_xhs_avatar_means_logged_in():
-    """出现用户头像 → True。"""
+    """头像 + `web_session` → True。
+
+    ⚠️ 2026-09-28 收紧：光有头像**不够**，还要有 `web_session`。
+    原因（用户反馈"扫码后关掉浏览器，再搜就不弹浏览器了"）：
+    持久化 profile 里会**残留上次登录的 DOM**，只有头像就判已登录的话，
+    会话会**一秒内结束并关窗口**，用户来不及扫码换账号。
+    """
     from app.services.cookies.platforms.xiaohongshu import XhsDetector
 
     page = _FakePage(
         url="https://www.xiaohongshu.com/explore",
         selectors={".user-info .avatar": True},
     )
+    # 补一个带 web_session 的 context
+    page.context = _FakeContext([{"name": "web_session", "value": "x"}])
     assert await XhsDetector().detect(page) is True
+
+
+@pytest.mark.asyncio
+async def test_xhs_avatar_without_session_cookie_is_logged_out():
+    """**回归**：有头像但**没有** `web_session` → 判未登录。
+
+    这是"上次登录残留 DOM"的情况 —— 判成已登录会让会话秒结束，
+    用户看不到窗口（就是用户反馈的症状）。
+    """
+    from app.services.cookies.platforms.xiaohongshu import XhsDetector
+
+    page = _FakePage(
+        url="https://www.xiaohongshu.com/explore",
+        selectors={".user-info .avatar": True},
+    )
+    page.context = _FakeContext([])          # 没有任何 cookie
+    assert await XhsDetector().detect(page) is False
 
 
 # =============================================================================
