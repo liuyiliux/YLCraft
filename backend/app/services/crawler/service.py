@@ -181,13 +181,24 @@ class CrawlerService:
 
             # 调用 platforms 模块的搜索功能
             #
-            # mode 按平台选择：小红书必须走 patchright。
-            # 实测（2026-09-26）：小红书搜索端点已迁移到 so.xiaohongshu.com/v2，
+            # mode 按平台选择：小红书与微博必须走 patchright。
+            #
+            # 实测（2026-09-26）小红书：搜索端点已迁移到 so.xiaohongshu.com/v2，
             # 且需要 X-s/X-t 签名（签名函数是混淆 JS、跨域调用 406），
-            # 旧的 edith/v1 地址直接返回 code:300011。所以 API 模式对小红书已不可用，
-            # 硬走 api 只会得到一个"账号异常"的错误。
+            # 旧的 edith/v1 地址直接返回 code:300011。所以 API 模式对小红书已不可用。
+            #
+            # 实测（2026-09-27）微博：**所有 httpx 直连方案都返回 ok=-100**
+            # （直连 / 换访客 Cookie / 补 _T_WM·MLOGIN·XSRF / 换 UA / 加
+            # sec-fetch 头 全部失败）。根因是微博注册了 **Service Worker**
+            # （bsk debug 捕获显示 from_service_worker=True），
+            # 由它代理请求并注入 httpx 复现不了的上下文。
+            # 而真实浏览器里**连登录都不需要**（ok=1, total=870）。
+            # 所以微博也必须 patchright —— 但原因与小红书不同
+            # （小红书要签名，微博要 SW 上下文）。
+            #
             # 其他平台（B站/抖音/快手…）仍用 api。
-            mode = "patchright" if platform in ("xhs", "xiaohongshu") else "api"
+            BROWSER_ONLY = ("xhs", "xiaohongshu", "weibo", "wb")
+            mode = "patchright" if platform in BROWSER_ONLY else "api"
             logger.info(
                 "[_search_via_platforms] platform=%s mode=%s keyword=%s",
                 platform, mode, keyword,
@@ -219,6 +230,15 @@ class CrawlerService:
                     # 把总条数放到第一个结果的 raw_data 中，方便上层读取
                     if idx == 0 and total_from_platform:
                         raw_data["_total"] = total_from_platform
+
+                    # ⚠️ `SearchResult` 没有 images / video 字段（那些在
+                    # NoteDetail 里），所以平台把多图与视频直链放在 raw_data
+                    # 的 `_images` / `_video_url`（微博等就是这么做的）。
+                    # 这里取出来填进 CrawlerResult —— 否则前端拿不到图集，
+                    # 「图文下载」也会退化成只有一张封面。
+                    extra_images = list(raw_data.get("_images") or [])
+                    video_direct = str(raw_data.get("_video_url") or "")
+
                     result = CrawlerResult(
                         id=item.id,
                         platform=item.platform,
@@ -226,7 +246,10 @@ class CrawlerService:
                         title=item.title,
                         desc=item.desc if item.desc else None,
                         cover=item.cover,
-                        video_url=item.url,
+                        # 有视频直链就用它；否则退回详情页 URL
+                        # （抖音此前就踩过：video_url 放详情页会导致下载器取不到流）
+                        video_url=video_direct or item.url,
+                        images=extra_images,
                         author=item.author,
                         author_id=item.author_id,
                         likes=item.likes,

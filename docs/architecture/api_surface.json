@@ -5022,7 +5022,7 @@
       "summary": "批量获取无水印资源",
       "function": "fetch_no_watermark",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 396,
+      "line": 412,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5038,7 +5038,7 @@
       "summary": "导入到素材库",
       "function": "import_to_assets",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 204,
+      "line": 220,
       "response_model": "ImportResponse",
       "include_in_schema": true
     },
@@ -5054,7 +5054,7 @@
       "summary": "获取笔记详情（无水印）",
       "function": "get_note_detail",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 320,
+      "line": 336,
       "response_model": "NoteDetailResponse",
       "include_in_schema": true
     },
@@ -5118,7 +5118,7 @@
       "summary": "增强搜索（支持笔记/用户）",
       "function": "search_enhanced",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 265,
+      "line": 281,
       "response_model": "SearchResponse",
       "include_in_schema": true
     },
@@ -5134,7 +5134,7 @@
       "summary": "查询采集任务状态",
       "function": "get_task_status",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 250,
+      "line": 266,
       "response_model": "",
       "include_in_schema": true
     },
