@@ -56,18 +56,54 @@ class TwitterClient(BasePlatformClient):
         return ".x.com"
 
     async def search(self, params: SearchParams) -> List[SearchResult]:
-        """搜推特（浏览器 + DOM）。
+        """搜推特。
 
-        **未登录会抛 `TwitterLoginRequiredError`**（可操作提示），
-        而不是返回空列表 —— 后者会让人误以为"关键词没内容"。
+        ## 优先纯 HTTP，失败回退浏览器 DOM（2026-09-28）
+
+        **HTTP 路径**（`search_http`）：
+          · 不需要浏览器运行时（快）
+          · cursor 翻页，想拿多少拿多少
+          · 字段全（精确时间 / 语言 / 媒体类型）
+          需要 `auth_token` + `ct0`，且要生成 `x-client-transaction-id`
+
+        **DOM 路径**（`search_dom`）作回退：
+          · 当 transaction-id 生成失败、或 X 改了接口结构时用
+          · 代价：必须开浏览器；受虚拟列表限制，只能"边滚边收集"
+
+        ## ⚠️ 两条路都必须登录
+
+        凭证失效时抛**可操作错误**（含"去账号中心登录"），
+        **不返回"0 条结果"** —— 后者会让人误以为关键词没内容。
         """
+        cookie = self.header_cookie()
+
+        # 1) 优先 HTTP
+        if cookie:
+            from .search_http import TwitterAuthError, search_via_http
+            from .xclid import TransactionIdError
+
+            try:
+                return await search_via_http(params, cookie_header=cookie)
+            except TwitterAuthError:
+                # 凭证问题不是"接口不可用"，必须抛出去让用户去登录 ——
+                # 回退 DOM 只会得到同样结果，而且更慢。
+                raise
+            except TransactionIdError as exc:
+                logger.warning(
+                    "[twitter] transaction-id 生成失败，回退浏览器路径：%s",
+                    str(exc)[:120],
+                )
+            except Exception as exc:
+                logger.warning(
+                    "[twitter] HTTP 路径失败（%s: %s），回退浏览器路径",
+                    type(exc).__name__, str(exc)[:120],
+                )
+        else:
+            logger.info("[twitter] 没有 cookie，直接走浏览器路径")
+
+        # 2) 回退 DOM
         from .search_dom import search_via_patchright
 
-        if self.config.mode == ClientMode.API:
-            logger.info(
-                "[twitter] 该平台直连不可用（guest token 不足 + queryId 轮换），"
-                "自动转浏览器路径"
-            )
         return await search_via_patchright(
             params,
             conn_key=self.config.conn_id or "",

@@ -1,0 +1,120 @@
+"""YLCraft — X（原 Twitter）GraphQL 端点定义。
+
+## 来源与验证（2026-09-28 实测跑通）
+
+| 项 | 来源 | 我方验证 |
+|----|------|---------|
+| Bearer | twscrape `account.py::TOKEN` | ✅ 实测可用 |
+| SearchTimeline queryId | twscrape `api.py::OP_SearchTimeline` | ✅ 实测 200 |
+| 请求头组合 | twscrape `account.py` + Scweet `account_session.py` | ✅ 实测 200 |
+| cursor 翻页 | twscrape `api.py::_get_cursor` | ✅ 4 页 85 条 |
+| 响应字段 | —— | ✅ 实测确认 |
+
+## ⚠️ 最关键的一条：缺 `x-client-transaction-id` 会 404
+
+这是之前把 404 误判成"queryId 失效"的真正原因。
+两个独立项目都在代码里记录：
+
+    twscrape/queue_client.py:
+        # if code 404 on first try then generate new
+        # x-client-transaction-id and retry
+    Scweet/transaction.py:
+        "A request without the x-client-transaction-id header answers 404."
+
+生成方式见 `xclid.py`。
+
+## ⚠️ queryId 会轮换
+
+历史上见过的几个值：
+  · `4fpceYZ6-YQCx_JSl_Cn_A`（gallery-dl 硬编码）→ 实测 **404**
+  · `uGB-gNd5HE4TkpO70OcFNw`（我方 bsk 从浏览器网络捕获）
+  · `hyPfJYJ_XAtDYoslQc-Rgg`（twscrape 当前值）→ **实测可用** ✅
+
+所以这里**不做自动抓取更新**（太脆弱），而是：
+  · 用 twscrape 的当前值作为默认
+  · 提供 `X_SEARCH_QUERY_ID` 环境变量覆盖
+  · 404 时给出明确的可操作提示（告诉用户去更新 queryId，
+    而不是报"没有结果"）
+"""
+
+# GraphQL 基础地址
+GQL_URL = "https://x.com/i/api/graphql"
+
+# 搜索操作（`queryId/operationName`）
+#
+# 来源：twscrape `twscrape/api.py::OP_SearchTimeline`
+# 实测 2026-09-28 可用（HTTP 200，20 条/页）
+SEARCH_QUERY_ID = "hyPfJYJ_XAtDYoslQc-Rgg"
+SEARCH_OPERATION = "SearchTimeline"
+SEARCH_OP = f"{SEARCH_QUERY_ID}/{SEARCH_OPERATION}"
+
+# 网页端公开 Bearer（非用户凭证，是 X 网页版固定值）
+#
+# 来源：twscrape `account.py::TOKEN`
+# 注意末尾的 `%3D` 是 URL 编码的 `=`，**照抄即可**（实测这样能用）
+WEB_BEARER = (
+    "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs"
+    "%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA"
+)
+
+# 搜索必需的两个 cookie（domain=.x.com）
+REQUIRED_COOKIES = ("auth_token", "ct0")
+
+# 抓取 transaction-id 素材用的页面
+#
+# ⚠️ twscrape 用 `https://x.com/tesla`，实测该页面能拿到含
+#    INDICES 的 JS bundle。`/home` 也行（同样 304KB）。
+XCLID_SOURCE_URL = "https://x.com/tesla"
+
+# 搜索产物（product）
+#   实测 "Top" 可用；"Latest" 是另一档（按时间）
+PRODUCT_TOP = "Top"
+PRODUCT_LATEST = "Latest"
+PRODUCT_MEDIA = "Media"
+
+PRODUCT_ALIASES: dict[str, str] = {
+    "note": PRODUCT_TOP,
+    "all": PRODUCT_TOP,
+    "default": PRODUCT_TOP,
+    "top": PRODUCT_TOP,
+    "hot": PRODUCT_TOP,
+    "latest": PRODUCT_LATEST,
+    "realtime": PRODUCT_LATEST,
+    "video": PRODUCT_MEDIA,
+    "image": PRODUCT_MEDIA,
+    "media": PRODUCT_MEDIA,
+}
+
+
+def resolve_product(search_type: str | None) -> str:
+    """把前端的 search_type 解析成 X 的 product。
+
+    未知值回退到 Top（给结果比报错有用）。
+    """
+    key = (search_type or "").strip().lower()
+    return PRODUCT_ALIASES.get(key, PRODUCT_TOP)
+
+
+def build_search_variables(
+    keyword: str,
+    count: int = 20,
+    product: str = PRODUCT_TOP,
+    cursor: str | None = None,
+) -> dict:
+    """构造 SearchTimeline 的 variables。
+
+    来源：twscrape `api.py::search_raw`
+        kv = {"rawQuery": q, "count": 20, "querySource": "typed_query", ...}
+
+    翻页时把上一页的 `cursor.bottom.value` 放进 `cursor`。
+    """
+    variables: dict = {
+        "rawQuery": keyword,
+        "count": count,
+        "querySource": "typed_query",
+        "product": product,
+        "withGrokTranslatedBio": False,
+    }
+    if cursor:
+        variables["cursor"] = cursor
+    return variables

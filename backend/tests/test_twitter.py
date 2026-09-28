@@ -67,13 +67,32 @@ def test_client_instantiable_via_aliases():
         assert type(client).__name__ == "TwitterClient", name
 
 
-def test_crawler_dispatches_twitter_to_browser():
-    """twitter/x/tw 在 crawler 层要分派到 patchright。"""
+def test_crawler_does_not_force_browser_for_twitter():
+    """**回归**：crawler 层**不应**把 twitter 放进 BROWSER_ONLY。
+
+    推特已改为**纯 HTTP 优先**（补上 `x-client-transaction-id` 后
+    SearchTimeline 实测 200，不开浏览器）。
+
+    ⚠️ 如果把它放回 BROWSER_ONLY，`mode=patchright` 会让
+    `BasePlatformClient` 在 `search()` **之前**就为注入 cookie 而**启动浏览器**
+    —— 实测看到 9 个 chrome 进程白起，而 HTTP 路径根本不需要它。
+    """
+    import inspect
+
     from app.services.crawler import service as crawler_service
 
     src = inspect.getsource(crawler_service.CrawlerService._search_via_platforms)
-    assert "twitter" in src, "分派表应含 twitter"
-    assert "BROWSER_ONLY" in src
+    # 找到 BROWSER_ONLY 那一行
+    line = next(
+        (ln for ln in src.splitlines() if "BROWSER_ONLY" in ln and "=" in ln), ""
+    )
+    assert line, "未找到 BROWSER_ONLY 定义"
+    for name in ("twitter", '"x"', '"tw"'):
+        assert name not in line, (
+            f"twitter 别名 {name} 不该在 BROWSER_ONLY 里（会让浏览器白起）"
+        )
+    # 小红书/微博仍必须走浏览器
+    assert "xhs" in line and "weibo" in line, "小红书/微博仍应走浏览器"
 
 
 # =============================================================================
@@ -254,6 +273,268 @@ def test_scroll_uses_collect_function():
     assert "_scroll_and_collect" in src
     # 不应再出现旧的"滚完单独读一次"的模式
     assert "_scroll_until_enough" not in src
+
+
+# =============================================================================
+# 纯 HTTP 路径（2026-09-28 实现，替代/优先于 DOM）
+# =============================================================================
+
+def test_http_endpoints_and_bearer():
+    """端点与 Bearer 要来自 twscrape 的当前值（实测可用）。"""
+    from app.services.platforms.twitter import apis
+
+    assert apis.SEARCH_OP == "hyPfJYJ_XAtDYoslQc-Rgg/SearchTimeline"
+    assert apis.GQL_URL == "https://x.com/i/api/graphql"
+    assert apis.WEB_BEARER.startswith("AAAAAAAAAAAAAAAAAAAAANRILg")
+    assert apis.REQUIRED_COOKIES == ("auth_token", "ct0")
+
+
+@pytest.mark.parametrize("alias,expected", [
+    ("note", "Top"), ("all", "Top"), ("top", "Top"), ("hot", "Top"),
+    ("latest", "Latest"), ("realtime", "Latest"),
+    ("video", "Media"), ("image", "Media"), ("media", "Media"),
+])
+def test_product_aliases(alias: str, expected: str):
+    from app.services.platforms.twitter.apis import resolve_product
+
+    assert resolve_product(alias) == expected
+
+
+def test_unknown_product_falls_back():
+    from app.services.platforms.twitter.apis import resolve_product
+
+    assert resolve_product("不存在") == "Top"
+    assert resolve_product(None) == "Top"
+
+
+def test_build_search_variables():
+    from app.services.platforms.twitter.apis import build_search_variables
+
+    v = build_search_variables("美食", count=20, product="Top")
+    assert v["rawQuery"] == "美食"
+    assert v["count"] == 20
+    assert v["querySource"] == "typed_query"
+    assert v["product"] == "Top"
+    assert "cursor" not in v, "首页不应带 cursor"
+
+    v2 = build_search_variables("美食", cursor="ABC")
+    assert v2["cursor"] == "ABC"
+
+
+def test_http_search_requires_both_cookies():
+    """**回归**：缺 auth_token 或 ct0 要报**可操作错误**。
+
+    X 搜索必须有这两个；缺了要提示去账号中心登录，
+    **不能**返回"0 条结果"（那会让人以为关键词没内容）。
+    """
+    import asyncio
+    import inspect
+
+    from app.services.platforms.twitter import search_http
+
+    src = inspect.getsource(search_http._request_page)
+    assert "REQUIRED_COOKIES" in src
+    assert "TwitterAuthError" in src
+    assert "账号中心" in src, "错误信息要告诉用户去哪登录"
+
+    # 真的抛（只有 ct0、没有 auth_token）
+    with pytest.raises(search_http.TwitterAuthError) as ei:
+        asyncio.run(search_http._request_page(
+            "ct0=abc; twid=x", {"rawQuery": "x"}
+        ))
+    assert "auth_token" in str(ei.value)
+
+
+def test_http_retries_once_on_404():
+    """**回归**：404 要重新生成 transaction-id 并重试一次。
+
+    404 是"缺/过期 transaction-id"的典型症状（不是"没有结果"）。
+    twscrape 同款策略：
+        # if code 404 on first try then generate new
+        # x-client-transaction-id and retry
+    """
+    import inspect
+
+    from app.services.platforms.twitter import search_http
+
+    src = inspect.getsource(search_http._request_page)
+    assert "404" in src, "应处理 404"
+    assert "invalidate_xclid" in src or "invalidate" in src, "应清缓存"
+    assert "force_refresh" in src, "重试要强制重新生成"
+    # 有两次尝试
+    assert "for attempt in (1, 2)" in src
+
+
+def test_http_error_messages_are_actionable():
+    """401/403 要报"登录态失效，去重新登录"，不是"没有结果"。"""
+    import inspect
+
+    from app.services.platforms.twitter import search_http
+
+    src = inspect.getsource(search_http._request_page)
+    assert "401" in src and "403" in src
+    assert "重新登录" in src or "账号中心" in src
+
+
+def test_parse_tweet_http_fields():
+    """HTTP 路径的字段解析（实测形状）。"""
+    from app.services.platforms.twitter.search_http import parse_tweet_http
+
+    t = {
+        "__typename": "Tweet",
+        "rest_id": "1933074517922099614",
+        "core": {"user_results": {"result": {"core": {"screen_name": "paiisnobody"}}}},
+        "legacy": {
+            "full_text": "美食是健康的水煮菠菜",
+            "created_at": "Thu Jun 12 08:10:54 +0000 2025",
+            "favorite_count": 68,
+            "retweet_count": 1,
+            "reply_count": 3,
+            "lang": "ja",
+            "id_str": "1933074517922099614",
+            "extended_entities": {"media": [
+                {"type": "photo", "media_url_https": "https://pbs.twimg.com/media/A.jpg"},
+            ]},
+        },
+    }
+    r = parse_tweet_http(t)
+    assert r is not None
+    assert r.id == "1933074517922099614"
+    assert r.author == "paiisnobody"
+    assert r.desc == "美食是健康的水煮菠菜"
+    assert r.likes == 68 and r.shares == 1 and r.comments == 3
+    assert r.create_time.startswith("Thu Jun 12")
+    assert r.raw_data["lang"] == "ja"
+    assert r.raw_data["_images"] == ["https://pbs.twimg.com/media/A.jpg"]
+    assert r.url == "https://x.com/paiisnobody/status/1933074517922099614"
+
+
+def test_parse_tweet_http_video_picks_highest_bitrate():
+    """视频要从 variants 里挑**码率最高**的 mp4。"""
+    from app.services.platforms.twitter.search_http import parse_tweet_http
+
+    t = {
+        "rest_id": "999",
+        "legacy": {
+            "full_text": "v", "id_str": "999",
+            "extended_entities": {"media": [{
+                "type": "video",
+                "media_url_https": "https://pbs.twimg.com/thumb.jpg",
+                "video_info": {"variants": [
+                    {"content_type": "video/mp4", "bitrate": 256000,
+                     "url": "https://video.twimg.com/low.mp4"},
+                    {"content_type": "video/mp4", "bitrate": 2176000,
+                     "url": "https://video.twimg.com/high.mp4"},
+                    {"content_type": "application/x-mpegURL",
+                     "url": "https://video.twimg.com/playlist.m3u8"},
+                ]},
+            }]},
+        },
+    }
+    r = parse_tweet_http(t)
+    assert r.type == "video"
+    assert r.raw_data["_video_url"] == "https://video.twimg.com/high.mp4"
+
+
+def test_parse_tweet_http_views_not_fabricated():
+    """**回归**：`views` GraphQL 拿不到时留 0，**不编造**。"""
+    from app.services.platforms.twitter.search_http import parse_tweet_http
+
+    t = {"rest_id": "1", "legacy": {"full_text": "x", "id_str": "1"}}
+    r = parse_tweet_http(t)
+    assert r.views == 0
+
+
+@pytest.mark.parametrize("bad", [{}, {"legacy": "字符串"}, None, {"legacy": {}}])
+def test_parse_tweet_http_tolerates_bad_input(bad):
+    from app.services.platforms.twitter.search_http import parse_tweet_http
+
+    assert parse_tweet_http(bad) is None
+
+
+def test_bottom_cursor_extraction():
+    """翻页游标：找 `cursorType == "Bottom"` 的 value。"""
+    from app.services.platforms.twitter.search_http import _get_bottom_cursor
+
+    payload = {"data": {"x": {"instructions": [
+        {"entries": [{"content": {"cursorType": "Top", "value": "T"}}]},
+        {"entries": [{"content": {"cursorType": "Bottom", "value": "B123"}}]},
+    ]}}}
+    assert _get_bottom_cursor(payload) == "B123"
+    assert _get_bottom_cursor({"data": {}}) is None
+
+
+def test_client_prefers_http_then_falls_back_to_dom():
+    """**回归**：客户端要**优先 HTTP**，失败才回退 DOM。
+
+    HTTP 不开浏览器、能翻页、字段全；
+    DOM 是兜底（transaction-id 生成失败或接口结构变化时用）。
+    """
+    import inspect
+
+    from app.services.platforms.twitter.client import TwitterClient
+
+    src = inspect.getsource(TwitterClient.search)
+    assert "search_via_http" in src, "应优先 HTTP"
+    assert "search_via_patchright" in src, "应有 DOM 回退"
+    i_http = src.find("search_via_http")
+    i_dom = src.find("search_via_patchright")
+    assert i_http < i_dom, "HTTP 应在 DOM 之前"
+
+
+def test_auth_error_does_not_fall_back_to_dom():
+    """凭证错误**不该**回退 DOM（回退也是同样结果，还更慢）。"""
+    import inspect
+
+    from app.services.platforms.twitter.client import TwitterClient
+
+    src = inspect.getsource(TwitterClient.search)
+    assert "except TwitterAuthError:" in src
+    i = src.find("except TwitterAuthError:")
+    seg = src[i:i + 200]
+    assert "raise" in seg, "凭证错误应直接抛出去"
+
+
+def test_xclid_generator_exists():
+    """transaction-id 生成器（缺它一切 404）。"""
+    from app.services.platforms.twitter import xclid
+
+    assert callable(xclid.make_transaction_id)
+    assert callable(xclid.get_generator)
+    assert callable(xclid.invalidate)
+
+    # 只检查**代码**（去掉注释/docstring）—— 文档里会提到 create() 这个坑
+    src = inspect.getsource(xclid)
+    lines = [ln for ln in src.splitlines() if not ln.strip().startswith("#")]
+    code = "\n".join(lines)
+    first = code.find('"""')
+    if first != -1:
+        second = code.find('"""', first + 3)
+        if second != -1:
+            code = code[:first] + code[second + 3:]
+
+    assert "XClIdGen.create" not in code, "不应调用 create()（本机报 ConnectError）"
+    assert "load_keys" in code, "应复用 load_keys 解析"
+
+
+def test_xclid_uses_fixed_user_agent():
+    """**回归**：必须用固定 UA。
+
+    twscrape 的 `XClIdGen.create()` 内部用动态 UA（`"@chrome"`），
+    实测在本机报 `ConnectError`；固定 UA 抓页面则正常（HTTP 200）。
+    """
+    from app.services.platforms.twitter import xclid
+
+    assert "Mozilla/5.0" in xclid.UA, "应是固定 UA 字符串"
+
+
+def test_xclid_documents_404_cause():
+    """文档要写清"缺这个头会 404" —— 这是最容易误判的点。"""
+    from app.services.platforms.twitter import xclid
+
+    doc = xclid.__doc__ or ""
+    assert "404" in doc, "应说明 404 的原因"
+    assert "ConnectError" in doc, "应记录 create() 不可用的坑"
 
 
 # =============================================================================
