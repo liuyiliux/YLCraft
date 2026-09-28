@@ -11,8 +11,8 @@
 | **B站** | ✅ 5 条（total=1000） | ✅ 20 条 OK | ✅ 5 个 | ✅ **6 个 Tab**（见下） | ✅ |
 | **抖音** | ✅ 5 条 | ⚠️ **只 18 条**（抖音已停支持 offset 翻页） | ✅ 4 个 | ✅ OK | ✅ OK |
 | **小红书** | ❌ 0 条（**cookie 过期**） | ❌ | ❌ code=-104（cookie 过期） | ✅ OK | ✅ OK |
-| **微博** | ✅ 5 条 | ⚠️ **只 9 条**（无真翻页，靠 since_id） | ❌ 未实现 | ❌ 未实现 | ❌ 未实现 |
-| **X** | ✅ 5 条 | ✅ 20 条 OK | ❌ 未实现 | ❌ 未实现 | ❌ 未实现 |
+| **微博** | ✅ 5 条 | ⚠️ **只 9 条**（无真翻页，靠 since_id） | ✅ 20 个（免登录） | ⚠️ 需登录 | ✅ |
+| **X** | ✅ 5 条 | ✅ 20 条 OK | ✅ 20 个（纯 HTTP） | ⚠️ 需登录 | ✅ |
 
 > ⚠️ **勘误（2026-09-28）**：本表初版把 B站「我的数据」标成"未实现"，
 > **那是错的**。原因：我的检查脚本只测了 `/api/v1/users/me`
@@ -117,3 +117,60 @@
 ### 支持的平台
 
 `/my-data` 页同时支持 **B站** 和 **番茄小说** 两个平台切换。
+
+---
+
+## 用户维度能力（2026-09-28 补齐）
+
+### 各平台对比
+
+| 平台 | 搜用户 | 用户详情 | 我的数据 |
+|------|--------|---------|---------|
+| **B站** | ✅ `search_type=user` | ✅ `/bilibili/up/profile` | ✅ `/my-data`（6 个 Tab） |
+| **抖音** | ✅ `/users/search` | ✅ `/users/profile` | ✅ `/users/me` |
+| **小红书** | ✅ `/users/search` | ✅ `/users/profile` | ✅ `/users/me` |
+| **微博** | ✅ `100103type=3`（**免登录**） | ✅ `100505{uid}` | ⚠️ **需登录** |
+| **X** | ✅ `SearchTimeline + product=People` | ✅ `UserByScreenName` | ⚠️ **需登录** |
+
+### 微博（实测免登录可用）
+
+    用户搜索  containerid=100103type=3&q={关键词}&page_type=searchall&page=N
+              → cards[].card_type=11 → card_group[] → user{}
+    用户详情  containerid=100505{uid} → data.userInfo{}
+
+⚠️ **用户卡片与内容卡片的解析路径完全不同**：
+    内容：card_type=9  → .mblog
+    用户：card_type=11 → .card_group[].user
+
+⚠️ **`followers_count` 是带单位的字符串**（`"58.8万"`），
+不是数字 —— 直接 `int()` 会炸。已有 `parse_count` 处理 万/亿/K/M。
+
+### X（纯 HTTP）
+
+    搜用户   复用 SearchTimeline，只把 product 改成 "People"
+             （调研确认 X **不存在**独立的 SearchUser operation）
+    用户详情 UserByScreenName（queryId Gb-d6r0vxPOADdG62OEBpQ）
+             必须带 9 个 fieldToggles
+
+⚠️ **新旧 schema 并存**，解析要兼容两套：
+    旧版扁平：legacy.screen_name / followers_count / ...
+    新版嵌套：core.screen_name / relationship_counts.followers /
+              tweet_counts.tweets / profile_bio.description / ...
+
+### ⚠️ 「我的数据」的通用陷阱：不能抓页面上的链接当"自己"
+
+微博**没有**"我是谁"的接口。第一版实现从页面抓第一个
+`/profile/{uid}` 链接 → 拿到一个 **275 万粉的真实博主**，
+还当成"我自己"返回了。
+
+**未登录时页面里全是别人的链接。** 所以：
+  · 微博：先查 `/api/config` 的 `login`，未登录返回 None
+  · X：handle **只从账号菜单**（`SideNav_AccountSwitcher_Button`）取
+
+**给错人的资料比"没有数据"危险得多。**
+
+### X 的「我的数据」是已知缺口
+
+twscrape 与 Scweet **都没有 `me()`**，全部 `OP_*` 常量里
+**没有 Viewer**（已穷尽核对）—— 所以**不臆造 queryId**。
+实现为「浏览器读 handle → UserByScreenName」两步，需登录。
