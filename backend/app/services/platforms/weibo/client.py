@@ -156,6 +156,51 @@ class WeiboClient(BasePlatformClient):
         )
 
     # =========================================================================
+    # 用户（可选能力，走浏览器 —— 与搜索同样的原因）
+    # =========================================================================
+
+    async def search_users(
+        self,
+        keyword: str,
+        max_results: int = 20,
+    ) -> List[UserProfile]:
+        """搜微博用户（**实测免登录可用**）。
+
+            containerid=100103type=3&q={关键词}&page_type=searchall&page=N
+            → cards[].card_type=11 → card_group[] → user{}
+
+        一页约 20 个。走浏览器（微博依赖 Service Worker，见模块 docstring）。
+        """
+        from .search_patchright import search_users_via_patchright
+
+        return await search_users_via_patchright(
+            keyword,
+            conn_key=self.config.conn_id or "",
+            max_results=max_results,
+        )
+
+    async def get_user_profile(self, user_id: str) -> Optional[UserProfile]:
+        """取用户资料（`containerid=100505{uid}` → `data.userInfo`）。"""
+        from .search_patchright import get_user_via_patchright
+
+        return await get_user_via_patchright(
+            user_id, conn_key=self.config.conn_id or ""
+        )
+
+    async def get_self_profile(self) -> Optional[UserProfile]:
+        """取**自己**的资料。
+
+        ⚠️ 微博没有"我是谁"的接口，且**未登录时不能从页面抓 uid**
+        （那是推荐流里的别人）—— 所以未登录直接返回 None。
+        详见 `search_patchright.get_self_profile_via_patchright`。
+        """
+        from .search_patchright import get_self_profile_via_patchright
+
+        return await get_self_profile_via_patchright(
+            conn_key=self.config.conn_id or ""
+        )
+
+    # =========================================================================
     # 统一请求出口
     # =========================================================================
 
@@ -264,6 +309,40 @@ class WeiboClient(BasePlatformClient):
 def _to_int(value: Any) -> int:
     try:
         return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def parse_count(value: Any) -> int:
+    """把微博的计数字符串转成 int。
+
+    ⚠️ 实测微博的 `followers_count` 是**带单位的字符串**（如 `"58.8万"`），
+    不是数字 —— 直接 `int()` 会炸。这里处理 万/亿/K/M 与千分位逗号。
+
+        实测样本（2026-09-28）：
+            "58.8万"    -> 588000
+            "1720.1万"  -> 17201000
+            608         -> 608
+    """
+    if value is None:
+        return 0
+    if isinstance(value, (int, float)):
+        return int(value)
+
+    s = str(value).strip().replace(",", "")
+    if not s:
+        return 0
+    try:
+        if "亿" in s:
+            return int(float(s.replace("亿", "")) * 100_000_000)
+        if "万" in s:
+            return int(float(s.replace("万", "")) * 10_000)
+        up = s.upper()
+        if up.endswith("K"):
+            return int(float(up[:-1]) * 1_000)
+        if up.endswith("M"):
+            return int(float(up[:-1]) * 1_000_000)
+        return int(float(s))
     except (TypeError, ValueError):
         return 0
 
@@ -465,6 +544,47 @@ def _extract_video_url(mb: Dict[str, Any]) -> str:
             if isinstance(v, str) and v:
                 return v
     return ""
+
+
+def parse_user(u: Dict[str, Any]) -> Optional[UserProfile]:
+    """把微博的 user 对象转成统一 UserProfile。
+
+    ## 实测字段（2026-09-28，共 29 个）
+
+        id / screen_name / description / profile_image_url / avatar_hd
+        followers_count / follow_count / statuses_count
+        verified / verified_reason / gender / cover_image_phone
+
+    ⚠️ **`followers_count` 是字符串**（实测 `"58.8万"`），不是数字 ——
+    要用 `parse_count` 解析。`follow_count` / `statuses_count` 是数字。
+    `verified` 是 bool，`verified_reason` 是认证说明。
+    """
+    if not isinstance(u, dict):
+        return None
+    uid = str(u.get("id") or "")
+    if not uid:
+        return None
+
+    return UserProfile(
+        id=uid,
+        name=u.get("screen_name") or "",
+        avatar=u.get("avatar_hd") or u.get("profile_image_url") or "",
+        platform="weibo",
+        desc=u.get("description") or "",
+        followers=parse_count(u.get("followers_count")),
+        following=_to_int(u.get("follow_count")),
+        total_videos=_to_int(u.get("statuses_count")),
+        # 微博的 `like` 是"收到的赞"；取不到就 0（不编造）
+        total_likes=_to_int(u.get("like")),
+        verified=bool(u.get("verified")),
+        raw_data={
+            "verified_reason": u.get("verified_reason") or "",
+            "gender": u.get("gender") or "",
+            "profile_url": u.get("profile_url") or f"https://m.weibo.cn/u/{uid}",
+            "cover_image_phone": u.get("cover_image_phone") or "",
+            "user": u,
+        },
+    )
 
 
 def _strip_html(html: str) -> str:

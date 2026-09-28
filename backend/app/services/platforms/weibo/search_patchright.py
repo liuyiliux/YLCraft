@@ -43,8 +43,9 @@ from typing import Any, Dict, List, Optional
 
 from ...browser.patchright_runtime import get_patchright_runtime
 from ..session_pool import PooledSession, SessionPool
-from ..types import SearchParams, SearchResult
+from ..types import SearchParams, SearchResult, UserProfile
 from .apis import build_search_params
+from .client import parse_user
 from .client import parse_mblog
 
 logger = logging.getLogger("ylcraft.platforms.weibo.patchright")
@@ -205,6 +206,219 @@ async def search_via_patchright(
 
     logger.info("[weibo] 搜索 %r -> %d 条（patchright）", params.keyword, len(out))
     return out[:want]
+
+
+async def search_users_via_patchright(
+    keyword: str,
+    *,
+    conn_key: str = "",
+    page: int = 1,
+    max_results: int = 20,
+) -> List[UserProfile]:
+    """搜微博用户（**实测免登录可用**）。
+
+        containerid=100103type=3&q={关键词}&page_type=searchall&page=N
+        → cards[].card_type=11 → card_group[] → user{}
+
+    ⚠️ 用户卡片的解析路径与内容搜索**完全不同**
+    （内容走 card_type=9 → mblog）。
+    """
+    from .apis import build_user_search_params
+
+    session = await _get_session(conn_key)
+    qp = build_user_search_params(keyword, page=page)
+    raw = await session.page.evaluate(JS_SEARCH, {"params": qp})
+    data = _load_json(raw, "用户搜索")
+
+    out: List[UserProfile] = []
+    seen: set[str] = set()
+    for card in ((data.get("data") or {}).get("cards") or []):
+        for user in _iter_card_users(card):
+            parsed = parse_user(user)
+            if parsed is None or parsed.id in seen:
+                continue
+            seen.add(parsed.id)
+            out.append(parsed)
+            if len(out) >= max_results:
+                break
+        if len(out) >= max_results:
+            break
+
+    logger.info("[weibo] 用户搜索 %r -> %d 个", keyword, len(out))
+    return out
+
+
+async def get_user_via_patchright(
+    uid: str,
+    *,
+    conn_key: str = "",
+) -> Optional[UserProfile]:
+    """取微博用户资料。
+
+        GET /api/container/getIndex?containerid=100505{uid}
+        → data.userInfo{...}
+
+    与 MediaCrawler `get_creator_info_by_id` 一致（实测确认）。
+    """
+    from .apis import build_user_detail_params
+
+    session = await _get_session(conn_key)
+    raw = await session.page.evaluate(JS_SEARCH, {"params": build_user_detail_params(uid)})
+    data = _load_json(raw, "用户详情")
+
+    info = (data.get("data") or {}).get("userInfo")
+    if isinstance(info, dict):
+        return parse_user(info)
+
+    # 有些形态把资料放在 cards[].user
+    for card in ((data.get("data") or {}).get("cards") or []):
+        for user in _iter_card_users(card):
+            parsed = parse_user(user)
+            if parsed is not None:
+                return parsed
+    logger.info("[weibo] 用户详情 uid=%s 未取到", uid)
+    return None
+
+
+async def get_self_profile_via_patchright(
+    *,
+    conn_key: str = "",
+) -> Optional[UserProfile]:
+    """取**自己**的资料。
+
+    ## ⚠️ 必须先确认登录，否则会拿到"别人的资料"（实测踩过）
+
+    微博**没有**"我是谁"的接口：
+
+        /api/config          → 只有 {login, st, user_token, ...}，**没有 uid**
+        /api/profile/me      → 404
+        /api/myProfile       → 404
+
+    MediaCrawler 也一样 —— 它的 `creator_id` 是**配置项**，不是自动发现的。
+
+    所以只能从页面里找 uid。**但这里有个大坑**：
+    未登录时首页是**推荐流**，页面里的 `/profile/{uid}` 链接全是
+    **别的用户**。我第一版直接抓第一个链接，于是拿到一个大 V 的资料，
+    还以为是"我自己"（实测未登录时抓到 uid=7918597670「蓟海棠」，
+    275 万粉 —— 那是个真实博主，绝不是登录用户）。
+
+    **所以现在先查 `/api/config` 的 `login`：为 false 就直接返回 None。**
+    宁可不给，也不能给错人的资料 —— 后者比"没有数据"危险得多。
+    """
+    session = await _get_session(conn_key)
+
+    # 1) 先确认登录（否则下面抓到的 uid 一定是别人的）
+    try:
+        raw = await session.page.evaluate(JS_CHECK_LOGIN)
+        config = json.loads(raw) if isinstance(raw, str) else (raw or {})
+    except Exception as exc:
+        logger.warning("[weibo] 查询登录态失败：%s", exc)
+        return None
+
+    if not (config.get("data") or {}).get("login"):
+        logger.info(
+            "[weibo] 未登录 —— 「我的数据」需要登录后才能确定身份"
+            "（未登录时页面里的 /profile/ 链接都是别的用户，不能拿来当自己）"
+        )
+        return None
+
+    # 2) 已登录才从页面找自己的 uid
+    uid = await session.page.evaluate(JS_FIND_SELF_UID)
+    if not uid:
+        logger.info("[weibo] 已登录但未能从页面取到自己的 uid")
+        return None
+    return await get_user_via_patchright(str(uid), conn_key=conn_key)
+
+
+# =============================================================================
+# 辅助
+# =============================================================================
+
+def _load_json(raw: Any, label: str) -> Dict[str, Any]:
+    if isinstance(raw, dict):
+        data = raw
+    else:
+        try:
+            data = json.loads(raw)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(f"[weibo] {label}响应解析失败：{exc}") from exc
+
+    if isinstance(data, dict) and data.get("_error"):
+        raise RuntimeError(
+            f"[weibo] {label}返回非 JSON（{data.get('_error')}，HTTP {data.get('http')}）。"
+            f"响应开头：{str(data.get('head'))[:80]}。"
+            "通常是 Service Worker 未就绪或登录态失效。"
+        )
+    ok = data.get("ok") if isinstance(data, dict) else None
+    if ok == -100:
+        raise RuntimeError("[weibo] 未登录（ok=-100）。请在「账号中心」保存微博登录态。")
+    return data
+
+
+def _iter_card_users(card: Any):
+    """从一张卡片里迭代出所有 user 对象。
+
+    实测用户卡片的形状：
+        {card_type: 11, card_group: [{user: {...}}, ...]}
+    也有直接把 user 放在卡片顶层的。
+    """
+    if not isinstance(card, dict):
+        return
+    group = card.get("card_group")
+    if isinstance(group, list):
+        for sub in group:
+            if isinstance(sub, dict) and isinstance(sub.get("user"), dict):
+                yield sub["user"]
+    if isinstance(card.get("user"), dict):
+        yield card["user"]
+
+
+# 查登录态（`/api/config` 的 `login` 字段）。
+#
+# ⚠️ **「我的数据」必须先查这个** —— 未登录时页面里全是别人的
+# /profile/ 链接，直接抓会拿到"别人的资料"（实测踩过）。
+JS_CHECK_LOGIN = """
+async () => {
+  try {
+    const r = await fetch('https://m.weibo.cn/api/config', { credentials: 'include' });
+    return await r.text();
+  } catch (e) {
+    return JSON.stringify({ _error: String(e).slice(0, 80) });
+  }
+}
+"""
+
+
+# 从页面找自己的 uid。
+#
+# ⚠️ **只在已登录时才可信**（未登录时是推荐流的其他用户）。
+JS_FIND_SELF_UID = """
+() => {
+  // 1) 页面链接里的 /u/{uid} 或 /profile/{uid}
+  for (const a of document.querySelectorAll('a[href]')) {
+    const h = a.getAttribute('href') || '';
+    const m = h.match(/\\/(?:u|profile)\\/(\\d{6,})/);
+    if (m) return m[1];
+  }
+  // 2) 页面全局变量里的 uid（微博 H5 有 $render_data）
+  try {
+    const rd = window.$render_data;
+    if (rd) {
+      const s = JSON.stringify(rd);
+      const m = s.match(/"uid"\\s*:\\s*"?([0-9]{6,})"?/);
+      if (m) return m[1];
+      const m2 = s.match(/"id"\\s*:\\s*"?([0-9]{8,})"?/);
+      if (m2) return m2[1];
+    }
+  } catch (e) {}
+  // 3) 页面 HTML 里的 "uid":xxx
+  try {
+    const m = document.documentElement.innerHTML.match(/"uid"\\s*:\\s*"?([0-9]{8,})"?/);
+    if (m) return m[1];
+  } catch (e) {}
+  return '';
+}
+"""
 
 
 async def search_with_runtime(

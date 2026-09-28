@@ -48,6 +48,28 @@ SEARCH_QUERY_ID = "hyPfJYJ_XAtDYoslQc-Rgg"
 SEARCH_OPERATION = "SearchTimeline"
 SEARCH_OP = f"{SEARCH_QUERY_ID}/{SEARCH_OPERATION}"
 
+# 按 handle 取用户资料
+#
+# 来源：twscrape `api.py::OP_UserByScreenName` + `user_by_login_raw`
+#     kv = {"screen_name": login, "withSafetyModeUserFields": True}
+#     ft = {...9 个 fieldToggles...}
+#     响应路径：data.user_result_by_screen_name.result
+USER_BY_SCREEN_NAME_QUERY_ID = "Gb-d6r0vxPOADdG62OEBpQ"
+USER_BY_SCREEN_NAME_OP = f"{USER_BY_SCREEN_NAME_QUERY_ID}/UserByScreenName"
+
+# ⚠️ UserByScreenName **必须带 fieldToggles**（来源 twscrape `user_by_login_raw`）
+USER_BY_SCREEN_NAME_FIELD_TOGGLES: dict = {
+    "highlights_tweets_tab_ui_enabled": True,
+    "hidden_profile_likes_enabled": True,
+    "creator_subscriptions_tweet_preview_api_enabled": True,
+    "hidden_profile_subscriptions_enabled": True,
+    "subscriptions_verification_info_verified_since_enabled": True,
+    "subscriptions_verification_info_is_identity_verified_enabled": False,
+    "responsive_web_twitter_article_notes_tab_enabled": False,
+    "subscriptions_feature_can_gift_premium": False,
+    "profile_label_improvements_pcf_label_in_post_enabled": False,
+}
+
 # 网页端公开 Bearer（非用户凭证，是 X 网页版固定值）
 #
 # 来源：twscrape `account.py::TOKEN`
@@ -67,10 +89,16 @@ REQUIRED_COOKIES = ("auth_token", "ct0")
 XCLID_SOURCE_URL = "https://x.com/tesla"
 
 # 搜索产物（product）
-#   实测 "Top" 可用；"Latest" 是另一档（按时间）
+#   实测 "Top" 可用；"Latest" 是另一档（按时间）；"People" 搜**用户**
 PRODUCT_TOP = "Top"
 PRODUCT_LATEST = "Latest"
 PRODUCT_MEDIA = "Media"
+# 搜用户。来源：twscrape `api.py::search_user`：
+#     kv = {"product": "People", **(kv or {})}
+# 并复现其 `search_raw`，**用同一个 SearchTimeline operation** ——
+# 调研确认：X **不存在**独立的 SearchUser/UserSearch operation
+# （已逐行核对 twscrape 全部 OP_* 常量 + Scweet manifest）。
+PRODUCT_PEOPLE = "People"
 
 PRODUCT_ALIASES: dict[str, str] = {
     "note": PRODUCT_TOP,
@@ -83,6 +111,10 @@ PRODUCT_ALIASES: dict[str, str] = {
     "video": PRODUCT_MEDIA,
     "image": PRODUCT_MEDIA,
     "media": PRODUCT_MEDIA,
+    # 搜用户
+    "user": PRODUCT_PEOPLE,
+    "people": PRODUCT_PEOPLE,
+    "users": PRODUCT_PEOPLE,
 }
 
 
@@ -93,6 +125,18 @@ def resolve_product(search_type: str | None) -> str:
     """
     key = (search_type or "").strip().lower()
     return PRODUCT_ALIASES.get(key, PRODUCT_TOP)
+
+
+def build_user_lookup_variables(screen_name: str) -> dict:
+    """构造 UserByScreenName 的 variables。
+
+    来源：twscrape `api.py::user_by_login_raw`
+        kv = {"screen_name": login, "withSafetyModeUserFields": True}
+    """
+    return {
+        "screen_name": screen_name.lstrip("@"),
+        "withSafetyModeUserFields": True,
+    }
 
 
 def build_search_variables(

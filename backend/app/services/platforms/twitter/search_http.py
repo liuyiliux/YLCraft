@@ -40,13 +40,16 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-from ..types import SearchParams, SearchResult
+from ..types import SearchParams, SearchResult, UserProfile
 from .apis import (
     GQL_URL,
     REQUIRED_COOKIES,
     SEARCH_OP,
+    USER_BY_SCREEN_NAME_FIELD_TOGGLES,
+    USER_BY_SCREEN_NAME_OP,
     WEB_BEARER,
     build_search_variables,
+    build_user_lookup_variables,
     resolve_product,
 )
 from .xclid import (
@@ -108,10 +111,26 @@ async def _request_page(
     *,
     retry_on_404: bool = True,
 ) -> Dict[str, Any]:
-    """请求一页 SearchTimeline，返回解析后的 JSON。
+    """请求一页 SearchTimeline（`_request_page_raw` 的薄封装）。"""
+    return await _request_page_raw(
+        cookie_header, SEARCH_OP, variables, retry_on_404=retry_on_404
+    )
+
+
+async def _request_page_raw(
+    cookie_header: str,
+    op: str,
+    variables: Dict[str, Any],
+    *,
+    field_toggles: Optional[Dict[str, Any]] = None,
+    retry_on_404: bool = True,
+) -> Dict[str, Any]:
+    """请求任意 GraphQL 操作，返回解析后的 JSON。
 
     404 时：清 transaction-id 缓存 → 重新生成 → 重试一次
     （twscrape `queue_client.py` 同款策略）。
+
+    `field_toggles` 只有部分操作需要（如 UserByScreenName）。
     """
     ck = cookie_map(cookie_header)
     missing = [n for n in REQUIRED_COOKIES if not ck.get(n)]
@@ -122,17 +141,21 @@ async def _request_page(
             "用浏览器方式登录一次 x.com，登录态会自动保存。"
         )
 
-    path = f"/i/api/graphql/{SEARCH_OP}"
+    path = f"/i/api/graphql/{op}"
 
     for attempt in (1, 2):
         txid = await make_transaction_id(
             cookie_header, "GET", path, force_refresh=(attempt == 2)
         )
         headers = _build_headers(cookie_header, ck["ct0"], txid)
-        params = {"variables": json.dumps(variables, ensure_ascii=False)}
+        params: Dict[str, Any] = {
+            "variables": json.dumps(variables, ensure_ascii=False)
+        }
+        if field_toggles:
+            params["fieldToggles"] = json.dumps(field_toggles, ensure_ascii=False)
 
         async with httpx.AsyncClient(timeout=60, follow_redirects=True) as c:
-            resp = await c.get(f"{GQL_URL}/{SEARCH_OP}", params=params, headers=headers)
+            resp = await c.get(f"{GQL_URL}/{op}", params=params, headers=headers)
 
         if resp.status_code == 200:
             return resp.json()
@@ -151,7 +174,7 @@ async def _request_page(
             continue
 
         raise RuntimeError(
-            f"[twitter] 搜索接口返回 HTTP {resp.status_code}。"
+            f"[twitter] 接口 {op} 返回 HTTP {resp.status_code}。"
             f"（body 前 120：{resp.text[:120]!r}）"
         )
 
@@ -402,6 +425,183 @@ async def search_via_http(
     logger.info("[twitter] 搜索 %r -> %d 条（HTTP，page=%d，翻 %d 页）",
                 params.keyword, len(results), page_no, pages)
     return results[:want]
+
+
+async def search_users_via_http(
+    keyword: str,
+    *,
+    cookie_header: str,
+    max_results: int = 20,
+    max_pages: int = 5,
+) -> List[UserProfile]:
+    """搜 X 用户（**复用 SearchTimeline，只把 product 改成 "People"**）。
+
+    来源：twscrape `api.py::search_user`
+        kv = {"product": "People", **(kv or {})}
+    调研确认 X **不存在**独立的 SearchUser/UserSearch operation
+    （已逐行核对 twscrape 全部 OP_* + Scweet manifest），
+    所以直接复用现有 queryId，零额外成本。
+
+    用户项在 timeline 里（`__typename` 含 "User"），用 cursor 翻页。
+    """
+    want = max(1, max_results)
+    merged: Dict[str, Dict] = {}
+    cursor: Optional[str] = None
+
+    for _ in range(max(1, max_pages)):
+        variables = build_search_variables(
+            keyword=keyword, count=20, product="People", cursor=cursor
+        )
+        payload = await _request_page(cookie_header, variables)
+        _collect_users(payload, merged)
+        if len(merged) >= want:
+            break
+        cursor = _get_bottom_cursor(payload)
+        if not cursor:
+            break
+
+    out: List[UserProfile] = []
+    for u in merged.values():
+        parsed = parse_user_http(u)
+        if parsed is not None:
+            out.append(parsed)
+    logger.info("[twitter] 用户搜索 %r -> %d 个（HTTP）", keyword, len(out))
+    return out[:want]
+
+
+async def get_user_via_http(
+    screen_name: str,
+    *,
+    cookie_header: str,
+) -> Optional[UserProfile]:
+    """按 handle 取用户资料（UserByScreenName）。"""
+    variables = build_user_lookup_variables(screen_name)
+    payload = await _request_page_raw(
+        cookie_header,
+        USER_BY_SCREEN_NAME_OP,
+        variables,
+        field_toggles=USER_BY_SCREEN_NAME_FIELD_TOGGLES,
+    )
+    result = _walk(payload, lambda x: "screen_name" in x and "followers_count" in x)
+    if not isinstance(result, dict):
+        # 新版嵌套结构
+        result = _walk(payload, lambda x: "core" in x and "relationship_counts" in x)
+    if not isinstance(result, dict):
+        logger.info("[twitter] 用户 %s 未取到资料", screen_name)
+        return None
+    return parse_user_http(result)
+
+
+def _collect_users(obj: Any, out: Dict[str, Dict]) -> None:
+    """收集用户对象（按 rest_id 去重）。
+
+    X 的用户对象形状（新旧并存 —— 调研明确警告）：
+        旧版扁平：`{"__typename": "User", "rest_id": ..., "legacy": {screen_name, followers_count, ...}}`
+        新版嵌套：`{"core": {screen_name, name}, "relationship_counts": {...}}`
+
+    这里对两种都收集，解析时在 `parse_user_http` 里兼容。
+    """
+    if isinstance(obj, dict):
+        tn = str(obj.get("__typename") or "")
+        rid = str(obj.get("rest_id") or "")
+        legacy = obj.get("legacy")
+        looks_user = (
+            "User" in tn
+            and rid
+            and (isinstance(legacy, dict) or "core" in obj)
+        )
+        if looks_user:
+            out[rid] = obj
+        for v in obj.values():
+            _collect_users(v, out)
+    elif isinstance(obj, list):
+        for v in obj:
+            _collect_users(v, out)
+
+
+def parse_user_http(u: Dict[str, Any]) -> Optional[UserProfile]:
+    """把 X 的 user 对象转成统一 UserProfile。
+
+    ## ⚠️ 新旧 schema 并存（调研明确警告）
+
+    **旧版扁平**（`legacy.*`）：
+        screen_name / name / description / followers_count /
+        friends_count / statuses_count / profile_image_url_https /
+        verified / location
+
+    **新版嵌套**：
+        core.screen_name / core.name
+        relationship_counts.followers / relationship_counts.following
+        tweet_counts.tweets
+        profile_bio.description
+        verification.verified
+        avatar.image_url
+        location.location
+        rest_id（顶层）
+
+    两套都要兼容 —— 只认一套会在 X 切换时静默返回空字段。
+    """
+    if not isinstance(u, dict):
+        return None
+
+    legacy = u.get("legacy") if isinstance(u.get("legacy"), dict) else {}
+    core = u.get("core") if isinstance(u.get("core"), dict) else {}
+    rel = u.get("relationship_counts") if isinstance(u.get("relationship_counts"), dict) else {}
+    tweets = u.get("tweet_counts") if isinstance(u.get("tweet_counts"), dict) else {}
+    bio = u.get("profile_bio") if isinstance(u.get("profile_bio"), dict) else {}
+    ver = u.get("verification") if isinstance(u.get("verification"), dict) else {}
+    avatar = u.get("avatar") if isinstance(u.get("avatar"), dict) else {}
+    loc = u.get("location") if isinstance(u.get("location"), dict) else {}
+
+    uid = str(u.get("rest_id") or legacy.get("id_str") or "")
+    handle = str(core.get("screen_name") or legacy.get("screen_name") or "")
+    # ⚠️ 只有 rest_id 而没有昵称/handle 的，不是有效用户对象
+    # （实测 GraphQL 里 `{"rest_id": "..."}` 这种壳会在多处出现，
+    #   把它当用户会产出全空的记录）
+    if not handle:
+        return None
+    if not uid:
+        uid = handle
+
+    name = str(core.get("name") or legacy.get("name") or handle)
+    desc = str(bio.get("description") or legacy.get("description") or "")
+
+    followers = _to_int(rel.get("followers", legacy.get("followers_count")))
+    following = _to_int(rel.get("following", legacy.get("friends_count")))
+    total = _to_int(tweets.get("tweets", legacy.get("statuses_count")))
+    likes = _to_int(legacy.get("favourites_count"))
+
+    verified = bool(ver.get("verified", legacy.get("verified", False)))
+    avatar_url = str(
+        avatar.get("image_url") or legacy.get("profile_image_url_https") or ""
+    )
+
+    return UserProfile(
+        id=uid,
+        name=name,
+        avatar=avatar_url,
+        platform="twitter",
+        desc=desc,
+        followers=followers,
+        following=following,
+        total_likes=likes,
+        total_videos=total,
+        verified=verified,
+        raw_data={
+            "handle": handle,
+            "location": str(loc.get("location") or legacy.get("location") or ""),
+            "verified_type": ver.get("verified_type") or legacy.get("verified_type"),
+            "profile_url": f"https://x.com/{handle}" if handle else "",
+            "user": u,
+        },
+    )
+
+
+def _to_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 async def close() -> None:

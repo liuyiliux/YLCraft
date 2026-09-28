@@ -303,6 +303,56 @@ async def _scroll_and_collect(page, want: int, max_rounds: int = 12) -> Dict[str
     }
 
 
+async def fetch_self_handle_via_browser(conn_key: str = "") -> str:
+    """用浏览器取**自己**的 handle（X 没有"我是谁"的 GraphQL operation）。
+
+    ## 为什么只能走浏览器
+
+    调研确认 twscrape 与 Scweet **都没有 `me()`**，全部 `OP_*` 常量里
+    **没有 Viewer**（已穷尽核对）。所以不能靠 GraphQL 拿自己的身份。
+
+    ## 做法
+
+    打开 x.com，从**账号菜单按钮**（`SideNav_AccountSwitcher_Button`）
+    里的 `/handle` 链接取。**必须先确认登录** —— 未登录时页面里的
+    链接都是别人的（微博那边踩过这个坑）。
+
+    失败返回空字符串（**不猜身份**）。
+    """
+    try:
+        session = await _get_session(conn_key)
+        await check_logged_in(session.page)
+        handle = await session.page.evaluate(JS_FIND_SELF_HANDLE)
+        return str(handle or "").strip().lstrip("@")
+    except TwitterLoginRequiredError:
+        logger.info("[twitter] 未登录 —— 无法确定自己是谁")
+        return ""
+    except Exception as exc:
+        logger.warning("[twitter] 取自己的 handle 失败：%s", exc)
+        return ""
+
+
+# 从**已登录**的页面取自己的 handle。
+#
+# 只认账号菜单里的链接（那是当前登录用户），**不认页面上的任意
+# /handle 链接** —— 那些可能是推荐内容里的别人。
+JS_FIND_SELF_HANDLE = """
+() => {
+  const btn = document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]');
+  if (btn) {
+    for (const a of btn.querySelectorAll('a[href]')) {
+      const m = (a.getAttribute('href') || '').match(/^\\/([A-Za-z0-9_]{1,15})$/);
+      if (m) return m[1];
+    }
+    // 退一步：按钮里的文本含 @handle
+    const t = (btn.innerText || '').match(/@([A-Za-z0-9_]{1,15})/);
+    if (t) return t[1];
+  }
+  return '';
+}
+"""
+
+
 async def close_pool() -> None:
     await _pool.close_all()
 
