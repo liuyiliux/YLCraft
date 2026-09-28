@@ -332,7 +332,8 @@ def test_http_search_requires_both_cookies():
 
     from app.services.platforms.twitter import search_http
 
-    src = inspect.getsource(search_http._request_page)
+    # 逻辑在 _request_page_raw（_request_page 是它的薄封装）
+    src = inspect.getsource(search_http._request_page_raw)
     assert "REQUIRED_COOKIES" in src
     assert "TwitterAuthError" in src
     assert "账号中心" in src, "错误信息要告诉用户去哪登录"
@@ -357,9 +358,9 @@ def test_http_retries_once_on_404():
 
     from app.services.platforms.twitter import search_http
 
-    src = inspect.getsource(search_http._request_page)
+    src = inspect.getsource(search_http._request_page_raw)
     assert "404" in src, "应处理 404"
-    assert "invalidate_xclid" in src or "invalidate" in src, "应清缓存"
+    assert "invalidate" in src, "应清缓存"
     assert "force_refresh" in src, "重试要强制重新生成"
     # 有两次尝试
     assert "for attempt in (1, 2)" in src
@@ -371,7 +372,7 @@ def test_http_error_messages_are_actionable():
 
     from app.services.platforms.twitter import search_http
 
-    src = inspect.getsource(search_http._request_page)
+    src = inspect.getsource(search_http._request_page_raw)
     assert "401" in src and "403" in src
     assert "重新登录" in src or "账号中心" in src
 
@@ -569,6 +570,156 @@ def test_max_page_guard():
     src = inspect.getsource(search_http.search_via_http)
     assert "MAX_PAGE" in src
     assert "max_results" in src, "错误提示应给出替代方案（调大 max_results）"
+
+
+# =============================================================================
+# 用户搜索 / 用户详情（2026-09-28）
+# =============================================================================
+
+def test_user_search_reuses_search_timeline():
+    """**关键**：X 搜用户**复用 SearchTimeline**，只改 `product`。
+
+    调研确认 X **不存在**独立的 SearchUser/UserSearch operation
+    （已逐行核对 twscrape 全部 OP_* 常量 + Scweet manifest）。
+    所以不该新增 queryId —— 零额外成本。
+    """
+    from app.services.platforms.twitter import apis
+
+    assert apis.PRODUCT_PEOPLE == "People"
+    # 用户搜索用的仍是 SEARCH_OP
+    src = inspect.getsource(
+        __import__("app.services.platforms.twitter.search_http",
+                   fromlist=["search_users_via_http"]).search_users_via_http
+    )
+    assert 'product="People"' in src or "PRODUCT_PEOPLE" in src
+    assert "SEARCH_OP" not in src or "_request_page" in src, "应复用 SearchTimeline 请求"
+
+
+def test_resolve_product_user_aliases():
+    from app.services.platforms.twitter.apis import resolve_product
+
+    for alias in ("user", "people", "users"):
+        assert resolve_product(alias) == "People", alias
+
+
+def test_user_by_screen_name_op():
+    """UserByScreenName 的 queryId 与 fieldToggles（来源 twscrape）。"""
+    from app.services.platforms.twitter import apis
+
+    assert apis.USER_BY_SCREEN_NAME_OP == "Gb-d6r0vxPOADdG62OEBpQ/UserByScreenName"
+    # ⚠️ 必须带 fieldToggles（twscrape user_by_login_raw 明确给了 9 个）
+    ft = apis.USER_BY_SCREEN_NAME_FIELD_TOGGLES
+    assert isinstance(ft, dict) and len(ft) >= 5
+    assert "hidden_profile_likes_enabled" in ft
+
+
+def test_build_user_lookup_variables_strips_at():
+    from app.services.platforms.twitter.apis import build_user_lookup_variables
+
+    assert build_user_lookup_variables("@foo")["screen_name"] == "foo"
+    assert build_user_lookup_variables("foo")["withSafetyModeUserFields"] is True
+
+
+def test_parse_user_http_legacy_shape():
+    """**旧版扁平 schema**（`legacy.*`）。"""
+    from app.services.platforms.twitter.search_http import parse_user_http
+
+    u = parse_user_http({
+        "rest_id": "123",
+        "legacy": {
+            "screen_name": "foo", "name": "Foo", "description": "hi",
+            "followers_count": 100, "friends_count": 20,
+            "statuses_count": 5, "favourites_count": 9,
+            "profile_image_url_https": "https://pbs.twimg.com/a.jpg",
+            "verified": True, "location": "Tokyo",
+        },
+    })
+    assert u is not None
+    assert u.id == "123"
+    assert u.name == "Foo"
+    assert u.followers == 100 and u.following == 20
+    assert u.total_videos == 5 and u.total_likes == 9
+    assert u.verified is True
+    assert u.raw_data["handle"] == "foo"
+    assert u.raw_data["location"] == "Tokyo"
+
+
+def test_parse_user_http_new_shape():
+    """**新版嵌套 schema**（`core.*` / `relationship_counts.*`）。
+
+    调研明确警告：新旧两套并存，只认一套会在 X 切换时静默返回空字段。
+    """
+    from app.services.platforms.twitter.search_http import parse_user_http
+
+    u = parse_user_http({
+        "rest_id": "456",
+        "core": {"screen_name": "bar", "name": "Bar"},
+        "relationship_counts": {"followers": 200, "following": 30},
+        "tweet_counts": {"tweets": 77},
+        "profile_bio": {"description": "bio"},
+        "verification": {"verified": False, "verified_type": "Blue"},
+        "avatar": {"image_url": "https://pbs.twimg.com/b.jpg"},
+        "location": {"location": "Osaka"},
+    })
+    assert u is not None
+    assert u.id == "456"
+    assert u.name == "Bar"
+    assert u.followers == 200 and u.following == 30
+    assert u.total_videos == 77
+    assert u.desc == "bio"
+    assert u.raw_data["handle"] == "bar"
+    assert u.raw_data["location"] == "Osaka"
+
+
+@pytest.mark.parametrize("bad", [{}, {"rest_id": "1"}, None, "字符串"])
+def test_parse_user_http_tolerates_bad_input(bad):
+    from app.services.platforms.twitter.search_http import parse_user_http
+
+    assert parse_user_http(bad) is None
+
+
+def test_collect_users_matches_both_shapes():
+    from app.services.platforms.twitter.search_http import _collect_users
+
+    out: dict = {}
+    _collect_users({"data": {"x": [
+        {"__typename": "User", "rest_id": "1", "legacy": {"screen_name": "a"}},
+        {"__typename": "User", "rest_id": "2", "core": {"screen_name": "b"}},
+        {"__typename": "Tweet", "rest_id": "9", "legacy": {}},   # 不是用户
+    ]}}, out)
+    assert set(out.keys()) == {"1", "2"}, out
+
+
+def test_self_profile_does_not_invent_viewer_query():
+    """**回归**：不要臆造 Viewer queryId。
+
+    调研穷尽核对 twscrape 全部 OP_* 常量 + Scweet manifest ——
+    **没有 Viewer，也没有 me()**。所以"我的数据"只能靠浏览器读 handle，
+    再走 UserByScreenName。
+    """
+    from app.services.platforms.twitter import apis
+
+    src = inspect.getsource(apis)
+    assert "Viewer" not in src, "不应臆造 Viewer operation"
+
+    from app.services.platforms.twitter import client as tw_client
+
+    csrc = inspect.getsource(tw_client.TwitterClient.get_self_profile)
+    assert "fetch_self_handle_via_browser" in csrc, "应走浏览器取 handle"
+    assert "get_user_profile" in csrc, "再用 handle 取资料"
+
+
+def test_self_handle_only_from_account_menu():
+    """**回归**：自己的 handle 只从**账号菜单**取，不从页面任意链接取。
+
+    （微博那边踩过：未登录时页面里的链接全是别人的。）
+    """
+    from app.services.platforms.twitter import search_dom
+
+    js = search_dom.JS_FIND_SELF_HANDLE
+    assert "SideNav_AccountSwitcher_Button" in js, "应从账号菜单取"
+    src = inspect.getsource(search_dom.fetch_self_handle_via_browser)
+    assert "check_logged_in" in src, "取之前必须确认登录"
 
 
 # =============================================================================

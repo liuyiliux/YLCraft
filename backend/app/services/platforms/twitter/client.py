@@ -21,9 +21,17 @@ from ..types import (
     NoteDetail,
     SearchParams,
     SearchResult,
+    UserProfile,
 )
 
 logger = logging.getLogger("ylcraft.platforms.twitter")
+
+
+class TwitterAuthError(RuntimeError):
+    """X 凭证缺失或失效（需要用户重新登录）。
+
+    与"没有搜索结果"必须区分 —— 前者要用户去登录，后者才是关键词没内容。
+    """
 
 
 @register_platform("twitter")
@@ -113,8 +121,7 @@ class TwitterClient(BasePlatformClient):
     async def get_detail(self, item_id: str, **kwargs) -> NoteDetail:
         """取推文详情。
 
-        DOM 路径已含正文/作者/图片/视频，所以优先复用调用方带的 raw
-        （搜索时抓到的 DOM 数据），避免再开一次页面。
+        优先复用调用方带的 raw（搜索时已抓到的数据），避免再多一次请求。
         """
         from .search_dom import parse_detail_from_raw
 
@@ -125,6 +132,69 @@ class TwitterClient(BasePlatformClient):
                 return detail
         raise RuntimeError(
             f"[twitter] 未能获取推文详情（id={item_id}）。"
-            "推特详情需要浏览器路径（且必须登录）—— "
             "请先搜索取到该推文，再基于搜索结果查看详情。"
         )
+
+    # =========================================================================
+    # 用户（可选能力）
+    # =========================================================================
+
+    async def search_users(
+        self,
+        keyword: str,
+        max_results: int = 20,
+    ) -> List[UserProfile]:
+        """搜 X 用户（**复用 SearchTimeline，只把 product 改成 "People"**）。
+
+        来源：twscrape `api.py::search_user`
+            kv = {"product": "People", **(kv or {})}
+
+        调研确认 X **不存在**独立的 SearchUser/UserSearch operation
+        （已逐行核对 twscrape 全部 OP_* 常量 + Scweet manifest），
+        所以直接复用现有 queryId —— 零额外成本。
+        """
+        from .search_http import search_users_via_http
+
+        cookie = self.header_cookie()
+        if not cookie:
+            raise TwitterAuthError(
+                "[twitter] 搜用户需要登录态（auth_token + ct0）。"
+                "请在「账号中心」用浏览器方式登录一次 x.com。"
+            )
+        return await search_users_via_http(
+            keyword, cookie_header=cookie, max_results=max_results
+        )
+
+    async def get_user_profile(self, user_id: str) -> Optional[UserProfile]:
+        """按 handle 取 X 用户资料（`UserByScreenName`）。
+
+        `user_id` 这里是 **handle**（不带 @）—— X 的 UserByScreenName
+        按 screen_name 查；数字 id 要用另一个 operation（未实现）。
+        """
+        from .search_http import get_user_via_http
+
+        cookie = self.header_cookie()
+        if not cookie:
+            raise TwitterAuthError(
+                "[twitter] 查用户资料需要登录态。请在「账号中心」登录一次 x.com。"
+            )
+        return await get_user_via_http(user_id.lstrip("@"), cookie_header=cookie)
+
+    async def get_self_profile(self) -> Optional[UserProfile]:
+        """取**自己**的资料。
+
+        ## ⚠️ X 没有"我是谁"的 GraphQL operation（调研确认）
+
+        twscrape 与 Scweet **都没有 `me()`**，全部 `OP_*` 常量里
+        **没有 Viewer**（已穷尽核对）。所以这里不臆造 queryId。
+
+        可行做法：先从**浏览器**页面取自己的 handle，再走 UserByScreenName。
+        （X 的搜索是纯 HTTP，但"我是谁"只能靠浏览器读页面。）
+        """
+        from .search_dom import fetch_self_handle_via_browser
+
+        handle = await fetch_self_handle_via_browser(self.config.conn_id or "")
+        if not handle:
+            logger.info("[twitter] 未能取到自己的 handle（可能未登录）")
+            return None
+        return await self.get_user_profile(handle)

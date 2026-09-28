@@ -59,8 +59,28 @@ SEARCH_PAGE_TYPE = "searchall"
 # 微博卡片类型：只有 9 带 mblog（正文）
 CARD_TYPE_MBLOG = 9
 
-# 用户主页容器前缀（`100505` + uid）——未实测，暂不实现
+# 用户卡片（card_type=11 → card_group[] 里每项有 `user` 对象）
+#
+# ⚠️ 与内容搜索**结构完全不同**：
+#     内容：cards[].card_type=9  → .mblog
+#     用户：cards[].card_type=11 → .card_group[].user
+CARD_TYPE_USER_GROUP = 11
+
+# 用户主页容器前缀（`100505` + uid）
+#
+# 实测（2026-09-28）：
+#     GET /api/container/getIndex?containerid=100505{uid}
+#     → data.userInfo{...}      ← 直接是用户对象（29 个字段）
+# 与 MediaCrawler `get_creator_info_by_id` 的做法一致。
 USER_CONTAINER_PREFIX = "100505"
+
+# 用户搜索的 type（**实测确认**）
+#
+#     GET /api/container/getIndex
+#         ?containerid=100103type=3&q={关键词}&page_type=searchall&page=N
+#     → cards[].card_type=11 → card_group[] → user{}
+#     实测一页 20 个用户
+SEARCH_TYPE_USER = "3"
 
 
 # =============================================================================
@@ -112,3 +132,34 @@ def build_search_params(
         "page_type": SEARCH_PAGE_TYPE,
         "page": str(page),
     }
+
+
+def build_user_search_params(keyword: str, page: int = 1) -> dict[str, str]:
+    """构造**用户搜索**参数（实测确认）。
+
+        GET /api/container/getIndex
+            ?containerid=100103type=3&q={关键词}&page_type=searchall&page=N
+        → cards[].card_type=11 → card_group[] → user{}
+        实测一页 20 个用户
+
+    ⚠️ 与内容搜索的唯一区别是 `type=3`（内容综合是 `type=1`）。
+        用户卡片走 `card_type=11` + `card_group`，
+        内容卡片走 `card_type=9` + `mblog` —— **解析方式完全不同**。
+    """
+    return {
+        "containerid": f"{SEARCH_CONTAINER_PREFIX}type={SEARCH_TYPE_USER}&q={keyword}",
+        "page_type": SEARCH_PAGE_TYPE,
+        "page": str(page),
+    }
+
+
+def build_user_detail_params(uid: str) -> dict[str, str]:
+    """构造用户详情参数（实测确认）。
+
+        GET /api/container/getIndex?containerid=100505{uid}
+        → data.userInfo{...}
+
+    与 MediaCrawler `get_creator_info_by_id` 一致（它还额外带
+    jumpfrom/type/value，实测只带 containerid 也能用）。
+    """
+    return {"containerid": f"{USER_CONTAINER_PREFIX}{uid}"}

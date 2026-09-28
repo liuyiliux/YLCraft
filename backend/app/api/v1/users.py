@@ -41,6 +41,13 @@ SUPPORTED = {
     "xiaohongshu": {"conn_platform": "XHS", "cookie_domain": "xiaohongshu"},
     # 别名，容忍前端传 xhs
     "xhs": {"conn_platform": "XHS", "cookie_domain": "xiaohongshu"},
+    # 微博：用户搜索**免登录可用**（实测）；「我的数据」需登录
+    "weibo": {"conn_platform": "WEIBO", "cookie_domain": "weibo"},
+    "wb": {"conn_platform": "WEIBO", "cookie_domain": "weibo"},
+    # X（原 Twitter）：纯 HTTP，需 auth_token + ct0
+    "twitter": {"conn_platform": "TWITTER", "cookie_domain": "x.com"},
+    "x": {"conn_platform": "TWITTER", "cookie_domain": "x.com"},
+    "tw": {"conn_platform": "TWITTER", "cookie_domain": "x.com"},
 }
 
 
@@ -139,12 +146,34 @@ async def _client_for(platform: str):
     from app.services.platforms import create_client
 
     cookie = netscape_to_header(raw, cfg["cookie_domain"])
-    # 小红书用户接口需要签名（走 API 模式）；抖音同样走 API
-    client = create_client(platform if platform != "xhs" else "xiaohongshu",
-                           mode="api", cookie=cookie)
+    # mode 按平台选：
+    #   · 抖音 / 小红书 / X → api
+    #       （小红书内部自己签名；X 纯 HTTP，需 transaction-id）
+    #   · 微博 → patchright（依赖 Service Worker，见
+    #     `services/platforms/weibo/search_patchright.py`）
+    client_name = platform
+    if client_name in ("xhs",):
+        client_name = "xiaohongshu"
+    elif client_name in ("wb",):
+        client_name = "weibo"
+    elif client_name in ("x", "tw"):
+        client_name = "twitter"
+    mode = "patchright" if client_name == "weibo" else "api"
+    client = create_client(client_name, mode=mode, cookie=cookie,
+                           conn_id=conn_id_str(platform))
     if client is None:
         raise HTTPException(status_code=500, detail=f"{platform} 客户端未注册")
     return client
+
+
+def conn_id_str(platform: str) -> str:
+    """取该平台的连接 id（连不上就给空串，不影响纯 HTTP 路径）。"""
+    try:
+        cfg = _resolve(platform)
+        cid, _raw = resolve_connection("", cfg["conn_platform"])
+        return cid or ""
+    except Exception:
+        return ""
 
 
 @router.get(
