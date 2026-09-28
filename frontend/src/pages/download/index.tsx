@@ -933,9 +933,18 @@ export default function DownloadPage() {
   }
 
   // 图片加载失败时的占位（避免整块空白）
+  //
+  // ⚠️ **不能用 `btoa()`** —— 它只接受 Latin1 字符，
+  // SVG 里的中文（"加载失败"）会让它抛
+  // `InvalidCharacterError: The string to be encoded contains
+  //  characters outside of the Latin1 range`，
+  // 而这是**模块顶层求值**，会直接崩掉整个页面（实测踩过）。
+  //
+  // 用 `encodeURIComponent` 生成 data URI —— 原生支持 Unicode，
+  // 不需要 base64，也不用 `unescape` 那类已废弃的 hack。
   const FALLBACK_IMG =
-    'data:image/svg+xml;base64,' +
-    btoa(
+    'data:image/svg+xml;charset=utf-8,' +
+    encodeURIComponent(
       '<svg xmlns="http://www.w3.org/2000/svg" width="140" height="186">' +
       '<rect width="140" height="186" fill="#1f2937"/>' +
       '<text x="70" y="93" fill="#6b7280" font-size="12" text-anchor="middle">加载失败</text>' +
@@ -1037,7 +1046,7 @@ export default function DownloadPage() {
         <CloudDownloadOutlined style={{ color: THEME.primary, marginRight: 8 }} />
         内容去水印解析
         <Text style={{ color: THEME.textSecondary, fontSize: 14, marginLeft: 12 }}>
-          支持视频和图片 · 1000+ 平台（抖音/B站/Twitter 等）
+          支持视频和图片 · 1000+ 平台（抖音/B站/X 等）
         </Text>
       </Title>
 
@@ -1046,7 +1055,7 @@ export default function DownloadPage() {
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
           <Input
             size="large"
-            placeholder="粘贴视频或图片链接（支持 1000+ 平台，包括抖音/B站/Twitter 等）..."
+            placeholder="粘贴视频或图片链接（支持 1000+ 平台，包括抖音/B站/X 等）..."
             value={url} onChange={e => setUrl(normalizeUrl(e.target.value))} onPressEnter={handleParse}
             style={{ background: THEME.bgInput, color: THEME.textPrimary }}
             prefix={<LinkOutlined style={{ color: THEME.textSecondary }} />}
