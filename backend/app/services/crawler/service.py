@@ -196,14 +196,25 @@ class CrawlerService:
             # 所以微博也必须 patchright —— 但原因与小红书不同
             # （小红书要签名，微博要 SW 上下文）。
             #
-            # 实测（2026-09-28）推特：**必须登录 + 必须走浏览器**。
-            # httpx（guest token + queryId）→ 404；页面内 fetch → 403；
-            # 未登录打开搜索页 → 重定向到登录引导页、article=0。
-            # 且 queryId 会轮换（gallery-dl 里硬编码的那个已失效），
-            # 所以走"打开搜索页 + 读 DOM"。
+            # 实测（2026-09-28 更新）推特：**已改为纯 HTTP 优先**。
+            #
+            # 之前归因错了 —— httpx 拿 404 **不是 queryId 失效，而是缺
+            # `x-client-transaction-id` 请求头**（twscrape/Scweet 都有记录）。
+            # 补上它 + `auth_token`/`ct0` 后，SearchTimeline 实测 200：
+            #
+            #     要 20 条 -> 20 条 (9.1s)    要 50 条 -> 50 条 (19.3s)
+            #     cursor 翻页 4 页 85 条
+            #     **全程不开浏览器**
+            #
+            # 所以推特**不再**放进 BROWSER_ONLY —— 走 api 模式（纯 HTTP），
+            # 客户端内部在 HTTP 失败时才自己回退 DOM。
+            #
+            # 注意：这里必须让 mode=api。否则 BasePlatformClient 会在
+            # `search()` 之前就为注入 cookie 而**启动浏览器**（实测看到
+            # 9 个 chrome 进程白起），而我们的 HTTP 路径根本不需要它。
             #
             # 其他平台（B站/抖音/快手…）仍用 api。
-            BROWSER_ONLY = ("xhs", "xiaohongshu", "weibo", "wb", "twitter", "x", "tw")
+            BROWSER_ONLY = ("xhs", "xiaohongshu", "weibo", "wb")
             mode = "patchright" if platform in BROWSER_ONLY else "api"
             logger.info(
                 "[_search_via_platforms] platform=%s mode=%s keyword=%s",
