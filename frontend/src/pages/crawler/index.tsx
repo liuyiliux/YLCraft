@@ -1236,7 +1236,11 @@ export default function CrawlerPage() {
     }
     try {
       const detailConnectionId = record.platform === 'bili' ? selectedBiliConn : selectedSearchConn
-      const detail = await getNoteDetail(record.platform, record.id, detailConnectionId)
+      // 把当前搜索关键词一起传下去 —— 小红书详情要"站内点击"打开，
+      // 而点击前必须先搜到这条笔记（用笔记 id 搜不到）。
+      const detail = await getNoteDetail(
+        record.platform, record.id, detailConnectionId, keyword,
+      )
       setDetailNote(prev => prev ? { ...prev, ...detail, raw_data: detail } : null)
 
       // B站：同时获取统计数据

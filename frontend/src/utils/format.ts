@@ -86,6 +86,16 @@ export function parseCreateTime(v: any): Date | null {
  * - 影视类型：显示完整日期
  * - 其它：显示相对时间（分钟前/小时前/天前...）
  *
+ * ## ⚠️ 只有「月-日」的短格式必须**原样显示**（2026-09-28 修）
+ *
+ * 小红书搜索卡片给的时间是 **`09-12`**（当年）或 **`2025-11-15`**（往年）
+ * —— 前者**没有年份**。
+ *
+ * 原实现直接 `new Date("09-12")` → 浏览器按 **2001 年** 兜底 →
+ * 算出"25 年前"这种荒谬结果（用户实测截图反馈过）。
+ *
+ * 所以遇到没有年份的短格式，**原样返回**，不猜年份、不算相对时间。
+ *
  * @param create_time 原始时间字段
  * @param platform 平台标识（wechat_mp / bili / xhs ...）
  * @param searchType 搜索类型（account / article / video / user ...）
@@ -95,6 +105,16 @@ export function formatTime(
   platform?: string,
   searchType?: string
 ): string {
+  // ① 「月-日」或「月/日」：没有年份，**原样显示**（不能算相对时间）
+  if (typeof create_time === 'string') {
+    const short = create_time.trim()
+    if (/^\d{1,2}[-/]\d{1,2}$/.test(short)) return short
+    // 「3天前」「昨天」这种平台自带的中文相对时间也原样显示
+    if (/^(\d+\s*(分钟|小时|天|周|月|年)前|昨天|今天|刚刚)$/.test(short)) {
+      return short
+    }
+  }
+
   const date = parseCreateTime(create_time)
   if (!date) return '-'
   // 微信公众号 / 公众号文章：显示具体日期

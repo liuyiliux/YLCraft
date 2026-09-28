@@ -400,25 +400,40 @@ class CrawlerService:
         platform: str,
         note_id: str,
         cookie: str = "",
+        keyword: str = "",
     ) -> dict:
         """
         获取笔记详情（无水印）
         返回包含无水印图片/视频 URL 的字典
 
-        注：抖音没有"按 id 反查详情"的已确认接口，其详情数据在搜索结果里
-        就已完整（前端因此直接用结果渲染，不走这里）。
-        若确实调到这里且缺少原始数据，会抛出可读错误而不是静默返回空。
+        ## 平台差异（实测）
+
+        · **小红书必须走 patchright**（API 端点已失效），
+          而且详情要"站内点击"打开 —— 所以要把**搜索关键词**传下去
+          （用笔记 id 搜不到目标笔记，实测返回不相关结果）。
+        · 抖音没有"按 id 反查详情"的已确认接口，其详情数据在搜索结果里
+          就已完整（前端因此直接用结果渲染，不走这里）。
+          若确实调到这里且缺少原始数据，会抛出可读错误而不是静默返回空。
         """
         try:
             from app.services.platforms import create_client
-            from app.services.platforms.types import NoteDetail as PlatformNoteDetail
 
-            client = create_client(platform, mode="api", cookie=cookie)
+            # 小红书走 patchright；其它平台走 api
+            mode = "patchright" if platform in ("xhs", "xiaohongshu") else "api"
+            client = create_client(platform, mode=mode, cookie=cookie)
             if not client:
                 logger.error(f"[get_note_detail] Failed to create client for {platform}")
                 return {}
 
-            detail = await client.get_detail(note_id)
+            # 小红书详情需要 keyword（用于站内搜索定位卡片）
+            kwargs: dict = {}
+            if keyword and platform in ("xhs", "xiaohongshu"):
+                kwargs["url"] = (
+                    "https://www.xiaohongshu.com/search_result"
+                    f"?keyword={keyword}"
+                )
+
+            detail = await client.get_detail(note_id, **kwargs)
 
             if not detail:
                 logger.warning(f"[get_note_detail] No detail found for {note_id}")

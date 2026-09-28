@@ -333,14 +333,23 @@ async def search_enhanced(req: SearchEnhancedRequest):
 
 
 @router.get("/note-detail", summary="获取笔记详情（无水印）", response_model=NoteDetailResponse)
-async def get_note_detail(platform: str, note_id: str, conn_id: str = ""):
+async def get_note_detail(platform: str, note_id: str, conn_id: str = "",
+                          keyword: str = ""):
     """
     获取笔记详情（无水印图片 & 视频）
     - platform: 平台（xhs/dy/ks/bili/wechat_mp）
     - note_id: 笔记ID
     - conn_id: 可选，使用指定连接的 Cookie
+    - keyword: 可选，**搜索时用的关键词**。
+
+      ⚠️ 小红书详情必须"站内点击"打开，而点击前要先搜到这条笔记
+      —— 用笔记 id 当搜索词**搜不到**（实测返回 30 条不相关结果）。
+      所以前端把当前搜索关键词传过来，后端用它搜索再定位点击。
     """
-    logger.info(f"[get_note_detail] platform={platform} note_id={note_id}")
+    logger.info(
+        f"[get_note_detail] platform={platform} note_id={note_id} "
+        f"keyword={keyword!r}"
+    )
 
     # 微信公众号特殊处理：公众号账号没有"笔记详情"概念，返回空结果
     # 前端会直接使用搜索结果中的数据显示详情
@@ -371,23 +380,18 @@ async def get_note_detail(platform: str, note_id: str, conn_id: str = ""):
         )
 
     # 获取 Cookie
-    cookie = ""
-    if conn_id:
-        try:
-            from app.services.platform_connection import get_platform_connection_service
-            service = get_platform_connection_service()
-            conn = await service.get_by_id(conn_id)
-            if conn and conn.cookie_content:
-                # cookie_content 是 Netscape 文件格式，必须先规范化为 `k=v; k2=v2`，
-                # 否则会被 httpx 以 Illegal header value 拒绝（同 _get_conn_cookie 的坑）。
-                from app.services.cookies.manager import CookieManager
-                cookie = CookieManager().extract_raw(conn.cookie_content) or ""
-        except Exception as e:
-            logger.warning(f"[get_note_detail] Failed to get cookie from connection: {e}")
+    #
+    # ⚠️ 用 `_get_conn_cookie`（它是同步的、已规范化、且是**本文件既有的
+    # 正确实现**）。这里原本是自己抄了一份 async 取 cookie 的逻辑，
+    # 结果调错了 service 方法 → 拿到空 cookie →
+    # 小红书详情直接报"需要登录 Cookie"（实测踩过）。
+    cookie = _get_conn_cookie(conn_id) if conn_id else ""
 
     try:
         service = get_crawler_service()
-        detail = await service.get_note_detail(platform, note_id, cookie)
+        detail = await service.get_note_detail(
+            platform, note_id, cookie, keyword=keyword
+        )
 
         if not detail:
             raise HTTPException(status_code=404, detail="笔记不存在或获取失败")

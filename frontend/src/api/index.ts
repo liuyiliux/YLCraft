@@ -1192,8 +1192,24 @@ export const searchEnhanced = (params: {
 }) => request('/crawler/search-enhanced', { method: 'POST', body: JSON.stringify(params) })
 
 /** 获取笔记详情（无水印） */
-export const getNoteDetail = (platform: string, noteId: string, connId?: string) =>
-  request(`/crawler/note-detail?platform=${platform}&note_id=${noteId}${connId ? `&conn_id=${connId}` : ''}`)
+/**
+ * 获取笔记详情。
+ *
+ * `keyword` 是**当前搜索用的关键词** —— 小红书详情必须"站内点击"
+ * 打开，而点击前要先搜到这条笔记；用笔记 id 当搜索词搜不到（实测
+ * 返回 30 条不相关结果）。所以把关键词带上让后端去搜索定位。
+ */
+export const getNoteDetail = (
+  platform: string,
+  noteId: string,
+  connId?: string,
+  keyword?: string,
+) =>
+  request(
+    `/crawler/note-detail?platform=${platform}&note_id=${noteId}` +
+    `${connId ? `&conn_id=${connId}` : ''}` +
+    `${keyword ? `&keyword=${encodeURIComponent(keyword)}` : ''}`,
+  )
 
 /** 批量获取无水印资源 */
 export const fetchNoWatermark = (params: {
