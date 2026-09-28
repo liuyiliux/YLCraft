@@ -5,7 +5,8 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   CloudDownloadOutlined, AudioOutlined, PlayCircleOutlined, LinkOutlined, DeleteOutlined, FolderOpenOutlined,
-  PictureOutlined, DownloadOutlined, SaveOutlined, InboxOutlined, PauseCircleOutlined, ReloadOutlined
+  PictureOutlined, DownloadOutlined, SaveOutlined, InboxOutlined, PauseCircleOutlined, ReloadOutlined,
+  ImportOutlined
 } from '@ant-design/icons'
 import {
   addTorrentMagnet,
@@ -30,6 +31,7 @@ import {
   createDownloadTask,
   downloadImages,
   getDownloadTask,
+  importCrawler,
   wechatMpDownloadSingle,
 } from '../../api'
 import type { DownloadParseResponse, VideoQuality } from '../../types/api'
@@ -879,6 +881,8 @@ export default function DownloadPage() {
   const [downloadingImages, setDownloadingImages] = useState(false)
   const [downloadingImageIndex, setDownloadingImageIndex] = useState<number | null>(null)
   const [downloadedImages, setDownloadedImages] = useState<string[]>([])
+  // 导入素材库的状态（与"下载到本地"区分开）
+  const [importingAsset, setImportingAsset] = useState(false)
   const [dlProgress, setDlProgress] = useState(0)
   const [dlError, setDlError] = useState('')
   const [savedFilePath, setSavedFilePath] = useState('')
@@ -1011,6 +1015,44 @@ export default function DownloadPage() {
       message.error(e?.response?.data?.detail || '下载失败')
     } finally {
       setDownloadingImages(false)
+    }
+  }
+
+  /** 把解析出的图集导入**素材库**（与「全部下载到本地」不同）。
+   *
+   * 用户反馈"我点全部下载但是素材库没有看到" —— 因为「全部下载」只
+   * 存本地磁盘。这个按钮才走 `/crawler/import` 进素材库。
+   */
+  const handleImportToAssets = async () => {
+    if (!result) return
+    setImportingAsset(true)
+    try {
+      const res = await importCrawler({
+        results: [
+          {
+            id: result.asset_id || result.page_url || url,
+            platform: result.platform || '',
+            title: result.title || '',
+            // 解析响应里没有 desc 字段 —— 传空串（不编造）
+            desc: '',
+            cover: result.images?.[0] || result.cover_url || '',
+            author: result.author || '',
+            url: result.page_url || url,
+            // 图集要带上全部图片，后端会按"集合 + 子图"两层入库
+            images: result.images || [],
+          } as any,
+        ],
+      })
+      const n = res?.imported_count || 0
+      if (n > 0) {
+        message.success(`已导入素材库（${n} 项）`)
+      } else {
+        message.info('素材已存在，未新增（可在素材库查看）')
+      }
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail || '导入素材库失败')
+    } finally {
+      setImportingAsset(false)
     }
   }
 
@@ -1294,14 +1336,27 @@ export default function DownloadPage() {
                 </Space>
               }
               extra={
-                <Button
-                  type="primary"
-                  icon={<CloudDownloadOutlined />}
-                  loading={downloadingImages}
-                  onClick={handleDownloadAllImages}
-                >
-                  全部下载
-                </Button>
+                <Space>
+                  {/* 「全部下载」只把图片存到**本地磁盘**；
+                      「导入素材库」才会进素材库 —— 这是两条不同的路径，
+                      用户容易以为下载完就能在素材库看到（实测反馈过）。
+                      所以两个按钮并排放，并各自标明去处。 */}
+                  <Button
+                    icon={<ImportOutlined />}
+                    loading={importingAsset}
+                    onClick={handleImportToAssets}
+                  >
+                    导入素材库
+                  </Button>
+                  <Button
+                    type="primary"
+                    icon={<CloudDownloadOutlined />}
+                    loading={downloadingImages}
+                    onClick={handleDownloadAllImages}
+                  >
+                    全部下载到本地
+                  </Button>
+                </Space>
               }
               style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}
             >
