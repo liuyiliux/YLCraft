@@ -89,7 +89,8 @@ const PLATFORMS: PlatformInfo[] = [
   { value: 'bili', label: 'B站', icon: <PlayCircleOutlined />, color: '#00aeec' },
   { value: 'wb', label: '微博', icon: <MessageOutlined />, color: '#ff8200' },
   { value: 'zhihu', label: '知乎', icon: <QuestionCircleOutlined />, color: '#0066ff' },
-  { value: 'twitter', label: 'Twitter/X', icon: <TwitterOutlined />, color: '#1DA1F2' },
+  // 平台已改名 X（原 Twitter）。标签用官方现名，标识符仍是 `twitter`。
+  { value: 'twitter', label: 'X', icon: <TwitterOutlined />, color: '#1DA1F2' },
   { value: 'youtube', label: 'YouTube', icon: <YoutubeOutlined />, color: '#FF0000' },
   { value: 'wechat_mp', label: '微信公众号', icon: <MessageOutlined />, color: '#07C160' },
 ]

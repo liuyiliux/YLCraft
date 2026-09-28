@@ -47,7 +47,12 @@ UI_ONLY_PLATFORMS = {"openai", "anthropic", "minimax", "google", "s3", "ftp", "w
 
 # 已知历史缺口：这些平台从未实现浏览器取 Cookie / 前端入口，属既有状态。
 # 单独列出而非静默忽略——新接入平台不得加入此表。
-KNOWN_GAPS = {"telegram", "tiktok", "twitter", "youtube"}
+# 已知历史缺口：这几个平台**从未**支持浏览器取 Cookie
+# （没有 detector、账号中心也没入口），用 --allow-known 可临时放行。
+#
+# ⚠️ 修好一个就从这里删掉 —— 否则校验器会对已修的平台继续放行，
+# 缺口会重新溜进来（`twitter` 2026-09-28 修好后已移出）。
+KNOWN_GAPS = {"telegram", "tiktok", "youtube"}
 
 
 def load_env() -> None:
