@@ -53,7 +53,10 @@ SUPPORTED_PLATFORMS = [
     {"value": "fanqie",     "label": "番茄小说",   "icon": "book",       "color": "#ff5a5f",  "auth_types": ["cookie"], "view": True, "publish": True, "credential": "cookie"},
     {"value": "youtube",    "label": "YouTube",   "icon": "youtube",     "color": "#ff0000",  "auth_types": ["cookie"]},
     {"value": "tiktok",     "label": "TikTok",    "icon": "tiktok",      "color": "#000000",  "auth_types": ["cookie"]},
-    {"value": "twitter",    "label": "Twitter/X", "icon": "twitter",    "color": "#1da1f2",  "auth_types": ["cookie"]},
+    # 平台已改名 X（原 Twitter）。label 用现名，**value 保持 `twitter`**
+    # —— PlatformType.TWITTER、连接表 platform 字段、既有数据都是
+    # `twitter`，改 value 会破坏既有数据。
+    {"value": "twitter",    "label": "X",          "icon": "twitter",    "color": "#1da1f2",  "auth_types": ["cookie"]},
     {"value": "telegram",   "label": "Telegram",  "icon": "send",        "color": "#0088cc",  "auth_types": ["cookie"]},
     {"value": "openai",     "label": "OpenAI",    "icon": "api",         "color": "#10a37f",  "auth_types": ["api_key"]},
     {"value": "anthropic",  "label": "Anthropic", "icon": "api",         "color": "#d4a0e7",  "auth_types": ["api_key"]},

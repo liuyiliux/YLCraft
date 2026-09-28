@@ -41,7 +41,8 @@ function getPlatformInfo(platform: string) {
     ks: { label: '快手', color: '#ff5000' },
     wb: { label: '微博', color: '#ff8200' },
     zhihu: { label: '知乎', color: '#0066ff' },
-    twitter: { label: 'Twitter/X', color: '#1DA1F2' },
+    // 平台已改名 X（原 Twitter）
+    twitter: { label: 'X', color: '#1DA1F2' },
     youtube: { label: 'YouTube', color: '#FF0000' },
   }
   return map[platform] || { label: platform, color: '#888' }

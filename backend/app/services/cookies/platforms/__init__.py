@@ -20,6 +20,15 @@ _detector_registry: dict[str, str] = {
     "kuaishou": "app.services.cookies.platforms.kuaishou:KuaishouDetector",
     "bilibili": "app.services.cookies.platforms.bilibili:BilibiliDetector",
     "weibo": "app.services.cookies.platforms.weibo:WeiboDetector",
+    # X（原 Twitter）。
+    # ⚠️ 标识符**保留 `twitter`** —— `PlatformType.TWITTER`、连接表的
+    # platform 字段、既有数据用的都是 `twitter`，改标识会破坏既有数据。
+    # 界面显示名统一用「X」（前端 PLATFORM_METAS 里 label 就是 'X'）。
+    # 另注册 `x` / `tw` 别名：漏了它们会让用户在账号中心点 X 时
+    # 报「平台 twitter 暂不支持 Patchright 获取」（实测就是这个表现）。
+    "twitter": "app.services.cookies.platforms.x:XDetector",
+    "x": "app.services.cookies.platforms.x:XDetector",
+    "tw": "app.services.cookies.platforms.x:XDetector",
     "zhihu": "app.services.cookies.platforms.zhihu:ZhihuDetector",
     "wechat_mp": "app.services.cookies.platforms.wechat_mp:WechatMPDetector",
     "fanqie": "app.services.cookies.platforms.fanqie:FanqieDetector",

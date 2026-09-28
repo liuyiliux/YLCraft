@@ -33,7 +33,34 @@ python scripts/check_platform_registry.py --allow-known  # 全量但放行已知
 ```
 
 脚本会连真实数据库读取 PG 枚举值，逐项比对上述清单，缺失即退出码 1。
-已知历史缺口（`telegram`/`tiktok`/`twitter`/`youtube` 缺 Detector 与前端入口，
+
+### ⚠️ 教训：**必须跑全量校验，不能只查自己改的那个平台**
+
+2026-09-28 接入推特时，我只跑了 `check_platform_registry.py weibo`
+（只校验微博），**漏掉了推特**，于是：
+
+  · 后端做完了搜索（`services/platforms/twitter/`）
+  · 但 `_detector_registry` 里**没有 `twitter`**
+  · 用户在账号中心点 X → 报
+    **「平台 twitter 暂不支持 Patchright 获取」**
+  · 结果：功能写了，**但用户根本没法登录**，等于不可用
+
+而且当时 `twitter` 还在脚本的 `KNOWN_GAPS`（"已知缺口，放行"）里，
+`--allow-known` 会**继续放行**这个已经能修的问题，进一步掩盖。
+
+**两条规则**：
+
+1. 改完平台后跑**不带参数的**全量校验（不是 `<platform>` 单查）——
+   单查只能证明你改的那个没问题，证明不了别的没被带坏。
+2. **修好一个平台就从 `KNOWN_GAPS` 移出** ——
+   它只是"历史上确实没做"的记录，不是"可以一直不做"。
+   （`twitter` 修好后已移出；剩下 `telegram`/`tiktok`/`youtube` 是真的没做。）
+
+对应的回归测试：`backend/tests/test_platform_registry_completeness.py`
+（会检查"已实现搜索的平台都在 Patchright 支持列表里"、
+"registry 里每个 key 都能真正加载出类"、"KNOWN_GAPS 不含已修平台"）。
+
+已知历史缺口（`telegram`/`tiktok`/`youtube` 缺 Detector 与前端入口，
 本就未支持浏览器取 Cookie）在脚本的 `KNOWN_GAPS` 里单列，**新平台不得加入**。
 
 ## 搜索类平台的三个额外约束

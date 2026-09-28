@@ -42,7 +42,8 @@ const { Title, Text, Paragraph } = Typography
 const PLATFORM_LABELS: Record<string, string> = {
   bilibili: 'B站', douyin: '抖音', kuaishou: '快手',
   xiaohongshu: '小红书', weibo: '微博', youtube: 'YouTube', tiktok: 'TikTok',
-  twitter: 'Twitter/X', telegram: 'Telegram', wechat_mp: '微信公众号',
+  // 平台已改名 X（原 Twitter），标签用现名
+  twitter: 'X', telegram: 'Telegram', wechat_mp: '微信公众号',
   unknown: '未知平台',
 }
 
@@ -897,14 +898,14 @@ export default function DownloadPage() {
     if ((url.includes('twitter.com') || url.includes('x.com')) && url.includes('/photo/')) {
       return {
         type: 'info',
-        text: 'ℹ️ 检测到这是 Twitter/X 图片链接，我们会尝试解析图片（目前只支持视频）'
+        text: 'ℹ️ 检测到这是 X（原 Twitter）图片链接，我们会尝试解析图片（目前只支持视频）'
       }
     }
 
     if (url.includes('twitter.com') || url.includes('x.com')) {
       return {
         type: 'info',
-        text: 'ℹ️ Twitter/X 链接可能需要登录才能解析，请确认内容是公开的'
+        text: 'ℹ️ X（原 Twitter）链接可能需要登录才能解析，请确认内容是公开的'
       }
     }
 
