@@ -196,8 +196,14 @@ class CrawlerService:
             # 所以微博也必须 patchright —— 但原因与小红书不同
             # （小红书要签名，微博要 SW 上下文）。
             #
+            # 实测（2026-09-28）推特：**必须登录 + 必须走浏览器**。
+            # httpx（guest token + queryId）→ 404；页面内 fetch → 403；
+            # 未登录打开搜索页 → 重定向到登录引导页、article=0。
+            # 且 queryId 会轮换（gallery-dl 里硬编码的那个已失效），
+            # 所以走"打开搜索页 + 读 DOM"。
+            #
             # 其他平台（B站/抖音/快手…）仍用 api。
-            BROWSER_ONLY = ("xhs", "xiaohongshu", "weibo", "wb")
+            BROWSER_ONLY = ("xhs", "xiaohongshu", "weibo", "wb", "twitter", "x", "tw")
             mode = "patchright" if platform in BROWSER_ONLY else "api"
             logger.info(
                 "[_search_via_platforms] platform=%s mode=%s keyword=%s",
