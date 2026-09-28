@@ -33,6 +33,15 @@ JS_PARSE_CARDS = """
     const t = c.querySelector('.title, [class*=title]');
     const au = c.querySelector('.name, [class*=author] .name');
     const lk = c.querySelector('[class*=like] .count, .like-wrapper .count');
+    // 发布时间：实测卡片里有 `.time`（内容形如 "05-25" / "06-08" / "3天前"）
+    //
+    // ⚠️ 选择器要精确到 `.time` —— 写成 [class*=time] 会命中
+    // `.name-time-wrapper`（父元素），拿到的是"作者名 + 时间"整块文本
+    // （实测踩过：时间字段混进了作者名）。
+    //
+    // 注意：这个字符串是 Python 普通字符串，注释里**不能写反斜杠 n**
+    // （会被解释成真换行，导致 JS 语法错误 —— 实测踩过）。
+    const tm = c.querySelector('.time');
     const hasVideo = !!c.querySelector('[class*=play], svg.play');
     // href 形如 /search_result/{id}?xsec_token=...&xsec_source=...
     const href = a ? (a.getAttribute('href') || '') : '';
@@ -56,6 +65,12 @@ JS_PARSE_CARDS = """
       title: t ? t.innerText.trim() : '',
       author: au ? au.innerText.trim() : '',
       likes: lk ? lk.innerText.trim() : '0',
+      // 发布时间（实测卡片有 .time，如 "05-25"）。
+      //
+      // ⚠️ **收藏数在搜索列表里没有** —— 实测 30 张卡片里含"收藏"
+      // 字样的为 0 个。列表只显示点赞数，收藏要进详情页才有。
+      // 所以这里不抓 collects（避免给一个恒为空的字段）。
+      time_text: tm ? tm.innerText.trim() : '',
       is_video: hasVideo,
       cover: cover,
       href: href,
@@ -360,6 +375,9 @@ def parse_card(c: Dict[str, Any]) -> SearchResult:
         platform="xiaohongshu",
         type="video" if c.get("is_video") else "note",
         likes=parse_count(likes_raw),
+        # 发布时间：卡片只给 "05-25" 这种短格式（没有年份），
+        # 原样透出（**不编造年份**）。详情页有完整时间。
+        create_time=str(c.get("time_text") or ""),
         raw_data={"card": c, "xsec_token": token},
     )
 

@@ -134,15 +134,36 @@ async def get_detail_via_patchright(
                 session.warmed = True
             session.touch()
 
-            try:
-                await session.page.goto(
-                    url, wait_until="domcontentloaded", timeout=60000
-                )
-            except Exception as exc:
-                raise RuntimeError(
-                    f"[xhs] 打开笔记页超时：{type(exc).__name__}。"
-                    "通常是 Cookie 失效或平台限流。"
-                ) from exc
+            # ⚠️ **不能直接 `goto` 详情 URL**（实测 2026-09-28）
+            #
+            # 用户反馈"详情加载失败"。实测三种打开方式：
+            #
+            #     A) goto search_result/{id}?xsec_token=...  → 重定向到
+            #        /website-login/error，页面显示
+            #        「安全限制 访问链接异常 300017」
+            #     B) goto explore/{id}?xsec_token=...        → 跳回 /explore
+            #     C) goto explore/{id}（不带 token）          → 跳回 /explore
+            #     D) **在搜索页点击卡片**（站内跳转）          → ✅ 成功
+            #        拿到 /explore/{id}?xsec_token=...，图集 5 张、指示器 1/3
+            #
+            # 即：小红书详情**必须在站内点击进入**（带正确的会话上下文），
+            # 直接构造 URL 会被安全策略拦掉。
+            #
+            # 所以先打开搜索页，再在页面里点击目标笔记。
+            ok = await _open_note_by_click(session.page, item_id, url)
+            if not ok:
+                # 点击找不到（例如笔记不在首屏）时，退回 goto 再试一次 ——
+                # 虽然多半会被拦，但比直接失败多一次机会。
+                logger.info("[xhs] 站内点击没找到目标笔记，退回 goto 方式")
+                try:
+                    await session.page.goto(
+                        url, wait_until="domcontentloaded", timeout=60000
+                    )
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"[xhs] 打开笔记页超时：{type(exc).__name__}。"
+                        "通常是 Cookie 失效或平台限流。"
+                    ) from exc
 
             # 等图集/正文渲染
             try:
@@ -267,6 +288,61 @@ JS_PARSE_NOTE = r"""
     });
 }
 """
+
+
+# 在搜索页里点击目标笔记卡片（**站内跳转**）。
+#
+# 实测（2026-09-28）：小红书详情**必须站内点击进入** ——
+# 直接 goto 详情 URL 会被安全策略拦（300017 / 跳回首页）。
+#
+# 做法：打开搜索页 → 找到 href 含目标 note_id 的卡片 → 点击 →
+# 等详情渲染。
+JS_CLICK_NOTE_CARD = """
+(args) => {
+  const id = args.id;
+  // 搜索结果卡片
+  for (const a of document.querySelectorAll('section.note-item a.cover')) {
+    const href = a.getAttribute('href') || '';
+    if (href.indexOf(id) >= 0) { a.click(); return true; }
+  }
+  // 兜底：任意带该 id 的链接
+  for (const a of document.querySelectorAll('a[href]')) {
+    const href = a.getAttribute('href') || '';
+    if (href.indexOf(id) >= 0) { a.click(); return true; }
+  }
+  return false;
+}
+"""
+
+
+async def _open_note_by_click(page, item_id: str, fallback_url: str) -> bool:
+    """通过"站内点击"打开笔记详情（返回是否成功点到）。
+
+    见 `JS_CLICK_NOTE_CARD` 上方注释 —— 直接 goto 会被安全拦截。
+    """
+    if not item_id:
+        return False
+
+    try:
+        # 打开该笔记所在关键词的搜索页（用笔记 id 搜不到，所以用通用入口）
+        await page.goto(
+            "https://www.xiaohongshu.com/explore",
+            wait_until="domcontentloaded",
+            timeout=60000,
+        )
+        await page.wait_for_timeout(6000)
+
+        clicked = await page.evaluate(JS_CLICK_NOTE_CARD, {"id": item_id})
+        if not clicked:
+            return False
+
+        # 等详情渲染（站内跳转后有动画 + 网络请求）
+        await page.wait_for_timeout(6000)
+        logger.info("[xhs] 已通过站内点击打开笔记 %s", item_id)
+        return True
+    except Exception as exc:
+        logger.warning("[xhs] 站内点击打开笔记失败：%s", exc)
+        return False
 
 
 def parse_note_dom(data: Dict[str, Any], item_id: str) -> NoteDetail:
