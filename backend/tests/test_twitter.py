@@ -537,6 +537,40 @@ def test_xclid_documents_404_cause():
     assert "ConnectError" in doc, "应记录 create() 不可用的坑"
 
 
+def test_search_respects_page_parameter():
+    """**回归**：X 没有 `page` 参数，必须用 cursor 模拟。
+
+    原实现忽略 `page`，于是前端点"第 2 页"会拿到和第 1 页
+    **完全相同**的数据（实测：两页首条 id 一样）。
+
+    现在 page=N 会**先翻过前 N-1 页**（丢弃），再返回第 N 页的结果。
+    """
+    import inspect
+
+    from app.services.platforms.twitter import search_http
+
+    src = inspect.getsource(search_http.search_via_http)
+    assert "skip_remaining" in src, "应有跳过前 N-1 页的逻辑"
+    assert "page_no" in src, "应读取 page"
+    # 跳过时不能收进结果
+    assert "continue" in src
+
+
+def test_max_page_guard():
+    """page 太大要报可操作错误，**而不是默默返回第 1 页**。
+
+    X 只能顺序翻，page 越大越慢，所以要设上限并明确告知。
+    """
+    import inspect
+
+    from app.services.platforms.twitter import search_http
+
+    assert search_http.MAX_PAGE >= 3, "上限太小"
+    src = inspect.getsource(search_http.search_via_http)
+    assert "MAX_PAGE" in src
+    assert "max_results" in src, "错误提示应给出替代方案（调大 max_results）"
+
+
 # =============================================================================
 # 「必须登录」这个结论要被钉住
 # =============================================================================
