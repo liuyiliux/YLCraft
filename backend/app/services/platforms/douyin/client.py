@@ -209,6 +209,23 @@ class DouyinClient(BasePlatformClient):
         现在按需求条数自动翻页：单页最多 20（实测上限），
         需要更多就按 offset 递增继续取，直到够数或 has_more=0。
 
+        ## ⚠️ 但 offset 翻页**已失效**（2026-09-28 复测）
+
+        上面那条"offset=0/20/40 有效"是 2026-09-27 的结论，**现在不成立**：
+
+            offset=0   count=20  -> 18 条  cursor=20  has_more=True   ✅
+            offset=20  count=20  ->  0 条  cursor=40  has_more=False  ❌
+            offset=5   count=5   ->  0 条  cursor=10  has_more=False  ❌
+
+        而且**在真实浏览器里跑同样的请求，offset=20 也是 0 条** ——
+        所以这是抖音的**服务端行为变化**，不是我们的代码问题，
+        也不是"自动化被限制"。
+
+        **结论：抖音目前只能拿首页（约 18 条）**。
+        `page=2` 会得到 0 条（不再返回与第 1 页重复的数据，
+        这比之前"两页相同"更接近真实语义 —— 确实是"没有第 2 页"）。
+        代码保留 offset 递增逻辑：若抖音恢复该能力，无需改动即可生效。
+
         ## 为什么要重试（2026-09-26 实测，48 次采样）
 
         抖音搜索会**不定期**返回空 data（code=0 但 data=[]）。实测采样：
@@ -223,9 +240,20 @@ class DouyinClient(BasePlatformClient):
 
         # 单页上限 20（实测；请求更多也不会多给）
         page_size = min(want, SINGLE_PAGE_MAX)
-        offset = 0
+
+        # ⚠️ 必须把 `page` 换算成 offset（2026-09-28 修）
+        #
+        # 抖音接口没有 `page` 参数，只有 `offset`。原实现**忽略 page、
+        # offset 恒从 0 开始**，于是前端点"第 2 页"会拿到和第一页
+        # **完全相同**的数据（实测：两页首条 id 一样）。
+        #
+        # 换算：page=N（1 起）→ offset=(N-1)*page_size
+        page_no = max(1, int(getattr(params, "page", 1) or 1))
+        offset = (page_no - 1) * page_size
+
         collected: List[SearchResult] = []
         seen: set[str] = set()
+        # page 模式只取"这一页"；不传 page（=1）时按 want 连续翻页
         max_pages = max(1, math.ceil(want / page_size))
 
         for page_idx in range(max_pages):

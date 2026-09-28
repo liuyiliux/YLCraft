@@ -59,6 +59,14 @@ from .xclid import clear_all as clear_xclid_cache
 
 logger = logging.getLogger("ylcraft.platforms.twitter.http")
 
+# page 模式的最大页码。
+#
+# X 没有 page 参数，page=N 只能靠 cursor **顺序翻过**前 N-1 页，
+# 所以页数越大越慢（每页一次请求 + 一次 transaction-id 生成）。
+# 超过这个值就报可操作错误，**而不是默默返回第 1 页**
+# （那样前端会看到"翻页没反应"，实测就是这个症状）。
+MAX_PAGE = 10
+
 
 class TwitterAuthError(RuntimeError):
     """X 凭证缺失或失效（需要用户重新登录）。"""
@@ -300,21 +308,50 @@ async def search_via_http(
     cookie_header: str,
     max_pages: int = 10,
 ) -> List[SearchResult]:
-    """纯 HTTP 搜 X（cursor 翻页，直到够量 / 没游标 / 到页数上限）。"""
+    """纯 HTTP 搜 X。
+
+    ## 两种取数模式
+
+    **模式 A：`max_results` 驱动**（前端不传 page / page=1 时）
+      从第 1 页开始，用 cursor 一直翻到够 `max_results` 条。
+      这是主用法（"我要 50 条"）。
+
+    **模式 B：`page` 驱动**（前端传 page>=2 时）
+      X 的 GraphQL 只认 cursor，**没有 page 参数**。
+      所以 page=N 要**先翻过前 N-1 页**（丢掉），再返回第 N 页的结果。
+      否则前端点"第 2 页"会拿到和第 1 页**完全相同**的数据
+      （实测踩过：两页首条 id 一样）。
+
+      代价：page 越大越慢（要顺序翻过去）。所以这里限制
+      `page <= MAX_PAGE`，超了就报可操作错误，而不是默默返回第 1 页。
+    """
     want = max(1, params.max_results or 20)
+    page_no = max(1, int(getattr(params, "page", 1) or 1))
 
     raw_st = getattr(params, "search_type", "") or "note"
     stype = str(getattr(raw_st, "value", raw_st))
     product = resolve_product(stype)
 
+    if page_no > MAX_PAGE:
+        raise ValueError(
+            f"[twitter] 最多支持翻到第 {MAX_PAGE} 页（要第 {page_no} 页）。"
+            "X 没有 page 参数，只能靠 cursor 顺序翻 —— 页数太大会很慢。"
+            "如需更多结果，请把 max_results 调大（一次给够）。"
+        )
+
     merged: Dict[str, Dict] = {}
     cursor: Optional[str] = None
     pages = 0
+    # page=1 时收 0 页丢弃；page=N 时收 N-1 页丢弃
+    skip_remaining = page_no - 1
 
-    for i in range(max_pages):
+    # 循环上限：跳过的页 + 本页要翻的页
+    total_rounds = skip_remaining + max_pages
+
+    for i in range(total_rounds):
         variables = build_search_variables(
             keyword=params.keyword,
-            count=min(20, max(20, want)) if want <= 20 else 20,
+            count=20,
             product=product,
             cursor=cursor,
         )
@@ -335,12 +372,24 @@ async def search_via_http(
             raise
 
         before = len(merged)
+        cursor_next = _get_bottom_cursor(payload)
+
+        # page=N 模式：先丢掉前 N-1 页
+        if skip_remaining > 0:
+            skip_remaining -= 1
+            cursor = cursor_next
+            if not cursor:
+                # 还没翻到目标页就没游标了 → 该页不存在
+                logger.info("[twitter] 翻到第 %d 页时没有更多数据", page_no)
+                return []
+            continue
+
         _collect_tweets(payload, merged)
-        pages = i + 1
+        pages += 1
 
         if len(merged) >= want:
             break
-        cursor = _get_bottom_cursor(payload)
+        cursor = cursor_next
         if not cursor or len(merged) == before:
             break
 
@@ -350,8 +399,8 @@ async def search_via_http(
         if parsed is not None:
             results.append(parsed)
 
-    logger.info("[twitter] 搜索 %r -> %d 条（HTTP，%d 页）",
-                params.keyword, len(results), pages)
+    logger.info("[twitter] 搜索 %r -> %d 条（HTTP，page=%d，翻 %d 页）",
+                params.keyword, len(results), page_no, pages)
     return results[:want]
 
 
