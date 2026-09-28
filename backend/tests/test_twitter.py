@@ -197,6 +197,66 @@ def test_parse_tweet_tolerates_bad_input(bad):
 
 
 # =============================================================================
+# 分页：必须"边滚边收集"（用户反馈"只有 9 个"）
+# =============================================================================
+
+def test_scroll_collects_while_scrolling():
+    """**回归**：必须**边滚边收集**，不能"滚到底再读一次 DOM"。
+
+    推特是**虚拟列表** —— 滚动时回收离屏节点。
+    实测 DOM 里 article 数量会波动：
+
+        滚1: 5→10   滚2: 10→9   滚4: 9→6   滚8: 9→15
+
+    所以最后读一次 DOM 会丢掉中间滚过的推文
+    （实测表现为"最多只有 9 条"，用户反馈就是这个问题）。
+
+    正确做法：每滚一次就把当时 DOM 里的推文抓下来、按 id 去重累积。
+    """
+    from app.services.platforms.twitter import search_dom
+
+    src = inspect.getsource(search_dom._scroll_and_collect)
+    # 循环内要 evaluate 抓取
+    assert "JS_PARSE_TWEETS" in src, "循环内要读 DOM"
+    assert "merged" in src, "要有累积容器"
+    # 必须有去重（按 id）
+    assert 'tid not in merged' in src or "not in merged" in src, "要按 id 去重"
+
+
+def test_scroll_goes_to_bottom_not_scrollby():
+    """**回归**：滚动要**滚到底**（`scrollTo(0, scrollHeight)`）。
+
+    实测 `scrollBy(0, 1600)` 几乎没用（5→6 条），
+    因为一屏推文就 ~900px，推特是在**接近底部**时才触发下一批。
+    """
+    from app.services.platforms.twitter import search_dom
+
+    src = inspect.getsource(search_dom._scroll_and_collect)
+    assert "scrollTo(0, document.body.scrollHeight)" in src, "应滚到底"
+    assert "scrollBy" not in src, "不应只 scrollBy（实测无效）"
+
+
+def test_scroll_has_termination():
+    """滚动要有终止条件，不能无限滚。"""
+    from app.services.platforms.twitter import search_dom
+
+    src = inspect.getsource(search_dom._scroll_and_collect)
+    assert "max_rounds" in src, "应有轮次上限"
+    assert "stagnant" in src, "应检测停滞（连续无新增就停）"
+    assert "want" in src, "应够量就停"
+
+
+def test_scroll_uses_collect_function():
+    """搜索主流程要用 `_scroll_and_collect`（不是旧的"滚完再读"）。"""
+    from app.services.platforms.twitter import search_dom
+
+    src = inspect.getsource(search_dom.search_via_patchright)
+    assert "_scroll_and_collect" in src
+    # 不应再出现旧的"滚完单独读一次"的模式
+    assert "_scroll_until_enough" not in src
+
+
+# =============================================================================
 # 「必须登录」这个结论要被钉住
 # =============================================================================
 

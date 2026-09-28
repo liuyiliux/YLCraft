@@ -192,20 +192,25 @@ async def search_via_patchright(
         logger.warning("[twitter] 等待推文超时，按当前 DOM 继续")
     await session.page.wait_for_timeout(6000)
 
-    # 滚一两次多加载些（推特是无限滚动）
-    for _ in range(2):
-        try:
-            await session.page.evaluate("window.scrollBy(0, 1600)")
-        except Exception:
-            break
-        await session.page.wait_for_timeout(2500)
+    # 滚动加载。
+    #
+    # ⚠️ 这里踩过两个坑（2026-09-28，用户反馈"只有 9 个"）：
+    #
+    #   坑 1（滚动方式）：原实现是**固定滚 2 次、每次 `scrollBy(0, 1600)`**。
+    #     实测几乎没效果 —— 首屏 5 条，`scrollBy(0,1600)` 只到 6 条，
+    #     而 `scrollTo(0, scrollHeight)`（滚到底）能到 10 条。
+    #     原因：一屏推文就 ~900px，滚 1600 只多加载一两条；
+    #     推特是在**接近底部**时才触发下一批。
+    #
+    #   坑 2（虚拟列表，更隐蔽）：就算滚到底，**最后读一次 DOM 也拿不全**。
+    #     诊断显示 DOM 里 article 数量会**波动**：
+    #         滚1: 5→10   滚2: 10→9   滚4: 9→6   滚8: 9→15
+    #     因为推特是虚拟列表，**滚动时回收离屏节点** ——
+    #     中间滚过的推文已经不在 DOM 里了。
+    #
+    # 所以现在用 `_scroll_and_collect`：**边滚边收集 + 按 id 去重累积**。
+    data = await _scroll_and_collect(session.page, want)
 
-    try:
-        raw = await session.page.evaluate(JS_PARSE_TWEETS)
-    except Exception as exc:
-        raise RuntimeError(f"[twitter] 读取页面失败：{type(exc).__name__}") from exc
-
-    data = json.loads(raw) if isinstance(raw, str) else (raw or {})
     if not data.get("articles"):
         # article=0 可能是被重定向到登录页，再确认一次
         await check_logged_in(session.page)
@@ -225,6 +230,77 @@ async def search_via_patchright(
 
     logger.info("[twitter] 搜索 %r -> %d 条（DOM）", params.keyword, len(out))
     return out[:want]
+
+
+async def _scroll_and_collect(page, want: int, max_rounds: int = 12) -> Dict[str, Any]:
+    """**边滚边收集**推文（应对推特的虚拟列表）。
+
+    ## 为什么必须"边滚边收"（实测 2026-09-28）
+
+    原来只滚到底、最后读一次 DOM，结果拿不全。诊断显示
+    **DOM 里的 article 数量会波动**：
+
+        滚 1: 5 -> 10
+        滚 2: 10 -> 9     ← 变少了！
+        滚 4: 9 -> 6      ← 更少
+        滚 5: 6 -> 10
+        滚 8: 9 -> 15
+
+    原因：推特是**虚拟列表** —— 滚动时回收离屏节点，
+    DOM 里只保留可视区附近的那批。
+    所以"滚到底再读一次"会丢掉中间滚过的推文。
+
+    正确做法是每滚一次就把**当时 DOM 里的**推文抓下来、
+    按 id 去重累积。
+
+    ## 终止条件
+
+      · 累积够 `want` 条
+      · 连续 2 轮没有新增（真的到底了）
+      · 达到 max_rounds（防止无限滚）
+    """
+    merged: Dict[str, Any] = {}
+    stagnant = 0
+    last_count = 0
+
+    for i in range(max_rounds):
+        # 抓当前 DOM 里的推文并入总表（按 id 去重）
+        try:
+            raw = await page.evaluate(JS_PARSE_TWEETS)
+            batch = json.loads(raw) if isinstance(raw, str) else (raw or {})
+        except Exception:
+            break
+
+        new = 0
+        for t in (batch.get("tweets") or []):
+            tid = str((t or {}).get("id") or "")
+            if tid and tid not in merged:
+                merged[tid] = t
+                new += 1
+
+        if len(merged) >= want:
+            break
+
+        # 连续两轮没有新增 → 到底了
+        if new == 0 and len(merged) == last_count:
+            stagnant += 1
+            if stagnant >= 2:
+                break
+        else:
+            stagnant = 0
+        last_count = len(merged)
+
+        try:
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        except Exception:
+            break
+        # 等下一批渲染（实测 3.2s 比较稳）
+        await page.wait_for_timeout(3200)
+
+    return {
+        "articles": len(merged),
+        "tweets": list(merged.values()),
+    }
 
 
 async def close_pool() -> None:
