@@ -211,3 +211,112 @@ x.com/search?q=美食 搜索结果正常渲染    ← 以为"免登录可搜"
 **"接口不存在"和"没带登录态"要分清**。
 `ok=-100` + 跳登录页 是**登录态**问题，不是接口废弃；
 如果只看"返回空"就下结论，会误判成"微博搜索做不了"。
+
+
+---
+
+## 四、X（原 Twitter）纯 HTTP 方案 —— **已实测跑通**（2026-09-28）
+
+### 4.1 结论修正：404 的真正原因不是 queryId，而是缺 `x-client-transaction-id`
+
+之前记录的"四种直连方案全失败"里，**404 的主因判断错了**。
+调研 twscrape / Scweet 后发现，两个项目都在代码里明确记录：
+
+    twscrape/queue_client.py:
+        # if code 404 on first try then generate new x-client-transaction-id
+        # and retry     https://github.com/vladkens/twscrape/issues/248
+
+    Scweet/transaction.py:
+        "A request without the x-client-transaction-id header answers 404."
+
+**实测验证**：用库里真实登录 cookie + 手工生成的 transaction-id：
+
+    transaction-id 生成成功: TEDRYfzVqJDpSwK6D6kLPIq6UqrFPg7F3HvyOhAlxK89AVQb0wBAFnMv
+    SearchTimeline → HTTP 200  len=145151  tweet 条目=20
+
+**所以：X 可以不用浏览器运行时**（但仍需一次性登录 cookie）。
+
+### 4.2 完整可用请求（实测）
+
+    GET https://x.com/i/api/graphql/hyPfJYJ_XAtDYoslQc-Rgg/SearchTimeline
+        ?variables={"rawQuery":"美食","count":20,"querySource":"typed_query",
+                    "product":"Top","withGrokTranslatedBio":false}
+
+    必须的请求头：
+        authorization: Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D...
+        x-csrf-token: <ct0 cookie>
+        x-client-transaction-id: <动态生成>          ← 缺这个就 404
+        x-twitter-active-user: yes
+        x-twitter-auth-type: OAuth2Session
+        user-agent: <真实浏览器 UA>
+    必须的 cookie：auth_token + ct0（domain=.x.com）
+
+Bearer 与 queryId 来源：twscrape `account.py` / `api.py`。
+
+### 4.3 `x-client-transaction-id` 怎么生成
+
+来自 twscrape `xclid.py`：抓 `https://x.com/tesla` 页面 →
+用 BeautifulSoup 解析出 JS bundle →
+`await load_keys(soup, clt)` 得到 `(vk_bytes, anim_key)` →
+`XClIdGen(vk_bytes, anim_key).calc(method, path)`。
+
+⚠️ **twscrape 自带的 `XClIdGen.create()` 在本机报 `ConnectError`**
+（它内部用动态 UA `"@chrome"`）。但**直接用固定 UA 抓页面是通的**
+（HTTP 200, 304KB），所以手工走上面三步即可 —— 实测成功。
+
+### 4.4 cursor 翻页（实测）
+
+取响应里 `cursorType == "Bottom"` 的 `value`，塞进下一轮
+`variables.cursor`：
+
+    第 1 页: 新增 20  累计 20   cursor=有
+    第 2 页: 新增 22  累计 42   cursor=有
+    第 3 页: 新增 21  累计 63   cursor=有
+    第 4 页: 新增 22  累计 85   cursor=有
+
+**想拿多少拿多少** —— 比 DOM 方案（受虚拟列表限制）强得多。
+
+### 4.5 字段质量（实测）
+
+    ★ @viviliao711
+      正文: '肉末豆腐抱蛋，嫩到duang duang的！...'
+      时间: Tue Sep 22 01:25:44 +0000 2026
+      互动: 赞24 转2 评2
+      媒体: 1 个 type=video url=pbs.twimg.com/amplify_video_thumb/...
+      语言: zh
+
+关键字段：`legacy.full_text` / `created_at` / `favorite_count` /
+`retweet_count` / `reply_count` / `extended_entities.media` / `lang` / `id_str`。
+
+⚠️ 两个注意点：
+  · `views`（浏览量）GraphQL **没给**（实测 None）—— 不要编造
+  · `media_url_https` 给的是 `_thumb` 缩略图，原图要按
+    `?format=jpg&name=orig` 推导（gallery-dl 规则）
+
+### 4.6 与"必须登录"的关系
+
+**不矛盾**：X 搜索仍**必须登录**（未登录会被重定向到登录引导页），
+但"必须登录"≠"必须开浏览器运行时"。只要有 `auth_token` + `ct0`
+（一次性从浏览器导出），之后就能纯 HTTP 长期使用。
+
+### 4.7 开源对比（本次调研核实）
+
+| 项目 | 是否纯 HTTP | 凭证 | 状态 |
+|------|-----------|------|------|
+| **vladkens/twscrape** | ✅ | auth_token + ct0 | 活跃（默认分支 `main`） |
+| **Altimis/Scweet** | ✅ | auth_token + ct0 | 活跃 |
+| snscrape | ⚠️ 免凭证（guest token） | 无 | **停更于 2023-11**，queryId 全失效 |
+| nitter | ❌ | — | **已 archived** |
+| tweepy / python-twitter-v2 | ❌ | 官方付费 API | 不适用 |
+| MediaCrawler | ❌ **无 twitter 模块**（只有 bilibili/douyin/kuaishou/tieba/weibo/xhs/zhihu） | — | — |
+
+**官方 API 现状**（调研源：Postproxy / OpenTweet 2026 定价页）：
+免费额度已取消（2026-02-06 关闭新项目，2026-06-01 强制迁移），
+现为 pay-per-use **$0.005/条读取**，**且只有 7 天搜索窗口、无归档搜索**。
+
+### 4.8 待办
+
+把上述 HTTP 路径实现进 `services/platforms/twitter/`，
+作为 **DOM 路径的替代/回退**：
+  · 优先 HTTP（快、可翻页、字段全）
+  · HTTP 失败（如 transaction-id 生成失败）→ 回退现有 DOM 路径
