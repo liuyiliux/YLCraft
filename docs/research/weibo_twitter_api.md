@@ -106,105 +106,100 @@ MediaCrawler 用的是**解析 HTML**（不是 JSON API）：
 
 ## 二、推特 / X
 
-### 1. 关键结论：**未登录也能搜索**（与"必须 auth_token"的普遍说法不同）
+### 1. 结论：**搜索强制要求登录**（与微博相反）
 
-实测（2026-09-27，bsk 在真实浏览器）：
-
-```
-document.cookie 无 auth_token          ← 未登录
-x.com/search?q=美食&src=typed_query    ← 页面正常
-搜索结果正常渲染：
-  wangguan @wangguan2ghr  对美食一点抵抗力没有…
-  海派甜心 @paiisnobody   美食是健康的水煮菠菜…
-```
-
-网络捕获到真实请求：
+**先纠正一个容易误判的点。** 初步实测时看到：
 
 ```
-GET https://x.com/i/api/graphql/uGB-gNd5HE4TkpO70OcFNw/SearchTimeline
-    ?variables={"rawQuery":"美食","count":20,"querySource":"typed_query",
-                "product":"Top","withGrokTranslatedBio":true}
-    &features={...}
-→ HTTP 200
+document.cookie 无 auth_token          ← 以为"未登录"
+x.com/search?q=美食 搜索结果正常渲染    ← 以为"免登录可搜"
 ```
 
-**注意 queryId 是 `uGB-gNd5HE4TkpO70OcFNw`**，而 gallery-dl 里硬编码的是
-`4fpceYZ6-YQCx_JSl_Cn_A` —— 用旧值实测 **HTTP 404**（queryId 会轮换）。
-
-### 2. guest token 可以拿到
+**但这是误判**：`auth_token` 是 **httpOnly**，`document.cookie` 本来就看不到。
+后续验证确认该浏览器**已登录** —— 页面上有只有登录后才出现的元素：
 
 ```
-POST https://api.x.com/1.1/guest/activate.json
-     Authorization: Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejR...
-→ {"guest_token":"2104424973205110820"}   实测 HTTP 200
+[发帖] [账号菜单] [通知] [私信] [Grok] [历史] [个人资料]
 ```
 
-（Bearer 是 gallery-dl `extractor/twitter.py` 里的网页端固定值。）
+**决定性证据**：用 Patchright 全新 profile（真正未登录）打开
+`https://x.com/search?q=美食&src=typed_query`：
 
-### 3. 但 httpx 复现失败
+```
+→ 被重定向到 https://x.com/i/jf/onboarding/web?redirect_after_login=%2Fsearch...
+→ article 数 = 0（没有任何推文）
+```
 
-| 方案 | 结果 |
-|------|------|
-| guest token + 新 queryId，httpx 直连 | **HTTP 404** |
-| 页面内 fetch 同 URL（无额外头） | **HTTP 403** |
+即使先访问首页"入境"拿到 `gt`（guest token）cookie，搜索页**仍被重定向到登录引导页**。
+
+### 2. 所以推特需要真实登录态
+
+与微博（**实测确认免登录可搜**，`ok=1, total=870`）不同，
+推特搜索**必须有 `auth_token`**（浏览器登录后由 Patchright 持久化 profile 复用）。
+
+这与 gallery-dl 的做法一致：
+
+    cookies_domain = ".x.com"
+    cookies_names = ("auth_token",)
+    # 且注明 "Login with username & password is no longer supported.
+    #          Use browser cookies instead."
+
+**这意味着**：推特要能用，前提是**用户在 YLCraft 的浏览器里登录过一次推特**。
+
+### 3. 其他已确认的事实
+
+| 项 | 结果 |
+|---|---|
+| guest token 端点 | `POST https://api.x.com/1.1/guest/activate.json` → 200 |
+| queryId（gallery-dl 硬编码） | `4fpceYZ6-YQCx_JSl_Cn_A` → **404（已失效）** |
+| queryId（当前真实值） | `uGB-gNd5HE4TkpO70OcFNw`（bsk network 捕获） |
+| httpx + guest token + 新 queryId | **404** |
+| 页面内 fetch（无额外头） | **403** |
 | 页面内 fetch + `x-csrf-token`(ct0) | **仍 403** |
+| 从 JS bundle 动态提取 queryId | **不可行**（懒加载分散，主 bundle 里只 1 处且非 Search） |
 
-页面 cookie 实测含 `ct0`（160 位）、`guest_id`、`twid`，**没有 `auth_token`**。
-推特比微博严格得多，403 说明还差请求头组合（未查明是哪个）。
-
-### 3b. queryId 会轮换，硬编码必然失效
-
-- gallery-dl 里硬编码 `4fpceYZ6-YQCx_JSl_Cn_A` → 实测 **404**
-- 当前真实值 `uGB-gNd5HE4TkpO70OcFNw`（我方 bsk network 捕获）
-
-尝试从 JS bundle 动态提取：主 bundle 里 `queryId` 是**懒加载**的
-（只匹配到 1 处且不是 Search），分布在多个 chunk 里。
-**这条路太脆弱**，不作为方案。
-
-### 3c. 可用路径：操作 UI + 读 DOM（已验证可行）
-
-不依赖 queryId，直接**打开搜索页 URL，等渲染，读 `article` 节点**：
-
-```
-https://x.com/search?q={关键词}&src=typed_query         综合
-https://x.com/search?q={关键词}&f=media&src=typed_query 图片/视频
-```
-
-实测 DOM 提取成功：
-
-```json
-{"articles": 4,
- "statusLinks": ["/TaoSeDao/status/2101202430444675082"],
- "text": "桃色岛TaoSeDao @TaoSeDao · 9月19日 胖胖de奇妙旅行…"}
-```
-
-能读到：推文 ID（从 `/status/<id>`）、作者、正文。
-图片 URL 规则：`pbs.twimg.com/media/...`（**注意排除
-`profile_images`，那是头像**）。
-
-**下轮计划**：按这个路径实现（与微博同构：Patchright 打开页面 → 解析 DOM），
-媒体原图按 `?format=jpg&name=orig` 升级（gallery-dl 规则，需实测确认）。
-
-### 4. 图片/视频 URL 规则（来自 gallery-dl，未在我方环境验证）
+### 4. 图片/视频 URL 规则（gallery-dl，未在我方环境验证）
 
     self._size_image = "orig"
     self._size_fallback = ("4096x4096", "large", "medium", "small")
     # 形如: {base}?format={fmt}&name={size}
 
-即把 `&name=` 后面换成 `orig` 得原图。视频在
-`extended_entities.media[].video_info.variants[]`（yt-dlp 提取器里有）。
-**标注为"未验证"** —— 等下轮实测确认后再写代码。
+图片 URL 在 DOM 里是 `pbs.twimg.com/media/...`
+（**注意排除 `profile_images`，那是头像**）。
+视频在 `extended_entities.media[].video_info.variants[]`（yt-dlp 提取器）。
 
 ### 5. 来源
 
 | 结论 | 来源 |
 |------|------|
 | guest token 端点 + Bearer | gallery-dl `extractor/twitter.py:1856` |
-| 图片尺寸规则 orig/4096x4096 | gallery-dl `extractor/twitter.py:79-80, 266` |
-| 要求 auth_token Cookie | gallery-dl `extractor/twitter.py:27-28, 782-793` |
+| 要求 auth_token、密码登录已停用 | gallery-dl `extractor/twitter.py:27-28, 782-793` |
+| 图片尺寸规则 | gallery-dl `extractor/twitter.py:79-80, 266` |
 | 搜索 queryId + variables | gallery-dl `extractor/twitter.py:1598-1613` |
-| **当前 queryId `uGB-gNd5HE4TkpO70OcFNw`** | **我方 bsk network 实测捕获** |
-| 未登录可搜索 | **我方 bsk 实测**（cookie 无 auth_token，搜索结果正常） |
+| **搜索强制登录（未登录被重定向）** | **我方 Patchright 全新 profile 实测** |
+| 当前 queryId | **我方 bsk network 实测捕获** |
+| 页面已登录（有发帖/私信等元素） | **我方 bsk 实测** |
+
+---
+
+## 三、方法论：两次"差点误判"
+
+这两次都是**把"没登录"误读成"免登录可用"或"接口坏了"**：
+
+1. **微博**：httpx 返回 `ok=-100` →
+   差点以为"微博搜索做不了"。实际是**缺 Service Worker 上下文**，
+   换浏览器就通了。
+2. **推特**：`document.cookie` 无 `auth_token` →
+   差点以为"免登录可搜"。实际是 **httpOnly**，该浏览器是登录态的。
+
+**教训**：判断登录态不能只看 `document.cookie`，要看
+**只有登录后才出现的页面元素**（发帖/私信/账号菜单），
+或者**用全新 profile 复现**（这才是真·未登录）。
+
+**推论**：`ok=-100` / 重定向到登录页 / 空 article 列表，
+都应报成**"需要登录"**而不是**"关键词无结果"** ——
+前者用户能自己解决，后者会让人以为功能坏了。
+
 
 ---
 

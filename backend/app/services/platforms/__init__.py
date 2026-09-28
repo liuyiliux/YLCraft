@@ -27,6 +27,7 @@ def _auto_discover_platforms():
         "douyin",
         "kuaishou",
         "weibo",
+        "twitter",
         "zhihu",
         "fanqie",
     ]
