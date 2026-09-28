@@ -316,33 +316,99 @@ JS_CLICK_NOTE_CARD = """
 
 
 async def _open_note_by_click(page, item_id: str, fallback_url: str) -> bool:
-    """通过"站内点击"打开笔记详情（返回是否成功点到）。
+    """通过"站内点击"打开笔记详情（返回是否成功）。
 
-    见 `JS_CLICK_NOTE_CARD` 上方注释 —— 直接 goto 会被安全拦截。
+    ## ⚠️ 必须"先搜索到这条笔记，再点它"（2026-09-28 实测）
+
+    直接 goto 详情 URL 会被安全策略拦：
+
+        A) goto search_result/{id}?xsec_token=...  → /website-login/error
+           「安全限制 访问链接异常 300017」
+        B) goto explore/{id}?xsec_token=...        → 跳回 /explore
+        C) goto explore/{id}                       → 跳回 /explore
+
+    而**在搜索结果页点击卡片**能成功：
+
+        点到 /search_result/6aa5401f...?xsec_token=ABRdMxcx...
+        → 站内跳到 /explore/6aa5401f...?xsec_token=...
+        → 详情容器=True，图集 3 张 ✅
+
+    ## 三个要点（都是实测踩出来的）
+
+    1. **必须在搜索页点**，不能在 `/explore` 首页找 ——
+       首页是推荐流，几乎不可能正好有目标笔记
+       （上一版栽在这里：找不到卡片 → 退回 goto → 被拦）。
+    2. **点卡片自己的 href** —— 搜索结果的 href 带 `xsec_token`；
+       自己拼 `/explore/{id}`（不带 token）会被弹回首页。
+    3. **不能用笔记 id 当搜索词** —— 实测搜 id 返回 30 条**不相关**结果，
+       里面没有目标笔记。所以用 `fallback_url` 里的原始关键词。
     """
     if not item_id:
         return False
 
+    # 从原链接里取搜索关键词（前端传的是 search_result?keyword=xxx 这种）
+    keyword = _keyword_from_url(fallback_url) or item_id
+
     try:
-        # 打开该笔记所在关键词的搜索页（用笔记 id 搜不到，所以用通用入口）
+        # 先到首页拿会话上下文，再进搜索页
         await page.goto(
             "https://www.xiaohongshu.com/explore",
             wait_until="domcontentloaded",
             timeout=60000,
         )
-        await page.wait_for_timeout(6000)
+        await page.wait_for_timeout(5000)
+
+        import urllib.parse
+
+        q = urllib.parse.quote(keyword)
+        search_url = (
+            f"https://www.xiaohongshu.com/search_result?keyword={q}"
+            f"&source=web_explore_feed"
+        )
+        await page.goto(search_url, wait_until="domcontentloaded", timeout=60000)
+        await page.wait_for_timeout(10000)
 
         clicked = await page.evaluate(JS_CLICK_NOTE_CARD, {"id": item_id})
         if not clicked:
+            logger.info(
+                "[xhs] 搜索「%s」的结果里没找到笔记 %s 的卡片", keyword, item_id
+            )
             return False
 
-        # 等详情渲染（站内跳转后有动画 + 网络请求）
-        await page.wait_for_timeout(6000)
+        # 等详情渲染（站内跳转有动画 + 网络请求）
+        await page.wait_for_timeout(7000)
+
+        # 校验真的进了详情（而不是被弹回首页）
+        on_detail = await page.evaluate(
+            "() => !!document.querySelector('#noteContainer')"
+        )
+        if not on_detail:
+            logger.info("[xhs] 点击后未进入详情页（可能被弹回）")
+            return False
+
         logger.info("[xhs] 已通过站内点击打开笔记 %s", item_id)
         return True
     except Exception as exc:
         logger.warning("[xhs] 站内点击打开笔记失败：%s", exc)
         return False
+
+
+def _keyword_from_url(url: str) -> str:
+    """从 `search_result?keyword=xxx` 这类 URL 里取搜索关键词。
+
+    取不到返回空串（调用方会退化为用 id 搜，虽然多半搜不到）。
+    """
+    if not url:
+        return ""
+    try:
+        import urllib.parse
+
+        parsed = urllib.parse.urlparse(url)
+        qs = urllib.parse.parse_qs(parsed.query)
+        kw = (qs.get("keyword") or [""])[0]
+        return kw.strip()
+    except Exception:
+        return ""
 
 
 def parse_note_dom(data: Dict[str, Any], item_id: str) -> NoteDetail:
