@@ -146,14 +146,44 @@ POST https://api.x.com/1.1/guest/activate.json
 | 方案 | 结果 |
 |------|------|
 | guest token + 新 queryId，httpx 直连 | **HTTP 404** |
-| 页面内 fetch 同 URL | **HTTP 403** |
+| 页面内 fetch 同 URL（无额外头） | **HTTP 403** |
+| 页面内 fetch + `x-csrf-token`(ct0) | **仍 403** |
 
-403 说明缺必要请求头（`x-csrf-token` / `authorization` / `x-guest-token` 组合）。
-推特比微博严格得多。
+页面 cookie 实测含 `ct0`（160 位）、`guest_id`、`twid`，**没有 `auth_token`**。
+推特比微博严格得多，403 说明还差请求头组合（未查明是哪个）。
 
-**待下轮解决**：要么补齐请求头，要么像微博一样用"页面上真实操作/注入"
-的方式触发搜索。**按仓库规则，未验证的方案不写进代码** ——
-所以推特本轮**没有实现**，只记录到这里。
+### 3b. queryId 会轮换，硬编码必然失效
+
+- gallery-dl 里硬编码 `4fpceYZ6-YQCx_JSl_Cn_A` → 实测 **404**
+- 当前真实值 `uGB-gNd5HE4TkpO70OcFNw`（我方 bsk network 捕获）
+
+尝试从 JS bundle 动态提取：主 bundle 里 `queryId` 是**懒加载**的
+（只匹配到 1 处且不是 Search），分布在多个 chunk 里。
+**这条路太脆弱**，不作为方案。
+
+### 3c. 可用路径：操作 UI + 读 DOM（已验证可行）
+
+不依赖 queryId，直接**打开搜索页 URL，等渲染，读 `article` 节点**：
+
+```
+https://x.com/search?q={关键词}&src=typed_query         综合
+https://x.com/search?q={关键词}&f=media&src=typed_query 图片/视频
+```
+
+实测 DOM 提取成功：
+
+```json
+{"articles": 4,
+ "statusLinks": ["/TaoSeDao/status/2101202430444675082"],
+ "text": "桃色岛TaoSeDao @TaoSeDao · 9月19日 胖胖de奇妙旅行…"}
+```
+
+能读到：推文 ID（从 `/status/<id>`）、作者、正文。
+图片 URL 规则：`pbs.twimg.com/media/...`（**注意排除
+`profile_images`，那是头像**）。
+
+**下轮计划**：按这个路径实现（与微博同构：Patchright 打开页面 → 解析 DOM），
+媒体原图按 `?format=jpg&name=orig` 升级（gallery-dl 规则，需实测确认）。
 
 ### 4. 图片/视频 URL 规则（来自 gallery-dl，未在我方环境验证）
 
