@@ -110,14 +110,39 @@ def sign_post(
     uri: str,
     cookie: str,
     payload: Dict[str, Any],
+    x_rap: bool = False,
 ) -> Dict[str, str]:
-    """给 POST 请求生成签名头。"""
+    """给 POST 请求生成签名头。
+
+    Args:
+        x_rap: 是否额外生成 **`x-rap-param`** 风控头。
+
+            `/api/sns/web/v1/feed`（笔记详情）属于风控接口，
+            xhshow README 明写 **feed / 搜索 / 笔记发布等需要**它。
+
+            实测 2026-09-29：`/feed` 不带也能拿到 200（我们成功过），
+            但风控策略会变 —— **保守起见详情一律带上**。
+    """
     _require_a1(cookie)
     signer = _signer_instance()
     try:
-        return signer.sign_headers_post(
-            uri=uri, cookies=cookie, payload=payload or {}
-        )
+        kwargs: Dict[str, Any] = {
+            "uri": uri, "cookies": cookie, "payload": payload or {},
+        }
+        if x_rap:
+            kwargs["x_rap"] = True
+        try:
+            return signer.sign_headers_post(**kwargs)
+        except TypeError:
+            # 旧版 xhshow 没有 x_rap 参数 —— 退回不带风控头
+            # （搜索接口就是这样工作的，所以仍能跑）
+            if not x_rap:
+                raise
+            logger.warning(
+                "[xhs] 当前 xhshow 不支持 x_rap，退回不带 x-rap-param（%s）", uri
+            )
+            kwargs.pop("x_rap", None)
+            return signer.sign_headers_post(**kwargs)
     except Exception as exc:
         raise SigningUnavailableError(
             f"[xhs] POST 签名失败（{uri}）：{type(exc).__name__}: {exc}"

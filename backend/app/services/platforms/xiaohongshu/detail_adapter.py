@@ -78,18 +78,33 @@ async def fetch_xhs_detail(url: str) -> Dict[str, Any]:
         return {}
 
     cookie = netscape_to_header(raw, "xiaohongshu")
-    # 详情必须走 patchright（API 端点已失效，见 note.py docstring）
-    client = create_client("xiaohongshu", mode="patchright", cookie=cookie)
+    token = extract_xsec_token(url)
+    # ⚠️ **走 API 模式（纯 HTTP）**，不开浏览器（2026-09-29 修正）
+    #
+    # 这里原本是 `mode="patchright"`，注释写"API 端点已失效"——
+    # **那个判断是错的**：端点一直活着，当时只是缺 X-s/X-t 签名。
+    # 加上 `xhshow` 签名后实测：
+    #
+    #     POST /api/sns/web/v1/feed  → 200, note_card 含
+    #     title/desc/image_list(原图)/video(多清晰度)/interact_info
+    #
+    # 纯 HTTP 比浏览器路径**更快**、字段**更全**，也不再需要
+    # "带 token 直接 goto"那套。token 从 url 里取（这是必需的，实测
+    # 不带 token 会返回 HTTP 461）。
+    if not token:
+        logger.warning(
+            "[xhs_detail] URL 缺少 xsec_token —— 详情接口必需"
+            "（实测缺失返回 HTTP 461）。url=%s", url[:110],
+        )
+        return {}
+
+    client = create_client("xiaohongshu", mode="api", cookie=cookie)
     if client is None:
         logger.warning("[xhs_detail] 小红书客户端未注册")
         return {}
 
     async with client:
-        detail = await client.get_detail(
-            note_id,
-            url=url,
-            xsec_token=extract_xsec_token(url),
-        )
+        detail = await client.get_detail(note_id, xsec_token=token)
 
     if detail is None:
         logger.warning("[xhs_detail] 详情为空: %s", note_id)
@@ -112,5 +127,6 @@ async def fetch_xhs_detail(url: str) -> Dict[str, Any]:
         "collect_count": detail.collects or 0,
         "content_type": "image" if detail.images else "video",
         "images": list(detail.images or []),
-        "parse_method": "xiaohongshu_patchright",
+        # 走的是纯 HTTP API（不是浏览器 DOM），名字要如实反映
+        "parse_method": "xiaohongshu_api",
     }
