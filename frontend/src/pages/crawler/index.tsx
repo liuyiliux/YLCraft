@@ -1236,10 +1236,12 @@ export default function CrawlerPage() {
     }
     try {
       const detailConnectionId = record.platform === 'bili' ? selectedBiliConn : selectedSearchConn
-      // 把当前搜索关键词一起传下去 —— 小红书详情要"站内点击"打开，
-      // 而点击前必须先搜到这条笔记（用笔记 id 搜不到）。
+      // 小红书：把搜索结果里的 `xsec_token` 一起传下去 —— 详情**直接用
+      // 带 token 的链接打开**即可，不需要重新搜索（快很多，也不会因为
+      // 笔记不在当前搜索结果里而失败）。keyword 只作兜底。
+      const xsecToken = (record.raw_data as any)?.xsec_token || ''
       const detail = await getNoteDetail(
-        record.platform, record.id, detailConnectionId, keyword,
+        record.platform, record.id, detailConnectionId, keyword, xsecToken,
       )
       setDetailNote(prev => prev ? { ...prev, ...detail, raw_data: detail } : null)
 

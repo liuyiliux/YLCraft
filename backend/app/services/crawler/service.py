@@ -401,6 +401,7 @@ class CrawlerService:
         note_id: str,
         cookie: str = "",
         keyword: str = "",
+        **kwargs_in,
     ) -> dict:
         """
         获取笔记详情（无水印）
@@ -425,13 +426,34 @@ class CrawlerService:
                 logger.error(f"[get_note_detail] Failed to create client for {platform}")
                 return {}
 
-            # 小红书详情需要 keyword（用于站内搜索定位卡片）
+            # ⚠️ 小红书详情**直接拼带 token 的链接**（2026-09-29 修正）
+            #
+            # 之前这里传的是 `search_result?keyword=xxx`（**没有 token**），
+            # 让详情层去"搜索 → 站内点击"。那套很慢（每次都要加载搜索页），
+            # 而且**目标笔记不在搜索结果里时直接失败**
+            # （用户日志：搜索"沈阳吊带"的结果里没有那条笔记）。
+            #
+            # 实测确认：**直接 goto 带 xsec_token 的链接就能进详情** ——
+            #     explore/{id}?xsec_token=xxx&xsec_source=pc_feed → ✅
+            #     explore/{id}（不带 token）                        → ❌ 跳回首页
+            # 决定性因素是有没有有效 token，不是"站内点击"。
+            #
+            # 所以把搜索时拿到的 `xsec_token` 透传下来，直接构造详情 URL。
             kwargs: dict = {}
-            if keyword and platform in ("xhs", "xiaohongshu"):
-                kwargs["url"] = (
-                    "https://www.xiaohongshu.com/search_result"
-                    f"?keyword={keyword}"
-                )
+            if platform in ("xhs", "xiaohongshu"):
+                token = (kwargs_in or {}).get("xsec_token") or ""
+                if token:
+                    kwargs["url"] = (
+                        f"https://www.xiaohongshu.com/explore/{note_id}"
+                        f"?xsec_token={token}&xsec_source=pc_feed"
+                    )
+                    kwargs["xsec_token"] = token
+                elif keyword:
+                    # 没有 token 时的兜底：仍走"搜索 → 点击"（旧路径）
+                    kwargs["url"] = (
+                        "https://www.xiaohongshu.com/search_result"
+                        f"?keyword={keyword}"
+                    )
 
             detail = await client.get_detail(note_id, **kwargs)
 

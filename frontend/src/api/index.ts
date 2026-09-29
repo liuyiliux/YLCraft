@@ -1195,20 +1195,25 @@ export const searchEnhanced = (params: {
 /**
  * 获取笔记详情。
  *
- * `keyword` 是**当前搜索用的关键词** —— 小红书详情必须"站内点击"
- * 打开，而点击前要先搜到这条笔记；用笔记 id 当搜索词搜不到（实测
- * 返回 30 条不相关结果）。所以把关键词带上让后端去搜索定位。
+ * ⚠️ `xsecToken` 是**小红书详情的关键** —— 实测直接访问带 `xsec_token`
+ * 的链接就能进详情；没有 token 会跳回首页。所以把搜索结果里的 token
+ * 传下去，后端直接拼 `explore/{id}?xsec_token=...` 打开
+ * （比"重新搜索 → 站内点击"快得多，也不会因为笔记不在搜索结果里而失败）。
+ *
+ * `keyword` 只作为没有 token 时的兜底。
  */
 export const getNoteDetail = (
   platform: string,
   noteId: string,
   connId?: string,
   keyword?: string,
+  xsecToken?: string,
 ) =>
   request(
     `/crawler/note-detail?platform=${platform}&note_id=${noteId}` +
     `${connId ? `&conn_id=${connId}` : ''}` +
-    `${keyword ? `&keyword=${encodeURIComponent(keyword)}` : ''}`,
+    `${keyword ? `&keyword=${encodeURIComponent(keyword)}` : ''}` +
+    `${xsecToken ? `&xsec_token=${encodeURIComponent(xsecToken)}` : ''}`,
   )
 
 /** 批量获取无水印资源 */

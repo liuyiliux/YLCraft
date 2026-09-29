@@ -96,8 +96,22 @@ async def get_detail_via_patchright(
     token = (kwargs or {}).get("xsec_token") or ""
     if not url:
         url = f"https://www.xiaohongshu.com/explore/{item_id}"
-        if token:
-            url += f"?xsec_token={token}&xsec_source="
+    # ⚠️ **必须保证 URL 带上 xsec_token**（2026-09-29 修正）
+    #
+    # 我之前判断"详情不能直接 goto、必须站内点击" —— **那个结论是错的**。
+    # 实测（用户给出的链接）：
+    #
+    #     explore/{id}?xsec_token=xxx&xsec_source=pc_feed → ✅ 直接进详情
+    #     search_result/{id}?xsec_token=xxx               → ✅ 也进详情
+    #     explore/{id}（**不带 token**）                   → ❌ 跳回首页
+    #
+    # 即：**能不能直接访问，取决于有没有有效的 `xsec_token`**，
+    # 与"站内点击"无关。我当时用的是没有 token 的 URL，把因果搞反了。
+    #
+    # 所以现在：URL 缺 token 就补上（调用方单独传了 token 的情况）。
+    if token and "xsec_token=" not in url:
+        sep = "&" if "?" in url else "?"
+        url = f"{url}{sep}xsec_token={token}&xsec_source=pc_feed"
 
     conn_id = getattr(getattr(client, "config", None), "conn_id", "") or ""
     from app.services.platforms.session_pool import PooledSession, get_session_pool
@@ -134,36 +148,33 @@ async def get_detail_via_patchright(
                 session.warmed = True
             session.touch()
 
-            # ⚠️ **不能直接 `goto` 详情 URL**（实测 2026-09-28）
+            # ✅ **直接 goto 带 xsec_token 的链接**（2026-09-29 修正）
             #
-            # 用户反馈"详情加载失败"。实测三种打开方式：
+            # ⚠️ 我之前写的是"必须站内点击，不能直接 goto"——**那是错的**。
             #
-            #     A) goto search_result/{id}?xsec_token=...  → 重定向到
-            #        /website-login/error，页面显示
-            #        「安全限制 访问链接异常 300017」
-            #     B) goto explore/{id}?xsec_token=...        → 跳回 /explore
-            #     C) goto explore/{id}（不带 token）          → 跳回 /explore
-            #     D) **在搜索页点击卡片**（站内跳转）          → ✅ 成功
-            #        拿到 /explore/{id}?xsec_token=...，图集 5 张、指示器 1/3
+            # 我当时的实测（用**没有 token** 的 URL）：
+            #     goto explore/{id}（不带 token）  → 跳回 /explore
+            #     goto search_result/{id}（旧 token）→ 300017 安全限制
+            # 于是误判成"小红书禁止直接访问详情"。
             #
-            # 即：小红书详情**必须在站内点击进入**（带正确的会话上下文），
-            # 直接构造 URL 会被安全策略拦掉。
+            # 用户给出的链接（**带有效 token**）实测：
+            #     explore/{id}?xsec_token=xxx&xsec_source=pc_feed → ✅ 直接进详情
+            #     search_result/{id}?xsec_token=xxx               → ✅ 也进详情
             #
-            # 所以先打开搜索页，再在页面里点击目标笔记。
-            ok = await _open_note_by_click(session.page, item_id, url)
-            if not ok:
-                # 点击找不到（例如笔记不在首屏）时，退回 goto 再试一次 ——
-                # 虽然多半会被拦，但比直接失败多一次机会。
-                logger.info("[xhs] 站内点击没找到目标笔记，退回 goto 方式")
-                try:
-                    await session.page.goto(
-                        url, wait_until="domcontentloaded", timeout=60000
-                    )
-                except Exception as exc:
-                    raise RuntimeError(
-                        f"[xhs] 打开笔记页超时：{type(exc).__name__}。"
-                        "通常是 Cookie 失效或平台限流。"
-                    ) from exc
+            # **决定性因素是有没有有效 `xsec_token`，不是"站内点击"。**
+            #
+            # 所以现在直接 goto —— 比"搜索→点击"快得多（省掉搜索页加载
+            # 的十几秒），也不会因为"目标不在搜索结果里"而失败
+            # （用户日志里就是这个：搜索"沈阳吊带"的结果里没有那条笔记）。
+            try:
+                await session.page.goto(
+                    url, wait_until="domcontentloaded", timeout=60000
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    f"[xhs] 打开笔记页超时：{type(exc).__name__}。"
+                    "通常是 Cookie 失效或平台限流。"
+                ) from exc
 
             # 等图集/正文渲染
             try:
