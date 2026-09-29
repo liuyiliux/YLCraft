@@ -131,6 +131,23 @@ def _to_item(p) -> UserItem:
     )
 
 
+def _get_cookie_for(platform: str) -> str:
+    """取某平台的 cookie（`k=v; k2=v2` 形式）。取不到返回空串。
+
+    与 `_client_for` 的区别：这个**不建客户端**，只给需要裸 cookie
+    的调用方（如创作者中心接口 —— 它们不走平台客户端）。
+    """
+    try:
+        cfg = _resolve(platform)
+        _conn_id, raw = resolve_connection("", cfg["conn_platform"])
+        if not raw:
+            return ""
+        return netscape_to_header(raw, cfg["cookie_domain"]) or ""
+    except Exception as exc:
+        logger.warning("[users] 取 %s cookie 失败：%s", platform, exc)
+        return ""
+
+
 async def _client_for(platform: str):
     """按连接取 cookie，建平台客户端。"""
     cfg = _resolve(platform)
@@ -242,6 +259,108 @@ async def get_self_profile(
     except Exception as exc:
         logger.error("[users/me] %s 失败: %s", platform, exc)
         raise HTTPException(status_code=500, detail=f"获取我的资料失败: {exc}")
+
+
+@router.get(
+    "/creator/overview",
+    summary="创作者中心：账号总览（仅号主可见的运营数据）",
+)
+async def get_creator_overview(
+    platform: str = Query("douyin", description="平台：目前支持 douyin"),
+    days: int = Query(7, description="时间范围：7 / 15 / 30"),
+):
+    """取**创作者中心**的账号总览（含每日趋势）。
+
+    ## 与 `/users/me` 的区别
+
+    `/users/me` 拿的是**公开资料**（别人也能看到的粉丝/获赞）。
+    这里拿的是**只有号主能看**的运营数据：
+
+        播放量 / 主页访问量 / 作品点赞 / 作品分享 / 作品评论
+        净增粉丝 / 取关粉丝 / 粉丝总数 / 搜索来源 / 音乐创作
+
+    ## 实测（2026-09-29）
+
+    抖音创作者中心**纯 HTTP + 裸 cookie 即可**，不需要签名：
+
+        GET creator.douyin.com/aweme/janus/creator/data/overview/all/
+        → data.{play,new_fans,profile,digg,comment,share,...}
+            每个 {current_count, last_period_incr, option_list[{date,count}]}
+
+    实测与创作者中心页面显示的数字**一致**（播放量 16 / 主页访问 1 / 点赞 1）。
+    """
+    if platform not in ("douyin", "dy"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"创作者中心暂只支持抖音（当前 {platform}）。"
+                "小红书创作者中心需要**单独登录**（其登录态与主站 cookie 不同），"
+                "尚未接入。"
+            ),
+        )
+
+    from app.services.platforms.douyin import creator as dy_creator
+
+    cookie = _get_cookie_for("douyin")
+    if not cookie:
+        raise HTTPException(
+            status_code=400,
+            detail="没有可用的抖音连接 —— 请先在「账号中心」登录抖音。",
+        )
+    try:
+        data = await dy_creator.fetch_overview(cookie, days=days)
+    except Exception as exc:
+        logger.error("[users/creator/overview] 失败: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    if data is None:
+        return {
+            "success": False, "data": None,
+            "message": "创作者中心没有返回数据 —— 该账号可能还没有创作数据",
+        }
+    return {"success": True, "data": data, "message": "获取成功"}
+
+
+@router.get(
+    "/creator/works",
+    summary="创作者中心：作品列表（含完播率等深度指标）",
+)
+async def get_creator_works(
+    platform: str = Query("douyin", description="平台：目前支持 douyin"),
+    count: int = Query(20, description="每页条数"),
+    max_cursor: int = Query(0, description="翻页游标（上一页返回的 max_cursor）"),
+):
+    """取创作者中心的**作品列表**，含普通接口拿不到的深度指标：
+
+        完播率 / 5 秒完播率 / 2 秒跳出率 / 平均观看时长
+        粉丝观看占比 / 净增粉丝 / 下载数 / 不喜欢数 …
+
+    ⚠️ **单作品的「粉丝增量」抖音没有 API**（只在投稿列表 DOM 里），
+    所以这里不提供 —— 不编造。
+    """
+    if platform not in ("douyin", "dy"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"创作者中心暂只支持抖音（当前 {platform}）。",
+        )
+
+    from app.services.platforms.douyin import creator as dy_creator
+
+    cookie = _get_cookie_for("douyin")
+    if not cookie:
+        raise HTTPException(
+            status_code=400,
+            detail="没有可用的抖音连接 —— 请先在「账号中心」登录抖音。",
+        )
+    try:
+        data = await dy_creator.fetch_works(
+            cookie, count=count, max_cursor=max_cursor
+        )
+    except Exception as exc:
+        logger.error("[users/creator/works] 失败: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    return {"success": True, "data": data, "message": "获取成功"}
 
 
 @router.get(
