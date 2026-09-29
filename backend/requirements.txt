@@ -36,6 +36,9 @@ ebooklib>=0.18.0
 # 小红书 API 签名（纯 Python 复现 X-s/X-s-common，MIT）
 xhshow>=0.2.0
 
+# 小红书创作中心签名（XYW_ / AES-128-CBC）需要
+pycryptodome>=3.19.0
+
 # X（原 Twitter）：纯 HTTP 搜索需要生成 x-client-transaction-id
 # （缺它 SearchTimeline 一律 404）。我们只复用 twscrape 的
 # xclid 解析/计算部分（load_keys / XClIdGen），网络层用自己的 httpx。
