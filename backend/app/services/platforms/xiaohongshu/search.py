@@ -1,120 +1,84 @@
+"""YLCraft — 小红书搜索（API 模式）**转发层**
+
+## 历史：这个文件曾经记录了错误的结论（2026-09-29 修正）
+
+原文：
+
+    ⚠️ 2026-09-26 实测结论：**API 模式对小红书搜索已不可用**。
+       本文件曾用 `edith.../api/sns/web/v1/search/notes`，实测返回
+       `{"code":300011,"msg":"当前账号存在异常…"}`（**本质是缺 X-s/X-t
+       签名被风控拒**，不是账号真有问题）。真实端点已迁移到
+       `so.xiaohongshu.com/.../v2/search/notes`，但同样要签名，
+       且签名函数 `window._webmsxyw` 是混淆 JS、跨域调用实测 406。
+
+**这段话自相矛盾**：它承认 300011 是"缺签名被风控拒"，
+却又据此断定"端点迁移了、Python 侧不可用"。
+
+**真相（2026-09-29 实测）**：
+
+    POST https://edith.xiaohongshu.com/api/sns/web/v1/search/notes
+    body = {keyword, page, page_size, search_id, sort, note_type}
+    → HTTP 200, success=True, data.items[20~21]
+
+**端点没迁移，也一直可用** —— 当时缺的是签名能力，
+而我们现在有 `xhshow`（纯 Python 复现）。
+
+所以本文件现在只做**转发**，真实实现在 `search_api.py`。
+
+## ⚠️ 教训
+
+"缺签名" ≠ "端点废弃"。遇到风控拒绝时，
+先把"签名/凭证"补齐再下结论 —— 否则会把一个可用端点误判成死的，
+并因此绕远路（我们用浏览器 DOM 走了好几天）。
 """
-YLCraft — 小红书搜索逻辑（API 模式）
 
-⚠️ 2026-09-26 实测结论：**API 模式对小红书搜索已不可用**。
-   本文件曾用 `edith.xiaohongshu.com/api/sns/web/v1/search/notes`，实测返回
-   `{"code":300011,"msg":"当前账号存在异常…"}`（本质是缺 X-s/X-t 签名被风控拒，
-   不是账号真有问题）。真实端点已迁移到 `so.xiaohongshu.com/api/sns/web/v2/search/notes`，
-   但同样要签名，且签名函数 `window._webmsxyw` 是混淆 JS、跨域调用实测 406。
+from typing import Any, Dict, List
 
-   所以小红书搜索请走 `search_patchright.py`（浏览器打开搜索页读渲染结果）。
-   这里保留 `search_via_api` 只是为了不改动既有调用面，并让它**明确报错**——
-   原实现把所有失败都吞成 `return []`，用户只会看到"没搜到"，
-   属于最费时间的那类假阴性。
-"""
+from ..types import SearchParams, SearchResult
 
-from typing import Any, Dict, List, Optional
-
-from ..types import SearchResult, SearchParams, SearchType
-
-# 旧端点，仅作历史记录；不要用于新代码（见模块 docstring）
-DEAD_V1_ENDPOINT = "https://edith.xiaohongshu.com/api/sns/web/v1/search/notes"
-
-# 真实端点（需签名，Python 侧不可直接用）
-REAL_V2_ENDPOINT = "https://so.xiaohongshu.com/api/sns/web/v2/search/notes"
+# 真正的端点（**可用**，2026-09-29 实测）
+REAL_ENDPOINT = "https://edith.xiaohongshu.com/api/sns/web/v1/search/notes"
 
 
 async def search_via_api(
     client,
     params: SearchParams,
 ) -> List[SearchResult]:
-    """API 模式搜索——**已停用**，调用它必然失败。
+    """纯 HTTP 搜索（转发到 `search_api.search_via_api`）。
 
-    与其静默返回空列表让调用方以为"没搜到"，不如明确抛出可读错误。
-    要搜小红书请用 patchright 模式（见模块 docstring）。
+    保留这个模块名是为了不改动既有调用面（`client.py` 从这里导入）。
     """
-    raise RuntimeError(
-        "[xhs] 小红书搜索的 API 模式已停用：真实端点迁移到 "
-        "so.xiaohongshu.com/api/sns/web/v2/search/notes 且需要 X-s/X-t 签名，"
-        "旧端点已返回 code:300011。请改用 patchright 模式"
-        "（crawler/service.py 已按平台自动选择）。"
-    )
+    from .search_api import search_via_api as _impl
 
-
-async def search_via_patchright(
-    client,
-    params: SearchParams,
-) -> List[SearchResult]:
-    """
-    通过 Patchright 搜索（绕过反爬）
-    """
-    client._log("Patchright mode not yet implemented", "warning")
-    # TODO: 实现 Patchright 浏览器自动化
-    return []
+    return await _impl(client, params)
 
 
 def parse_search_result(item: Dict[str, Any]) -> SearchResult:
-    """
-    解析搜索结果项
-    """
-    note_card = item.get("note_card", {})
-    note_id = note_card.get("note_id", "")
-    title = note_card.get("display_title", "")
-    desc = note_card.get("desc", "")
+    """解析搜索结果项（转发到 `search_api.parse_item`）。"""
+    from .search_api import parse_item
 
-    # 作者信息
-    user = note_card.get("user", {})
-    author = user.get("nickname", "")
-    author_id = str(user.get("user_id", ""))
-
-    # 封面图
-    cover = note_card.get("cover", {}).get("url_default", "")
-
-    # 互动数据
-    interact_info = note_card.get("interact_info", {})
-    likes = parse_count(interact_info.get("liked_count", "0"))
-    comments = parse_count(interact_info.get("comment_count", "0"))
-    shares = parse_count(interact_info.get("share_count", "0"))
-    collects = parse_count(interact_info.get("collected_count", "0"))
-
-    # 类型
-    type_str = note_card.get("type", "normal")  # normal: 图文, video: 视频
-
-    return SearchResult(
-        id=note_id,
-        title=title,
-        author=author,
-        author_id=author_id,
-        cover=cover,
-        url=f"https://www.xiaohongshu.com/explore/{note_id}",
-        platform="xiaohongshu",
-        type=type_str,
-        likes=likes,
-        comments=comments,
-        shares=shares,
-        collects=collects,
-        views=0,  # 搜索结果没有浏览数
-        desc=desc,
-        create_time="",
-        raw_data=item,
-    )
+    parsed = parse_item(item)
+    if parsed is None:
+        raise ValueError("搜索结果项缺少 id 或 note_card")
+    return parsed
 
 
-def parse_count(count_str: str) -> int:
-    """
-    解析数量字符串（如 '1.2万' -> 12000）
-    """
-    if not count_str:
+def parse_count(count_str: Any) -> int:
+    """解析数量字符串（如 '1.2万' -> 12000）。"""
+    from .search_api import _to_int
+
+    if isinstance(count_str, (int, float)):
+        return int(count_str)
+    s = str(count_str or "").strip()
+    if not s:
         return 0
-
-    count_str = str(count_str).strip()
-
     try:
-        if '万' in count_str:
-            return int(float(count_str.replace('万', '')) * 10000)
-        elif 'k' in count_str.lower():
-            return int(float(count_str.lower().replace('k', '')) * 1000)
-        else:
-            return int(count_str)
-    except (ValueError, AttributeError):
+        if "万" in s:
+            return int(float(s.replace("万", "")) * 10000)
+        if "亿" in s:
+            return int(float(s.replace("亿", "")) * 100000000)
+        if s.lower().endswith("k"):
+            return int(float(s[:-1]) * 1000)
+        return _to_int(s)
+    except (ValueError, TypeError):
         return 0
