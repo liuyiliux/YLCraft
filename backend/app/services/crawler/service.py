@@ -205,18 +205,41 @@ class CrawlerService:
             # 必须转成 `k=v; k2=v2` 才能放进 HTTP 头
             # （直接塞会被 httpx 以 Illegal header value 拒绝）。
             #
-            # ⚠️ **domain 参数要用 `netscape_to_header` 认识的别名**
-            # （2026-09-29 踩过：传 `xhs` 返回 0 字符，传 `xiaohongshu`
-            # 才返回 998 字符）。这里做一次平台名归一。
-            cookie_domain = {
-                "xhs": "xiaohongshu",
-                "dy": "douyin",
-                "wb": "weibo",
-                "bili": "bilibili",
-                "x": "twitter",
-            }.get(platform, platform)
+            # ⚠️ **domain 参数要用 `netscape_to_header` 认识的名字**
+            # （2026-09-29 踩过两次）：
+            #
+            #     netscape_to_header(raw, "xhs")      → 0 字符
+            #     netscape_to_header(raw, "xiaohongshu") → 998 字符
+            #
+            #     netscape_to_header(raw, "twitter")  → 0 字符
+            #     netscape_to_header(raw, "x.com")    → 1339 字符   ← X 的域是 .x.com
+            #
+            # 第一次我加了映射表但**漏了 `twitter` 本身**
+            # （只加了 `x` → `twitter`，而 twitter 又映射不到真实域名）。
+            #
+            # 所以现在**逐个候选试**，而不是只查一次映射表 ——
+            # 映射表漏项时还有兜底。
+            cookie_domains = {
+                "xhs": ("xiaohongshu", "xhs"),
+                "xiaohongshu": ("xiaohongshu", "xhs"),
+                "dy": ("douyin", "dy"),
+                "douyin": ("douyin", "dy"),
+                "wb": ("weibo", "wb"),
+                "weibo": ("weibo", "wb"),
+                "bili": ("bilibili", "bili"),
+                "bilibili": ("bilibili", "bili"),
+                # ⚠️ X 的 cookie 域是 **.x.com**（不是 twitter.com）
+                "twitter": ("x.com", "x", "twitter.com", "twitter"),
+                "x": ("x.com", "x", "twitter.com", "twitter"),
+                "tw": ("x.com", "x", "twitter.com", "twitter"),
+                "fanqie": ("fanqie",),
+            }.get(platform, (platform,))
 
-            cookie = netscape_to_header(raw, cookie_domain) or ""
+            cookie = ""
+            for dom in cookie_domains:
+                cookie = netscape_to_header(raw, dom) or ""
+                if cookie:
+                    break
             if not cookie:
                 # 兜底：可能已经是 header 格式了
                 cookie = raw if "=" in raw and "\t" not in raw else ""
