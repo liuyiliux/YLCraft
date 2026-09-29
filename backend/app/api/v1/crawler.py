@@ -49,21 +49,95 @@ logger = logging.getLogger("ylcraft.api.crawler")
 def _get_conn_cookie(conn_id: str) -> str:
     """从 conn_id 获取 Cookie（**已规范化**，可直接放进 HTTP `Cookie` 头）。
 
-    必须用 `get_raw_cookie()`，不能直接用 `conn.cookie_content`：后者是 **Netscape
-    文件格式**（含 `# Netscape HTTP Cookie File` 注释头、字段以制表符分隔），直接塞进
-    HTTP 头会被 httpx 拒绝（`Illegal header value`），**请求根本发不出去**——表现为
-    搜索静默返回空。本文件 `_search_wechat_mp` 早已按此处理并留有同样的注释，此处对齐，
-    使普通平台搜索路径不再依赖调用方自觉。
+    ## ⚠️ 2026-09-29 修正：原来这个函数**返回空**
+
+    老实现：
+
+        service = PlatformConnectionService()
+        return service.get_raw_cookie(conn_id) or ""
+
+    `PlatformConnectionService` 内部用**它自己的 session** 查库，
+    在 API 请求上下文里**查不到连接** → 返回 `None` → 这里得到空串。
+
+    **后果是全线静默失败**：所有依赖 cookie 的路径（小红书搜索、
+    详情 …）都报"需要登录 Cookie"，看起来像"登录态丢了"，
+    实际是**取 cookie 的代码坏了**（实测：`_get_conn_cookie` 返回 0 字符）。
+
+    改用 `resolve_connection` —— 项目里**已验证可用**的取 cookie 路径
+    （它用 `SessionLocal()`，还自带"conn_id 失效时回退到该平台最近连接"
+    的兜底），再用 `netscape_to_header` 转成 HTTP 头格式
+    （`cookie_content` 是 Netscape 格式，直接塞会被 httpx 以
+    `Illegal header value` 拒绝）。
     """
     if not conn_id:
         return ""
     try:
-        from app.services.platform_connection import PlatformConnectionService
-        service = PlatformConnectionService()
-        return service.get_raw_cookie(conn_id) or ""
+        from app.services.platforms.login_health import (
+            netscape_to_header,
+            resolve_connection,
+        )
+
+        # ⚠️ `resolve_connection` 的兜底（"conn_id 失效时回退到该平台
+        # 最近连接"）**只有在传了 platform 时才生效**（实测：
+        # `resolve_connection(old_id, "")` 返回空）。所以这里先按 conn_id
+        # 查出**它属于哪个平台**，再用该平台做兜底。
+        platform_hint = _platform_of_connection(conn_id)
+
+        _cid, raw = resolve_connection(conn_id, platform_hint)
+        if not raw:
+            logger.warning(
+                "[_get_conn_cookie] conn=%s 取不到内容 —— 依赖 cookie 的"
+                "请求会失败（请检查「账号中心」是否保存了登录态）",
+                conn_id[:8],
+            )
+            return ""
+
+        # Netscape → `k=v; k2=v2`。domain 用平台的 cookie 别名
+        # （实测：传 `xhs` 返回 0 字符，必须传 `xiaohongshu`）。
+        cookie_domain = {
+            "xhs": "xiaohongshu", "xiaohongshu": "xiaohongshu",
+            "douyin": "douyin", "bili": "bilibili",
+            "weibo": "weibo", "twitter": "twitter",
+        }.get(platform_hint, platform_hint)
+
+        cookie = netscape_to_header(raw, cookie_domain) or ""
+        if not cookie:
+            # 兜底：内容可能本来就是 header 格式
+            cookie = raw if "=" in raw and "\t" not in raw else ""
+        return cookie
     except Exception as e:
         logger.warning(f"Failed to get cookie from connection {conn_id}: {e}")
     return ""
+
+
+def _platform_of_connection(conn_id: str) -> str:
+    """查连接属于哪个平台（小写枚举值，如 `xhs` / `douyin`）。
+
+    查不到返回空串 —— 调用方会退化为"只按 conn_id 查"。
+
+    为什么需要：`resolve_connection` 的"回退到该平台最近连接"兜底
+    **必须传 platform 才生效**，否则 conn_id 一失效就取不到 cookie
+    （实测：用户重新登录后连接 ID 会变，旧 ID 就查不到了）。
+    """
+    try:
+        from sqlmodel import select
+
+        from app.db.database import SessionLocal
+        from app.db.models.platform_connection import PlatformConnection
+
+        session = SessionLocal()
+        try:
+            row = session.get(PlatformConnection, conn_id)
+            if row is None:
+                return ""
+            p = row.platform
+            # 枚举 → 小写值（PG 枚举值是小写）
+            return str(getattr(p, "value", p) or "").lower()
+        finally:
+            session.close()
+    except Exception as exc:
+        logger.debug("[_platform_of_connection] %s 查询失败：%s", conn_id[:8], exc)
+        return ""
 
 
 # =============================================================================

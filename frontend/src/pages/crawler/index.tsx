@@ -1837,16 +1837,24 @@ export default function CrawlerPage() {
             pagination={{
               current: currentPage,
               pageSize: maxResults,
-              total: total,
-              // ⚠️ 措辞要如实（2026-09-29）
+              // ⚠️ 分页器要"能翻到下一页"（2026-09-29 修）
               //
-              // 有些平台（如小红书）**不给真实总数** —— 后端只能给出
-              // "本次返回的条数"。原来一律显示"共 N 条"，用户会以为
-              // 只有这么多，但翻下一页明明还有内容。
+              // 平台不给真实总数时（小红书只给 `has_more`），后端返回的
+              // `total` = 本页条数。若直接用 `total` 当分页总数，
+              // 分页器只显示 1 页、**点不了"下一页"** ——
+              // 用户看到"还有更多"却没法翻（实测反馈）。
               //
-              // 所以有 `hasMore` 时说"还有更多"，否则才说"共 N 条"。
+              // 所以 hasMore 时给分页器**多留一页**（`total + pageSize`），
+              // 让它渲染出可点的"下一页"。真正有没有下一页由服务端决定，
+              // 翻到空页时用户也能看出来。
+              total: hasMore ? total + maxResults : total,
+              // 措辞要如实：
+              //   有 hasMore → "N 条（还有更多）"
+              //   否则       → "共 N 条"
               showTotal: (t) =>
-                hasMore ? `${t} 条（还有更多）` : `共 ${t} 条`,
+                hasMore
+                  ? `${total} 条（还有更多）`
+                  : `共 ${t} 条`,
               size: 'small',
               onChange: (page) => {
                 setCurrentPage(page)
@@ -2363,6 +2371,44 @@ export default function CrawlerPage() {
                           <span><CommentOutlined style={{ color: BILI_COLORS.warning }} /> 评论 {biliStats?.stat?.reply ?? formatNum(detailNote.comments)}</span>
                           <ShareAltOutlined style={{ color: '#00C7CC' }} />
                         </Space>
+                      </Descriptions.Item>
+                    )}
+                    {/* ⚠️ 非 B 站平台也要显示互动数（2026-09-29 补）
+                        原来只有 bili 分支渲染互动，小红书/抖音的点赞、
+                        收藏、评论、分享**明明拿到了却不显示** ——
+                        用户看到详情面板"没什么内容"（实测反馈）。 */}
+                    {detailNote.platform !== 'bili' && (detailNote.likes || detailNote.comments || (detailNote as any).collect_count || detailNote.shares) ? (
+                      <Descriptions.Item label="互动">
+                        <Space size={10} style={{ fontSize: 13, fontWeight: 600, color: textPri }}>
+                          {Boolean(detailNote.likes) && (
+                            <span><LikeOutlined style={{ color: '#ec4899' }} /> 赞 {formatNum(detailNote.likes)}</span>
+                          )}
+                          {Boolean((detailNote as any).collect_count) && (
+                            <span><StarOutlined style={{ color: '#f59e0b' }} /> 收藏 {formatNum((detailNote as any).collect_count)}</span>
+                          )}
+                          {Boolean(detailNote.comments) && (
+                            <span><CommentOutlined style={{ color: '#22d3ee' }} /> 评论 {formatNum(detailNote.comments)}</span>
+                          )}
+                          {Boolean(detailNote.shares) && (
+                            <span><ShareAltOutlined style={{ color: '#10b981' }} /> 分享 {formatNum(detailNote.shares)}</span>
+                          )}
+                        </Space>
+                      </Descriptions.Item>
+                    ) : null}
+                    {/* 发布话题（小红书等有 tags；B站没有，所以条件渲染） */}
+                    {Array.isArray((detailNote as any).tags) && (detailNote as any).tags.length > 0 && (
+                      <Descriptions.Item label="话题">
+                        <Space size={4} wrap>
+                          {((detailNote as any).tags as string[]).slice(0, 12).map((t, i) => (
+                            <Tag key={i} style={{ margin: 0, fontSize: 12 }}>#{t}</Tag>
+                          ))}
+                        </Space>
+                      </Descriptions.Item>
+                    )}
+                    {/* 发布时间（API 路径能拿到，之前没展示） */}
+                    {(detailNote as any).create_time && (
+                      <Descriptions.Item label="发布时间">
+                        {String((detailNote as any).create_time)}
                       </Descriptions.Item>
                     )}
                     {detailNote.url && (
