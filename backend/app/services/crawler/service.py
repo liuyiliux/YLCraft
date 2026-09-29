@@ -419,41 +419,23 @@ class CrawlerService:
         try:
             from app.services.platforms import create_client
 
-            # 小红书走 patchright；其它平台走 api
-            mode = "patchright" if platform in ("xhs", "xiaohongshu") else "api"
+            # 小红书也走 api（**纯 HTTP + 签名**，2026-09-29 打通）
+            #
+            # 这里一度是 patchright（因为误判"API 端点已失效"）。
+            # 实际端点一直活着，只是缺签名；加上 `xhshow` 后纯 HTTP 可用，
+            # 而且比浏览器**更快、字段更全**（原图/多清晰度/话题/IP 属地）。
+            mode = "api"
             client = create_client(platform, mode=mode, cookie=cookie)
             if not client:
                 logger.error(f"[get_note_detail] Failed to create client for {platform}")
                 return {}
 
-            # ⚠️ 小红书详情**直接拼带 token 的链接**（2026-09-29 修正）
-            #
-            # 之前这里传的是 `search_result?keyword=xxx`（**没有 token**），
-            # 让详情层去"搜索 → 站内点击"。那套很慢（每次都要加载搜索页），
-            # 而且**目标笔记不在搜索结果里时直接失败**
-            # （用户日志：搜索"沈阳吊带"的结果里没有那条笔记）。
-            #
-            # 实测确认：**直接 goto 带 xsec_token 的链接就能进详情** ——
-            #     explore/{id}?xsec_token=xxx&xsec_source=pc_feed → ✅
-            #     explore/{id}（不带 token）                        → ❌ 跳回首页
-            # 决定性因素是有没有有效 token，不是"站内点击"。
-            #
-            # 所以把搜索时拿到的 `xsec_token` 透传下来，直接构造详情 URL。
+            # 小红书：把 `xsec_token` 透传给详情（**必需**，缺失会 461）
             kwargs: dict = {}
             if platform in ("xhs", "xiaohongshu"):
                 token = (kwargs_in or {}).get("xsec_token") or ""
                 if token:
-                    kwargs["url"] = (
-                        f"https://www.xiaohongshu.com/explore/{note_id}"
-                        f"?xsec_token={token}&xsec_source=pc_feed"
-                    )
                     kwargs["xsec_token"] = token
-                elif keyword:
-                    # 没有 token 时的兜底：仍走"搜索 → 点击"（旧路径）
-                    kwargs["url"] = (
-                        "https://www.xiaohongshu.com/search_result"
-                        f"?keyword={keyword}"
-                    )
 
             detail = await client.get_detail(note_id, **kwargs)
 
@@ -462,6 +444,11 @@ class CrawlerService:
                 return {}
 
             # 转换为字典
+            #
+            # ⚠️ 字段名要跟 `crawler.models.NoteDetail` 对齐：
+            # 收藏数是 **`collect_count`**（不是 `collects`）。
+            # 传错名字时 pydantic 会**静默忽略**该字段 → 前端拿到
+            # `收藏=None`（实测踩过：接口明明返回了 collected_count=155）。
             return {
                 "id": detail.id,
                 "platform": detail.platform,
@@ -474,8 +461,14 @@ class CrawlerService:
                 "likes": detail.likes,
                 "comments": detail.comments,
                 "shares": detail.shares,
-                "collects": detail.collects if hasattr(detail, 'collects') else 0,
-                "views": detail.views if hasattr(detail, 'views') else 0,
+                "collect_count": getattr(detail, "collects", 0) or 0,
+                "views": getattr(detail, "views", 0) or 0,
+                # 发布时间 / 标签：API 路径能拿到（小红书 `time` / `tag_list`）
+                "create_time": getattr(detail, "create_time", "") or "",
+                "tags": getattr(detail, "tags", []) or [],
+                # ⚠️ `raw_data` 要带出来 —— 前端依赖它拿 `xsec_token`
+                # （再点别的操作时要用）。原来没带，前端拿到空对象。
+                "raw_data": getattr(detail, "raw_data", {}) or {},
             }
 
         except Exception as e:

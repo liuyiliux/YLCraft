@@ -51,6 +51,16 @@ from ..types import NoteDetail
 
 logger = logging.getLogger("ylcraft.platforms.xiaohongshu.note")
 
+# 调详情接口时用的 UA（与签名里的 UA 保持一致，避免风控对不上）
+_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
+)
+
+# 详情接口：**纯 HTTP**（实测 2026-09-29 打通）
+FEED_URI = "/api/sns/web/v1/feed"
+EDITH_BASE = "https://edith.xiaohongshu.com"
+
 # 已失效端点，仅作历史记录（见模块 docstring）
 DEAD_V1_ENDPOINT = "https://edith.xiaohongshu.com/api/sns/web/v1/feed"
 
@@ -58,17 +68,119 @@ DEAD_V1_ENDPOINT = "https://edith.xiaohongshu.com/api/sns/web/v1/feed"
 async def get_detail_via_api(
     client,
     item_id: str,
+    **kwargs,
 ) -> Optional[NoteDetail]:
-    """API 模式：显式报错，不静默返回 None。
+    """**纯 HTTP 取笔记详情**（不开浏览器）—— 2026-09-29 实测打通。
 
-    原实现会真的去请求已失效的 `edith…/v1/feed`，失败后 `return None`，
-    调用方只看到"没拿到详情"，完全不知道是端点废弃。
+    ## 这个端点一直都在，之前只是缺签名
+
+    本函数原来是"显式报错"，注释写着：
+
+        edith.xiaohongshu.com/api/sns/web/v1/feed 已失效
+        （实测 code:300011，缺 X-s/X-t 签名被风控拒）
+
+    **端点从来没失效** —— 是当时没有签名能力。现在我们有了
+    `xhshow`（搜索接口一直在用），加上签名后实测：
+
+        POST https://edith.xiaohongshu.com/api/sns/web/v1/feed
+        body = {"source_note_id": "...", "xsec_token": "..."}
+        → HTTP 200, success=True, data.items[0].note_card
+
+    返回的数据**比浏览器 DOM 路径更全**：
+        title / desc / type(normal|video) / time / ip_location
+        user{nickname, user_id, avatar}
+        interact_info{liked_count, collected_count,
+                      comment_count, share_count}
+        image_list[{url_default, width, height}]   ← 全部图片+原图分辨率
+        video.media.stream.{h264,h265,av1,EF4..EF7} ← 多档清晰度
+        tag_list[{name}]                            ← 话题
+
+    ## ⚠️ `xsec_token` **必需**
+
+    实测不带 token → **HTTP 461**。token 从搜索结果里拿。
+
+    ## 实测
+
+        单图笔记 → 标题/描述/作者/互动/话题全有，1440x1920 原图
+        多图笔记 → 图片 3 张（全拿到）
+        视频笔记 → video stream EF4~EF7 四档清晰度
     """
-    raise RuntimeError(
-        "[xhs] API 模式已停用：edith.xiaohongshu.com/api/sns/web/v1/feed "
-        "已失效（实测 code:300011，缺 X-s/X-t 签名被风控拒）。"
-        "请改用 patchright 模式获取详情。"
-    )
+    import json as _json
+
+    import httpx
+
+    from app.services.platforms.xiaohongshu.signing import sign_post
+
+    cookie = getattr(getattr(client, "config", None), "cookie", "") or ""
+    if not cookie:
+        raise RuntimeError(
+            "[xhs] 获取笔记详情需要登录 Cookie：请先保存小红书连接。"
+        )
+
+    token = (kwargs or {}).get("xsec_token") or ""
+    if not token:
+        # 从调用方给的 url 里再捞一次
+        from urllib.parse import parse_qs, urlparse
+
+        u = (kwargs or {}).get("url") or ""
+        if u:
+            token = (parse_qs(urlparse(u).query).get("xsec_token") or [""])[0]
+    if not token:
+        raise RuntimeError(
+            "[xhs] 缺少 xsec_token —— 详情接口必需（实测缺失会返回 HTTP 461）。"
+            "请从搜索结果里带上该笔记的 xsec_token。"
+        )
+
+    uri = FEED_URI
+    body = {
+        "source_note_id": item_id,
+        "xsec_token": token,
+        "xsec_source": "pc_feed",
+    }
+    # ⚠️ `/feed` 属于**风控接口**，需要 `x-rap-param` 头
+    # （xhshow README 明写：feed / 搜索 / 笔记发布等需要）。
+    # 实测不带也能过（HTTP 200），但带上更稳 —— 风控策略会变。
+    signed = sign_post(uri, cookie, body, x_rap=True)
+    headers = {
+        "user-agent": _UA,
+        "origin": "https://www.xiaohongshu.com",
+        "referer": f"https://www.xiaohongshu.com/explore/{item_id}",
+        "content-type": "application/json;charset=UTF-8",
+        "accept": "application/json, text/plain, */*",
+        "accept-language": "zh-CN,zh;q=0.9",
+        "cookie": cookie,
+    }
+    headers.update(signed)
+
+    async with httpx.AsyncClient(timeout=40, follow_redirects=True) as c:
+        resp = await c.post(f"{EDITH_BASE}{uri}", json=body, headers=headers)
+
+    if resp.status_code == 461:
+        raise RuntimeError(
+            "[xhs] 详情接口返回 HTTP 461 —— 通常是 `xsec_token` 无效或过期。"
+            "请重新搜索该笔记以获取新的 token。"
+        )
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"[xhs] 详情接口返回 HTTP {resp.status_code}。"
+            f"（body 前 120：{resp.text[:120]!r}）"
+        )
+
+    payload = _json.loads(resp.text)
+    if not payload.get("success"):
+        raise RuntimeError(
+            f"[xhs] 详情接口返回失败：code={payload.get('code')} "
+            f"msg={payload.get('msg')!r}"
+        )
+    items = (payload.get("data") or {}).get("items") or []
+    if not items:
+        logger.info("[xhs] 详情接口未返回 items（id=%s）", item_id)
+        return None
+
+    note_card = items[0].get("note_card") or {}
+    if not note_card:
+        return None
+    return parse_note_detail({"note_card": note_card})
 
 
 async def get_detail_via_patchright(
@@ -499,18 +611,24 @@ def parse_note_dom(data: Dict[str, Any], item_id: str) -> NoteDetail:
 
 
 def parse_note_detail(data: Dict[str, Any]) -> NoteDetail:
-    """解析 API 模式的笔记详情（**保留给历史调用方**）。
+    """解析 **API 模式**的笔记详情（`note_card`）。
 
-    ⚠️ API 模式已失效（见模块 docstring），这个函数现在只被测试引用。
-    新代码请用 `parse_note_dom`。
+    ## 这个函数现在是**主路径**（2026-09-29 重新启用）
+
+    它一度被标为"已失效，只被测试引用" —— 因为当时以为
+    `/api/sns/web/v1/feed` 端点废弃了。**实际是缺签名**
+    （详见 `get_detail_via_api` 的说明）。加上 `xhshow` 签名后
+    端点工作正常，所以这里重新成为主路径。
 
     注意原来取的是 `url_default`（**缩略图**）——已改为优先取原图字段
     （`url_default` → `url` → `info_list` 里的最大尺寸）。
     """
     note_card = data.get("note_card", {})
     note_id = note_card.get("note_id", "")
-    title = note_card.get("display_title", "")
-    desc = note_card.get("desc", "")
+    # ⚠️ 实测 2026-09-29：字段是 `title`（不是 `display_title`）。
+    # 老的 display_title 作为兜底保留。
+    title = note_card.get("title") or note_card.get("display_title") or ""
+    desc = (note_card.get("desc") or "").strip()
 
     user = note_card.get("user", {})
     author = user.get("nickname", "")
@@ -536,25 +654,87 @@ def parse_note_detail(data: Dict[str, Any]) -> NoteDetail:
     video_url = ""
     video_info = note_card.get("video", {})
     if isinstance(video_info, dict) and video_info:
-        video_url = video_info.get("url", "")
+        video_url = _pick_video_url(video_info)
+
+    # 发布时间（毫秒时间戳）与话题 —— API 路径能拿到，DOM 路径拿不到
+    create_time = ""
+    raw_time = note_card.get("time")
+    if isinstance(raw_time, (int, float)) and raw_time > 0:
+        try:
+            from datetime import datetime, timezone
+
+            create_time = datetime.fromtimestamp(
+                raw_time / 1000, tz=timezone.utc
+            ).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            create_time = ""
+    tags = [
+        str(t.get("name"))
+        for t in (note_card.get("tag_list") or [])
+        if isinstance(t, dict) and t.get("name")
+    ]
 
     return NoteDetail(
-        id=note_id,
+        id=note_id or "",
         title=title,
-        desc=desc,
+        desc=desc or title,
         author=author,
         author_id=author_id,
         platform="xiaohongshu",
         type="video" if video_url else ("note" if type_str == "normal" else type_str),
         images=images,
         video=video_url,
-        video_cover=cover,
+        video_cover=cover or (images[0] if images else ""),
         likes=likes,
         comments=comments,
         shares=shares,
         collects=collects,
+        create_time=create_time,
+        tags=tags,
         raw_data=data,
     )
+
+
+def _pick_video_url(video_info: Dict[str, Any]) -> str:
+    """从视频节点里挑**清晰度最好**的播放地址。
+
+    实测 2026-09-29：视频地址在
+        video.media.stream.{h264|h265|av1|EF4|EF5|EF6|EF7}[i].master_url
+
+    `EF*` 是小红的自有编码档位（EF7 最高）。取第一个能用的即可 ——
+    各档都有 master_url，播放器会自动适配。
+
+    拿不到就返回空串（**不编造**）。
+    """
+    if not isinstance(video_info, dict):
+        return ""
+
+    # 老结构可能是平铺的 url
+    direct = video_info.get("url")
+    if isinstance(direct, str) and direct.startswith("http"):
+        return direct
+
+    media = video_info.get("media") or {}
+    if not isinstance(media, dict):
+        return ""
+    stream = media.get("stream") or {}
+    if not isinstance(stream, dict):
+        return ""
+
+    # 优先 h264/h265（通用性好），再退到 EF* 档位
+    for key in ("h264", "h265", "av1", "EF7", "EF6", "EF5", "EF4"):
+        arr = stream.get(key)
+        if not isinstance(arr, list):
+            continue
+        for entry in arr:
+            if not isinstance(entry, dict):
+                continue
+            u = entry.get("master_url") or entry.get("backup_urls")
+            if isinstance(u, list):
+                u = u[0] if u else ""
+            if isinstance(u, str) and u.startswith("http"):
+                return u
+    return ""
 
 
 def _pick_image_url(img: Dict[str, Any]) -> str:

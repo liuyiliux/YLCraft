@@ -99,16 +99,23 @@ class XiaohongshuClient(BasePlatformClient):
         """
         获取笔记详情。
 
-        ⚠️ API 模式已失效（端点废弃 + 签名限制），会显式报错。
-        详情走 patchright（浏览器打开笔记页读 DOM）。
+        ## 两条路径（2026-09-29 更新）
 
-        kwargs 可带：
-          · `url`        —— 原链接（含 xsec_token，最可靠）
-          · `xsec_token` —— 单独传 token（会拼成 /explore/{id}?xsec_token=…）
+        · **api（默认，纯 HTTP）**：`POST /api/sns/web/v1/feed` + xhshow 签名。
+          **端点一直活着**，之前"已失效"的判断是错的（详见 note.py）。
+          更快、字段更全（原图 / 多清晰度 / 话题 / IP 属地）。
+        · patchright（浏览器）：保留作为兜底。
+
+        kwargs 必带：
+          · `xsec_token` —— 详情接口**必需**（实测缺失返回 HTTP 461），
+            从搜索结果或笔记 URL 的 `?xsec_token=` 里取。
+          · `url` —— 可选，没单独传 token 时从中提取。
         """
         if self.config.mode == ClientMode.PATCHRIGHT:
             return await get_detail_via_patchright(self, item_id, **kwargs)
-        return await get_detail_via_api(self, item_id)
+        # ⚠️ 必须把 kwargs 传下去 —— 原来漏了，导致 `xsec_token`
+        # 到不了 `get_detail_via_api`，详情报"缺少 token"（实测踩过）。
+        return await get_detail_via_api(self, item_id, **kwargs)
 
     # =========================================================================
     # 用户（搜索 / 资料 / 作品列表）——2026-09-27 实测实现

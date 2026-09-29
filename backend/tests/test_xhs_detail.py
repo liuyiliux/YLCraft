@@ -211,26 +211,48 @@ def test_js_detects_not_found_and_login():
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_api_mode_raises_instead_of_silent_none():
-    """API 模式必须显式报错。
+async def test_api_mode_requires_token_not_dead_endpoint():
+    """**API 模式现在是主路径**（2026-09-29 打通）。
 
-    原实现真去请求已失效端点、失败后返回 None，
-    调用方只看到"没拿到详情"，不知道是端点废弃。
+    ## 修正了一个错误结论
+
+    这里原本断言"API 模式必须显式报错"，理由是
+    "edith 端点已失效（300011 缺签名被风控拒）"。
+
+    **端点从来没失效** —— 是当时缺 X-s/X-t 签名。加上 `xhshow`
+    后实测拿得到完整数据（标题/描述/原图/多视频清晰度/互动数）。
+
+    现在 API 模式**真正去请求**；缺 `xsec_token` 时抛**可操作**错误
+    （实测缺 token 会返回 HTTP 461，所以这是必需参数）。
     """
     from app.services.platforms.xiaohongshu.note import get_detail_via_api
 
+    class _FakeConfig:
+        cookie = "a1=abc; web_session=xyz"
+
+    class _FakeClient:
+        config = _FakeConfig()
+
     with pytest.raises(RuntimeError) as exc:
-        await get_detail_via_api(None, "abc")
+        await get_detail_via_api(_FakeClient(), "abc")
     msg = str(exc.value)
-    assert "300011" in msg or "失效" in msg
-    assert "patchright" in msg.lower(), "应给出正确做法"
+    assert "xsec_token" in msg, "应说明缺的是 token"
+    assert "461" in msg or "必需" in msg, "应给出可操作原因"
 
 
-def test_dead_endpoint_recorded():
-    """失效端点常量要留着，避免有人又捡回去用。"""
-    from app.services.platforms.xiaohongshu.note import DEAD_V1_ENDPOINT
+async def test_api_mode_requires_cookie():
+    """没有 cookie 时要明确报错（而不是静默返回 None）。"""
+    from app.services.platforms.xiaohongshu.note import get_detail_via_api
 
-    assert "edith.xiaohongshu.com" in DEAD_V1_ENDPOINT
+    class _FakeConfig:
+        cookie = ""
+
+    class _FakeClient:
+        config = _FakeConfig()
+
+    with pytest.raises(RuntimeError) as exc:
+        await get_detail_via_api(_FakeClient(), "abc")
+    assert "Cookie" in str(exc.value)
 
 
 # =============================================================================
@@ -270,21 +292,48 @@ def test_parser_has_xiaohongshu_branch():
     assert xhs_line < ytdlp_line, "小红书详情应在 yt-dlp 兜底之前尝试"
 
 
-def test_adapter_uses_patchright_mode():
-    """适配器必须用 patchright 模式（API 端点已失效）。"""
+def test_adapter_uses_api_mode():
+    """**适配器现在走 API 模式**（纯 HTTP，2026-09-29 打通）。
+
+    这里原本断言 `mode="patchright"`，理由是"API 端点已失效" ——
+    那个理由是错的（缺签名，不是端点废弃）。纯 HTTP 更快（3.4s vs 20s+）
+    且字段更全。
+    """
     from app.services.platforms.xiaohongshu import detail_adapter
 
     src = inspect.getsource(detail_adapter.fetch_xhs_detail)
-    assert 'mode="patchright"' in src
+    # 去掉注释再判断 —— 注释里会提到旧的 patchright 写法（说明为什么改）
+    code = "\n".join(
+        ln for ln in src.splitlines() if not ln.strip().startswith("#")
+    )
+    assert 'mode="api"' in code, "应走纯 HTTP 的 api 模式"
+    assert 'mode="patchright"' not in code, "不该再默认走浏览器"
 
 
 def test_adapter_passes_token():
-    """适配器必须把 xsec_token 传下去（不带 token 打不开笔记页）。"""
+    """适配器必须把 `xsec_token` 传下去。
+
+    ⚠️ 详情接口**必需 token**（实测缺失返回 HTTP 461）。
+    """
     from app.services.platforms.xiaohongshu import detail_adapter
 
     src = inspect.getsource(detail_adapter.fetch_xhs_detail)
     assert "xsec_token" in src
-    assert "url=url" in src
+    assert "extract_xsec_token" in src
+
+
+def test_client_get_detail_forwards_kwargs():
+    """**回归**：`client.get_detail` 必须把 kwargs 传给 api 分支。
+
+    原来写的是 `get_detail_via_api(self, item_id)` —— **漏了 kwargs**，
+    于是 `xsec_token` 到不了 API 层，详情直接报"缺少 token"（实测踩过）。
+    """
+    from app.services.platforms.xiaohongshu import client as xhs_client
+
+    src = inspect.getsource(xhs_client.XiaohongshuClient.get_detail)
+    assert "get_detail_via_api(self, item_id, **kwargs)" in src, (
+        "必须透传 kwargs，否则 xsec_token 丢失"
+    )
 
 
 def test_pick_image_url_prefers_original():
