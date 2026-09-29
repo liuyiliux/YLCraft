@@ -31,6 +31,7 @@ import type {
   PlatformUserItem, PlatformUserVideo, PlatformConnectionResponse,
 } from '../../api'
 import { useTheme } from '../../constants/theme'
+import CreatorCenterPanel from './CreatorCenterPanel'
 
 const { Title, Text } = Typography
 
@@ -271,6 +272,9 @@ export default function MyPlatformDataPage() {
                 locale={{ emptyText: <Empty description="暂无作品" /> }}
               />
             </Card>
+
+            {/* 创作者中心：只有号主能看的运营数据（曝光/完播率/主页访客…） */}
+            <CreatorCenterPanel platform={platform} />
           </>
         ) : (
           <Card style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
