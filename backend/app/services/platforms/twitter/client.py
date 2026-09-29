@@ -181,20 +181,33 @@ class TwitterClient(BasePlatformClient):
         return await get_user_via_http(user_id.lstrip("@"), cookie_header=cookie)
 
     async def get_self_profile(self) -> Optional[UserProfile]:
-        """取**自己**的资料。
+        """取**自己**的资料（**纯 HTTP，不需要浏览器**）。
 
-        ## ⚠️ X 没有"我是谁"的 GraphQL operation（调研确认）
+        ## ⚠️ 修正了之前的结论（2026-09-29）
 
-        twscrape 与 Scweet **都没有 `me()`**，全部 `OP_*` 常量里
-        **没有 Viewer**（已穷尽核对）。所以这里不臆造 queryId。
+        这里原来写着"X 没有『我是谁』的接口，只能靠浏览器读页面"——
+        **那个结论不完整**。实测有个 REST 端点直接给：
 
-        可行做法：先从**浏览器**页面取自己的 handle，再走 UserByScreenName。
-        （X 的搜索是纯 HTTP，但"我是谁"只能靠浏览器读页面。）
+            ① GET https://x.com/i/api/1.1/account/settings.json
+               → {"screen_name": "308YYtGer5EWPqj", ...}   ← 自己的 handle
+            ② GET .../UserByScreenName → 完整资料
+
+        两步都 HTTP 200（用 `auth_token` + `ct0` + transaction-id）。
+
+        实测：昵称「6」@308YYtGer5EWPqj，粉丝 10 / 关注 366 / 推文 15。
+
+        ## 之前走浏览器还有个副作用
+
+        `/users/me` 是 **api 模式，不开浏览器** —— 所以那条路**永远拿不到**，
+        用户看到"登录态已失效"，但 cookie 其实好好的
+        （用户反馈"微博和x是有效的，我搜索能搜到东西啊"）。
         """
-        from .search_dom import fetch_self_handle_via_browser
+        from .search_http import get_self_profile_via_http
 
-        handle = await fetch_self_handle_via_browser(self.config.conn_id or "")
-        if not handle:
-            logger.info("[twitter] 未能取到自己的 handle（可能未登录）")
-            return None
-        return await self.get_user_profile(handle)
+        cookie = self.header_cookie()
+        if not cookie:
+            raise TwitterAuthError(
+                "[twitter] 取自己的资料需要登录态（auth_token + ct0）。"
+                "请在「账号中心」用浏览器方式登录一次 x.com。"
+            )
+        return await get_self_profile_via_http(cookie_header=cookie)
