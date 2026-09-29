@@ -58,7 +58,15 @@ const BILI_COLORS = {
   purple: '#A855F7',
 }
 
-export default function MyDataPage() {
+export default function MyDataPage({
+  embedded = false,
+  platform = 'bili',
+}: {
+  /** 作为子面板嵌在「我的数据」页里时传 true —— 会隐藏标题栏 */
+  embedded?: boolean
+  /** 嵌在「我的数据」页时由父页指定平台（bili / fanqie） */
+  platform?: 'bili' | 'fanqie'
+} = {}) {
   const { theme: THEME, themeId } = useTheme()
   const cardBg = THEME.bgCard
   const borderColor = THEME.border
@@ -72,8 +80,18 @@ export default function MyDataPage() {
   const [activeTab, setActiveTab] = useState('overview')
 
   // 平台切换（B站 / 番茄）。番茄数据走独立 FanqieDataPanel。
-  const [dataPlatform, setDataPlatform] = useState<'bilibili' | 'fanqie'>('bilibili')
+  //
+  // ⚠️ 嵌在「我的数据」页里时用**父页给的 platform**（2026-09-29 合并入口）——
+  // 否则父页切换平台、子面板还显示另一个平台的数据。
+  const [dataPlatform, setDataPlatform] = useState<'bilibili' | 'fanqie'>(
+    platform === 'fanqie' ? 'fanqie' : 'bilibili',
+  )
   const [fanqieConnections, setFanqieConnections] = useState<PlatformConnectionResponse[]>([])
+
+  // 父页切换平台时同步（embedded 模式）
+  useEffect(() => {
+    setDataPlatform(platform === 'fanqie' ? 'fanqie' : 'bilibili')
+  }, [platform])
 
   // 用户信息
   const [profile, setProfile] = useState<any>(null)
@@ -680,30 +698,34 @@ export default function MyDataPage() {
   }
 
   return (
-    <div style={{ padding: 20 }}>
-      {/* 共享页头：标题 + 平台切换 */}
-      <Row justify="space-between" align="middle" style={{ marginBottom: 20 }}>
-        <Col>
-          <Title level={4} style={{ margin: 0, color: textPri }}>
-            <TeamOutlined style={{ marginRight: 8 }} />我的数据
-          </Title>
-          <Text style={{ fontSize: 13, color: textSec }}>
-            管理我的账号和创作数据
-          </Text>
-        </Col>
-        <Col>
-          {(biliConnections.length > 0 || fanqieConnections.length > 0) && (
-            <Segmented
-              value={dataPlatform}
-              onChange={(v: any) => setDataPlatform(v)}
-              options={[
-                ...(biliConnections.length > 0 ? [{ label: 'B站', value: 'bilibili' }] : []),
-                ...(fanqieConnections.length > 0 ? [{ label: '番茄小说', value: 'fanqie' }] : []),
-              ]}
-            />
-          )}
-        </Col>
-      </Row>
+    <div style={{ padding: embedded ? 0 : 20 }}>
+      {/* 共享页头：标题 + 平台切换
+          ⚠️ 嵌在「我的数据」页里时（embedded）**不渲染** ——
+          父页已有平台切换，两个切换器会让用户困惑（2026-09-29 合并入口）。 */}
+      {!embedded && (
+        <Row justify="space-between" align="middle" style={{ marginBottom: 20 }}>
+          <Col>
+            <Title level={4} style={{ margin: 0, color: textPri }}>
+              <TeamOutlined style={{ marginRight: 8 }} />我的数据
+            </Title>
+            <Text style={{ fontSize: 13, color: textSec }}>
+              管理我的账号和创作数据
+            </Text>
+          </Col>
+          <Col>
+            {(biliConnections.length > 0 || fanqieConnections.length > 0) && (
+              <Segmented
+                value={dataPlatform}
+                onChange={(v: any) => setDataPlatform(v)}
+                options={[
+                  ...(biliConnections.length > 0 ? [{ label: 'B站', value: 'bilibili' }] : []),
+                  ...(fanqieConnections.length > 0 ? [{ label: '番茄小说', value: 'fanqie' }] : []),
+                ]}
+              />
+            )}
+          </Col>
+        </Row>
+      )}
 
       {dataPlatform === 'bilibili' ? (
         <>

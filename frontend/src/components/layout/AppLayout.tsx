@@ -93,8 +93,11 @@ const menuItems: MenuProps['items'] = [
       // 博主中心已合并原「UP主分析」：一个入口覆盖 B站/抖音/小红书，
       // 搜人 → 看作品。原来两个入口功能重复，用户要在两者间来回找。
       { key: '/platform-users', label: navLabel('博主中心', '实验') },
-      { key: '/my-platform-data', label: navLabel('我的数据(抖音/小红书)', '实验') },
-      { key: '/my-data', label: navLabel('我的数据', '实验') },
+      // 「我的数据」已合并 B站/抖音/小红书（2026-09-29）：
+      // 原来 B站走 /my-data、抖音小红书走 /my-platform-data，
+      // 菜单里两个同名入口（都叫"我的数据"），用户要在两者间来回找。
+      // 现在统一到 /my-platform-data，B站作为其中一个平台选项。
+      { key: '/my-platform-data', label: navLabel('我的数据', '实验') },
       { key: '/inspiration', label: navLabel('灵感广场', '实验') },
       { key: '/provenance-clean', icon: <SafetyCertificateOutlined />, label: '审计去水印' },
     ],

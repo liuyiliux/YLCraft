@@ -32,10 +32,18 @@ import type {
 } from '../../api'
 import { useTheme } from '../../constants/theme'
 import CreatorCenterPanel from './CreatorCenterPanel'
+// B站「我的数据」直接复用原组件（含 6 个页签：概览/视频/收藏夹/历史/关注/付费课程）
+import MyDataPage from '../my-data'
 
 const { Title, Text } = Typography
 
 const PLATFORMS = [
+  // ⚠️ B站也在这里（2026-09-29 合并菜单入口）
+  //
+  // 原来菜单有两个「我的数据」：`/my-data`（B站+番茄）和
+  // `/my-platform-data`（抖音/小红书），用户要在两者间来回找。
+  // 现在统一到本页，B站分支**直接复用原组件**（不改那 1600 行）。
+  { value: 'bili', label: 'B站', connKeys: ['bilibili', 'bili'] },
   { value: 'douyin', label: '抖音', connKeys: ['douyin'] },
   { value: 'xiaohongshu', label: '小红书', connKeys: ['xiaohongshu', 'xhs'] },
 ]
@@ -171,6 +179,13 @@ export default function MyPlatformDataPage() {
         </Text>
       </div>
 
+      {/* ⚠️ B站：直接复用原「我的数据」组件（含收藏夹/历史/关注/付费课程
+          等 6 个页签）—— 它是全平台能力最强的，不重写（2026-09-29 合并入口）。 */}
+      {platform === 'bili' ? (
+        <MyDataPage embedded platform="bili" />
+      ) : (
+      <>
+
       <Card style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}`, marginBottom: 16 }}>
         <Row gutter={12} align="middle">
           <Col flex="140px">
@@ -288,6 +303,8 @@ export default function MyPlatformDataPage() {
           </Card>
         )}
       </Spin>
+      </>
+      )}
     </div>
   )
 }

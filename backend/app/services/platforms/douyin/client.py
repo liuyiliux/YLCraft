@@ -67,6 +67,27 @@ class PlatformUnavailableError(RuntimeError):
     """
 
 
+class DouyinSearchRateLimited(PlatformUnavailableError):
+    """抖音搜索被**速率限制**（稍等即可恢复）。
+
+    ## 实测（2026-09-29）
+
+        count=5  第 1 次  → 4 个 ✅
+        紧接着连发多次    → 全 0 ❌
+        等 ~60 秒后       → 4 个 ✅
+
+    **响应完全正常**：HTTP 200、`status_code=0`、字段齐全，
+    只是 `user_list` 为空 —— 靠响应的任何字段都判断不出被限流。
+
+    所以用"**首次请求就返回空**"作为信号，并给**可操作**提示
+    （等一会儿 / 重新登录），而不是静默返回 0 个让用户以为
+    "抖音搜不了博主"。
+
+    继承 `PlatformUnavailableError` 是为了让上层**不要**降级到
+    yt-dlp 再试一次（那只会再空一次，把限流伪装成"没结果"）。
+    """
+
+
 @register_platform("douyin")
 @register_platform("dy")
 class DouyinClient(BasePlatformClient):
@@ -427,7 +448,27 @@ class DouyinClient(BasePlatformClient):
             users = data.get("user_list") or []
             if not users:
                 if offset == 0:
-                    logger.info("[douyin] 用户搜索无结果（keyword=%r）", keyword)
+                    # ⚠️ **限流时不要静默返回空**（2026-09-29 实测）
+                    #
+                    # 抖音的 `discover/search` 有**速率限制**：
+                    #
+                    #     连续请求 → user_list 为空（但 HTTP 200、
+                    #                status_code=0，看不出异常）
+                    #     等 ~60 秒 → 又能拿到 4 个
+                    #
+                    # 静默返回空的话，用户看到"找到 0 个用户"，
+                    # 会以为"抖音搜不了博主"或"关键词没结果"，
+                    # 完全不知道"等一会儿再试就行"。
+                    #
+                    # 所以抛**可操作**错误。注意 status_code 仍是 0，
+                    # 不能靠它判断 —— 只能用"首次请求就空"这个信号。
+                    raise DouyinSearchRateLimited(
+                        f"[douyin] 搜博主没有返回结果（关键词={keyword!r}）。\n"
+                        "抖音对搜索有**速率限制** —— 短时间内连续搜索会被"
+                        "暂时拦截（实测等待约 1 分钟即可恢复）。\n"
+                        "请稍等片刻重试；若一直如此，可到「账号中心」"
+                        "重新登录抖音刷新登录态。"
+                    )
                 break
 
             for entry in users:

@@ -218,6 +218,11 @@ async def search_users(
     except HTTPException:
         raise
     except Exception as exc:
+        # ⚠️ 限流要返回 **429**（不是 500）—— 它是"稍后重试"，
+        # 不是服务端故障。前端据此提示"等一会儿再试"
+        # 而不是"服务器错误"（2026-09-29）。
+        if type(exc).__name__ == "DouyinSearchRateLimited":
+            raise HTTPException(status_code=429, detail=str(exc))
         logger.error("[users/search] %s %r 失败: %s", platform, keyword, exc)
         raise HTTPException(status_code=500, detail=f"搜索用户失败: {exc}")
 

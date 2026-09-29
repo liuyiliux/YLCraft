@@ -153,9 +153,44 @@ async def search(
         page=page,
         extra=search_kwargs,
     )
-    
+
+    # ==========================================================================
+    # 搜索结果缓存（2026-09-29 加）
+    # ==========================================================================
+    #
+    # 用户反馈"切换分页再切回来时候不用重新查询"。
+    #
+    # 实测各平台单次搜索：B站 ~2s / 小红书 ~2s / 抖音 ~4s /
+    # **X ~15s / 微博 ~21s**（后者要开浏览器）。
+    # 翻页、切回、重复搜同一关键词每次都重跑 —— 微博/X 尤其痛。
+    #
+    # 缓存放**这个共享入口**，所有平台的 api/patchright 路径都受益
+    # （和 base._init_patchright 只覆盖部分路径的教训一致）。
+    from .cache import get_search_cache
+
+    cache = get_search_cache()
+    cache_key = cache.make_key(
+        platform=platform,
+        keyword=keyword,
+        page=page,
+        size=max_results,
+        search_type=search_type,
+        conn_id=conn_id,
+        sort_by=sort_by,
+    )
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     async with client:
-        return await client.search(params)
+        results = await client.search(params)
+
+    # ⚠️ **只缓存非空结果** —— 空结果可能来自限流/风控
+    # （抖音实测：连续请求返回空，等 60 秒又好）。
+    # 缓存空结果会让"稍后重试"也拿不到数据。
+    if results:
+        cache.set(cache_key, results)
+    return results
 
 
 async def get_detail(
