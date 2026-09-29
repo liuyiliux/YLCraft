@@ -334,21 +334,23 @@ async def search_enhanced(req: SearchEnhancedRequest):
 
 @router.get("/note-detail", summary="获取笔记详情（无水印）", response_model=NoteDetailResponse)
 async def get_note_detail(platform: str, note_id: str, conn_id: str = "",
-                          keyword: str = ""):
+                          keyword: str = "", xsec_token: str = ""):
     """
     获取笔记详情（无水印图片 & 视频）
     - platform: 平台（xhs/dy/ks/bili/wechat_mp）
     - note_id: 笔记ID
     - conn_id: 可选，使用指定连接的 Cookie
-    - keyword: 可选，**搜索时用的关键词**。
+    - keyword: 可选，搜索关键词（**没有 token 时**的兜底路径用）
+    - xsec_token: 可选，**小红书详情必需**。
 
-      ⚠️ 小红书详情必须"站内点击"打开，而点击前要先搜到这条笔记
-      —— 用笔记 id 当搜索词**搜不到**（实测返回 30 条不相关结果）。
-      所以前端把当前搜索关键词传过来，后端用它搜索再定位点击。
+      ⚠️ 实测：小红书详情**直接访问带 `xsec_token` 的链接即可**，
+      没有 token 才会跳回首页。所以前端把搜索结果里的 token 传过来，
+      后端直接拼 `explore/{id}?xsec_token=...` 打开 —— 比"搜索→点击"
+      快得多，也不会因为"笔记不在当前搜索结果里"而失败。
     """
     logger.info(
         f"[get_note_detail] platform={platform} note_id={note_id} "
-        f"keyword={keyword!r}"
+        f"keyword={keyword!r} has_token={bool(xsec_token)}"
     )
 
     # 微信公众号特殊处理：公众号账号没有"笔记详情"概念，返回空结果
@@ -390,7 +392,7 @@ async def get_note_detail(platform: str, note_id: str, conn_id: str = "",
     try:
         service = get_crawler_service()
         detail = await service.get_note_detail(
-            platform, note_id, cookie, keyword=keyword
+            platform, note_id, cookie, keyword=keyword, xsec_token=xsec_token
         )
 
         if not detail:

@@ -143,40 +143,49 @@ def test_detail_does_read_collects():
 # 详情打开方式
 # =============================================================================
 
-def test_detail_uses_in_page_click():
-    """**回归**：详情必须**站内点击**打开，不能直接 goto。
+def test_detail_uses_direct_url_with_token():
+    """**回归（修正了一个错误结论）**：详情**直接用带 token 的链接 goto**。
 
-    实测直接 goto 会被安全策略拦：
-        search_result + token → /website-login/error「安全限制 300017」
-        explore + token       → 跳回 /explore
-    只有站内点击能拿到笔记 DOM。
+    ## 我之前判断错了
+
+    我一度写"小红书详情必须站内点击，不能直接 goto"，并据此实现了
+    "搜索 → 点击卡片"。**那个结论是错的** —— 我当时用的是
+    **没有 `xsec_token`** 的 URL。
+
+    用户给出的链接实测（**带有效 token**）：
+
+        explore/{id}?xsec_token=xxx&xsec_source=pc_feed → ✅ 直接进详情
+        search_result/{id}?xsec_token=xxx               → ✅ 也进详情
+        explore/{id}（**不带 token**）                   → ❌ 跳回首页
+
+    **决定性因素是有没有有效 token，与"站内点击"无关。**
+
+    而且"搜索→点击"更差：慢（每次加载搜索页十几秒），且
+    **目标笔记不在搜索结果里时直接失败**
+    （用户日志：搜索"沈阳吊带"的结果里没有那条笔记）。
+
+    ⚠️ `_open_note_by_click` 作为**兜底**保留（无 token 时才用）。
     """
     from app.services.platforms.xiaohongshu import note as note_mod
 
     src = inspect.getsource(note_mod.get_detail_via_patchright)
-    assert "_open_note_by_click" in src, "应走站内点击"
-    # goto 保留为兜底（点击找不到时）
-    assert "goto" in src, "应保留 goto 兜底"
+    assert "page.goto" in src, "应直接 goto 详情 URL"
+    assert "xsec_token" in src, "必须用上 xsec_token"
 
-    # 顺序：先尝试点击
-    i_click = src.find("_open_note_by_click")
+    # 主路径是 goto：goto 应出现在 click 之前（或根本没有 click）
     i_goto = src.find("page.goto")
-    assert i_click != -1 and i_goto != -1
-    assert i_click < i_goto, "应先点击，goto 仅作兜底"
+    i_click = src.find("_open_note_by_click")
+    assert i_goto != -1
+    if i_click != -1:
+        assert i_goto < i_click, "goto 应是主路径，点击只作兜底"
 
 
-def test_click_helper_exists_and_documents_reason():
-    """点击辅助函数要存在，并记录**为什么不能用 goto**。"""
+def test_detail_url_gets_token_appended():
+    """URL 缺 token 时要补上（调用方只单独传 token 的情况）。"""
     from app.services.platforms.xiaohongshu import note as note_mod
 
-    assert callable(note_mod._open_note_by_click)
-    doc = inspect.getsource(note_mod._open_note_by_click)
-    assert "300017" in doc or "安全" in doc, "应记录被拦的错误码"
-
-    # 点击 JS 要按 note_id 匹配卡片
-    js = note_mod.JS_CLICK_NOTE_CARD
-    assert "note-item" in js or "a[href]" in js
-    assert "id" in js
+    src = inspect.getsource(note_mod.get_detail_via_patchright)
+    assert "xsec_token=" in src, "应把 token 拼进 URL"
 
 
 def test_detail_documents_the_four_ways():
