@@ -549,6 +549,9 @@ export default function CrawlerPage() {
   const [loading, setLoading] = useState(false)
   const [results, setResults] = useState<CrawlerResult[]>([])
   const [total, setTotal] = useState(0)
+  // 平台是否明确表示"还有下一页" —— 用于列表底部的措辞
+  // （有的平台不给真实总数，只能说"还有更多"而不是"共 N 条"）
+  const [hasMore, setHasMore] = useState(false)
   const [searchedKeyword, setSearchedKeyword] = useState('')
   const [error, setError] = useState('')
 
@@ -986,6 +989,7 @@ export default function CrawlerPage() {
       })
       setResults(data.results || [])
       setTotal(data.total || 0)
+      setHasMore(Boolean((data as any).has_more))
       setSearchedKeyword(keyword.trim())
     } catch (e: any) {
       const msg = e?.response?.data?.detail || e?.message || '搜索失败'
@@ -1834,7 +1838,15 @@ export default function CrawlerPage() {
               current: currentPage,
               pageSize: maxResults,
               total: total,
-              showTotal: (t) => `共 ${t} 条`,
+              // ⚠️ 措辞要如实（2026-09-29）
+              //
+              // 有些平台（如小红书）**不给真实总数** —— 后端只能给出
+              // "本次返回的条数"。原来一律显示"共 N 条"，用户会以为
+              // 只有这么多，但翻下一页明明还有内容。
+              //
+              // 所以有 `hasMore` 时说"还有更多"，否则才说"共 N 条"。
+              showTotal: (t) =>
+                hasMore ? `${t} 条（还有更多）` : `共 ${t} 条`,
               size: 'small',
               onChange: (page) => {
                 setCurrentPage(page)

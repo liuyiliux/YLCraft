@@ -144,6 +144,16 @@ async def search_via_api(client, params: SearchParams) -> List[SearchResult]:
         # ⚠️ `note_type` 实测**不生效**（0/1/2 结果相同），
         # 这里固定传 0（全部），不要在 UI 上承诺类型筛选。
         "note_type": 0,
+        # ⚠️ **必须带 `image_formats`，否则不返回图片 URL**（2026-09-29 实测）
+        #
+        # 不带这个参数时，`cover` / `image_list` **只有宽高、没有 URL**：
+        #
+        #     不带:              cover = {"height":1600, "width":1200}
+        #     带 image_formats:  cover = {..., "url_default": "http://sns-webpic-qc..."}
+        #
+        # 后果是搜索列表**封面全空**（前端显示占位图）。
+        # 加了之后实测 **20/20 条都有封面**。
+        "image_formats": ["jpg", "webp", "avif"],
     }
 
     headers = {
@@ -197,9 +207,19 @@ async def search_via_api(client, params: SearchParams) -> List[SearchResult]:
             resp.text[:200],
         )
 
-    # 总条数：小红书不给真实 total，用"本页条数 + has_more"表达下界
+    # ## ⚠️ 关于「总数」：小红书**不给真实 total**（2026-09-29 修正）
+    #
+    # 我第一版把 `_total` 设成"本页条数"（`len(results)`）—— 那是**错的**：
+    # 接口固定一页给 20 条，于是前端显示"共 20 条"，
+    # 但用户翻到第 2、3 页**明明还有内容**（`has_more=True`）。
+    #
+    # 把"本页条数"当"总数"会误导用户以为"只有 20 条"。
+    #
+    # 现在如实表达：
+    #   · `_has_more` —— 接口明确给的"还有下一页"
+    #   · `_total`    —— **不设**（接口没给，就不编造）
+    # 前端据此显示"还有更多"而不是"共 N 条"。
     if results:
-        results[0].raw_data["_total"] = len(results)
         results[0].raw_data["_has_more"] = bool(data.get("has_more"))
 
     # ⚠️ 把"拿到几条 / 解析出几条"都打出来 —— 这两个数字不一致时
@@ -252,15 +272,29 @@ def parse_item(it: Dict[str, Any]) -> Optional[SearchResult]:
 
     token = str(it.get("xsec_token") or "")
 
-    # ⚠️ 搜索卡片**不含图片 URL**（image_list 只有宽高，cover 只有尺寸），
-    # 所以 cover 留空 —— 前端列表页需要封面的话得走详情。
-    # 这是接口限制，不是解析漏了。
+    # 封面：**只有请求里带了 `image_formats` 才会返回 URL**（2026-09-29 实测）
+    #
+    #     cover = {"url_default": "http://sns-webpic-qc.xhscdn.com/...",
+    #              "url_pre": "...", "height": 1600, "width": 1200}
+    #
+    # `url_default` 实测是 http（不是 https）—— 前端会经
+    # `/api/v1/proxy/image` 代理，那边会处理。
+    cover_info = card.get("cover") or {}
+    cover_url = ""
+    if isinstance(cover_info, dict):
+        cover_url = str(
+            cover_info.get("url_default")
+            or cover_info.get("url_pre")
+            or cover_info.get("url")
+            or ""
+        )
+
     return SearchResult(
         id=note_id,
         title=str(card.get("display_title") or card.get("title") or ""),
         author=str(user.get("nickname") or user.get("nick_name") or ""),
         author_id=str(user.get("user_id") or ""),
-        cover="",
+        cover=cover_url,
         url=f"https://www.xiaohongshu.com/explore/{note_id}?xsec_token={token}",
         platform="xiaohongshu",
         # ⚠️ `type` 恒为 "normal"（搜索接口不下发真实类型），
@@ -276,8 +310,8 @@ def parse_item(it: Dict[str, Any]) -> Optional[SearchResult]:
             "comment_count": _to_int(inter.get("comment_count")),
             "share_count": _to_int(inter.get("shared_count")),
             "cover_size": {
-                "width": (card.get("cover") or {}).get("width"),
-                "height": (card.get("cover") or {}).get("height"),
+                "width": cover_info.get("width") if isinstance(cover_info, dict) else None,
+                "height": cover_info.get("height") if isinstance(cover_info, dict) else None,
             },
         },
     )

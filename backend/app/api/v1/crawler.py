@@ -103,7 +103,11 @@ class SearchResponse(BaseModel):
     """搜索响应"""
     success: bool
     results: list[CrawlerResult] = []
+    # `total` 是**本次返回的条数**（不一定是平台总数 —— 有的平台不给）
     total: int = 0
+    # 平台是否明确表示"还有下一页"。
+    # 前端据此显示"还有更多"，而不是把 `total` 当总数说成"共 N 条"。
+    has_more: bool = False
     message: str = ""
     using: str = ""  # 使用的搜索引擎
 
@@ -316,14 +320,25 @@ async def search_enhanced(req: SearchEnhancedRequest):
             logger.warning(f"[search_enhanced] No results via platforms module for {req.platform}")
 
         # 从第一个结果的 raw_data 中提取平台返回的真实总条数
+        #
+        # ⚠️ 注意 `total` 的语义是**"本次返回的条数"**，不一定是"平台总数"：
+        # 有些平台（如小红书）**不给真实 total**，只给 `has_more`。
+        # 此时 total = 本页条数，前端不该把它显示成"共 N 条"
+        # （用户会以为只有这么多，但翻页明明还有）。
+        # 所以额外透出 `has_more`，让前端能表达"还有更多"。
         total = len(results)
-        if results and results[0].raw_data.get("_total"):
-            total = results[0].raw_data["_total"]
+        has_more = False
+        if results:
+            rd = results[0].raw_data or {}
+            if rd.get("_total"):
+                total = rd["_total"]
+            has_more = bool(rd.get("_has_more"))
 
         return SearchResponse(
             success=True,
             results=results,
             total=total,
+            has_more=has_more,
             message=f"找到 {total} 条结果",
             using=using,
         )
