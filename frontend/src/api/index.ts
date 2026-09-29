@@ -1120,6 +1120,10 @@ export interface CrawlerResult {
   create_time: string
   followers?: number
   videos?: number
+  /** 收藏数（小红书/抖音详情接口返回；字段名是 collect_count） */
+  collect_count?: number
+  /** 话题标签（小红书有；B站用 tag_name，不从这读） */
+  tags?: string[]
   raw_data?: any
 }
 
