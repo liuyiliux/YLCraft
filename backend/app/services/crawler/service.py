@@ -161,6 +161,77 @@ class CrawlerService:
         # 2. 降级方案：使用 yt-dlp 搜索
         return await self._search_via_ytdlp(platform, keyword, max_results)
 
+    def _resolve_cookie_for(self, conn_id: str, platform: str) -> str:
+        """从 `conn_id` 取 cookie（`k=v; k2=v2` 形式）。给 **api 模式**用。
+
+        ## ⚠️ 用 `resolve_connection` + `netscape_to_header`（2026-09-29）
+
+        我第一版用了 `PlatformConnectionService().get_raw_cookie(conn_id)`
+        —— **它在这个上下文里返回 None**（`svc.get()` 查不到连接），
+        导致 cookie 为空、搜索永远 0 条。
+
+        改用 `resolve_connection`（它本来就带"ID 失效时回退到该平台最近
+        连接"的兜底，是项目里已验证可用的取 cookie 路径），
+        再用 `netscape_to_header` 转成 HTTP 头格式。
+
+        patchright 模式不需要它（浏览器自己注入 cookie），
+        但 api 模式**必须**显式传 —— 否则平台客户端会报"需要登录 Cookie"。
+        """
+        try:
+            from app.services.platforms.login_health import (
+                netscape_to_header,
+                resolve_connection,
+            )
+
+            # 平台名要转成连接的枚举值（PG 枚举是小写：douyin / xhs / ...）
+            conn_platform = {
+                "xhs": "XHS", "xiaohongshu": "XHS",
+                "douyin": "DOUYIN", "dy": "DOUYIN",
+                "bili": "BILIBILI", "bilibili": "BILIBILI",
+                "weibo": "WEIBO", "wb": "WEIBO",
+                "twitter": "TWITTER", "x": "TWITTER",
+            }.get(platform, platform.upper())
+
+            _cid, raw = resolve_connection(conn_id or "", conn_platform)
+            if not raw:
+                logger.warning(
+                    "[_resolve_cookie_for] %s 没取到 cookie —— "
+                    "api 模式会失败（请检查「账号中心」是否保存了登录态）",
+                    platform,
+                )
+                return ""
+
+            # 连接的 cookie_content 是 **Netscape 格式**，
+            # 必须转成 `k=v; k2=v2` 才能放进 HTTP 头
+            # （直接塞会被 httpx 以 Illegal header value 拒绝）。
+            #
+            # ⚠️ **domain 参数要用 `netscape_to_header` 认识的别名**
+            # （2026-09-29 踩过：传 `xhs` 返回 0 字符，传 `xiaohongshu`
+            # 才返回 998 字符）。这里做一次平台名归一。
+            cookie_domain = {
+                "xhs": "xiaohongshu",
+                "dy": "douyin",
+                "wb": "weibo",
+                "bili": "bilibili",
+                "x": "twitter",
+            }.get(platform, platform)
+
+            cookie = netscape_to_header(raw, cookie_domain) or ""
+            if not cookie:
+                # 兜底：可能已经是 header 格式了
+                cookie = raw if "=" in raw and "\t" not in raw else ""
+            if cookie:
+                logger.debug(
+                    "[_resolve_cookie_for] %s -> %d 字符 cookie",
+                    platform, len(cookie),
+                )
+            return cookie
+        except Exception as exc:
+            logger.warning(
+                "[_resolve_cookie_for] 取 %s 的 cookie 失败：%s", platform, exc
+            )
+            return ""
+
     async def _search_via_platforms(
         self,
         platform: str,
@@ -238,10 +309,28 @@ class CrawlerService:
                 "[_search_via_platforms] platform=%s mode=%s keyword=%s",
                 platform, mode, keyword,
             )
+
+            # ⚠️ **api 模式必须显式传 cookie**（2026-09-29 修）
+            #
+            # 原来这里只传 `conn_id`，**没有 cookie**。
+            # 小红书走 patchright 时没暴露问题（浏览器自己注入 cookie），
+            # 但改成 api（纯 HTTP）后：
+            #
+            #     [xhs] HTTP client initialized (API mode)
+            #     Error: [xhs] 搜索需要登录 Cookie     ← 永远搜不到东西
+            #
+            # 表现是"小红书搜索 0 条"，而且**所有关键词都是 0 条** ——
+            # 这种"全空"要优先怀疑凭证没传，而不是关键词没内容。
+            cookie = self._resolve_cookie_for(conn_id, platform)
+            # ⚠️ 先剔除 kwargs 里可能已有的 cookie，否则
+            # `search() got multiple values for keyword argument 'cookie'`
+            # （实测踩过 —— 上层调用方有时会把 cookie 塞进 kwargs）。
+            kwargs.pop("cookie", None)
             results = await platform_search(
                 platform=platform,
                 keyword=keyword,
                 mode=mode,
+                cookie=cookie,
                 max_results=max_results,
                 search_type=search_type,
                 sort_by=sort_by,

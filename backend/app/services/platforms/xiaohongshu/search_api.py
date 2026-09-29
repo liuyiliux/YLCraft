@@ -115,7 +115,24 @@ async def search_via_api(client, params: SearchParams) -> List[SearchResult]:
         return []
 
     page = max(1, int(getattr(params, "page", 1) or 1))
-    page_size = max(1, min(int(params.max_results or 20), 50))
+    # ⚠️ **`page_size` 只能是 20**（2026-09-29 实测，非常重要）
+    #
+    # 小红书搜索接口对 `page_size` 做了硬校验 —— **只认 20**，
+    # 其它任何值都返回 `{"has_more": false}`（**没有 items**，
+    # 但 HTTP 200、`success: true`，看起来像"这个词没结果"）。
+    #
+    # 实测矩阵：
+    #
+    #     page_size= 1 / 5 / 10 / 15 / 30 / 50  →  items 为空
+    #     page_size= 20                          →  22 条 ✅
+    #
+    # 这个坑很隐蔽：**状态码 200、success=true、msg="成功"**，
+    # 完全看不出是参数问题。而前端默认"每页 10 条"正好踩中，
+    # 表现为"小红书搜什么都没结果"。
+    #
+    # 所以这里**固定 20**，再按调用方要的条数截断。
+    page_size = 20
+    want = max(1, int(params.max_results or 20))
     sort = resolve_sort(getattr(params, "sort_by", "") or "")
 
     body: Dict[str, Any] = {
@@ -165,21 +182,44 @@ async def search_via_api(client, params: SearchParams) -> List[SearchResult]:
             f"[xhs] 搜索失败：code={payload.get('code')} "
             f"msg={payload.get('msg')!r}"
         )
-
     data = payload.get("data") or {}
     items = data.get("items") or []
     results = [r for r in (parse_item(it) for it in items) if r is not None]
+
+    # ⚠️ 诊断：items 为 0 时把响应结构打出来。
+    # 排障用 —— "请求 200 但 items=0" 时，光看状态码看不出原因。
+    if not items:
+        logger.warning(
+            "[xhs] 搜索 200 但 items 为空。data 键=%s  payload 键=%s  "
+            "body 前 200=%r",
+            list(data.keys()) if isinstance(data, dict) else type(data).__name__,
+            list(payload.keys()),
+            resp.text[:200],
+        )
 
     # 总条数：小红书不给真实 total，用"本页条数 + has_more"表达下界
     if results:
         results[0].raw_data["_total"] = len(results)
         results[0].raw_data["_has_more"] = bool(data.get("has_more"))
 
+    # ⚠️ 把"拿到几条 / 解析出几条"都打出来 —— 这两个数字不一致时
+    # 说明是**解析**问题（字段结构变了），而不是"平台没给数据"。
+    # 排障时这一步能省很多时间（我为此绕了很久）。
     logger.info(
-        "[xhs] search(api) %r page=%d sort=%s -> %d 条（has_more=%s）",
-        keyword, page, sort, len(results), data.get("has_more"),
+        "[xhs] search(api) %r page=%d sort=%s -> 解析 %d 条"
+        "（items=%d, has_more=%s, cookie=%d字符）",
+        keyword, page, sort, len(results),
+        len(items), data.get("has_more"), len(cookie),
     )
-    return results
+    if items and not results:
+        # 有 items 但全被过滤掉 —— 打出首条结构，便于定位字段变化
+        logger.warning(
+            "[xhs] 拿到 %d 条 items 但全部解析失败！首条键=%s",
+            len(items),
+            list(items[0].keys()) if isinstance(items[0], dict) else type(items[0]).__name__,
+        )
+    # 调用方要的条数可能少于 20（接口固定给 20），这里截断
+    return results[:want] if want else results
 
 
 def parse_item(it: Dict[str, Any]) -> Optional[SearchResult]:
