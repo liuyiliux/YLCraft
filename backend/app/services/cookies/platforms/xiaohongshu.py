@@ -78,6 +78,24 @@ class XhsDetector(PlatformDetector):
             ):
                 el = await page.query_selector(sel)
                 if el:
+                    # ⚠️ **光看头像 + 有 web_session 不够**（2026-09-29 修）
+                    #
+                    # 用户反馈"小红书扫码又获取不到 cookie 了，进度卡在 45%"。
+                    # 实测原因：持久化 profile 里**残留着已失效的
+                    # `web_session`** —— 页面能正常渲染（有头像元素）、
+                    # cookie 里也确实有 `web_session`，但那个 session
+                    # **早就过期了**（主站正文写着"电脑设备登录超限，请重新登录"）。
+                    #
+                    # 于是检测器判"已登录" → 保存旧 cookie → 关窗口，
+                    # 用户**扫码也没用**（窗口已经关了/被判定完成）。
+                    #
+                    # 所以再加一道**页面文案**判据：出现登录提示词就是未登录。
+                    if await self._shows_login_prompt(page):
+                        logger.info(
+                            "[XhsDetector] 页面出现登录提示（登录态已失效），"
+                            "判为未登录 —— 请扫码重新登录"
+                        )
+                        return False
                     if await self._has_session_cookie(page):
                         return True
                     logger.info(
@@ -91,6 +109,38 @@ class XhsDetector(PlatformDetector):
         # 3. 判不出来就是没登录——不能把"不确定"当成"已登录"，
         #    否则会保存一个没有登录凭证的废连接，后面搜索全部失败还查不出原因。
         return False
+
+    # 页面出现这些词 → 明确是"未登录/登录态失效"
+    #
+    # 实测来源（2026-09-29）：
+    #   · 登录态过期时主站正文："**电脑设备登录超限，请重新登录**"
+    #     （小红书对同时在线设备数有限制）
+    #   · 未登录时登录页正文："扫码登录 / 手机号登录 / 获取验证码"
+    LOGIN_PROMPT_WORDS = (
+        "电脑设备登录超限",
+        "请重新登录",
+        "扫码登录",
+        "手机号登录",
+        "获取验证码",
+        "登录后查看",
+    )
+
+    @classmethod
+    async def _shows_login_prompt(cls, page) -> bool:
+        """页面是否出现"请登录"提示 —— 比"头像 + cookie 存在"更可靠。
+
+        因为**过期的 web_session 依然存在**，只查存在性会误判（实测踩过）。
+        """
+        try:
+            text = await page.evaluate(
+                "() => (document.body.innerText || '').slice(0, 4000)"
+            )
+            if not isinstance(text, str):
+                return False
+            return any(w in text for w in cls.LOGIN_PROMPT_WORDS)
+        except Exception as exc:
+            logger.debug("[XhsDetector] 登录提示探测失败：%s", exc)
+            return False
 
     @staticmethod
     async def _has_session_cookie(page) -> bool:

@@ -293,9 +293,8 @@ async def get_creator_overview(
         raise HTTPException(
             status_code=400,
             detail=(
-                f"创作者中心暂只支持抖音（当前 {platform}）。"
-                "小红书创作者中心需要**单独登录**（其登录态与主站 cookie 不同），"
-                "尚未接入。"
+                f"创作者中心总览暂只支持抖音（当前 {platform}）。"
+                "小红书请用 `/users/creator/xhs/overview`。"
             ),
         )
 
@@ -318,6 +317,72 @@ async def get_creator_overview(
             "success": False, "data": None,
             "message": "创作者中心没有返回数据 —— 该账号可能还没有创作数据",
         }
+    return {"success": True, "data": data, "message": "获取成功"}
+
+
+@router.get(
+    "/creator/xhs/overview",
+    summary="小红书创作服务平台：账号总览",
+)
+async def get_xhs_creator_overview(
+    period: str = Query("seven", description="时间范围：seven（近7天）/ thirty（近30天）"),
+):
+    """取**小红书创作服务平台**的账号总览。
+
+    ## 与 `/users/me` 的区别
+
+    普通站只有公开数据（点赞/收藏）。创作服务平台有**只有号主能看**的：
+    曝光数 / 观看数 / 封面点击率 / 视频完播率 / 平均观看时长 /
+    净涨粉 / 取消关注 / 主页访客 …
+
+    ## 实测（2026-09-29，与创作者后台页面完全一致）
+
+        曝光数 759（环比 +96%）  观看数 157（环比 +503%）
+        封面点击率 4.4%          视频完播率 3.4%
+        主页访客 9（环比 -40%）  净涨粉 1
+
+    ## 登录态**与主站通用**
+
+    不需要单独登录（cookie domain 是 `.xiaohongshu.com`）。
+    但**过期的 web_session 依然存在** —— 若报 401，请重新扫码登录。
+    """
+    from app.services.platforms.xiaohongshu import creator as xhs_creator
+
+    cookie = _get_cookie_for("xiaohongshu")
+    if not cookie:
+        raise HTTPException(
+            status_code=400,
+            detail="没有可用的小红书连接 —— 请先在「账号中心」登录小红书。",
+        )
+    try:
+        data = await xhs_creator.fetch_overview(cookie, period=period)
+    except Exception as exc:
+        logger.error("[users/creator/xhs/overview] 失败: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    return {"success": True, "data": data, "message": "获取成功"}
+
+
+@router.get(
+    "/creator/xhs/fans",
+    summary="小红书创作服务平台：粉丝数据",
+)
+async def get_xhs_creator_fans(
+    period: str = Query("seven", description="seven / thirty"),
+):
+    """取涨粉/掉粉/粉丝总数及日趋势。"""
+    from app.services.platforms.xiaohongshu import creator as xhs_creator
+
+    cookie = _get_cookie_for("xiaohongshu")
+    if not cookie:
+        raise HTTPException(
+            status_code=400, detail="没有可用的小红书连接。"
+        )
+    try:
+        data = await xhs_creator.fetch_fans(cookie, period=period)
+    except Exception as exc:
+        logger.error("[users/creator/xhs/fans] 失败: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc))
     return {"success": True, "data": data, "message": "获取成功"}
 
 
