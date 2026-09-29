@@ -197,17 +197,31 @@ def test_parse_item_type_is_honest():
     assert r.type == "note"
 
 
-def test_cover_is_empty_with_reason():
-    """搜索卡片**不含图片 URL** —— cover 留空是如实的，不是漏解析。
+def test_cover_comes_from_image_formats():
+    """**回归（修正了一个过早下的结论）**：封面**是能拿到的**。
 
-    实测 `image_list` 只有宽高、`cover` 也只有尺寸。
+    ## 我上一轮的判断是错的
+
+    这里原本断言"搜索卡片不含图片 URL，cover 留空是如实的"，
+    理由是"实测 `cover` 只有尺寸"。
+
+    **实测没错，但结论下早了** —— 差一个可选参数：
+
+        不带 image_formats:  cover = {"height":1600, "width":1200}
+        带 image_formats:    cover = {..., "url_default": "http://sns-webpic-qc..."}
+
+    加上之后 **20/20 条都有封面**。
+
+    **教训：说"平台不给"之前，先把常见可选参数试一遍。**
     """
     from app.services.platforms.xiaohongshu import search_api
 
     src = inspect.getsource(search_api.parse_item)
-    assert "cover=\"\"" in src or 'cover=""' in src
-    # 注释里要说明原因，避免后人以为是 bug
-    assert "不含图片" in src or "只有宽高" in src
+    assert "url_default" in src, "应从 cover.url_default 取封面"
+    assert "cover_url" in src
+    # 请求侧必须带参数（否则拿不到 URL）
+    req_src = inspect.getsource(search_api.search_via_api)
+    assert "image_formats" in req_src
 
 
 # =============================================================================
