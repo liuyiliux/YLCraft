@@ -101,12 +101,33 @@ CrawlerService._search_via_platforms()
 `_search_via_platforms` 通过 `_resolve_cookie_for(conn_id, platform)`
 取 cookie。**api 模式不传 cookie 会静默失败**（报"需要登录 Cookie"）。
 
-⚠️ 踩过的两个坑：
+⚠️ 踩过的三个坑：
 1. 用 `PlatformConnectionService().get_raw_cookie()` → **返回 None**
    （它自己的 session 在请求上下文查不到库）
    → 已改用 `resolve_connection` + `netscape_to_header`
 2. `netscape_to_header(raw, "xhs")` → **0 字符**，必须传 **`xiaohongshu`**
    → 已做平台名归一
+3. **同一个坑犯了两次**：加映射表时漏了 `twitter` 本身
+   （`netscape_to_header(raw, "twitter")` → 0 字符，必须传 **`x.com`**）。
+   → 已改成**逐个候选试**，而不是只查一次映射表
+
+### ⚠️ 搜索结果缓存（2026-09-29 加）
+
+缓存在**共享入口** `platforms.search()` 上，所有平台受益：
+
+| 平台 | 首次 | 缓存命中 |
+|------|------|---------|
+| 小红书 | 1.7s | **0.4s** |
+| 抖音 | 2.6s | **0.4s** |
+| B站 | 1.2s | **0.4s** |
+
+  · **只缓存非空结果** —— 空可能来自限流（抖音实测），
+    缓存它会让"稍后重试"也拿不到数据
+  · **key 含 `conn_id` + `sort_by`** —— 不同账号/排序不能串
+  · TTL 5 分钟、容量上限 500 条
+
+**教训**：小红书的缓存原来只加在部分路径上，**压根没生效**
+（实测三次搜索耗时都是 16 秒）。缓存放共享入口才能真正惠及所有路径。
 
 ---
 

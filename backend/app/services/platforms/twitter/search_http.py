@@ -604,5 +604,78 @@ def _to_int(value: Any) -> int:
         return 0
 
 
+async def get_self_profile_via_http(*, cookie_header: str) -> Optional[UserProfile]:
+    """**纯 HTTP** 取自己的资料 —— 两步，不需要浏览器。
+
+    ## ⚠️ 修正了之前的结论（2026-09-29）
+
+    之前这里写着"X 没有『我是谁』的接口，只能靠浏览器读页面"。
+    **那个结论不完整** —— 浏览器不是唯一出路，有个 REST 端点就能拿：
+
+        ① GET https://x.com/i/api/1.1/account/settings.json
+           → {"screen_name": "308YYtGer5EWPqj", ...}     ← **自己的 handle**
+
+        ② GET .../UserByScreenName?variables={"screen_name": handle}
+           → 完整资料（粉丝/关注/推文/简介/头像）
+
+    实测两步都 **HTTP 200**（用 `auth_token` + `ct0` +
+    `x-client-transaction-id`，与搜索同一套凭证）。
+
+    ## ⚠️ 响应路径与调研说的不同
+
+    `UserByScreenName` 实测返回 **`data.user.result`**，
+    而调研报告写的是 `data.user_result_by_screen_name.result` ——
+    后者**取不到**。`get_user_via_http` 里两种都兼容。
+
+    ## 关于 `twid`
+
+    cookie 里的 `twid=u%3D{user_id}` 也含自己的 id，但用
+    `UserByRestId` 查实测 **403**（Cloudflare），
+    所以走 `settings.json` → `UserByScreenName` 这条已验证可用的路。
+    """
+    if not cookie_header:
+        raise TwitterAuthError(
+            "[twitter] 取自己的资料需要登录态（auth_token + ct0）。"
+            "请在「账号中心」用浏览器方式登录一次 x.com。"
+        )
+
+    ck = cookie_map(cookie_header)
+    missing = [n for n in REQUIRED_COOKIES if not ck.get(n)]
+    if missing:
+        raise TwitterAuthError(
+            f"[twitter] 缺少必要的 cookie：{', '.join(missing)}。"
+        )
+
+    # ---- ① 拿自己的 handle ----
+    settings_path = "/i/api/1.1/account/settings.json"
+    headers = _build_headers(
+        cookie_header, ck["ct0"],
+        await make_transaction_id(cookie_header, "GET", settings_path),
+    )
+    async with httpx.AsyncClient(timeout=40, follow_redirects=True) as c:
+        r = await c.get(f"https://x.com{settings_path}", headers=headers)
+
+    if r.status_code in (401, 403):
+        raise TwitterAuthError(
+            f"[twitter] account/settings.json 拒绝访问（HTTP {r.status_code}）——"
+            "登录态可能已失效，请在「账号中心」重新登录 x.com。"
+        )
+    if r.status_code != 200 or not r.text.lstrip().startswith("{"):
+        logger.info(
+            "[twitter] settings.json 返回非 JSON（HTTP %s），无法确定自己的 handle",
+            r.status_code,
+        )
+        return None
+
+    handle = str((r.json() or {}).get("screen_name") or "").strip()
+    if not handle:
+        logger.info("[twitter] settings.json 里没有 screen_name")
+        return None
+    logger.info("[twitter] 自己的 handle = %s", handle)
+
+    # ---- ② 用 handle 取完整资料 ----
+    return await get_user_via_http(handle, cookie_header=cookie_header)
+
+
 async def close() -> None:
     clear_xclid_cache()
