@@ -169,7 +169,21 @@ PLATFORM_LOGIN_URLS = {
     "douyin": "https://www.douyin.com",
     "kuaishou": "https://www.kuaishou.com",
     "bilibili": "https://www.bilibili.com",
-    "weibo": "https://weibo.com",
+    "weibo": (
+        # ⚠️ **用 m 站的登录入口**（2026-09-29）
+        #
+        # 微博有**两套登录体系**：`weibo.com`（主站）与 `m.weibo.cn`（移动站）。
+        # 而我们的**搜索、详情、「我的数据」全走 m 站**
+        # （`m.weibo.cn/api/container/getIndex`）。
+        #
+        # 实测：用主站登录态打开 m 站，`/api/config` 返回 **login=False**
+        # （三种 cookie 组合都试过）—— 所以必须让用户**在 m 站的入口登录**，
+        # 才能拿到 m 站的 `SUB`。
+        #
+        # `m.weibo.cn/login` 会跳到 `passport.weibo.com/sso/signin?entry=wapsso`，
+        # 有完整的扫码登录页（实测截图确认）。
+        "https://m.weibo.cn/login"
+    ),
     "zhihu": "https://www.zhihu.com",
     "youtube": "https://www.youtube.com",
     "tiktok": "https://www.tiktok.com",
@@ -186,7 +200,11 @@ PLATFORM_DOMAINS = {
     "douyin": ".douyin.com,.iesdouyin.com,v.douyin.com",
     "kuaishou": ".kuaishou.com,.gifshow.com,v.kuaishou.com",
     "bilibili": ".bilibili.com,b23.tv",
-    "weibo": ".weibo.com,t.cn",
+    # ⚠️ 微博要**同时包含 m 站域**（2026-09-29）：
+    # 搜索/详情/「我的数据」都走 `m.weibo.cn`，它的登录态
+    # （`SUB`）与主站 `weibo.com` 是**不同的值**。
+    # 只存 `.weibo.com` 会漏掉 m 站的登录 cookie。
+    "weibo": ".weibo.cn,m.weibo.cn,.weibo.com,passport.weibo.com,t.cn",
     "zhihu": ".zhihu.com",
     "youtube": ".youtube.com,youtu.be",
     "tiktok": ".tiktok.com",

@@ -64,6 +64,31 @@ class PooledSession:
     def idle_seconds(self) -> float:
         return time.monotonic() - self.last_used
 
+    def alive(self) -> bool:
+        """会话是否还活着（浏览器/页面没被关掉）。
+
+        ## ⚠️ 为什么必须检查（2026-09-29 实测）
+
+        用户关掉浏览器窗口（或进程被杀）后，会话池里**还留着那个会话**，
+        下次请求仍会"复用它" → `Page.evaluate: Target page, context
+        or browser has been closed` → 功能直接失败。
+
+        实测：杀掉 chrome 后连搜两次都报这个错，而**重建会话就能恢复**。
+
+        这里用各对象自己的 `is_closed()`（Playwright / Patchright 都有）。
+        任何一项已关 → 整个会话不可用。
+        检查本身不抛异常（对象可能已被 GC）。
+        """
+        try:
+            for obj in (self.page, self.ctx):
+                checker = getattr(obj, "is_closed", None)
+                if callable(checker) and checker():
+                    return False
+            return True
+        except Exception:
+            # 检查过程本身报错（对象已失效）→ 当作不可用，重建更安全
+            return False
+
 
 class SessionPool:
     """按 key 复用浏览器会话。"""
@@ -84,9 +109,18 @@ class SessionPool:
         return lock
 
     def get(self, key: str) -> Optional[PooledSession]:
-        """取会话。过期/不存在返回 None（调用方负责新建）。
+        """取会话。过期/**已失效**/不存在返回 None（调用方负责新建）。
 
-        注意：这里只摘除过期会话，不在锁外关闭——关闭由调用方在锁内做，
+        ## ⚠️ 必须检查"还活着"（2026-09-29 实测）
+
+        用户关掉浏览器（或进程被杀）后，池里还留着那个会话，
+        下次仍会复用它 → `Page.evaluate: Target page, context or
+        browser has been closed` → 功能直接失败。
+
+        实测：杀掉 chrome 后连搜两次都报这个错，**重建会话就恢复**。
+        所以这里除了"空闲超时"，还要查会话是否已关闭。
+
+        注意：只摘除，不在锁外关闭 —— 关闭由调用方在锁内做，
         避免并发重复关同一个 context。
         """
         session = self._sessions.get(key)
@@ -96,6 +130,14 @@ class SessionPool:
             logger.info(
                 "[session-pool] 空闲 %.0fs 超限，回收 key=%s",
                 session.idle_seconds(), key,
+            )
+            del self._sessions[key]
+            return None
+        if not session.alive():
+            # 浏览器已被关闭/进程被杀 —— 摘掉它，让调用方重建。
+            # 不重建的话，用户重开浏览器后第一次操作必然失败。
+            logger.info(
+                "[session-pool] 会话已失效（浏览器被关闭），回收 key=%s", key
             )
             del self._sessions[key]
             return None
