@@ -1244,10 +1244,24 @@ export default function CrawlerPage() {
       // 带 token 的链接打开**即可，不需要重新搜索（快很多，也不会因为
       // 笔记不在当前搜索结果里而失败）。keyword 只作兜底。
       const xsecToken = (record.raw_data as any)?.xsec_token || ''
-      const detail = await getNoteDetail(
+      const resp: any = await getNoteDetail(
         record.platform, record.id, detailConnectionId, keyword, xsecToken,
       )
-      setDetailNote(prev => prev ? { ...prev, ...detail, raw_data: detail } : null)
+      // ⚠️ **响应是 `{success, data, message}`，真正的字段在 `data` 里**
+      //（2026-09-29 修）
+      //
+      // 原来写的是 `{ ...prev, ...detail }` —— 展开的是**顶层**，
+      // 于是 `desc` / `images` / `tags` 全是 undefined：
+      //   · 描述显示"暂无描述"（其实后端给了正文）
+      //   · 图集只显示 cover 一张（images 没拿到）
+      // 用户反馈"详情内容太少"就是这个。
+      const detail = (resp && resp.data) ? resp.data : resp
+      setDetailNote(prev => prev ? {
+        ...prev,
+        ...detail,
+        // 图集放进 raw_data.image_urls —— previewMediaUrls 从这里读
+        raw_data: { ...(detail?.raw_data || {}), ...(detail || {}) },
+      } : null)
 
       // B站：同时获取统计数据
       if (record.platform === 'bili') {
@@ -1264,7 +1278,20 @@ export default function CrawlerPage() {
   const previewMediaUrls = useMemo(() => {
     if (!detailNote) return [] as string[]
     const raw = detailNote.raw_data as any
-    return raw?.image_urls || (detailNote.cover ? [detailNote.cover] : [])
+    // ⚠️ 优先用 `images`（图集），再退回 raw_data.image_urls / cover
+    // （2026-09-29 修）
+    //
+    // 原来只看 `raw_data.image_urls || cover` —— 小红书/抖音的详情
+    // 把图集放在 `images` 字段里，这里读不到，于是**多图笔记只显示
+    // 封面一张**（用户反馈"多页只显示一页"）。
+    const imgs = (detailNote as any).images
+    if (Array.isArray(imgs) && imgs.length > 0) {
+      return imgs.filter(Boolean) as string[]
+    }
+    if (Array.isArray(raw?.image_urls) && raw.image_urls.length > 0) {
+      return raw.image_urls.filter(Boolean)
+    }
+    return detailNote.cover ? [detailNote.cover] : []
   }, [detailNote])
 
   // ===== 列定义 =====
