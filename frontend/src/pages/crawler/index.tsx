@@ -437,20 +437,44 @@ function getCurrentSearchTypeConfig(pf: string, st: string): SearchTypeConfig | 
   return cfg.searchTypes.find(t => t.value === st)
 }
 
-function proxyImageUrl(url?: string): string {
+/**
+ * 给图片 URL 走本地代理（防盗链），可选**生成缩略图**。
+ *
+ * ## ⚠️ 为什么需要缩略图（2026-09-29）
+ *
+ * 小红书原图动辄 **1~2 MB**。缩略图条只有 40×40 px，
+ * 却去加载 1.6MB 的原图 —— **加载慢、看着像"图片失败"**
+ * （用户反馈"详情里图片有成功有失败的"）。
+ *
+ * 实测小红书 CDN 支持 `imageView2` 参数：
+ *
+ *     原图                    1,657,105 字节
+ *     ?imageView2/2/w/120        8,310 字节   ← 200 倍差距
+ *
+ * @param url   原始图片 URL
+ * @param width 缩略图宽度（不传则用原图）
+ */
+function proxyImageUrl(url?: string, width?: number): string {
   if (!url) return ''
-  // 微信公众号图片 CDN / B站 / 小红书 / 抖音等都需要走代理（防盗链）
-  if (
+  const needsProxy =
     url.includes('hdslb.com') ||
     url.includes('xhscdn.com') ||
     url.includes('douyincdn.com') ||
     url.includes('mmbiz.qpic.cn') ||
     url.includes('mmbiz.qlogo.cn') ||
     url.includes('qpic.cn')
-  ) {
-    return `/api/v1/proxy/image?url=${encodeURIComponent(url)}`
+  if (!needsProxy) return url
+
+  let target = url
+  // 小红书 CDN：加 imageView2 拿缩略图（只在指定宽度且是 xhscdn 时）
+  if (width && width > 0 && url.includes('xhscdn.com')) {
+    const base = url.split('?')[0]
+    // 已经带了 imageView2 就不重复加
+    target = url.includes('imageView2')
+      ? url
+      : `${base}?imageView2/2/w/${Math.round(width)}/format/webp`
   }
-  return url
+  return `/api/v1/proxy/image?url=${encodeURIComponent(target)}`
 }
 
 // ===== 主组件 =====
@@ -987,9 +1011,15 @@ export default function CrawlerPage() {
         page,
         conn_id: platform === 'bili' ? selectedBiliConn : selectedSearchConn,
       })
-      setResults(data.results || [])
+      const rows = (data.results || []) as CrawlerResult[]
+      setResults(rows)
       setTotal(data.total || 0)
-      setHasMore(Boolean((data as any).has_more))
+      // ⚠️ **空页 = 到底了**（2026-09-29）
+      //
+      // 平台不给真实总数时只能靠 `has_more` 一路翻。若某页返回 0 条，
+      // 即使后端说 has_more 也该停 —— 否则分页器会无限往后长，
+      // 用户能一直点下一页却永远看不到内容。
+      setHasMore(Boolean((data as any).has_more) && rows.length > 0)
       setSearchedKeyword(keyword.trim())
     } catch (e: any) {
       const msg = e?.response?.data?.detail || e?.message || '搜索失败'
@@ -1299,8 +1329,10 @@ export default function CrawlerPage() {
     {
       title: wrapColumnTitle('封面', 'cover'), dataIndex: 'cover', key: 'cover', width: colWidths['cover'],
       render: (cover: string, r: CrawlerResult) => {
-        // 走统一的代理函数（含微信公众号 CDN / B站 / 小红书 / 抖音等）
-        const src = proxyImageUrl(cover)
+        // 走统一的代理函数（含微信公众号 CDN / B站 / 小红书 / 抖音等）。
+        // ⚠️ 传宽度让它取缩略图 —— 小红书原图 1~2MB，
+        // 列表里几十张会加载很久（2026-09-29）。
+        const src = proxyImageUrl(cover, 240)
         // 微信公众号头像 / 账号搜索结果用 1:1 圆形
         const isWechatAccount = r.platform === 'wechat_mp' && searchType === 'account'
         if (isWechatAccount) {
@@ -1871,10 +1903,22 @@ export default function CrawlerPage() {
               // 分页器只显示 1 页、**点不了"下一页"** ——
               // 用户看到"还有更多"却没法翻（实测反馈）。
               //
-              // 所以 hasMore 时给分页器**多留一页**（`total + pageSize`），
-              // 让它渲染出可点的"下一页"。真正有没有下一页由服务端决定，
-              // 翻到空页时用户也能看出来。
-              total: hasMore ? total + maxResults : total,
+              // ⚠️ 分页器要能**一直往后翻**（2026-09-29 修了两次）
+              //
+              // 平台不给真实总数时（小红书只给 `has_more`），后端返回的
+              // `total` = 本页条数。直接用它会**只显示 1 页、点不了下一页**。
+              //
+              // 我第一版改成 `total + maxResults`（多留 1 页）——
+              // 结果**只能翻到第 2 页就停了**（用户反馈"只能到第二页"），
+              // 因为翻到第 2 页后 `hasMore` 仍是 true，但 total 还是 20。
+              //
+              // 正确做法：**用"已翻到的页数"累计**。既然每页都可能
+              // `has_more`，就让分页器的总数随当前页一起增长：
+              //     当前在第 N 页 → 至少显示 N+1 页（还有下一页可点）
+              // 翻到空页时服务端返回 0 条，用户自然知道到头了。
+              total: hasMore
+                ? Math.max(total, currentPage * maxResults) + maxResults
+                : total,
               // 措辞要如实：
               //   有 hasMore → "N 条（还有更多）"
               //   否则       → "共 N 条"
@@ -2357,17 +2401,20 @@ export default function CrawlerPage() {
                   {/* 封面预览 */}
                   {previewMediaUrls.length > 0 && (
                     <div style={{ marginBottom: 16, position: 'relative', background: isDark ? '#252538' : '#f5f5f5', borderRadius: 8, overflow: 'hidden', textAlign: 'center' }}>
-                      <Image src={proxyImageUrl(previewMediaUrls[detailMediaIdx])} alt="media"
+                      {/* 大图用中等尺寸（800px）—— 原图 1~2MB 太慢 */}
+                      <Image src={proxyImageUrl(previewMediaUrls[detailMediaIdx], 800)} alt="media"
                         style={{ maxWidth: '100%', maxHeight: 320, objectFit: 'contain' }}
                         fallback="data:image/svg+xml,..."
                       />
                       {previewMediaUrls.length > 1 && (
                         <div style={{ textAlign: 'center', padding: '8px 0' }}>
-                          <Space size={8}>
+                          <Space size={8} wrap>
                             {previewMediaUrls.map((url, i) => (
                               <div key={i} onClick={() => setDetailMediaIdx(i)}
                                 style={{ width: 40, height: 40, borderRadius: 4, overflow: 'hidden', cursor: 'pointer', border: i === detailMediaIdx ? `2px solid ${THEME.primary}` : '2px solid transparent' }}>
-                                <Image src={proxyImageUrl(url)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} preview={false} />
+                                {/* ⚠️ 缩略图用 120px 版本（8KB）——
+                                    原来加载 1.6MB 原图，看起来像"加载失败" */}
+                                <Image src={proxyImageUrl(url, 120)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} preview={false} />
                               </div>
                             ))}
                           </Space>

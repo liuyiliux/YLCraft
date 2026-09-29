@@ -99,16 +99,22 @@ def test_interaction_uses_truthy_guard():
 # 分页：「还有更多」要能翻
 # =============================================================================
 
-def test_pagination_adds_page_when_has_more():
-    """**回归**：`hasMore` 时给分页器多留一页。
+def test_pagination_grows_beyond_first_page():
+    """**回归（修了两次）**：分页要能**一直往后翻**。
 
-    否则 `total` = 本页条数（10），分页器只有 1 页，
-    **"下一页"按钮不可点** —— 用户看到"还有更多"却翻不了页。
+    第一次：`total` = 本页条数（10）→ 分页器只有 1 页，点不了下一页。
+    第二次（错）：改成 `total + maxResults`（只多留 1 页）→
+                  **用户只能翻到第 2 页**就没得翻了。
+
+    正确：用"已翻到的页数"累计 ——
+        当前在第 N 页 → 至少显示 N+1 页。
     """
     src = _src()
-    assert "hasMore ? total + maxResults : total" in src, (
-        "hasMore 时应给分页器多留一页，否则翻不了页"
+    assert "currentPage * maxResults" in src, (
+        "分页总数应随当前页累计，否则只能翻 1 页"
     )
+    # 空页要能停下来
+    assert "rows.length > 0" in src
 
 
 def test_show_total_uses_real_count_when_has_more():
