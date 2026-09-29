@@ -1060,7 +1060,18 @@ function BrowserLoginPanel({
       } catch { /* ignore */ }
     }
 
-    ws.onclose = () => { setIsLoading(false) }
+    ws.onclose = () => {
+      setIsLoading(false)
+      // ⚠️ **WebSocket 断了不代表"用户取消了"**（2026-09-29 修）
+      //
+      // 后端重启（改代码/手动重启）会断开 WS，而**登录会话状态是内存态**，
+      // 重启后就没了。用户看到的是**永远卡在"请在浏览器中完成登录"45%**
+      // —— 实测就是这样（用户截图反馈"这里为啥一直等待"）。
+      //
+      // 所以断开后启动**轮询兜底**：查会话是否还在。
+      // 不在 = 已结束（后端重启或超时），明确告知而不是干等。
+      startSessionWatchdog(sid)
+    }
     ws.onerror = () => {
       setStatus('failed')
       setStatusText('WebSocket 连接失败')
@@ -1068,6 +1079,40 @@ function BrowserLoginPanel({
     }
 
     wsRef.current = ws
+  }
+
+  /** WS 断开后的兜底：轮询会话是否还存在。
+   *
+   * 会话不在（后端重启/超时结束）→ 如实告知，别让用户对着 45% 干等。
+   * 每 3 秒查一次，最多 2 分钟。
+   */
+  const startSessionWatchdog = (sid: string) => {
+    if (!sid) return
+    let tries = 0
+    const timer = window.setInterval(async () => {
+      tries += 1
+      if (tries > 40 || wsRef.current?.readyState === WebSocket.OPEN) {
+        window.clearInterval(timer)
+        return
+      }
+      try {
+        const res: any = await listPlaywrightSessions()
+        const list = res?.sessions || []
+        const alive = list.some((s: any) => s.session_id === sid)
+        if (!alive) {
+          window.clearInterval(timer)
+          // 会话已结束 —— 可能是"已成功保存"或"后端重启丢了"
+          setStatus('failed')
+          setStatusText(
+            '登录会话已结束（后端可能重启过）。若刚才已扫码成功，'
+            + '登录态已保存，可直接关闭本窗口并刷新；否则请重新点击「启动浏览器」。',
+          )
+          setIsLoading(false)
+        }
+      } catch {
+        // 后端还没起来 —— 继续等下一次
+      }
+    }, 3000)
   }
 
   const handleStart = async () => {
