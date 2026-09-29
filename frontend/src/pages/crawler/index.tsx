@@ -1260,10 +1260,16 @@ export default function CrawlerPage() {
       setDetailLoading(false)
       return
     }
-    // 抖音：搜索结果里已经包含详情所需的全部字段（描述/作者/统计/封面/时长），
-    // 后端也没有按 item_id 反查详情的接口（未抓包确认，不猜路径）。
-    // 所以直接用结果里的数据渲染，不再请求后端——既快又不会撞上风控受限窗口。
-    if (record.platform === 'douyin') {
+    // 抖音 / X：搜索结果里已经包含详情所需的全部字段
+    // （描述/作者/统计/封面/图片/视频），后端也没有可靠的
+    // "按 item_id 反查详情"接口 —— 所以直接用结果里的数据渲染，
+    // 不再请求后端（既快又不会撞上风控）。
+    //
+    // ⚠️ X 也要走这条路（2026-09-29 补）：X 的详情就是从搜索结果
+    // 的 `raw_data`（`_images` / `_video_url`）里来的。
+    // 原来只对抖音这么做，X 会去调 `/crawler/note-detail` 而
+    // **拿不到 raw → 404**（用户点了详情报"笔记不存在"）。
+    if (record.platform === 'douyin' || record.platform === 'twitter') {
       setDetailNote(prev => prev ? { ...prev, ...record, raw_data: record.raw_data } : null)
       setDetailLoading(false)
       return

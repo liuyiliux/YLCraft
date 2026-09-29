@@ -533,6 +533,22 @@ class BilibiliClient(BasePlatformClient):
 
         results = []
         for item in result_list:
+            # ⚠️ **过滤掉没有 bvid 的条目**（2026-09-29）
+            #
+            # B站搜索结果里会混入**广告位 / 推荐位** —— 它们没有 `bvid`，
+            # 解析出来就是 `id=''`、`url='https://www.bilibili.com/video/'`
+            # （实测第 2 页第一条就是这种）。
+            #
+            # 不过滤的话：
+            #   · 列表里出现一条"点不开"的空条目
+            #   · 前端拿空 id 去调详情/下载必然失败
+            bvid = item.get("bvid") or ""
+            if not bvid:
+                logger.debug(
+                    "[bili] 跳过无 bvid 的搜索结果（广告/推荐位）：%s",
+                    str(item.get("title"))[:40],
+                )
+                continue
             results.append(self._parse_video_result(item))
 
         # 把总条数存入第一个结果的 raw_data，供上层读取
