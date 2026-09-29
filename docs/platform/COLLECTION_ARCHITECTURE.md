@@ -238,9 +238,41 @@ DownloadManager
 | **B站** | httpx | 官方 API 开放，无需 Cookie |
 | **抖音** | httpx | 自己的签名算法 |
 | **小红书** | **httpx + xhshow** | 缺签名会被风控拒（300011）；**加签名即可纯 HTTP** |
-| **X** | **httpx** | 需要 `x-client-transaction-id`（动态生成）；失败才回退 DOM |
-| **微博** | **Patchright** | ⚠️ **必须浏览器** —— 微博注册了 **Service Worker**，由它代理请求并注入 httpx 复现不了的上下文（实测 httpx 直连一律 `ok=-100`，与签名无关） |
+| **X** | **httpx** | 需要 `x-client-transaction-id`（动态生成） |
+| **微博** | **Patchright** | 见下 |
 | **番茄** | httpx | 官方 API |
+
+### ⚠️ 微博：搜索不需要登录，但「我的数据」需要 —— 且必须在 **m 站**登录
+
+**两件事要分清**：
+
+| 能力 | 需要登录吗 | 说明 |
+|------|-----------|------|
+| 搜索 | ❌ **不需要** | 靠 **Service Worker 上下文**（未登录也能搜，实测 ok=1） |
+| 详情 | ❌ 不需要 | 公开信息 |
+| 搜博主 | ❌ 不需要 | 公开信息 |
+| **「我的数据」** | ✅ **需要** | 要确定"我是谁" |
+
+**所以"搜索能搜到" ≠ "登录态有效"** —— 别把这两件事混为一谈。
+
+#### 微博有**两套登录体系**
+
+    weibo.com     主站登录 → SUB 种在 .weibo.com
+    m.weibo.cn    移动站登录 → SUB 种在 .weibo.cn
+
+而**所有微博能力都走 m 站**（`m.weibo.cn/api/container/getIndex`）。
+
+实测：用**主站**登录态打开 m 站，`/api/config` 返回 **login=False**
+（三种 cookie 组合都试过）。**必须让用户在 m 站入口登录**：
+
+    登录 URL = https://m.weibo.cn/login
+    → 跳 passport.weibo.com/sso/signin?entry=wapsso（无线 SSO）
+
+登录成功后 `.weibo.cn` 域会多出 **ALF / SCF / SSOLoginState**（登录凭证）。
+
+⚠️ 未登录时页面里的 `/profile/{uid}` 是**推荐流里的别人**
+（实测拿到一个 275 万粉的真实博主）—— 所以必须保持
+"先查 `/api/config` 的 login 再抓 uid"的保护，**宁可不给也不能给错人的资料**。
 
 ### 各平台传输层实现文件
 
