@@ -174,12 +174,42 @@ async def get_detail_via_patchright(
                 logger.warning("[xhs] 等待图集超时，按当前 DOM 继续")
             await session.page.wait_for_timeout(2500)
 
-            # 滚动触发懒加载（实测部分图在滚动后才出现）
-            for _ in range(3):
-                await session.page.evaluate("() => window.scrollBy(0, 600)")
-                await session.page.wait_for_timeout(1200)
+            # 先确认在详情页再滚动 —— 否则滚的是首页推荐流
+            on_detail = await session.page.evaluate(
+                "() => !!document.querySelector('#noteContainer')"
+            )
+            if on_detail:
+                # 滚动触发懒加载（实测部分图在滚动后才出现）
+                for _ in range(3):
+                    await session.page.evaluate("() => window.scrollBy(0, 600)")
+                    await session.page.wait_for_timeout(1200)
+            else:
+                logger.warning("[xhs] 未在详情页，跳过滚动")
 
             raw = await session.page.evaluate(JS_PARSE_NOTE)
+
+            # ⚠️ **必须校验真的进了详情页**（实测 2026-09-28）
+            #
+            # 用户反馈"详情显示了但没啥内容、多页只显示一页"。
+            #
+            # 原因：站内点击失败后会退回 `goto`，而 goto **会被安全策略拦**
+            # —— 页面停在首页/错误页，但代码仍继续读 DOM，于是拿到**首页的
+            # 空数据**，再被 parse 成一个"看起来成功"的 NoteDetail
+            # （success=True、images=[]、标题是首页里的某个文本）。
+            #
+            # **谎报成功比直接失败更糟**：用户看到"获取成功"却没有内容，
+            # 完全不知道哪里出了问题。
+            #
+            # 所以这里显式检查 #noteContainer：不在详情页就直接抛错。
+            on_detail = await session.page.evaluate(
+                "() => !!document.querySelector('#noteContainer')"
+            )
+            if not on_detail:
+                raise RuntimeError(
+                    "[xhs] 未能进入笔记详情页（可能被安全策略拦截）。"
+                    "小红书详情必须『站内点击』打开；若从搜索结果进入，"
+                    "请带上当时的搜索关键词（详情接口支持 keyword 参数）。"
+                )
             session.touch()
         except Exception:
             await pool.close(session_key)
