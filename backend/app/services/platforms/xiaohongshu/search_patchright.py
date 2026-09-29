@@ -107,6 +107,10 @@ async def search_via_patchright(client, params: SearchParams) -> List[SearchResu
         logger.info("[xhs] 命中结果缓存，跳过浏览器 key=%s", cache_key)
         return cached
 
+    # 优先用 base 已建好的注入页；没有时才自建（原行为）。
+    #
+    # ⚠️ 别改成"始终走 search_with_runtime" —— 实测那样反而搜到 0 条
+    # （2026-09-28 试过并回退）。注入页分支是可用路径。
     page = getattr(client, "_patchright_page", None)
     if page is None:
         results = await search_with_runtime(client, params)
@@ -114,6 +118,14 @@ async def search_via_patchright(client, params: SearchParams) -> List[SearchResu
         await _warmup(page)
         results = await _search_on_page(page, params)
 
+    # ⚠️ **必须有 return**（2026-09-29 踩过）
+    #
+    # 我重构时把 return 连同 cache.set 一起删掉了 → 函数返回 None →
+    # 上层 `if not results` 判定"没有结果" → 用户看到"搜索 0 条"。
+    # 而日志明明写着 `-> 22/30 cards`（卡片其实读到了）。
+    #
+    # **日志说读到了、上层说没有** —— 这两个同时出现时，
+    # 先怀疑"返回值在中途丢了"，而不是"平台没给数据"。
     if results:
         cache.set(cache_key, results)
     return results
