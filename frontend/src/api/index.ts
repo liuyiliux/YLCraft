@@ -1432,6 +1432,38 @@ export const searchPlatformUsers = (platform: string, keyword: string, maxResult
 export const getMyPlatformProfile = (platform: string) =>
   request(`/users/me?platform=${encodeURIComponent(platform)}`)
 
+// ============================================================================
+// 创作者中心（只有号主能看的运营数据）
+// ============================================================================
+
+/**
+ * 抖音创作者中心：账号总览（含每日趋势）。
+ *
+ * ⚠️ 与 `/users/me` 不同 —— 这里的数据**只有号主能看**：
+ * 播放量 / 主页访问量 / 作品点赞 / 净增粉丝 / 取关粉丝 / 搜索来源…
+ */
+export const getDouyinCreatorOverview = (days: 7 | 15 | 30 = 7) =>
+  request(`/users/creator/overview?platform=douyin&days=${days}`)
+
+/** 抖音创作者中心：作品列表（含完播率、平均观看时长等深度指标）。 */
+export const getDouyinCreatorWorks = (count = 20, maxCursor = 0) =>
+  request(
+    `/users/creator/works?platform=douyin&count=${count}&max_cursor=${maxCursor}`,
+  )
+
+/**
+ * 小红书创作服务平台：账号总览。
+ *
+ * 实测与创作者后台页面完全一致：曝光数 / 观看数 / 封面点击率 /
+ * 视频完播率 / 主页访客 / 净涨粉（都带环比）。
+ */
+export const getXhsCreatorOverview = (period: 'seven' | 'thirty' = 'seven') =>
+  request(`/users/creator/xhs/overview?period=${period}`)
+
+/** 小红书创作服务平台：粉丝数据（涨粉/掉粉/总数 + 日趋势）。 */
+export const getXhsCreatorFans = (period: 'seven' | 'thirty' = 'seven') =>
+  request(`/users/creator/xhs/fans?period=${period}`)
+
 export const getPlatformUserProfile = (
   platform: string,
   opts: { userId?: string; secUid?: string },
