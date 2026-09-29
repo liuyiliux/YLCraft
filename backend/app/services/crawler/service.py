@@ -214,7 +214,25 @@ class CrawlerService:
             # 9 个 chrome 进程白起），而我们的 HTTP 路径根本不需要它。
             #
             # 其他平台（B站/抖音/快手…）仍用 api。
-            BROWSER_ONLY = ("xhs", "xiaohongshu", "weibo", "wb")
+            #
+            # ⚠️ 实测（2026-09-29 更新）小红书：**已改为纯 HTTP**。
+            #
+            # 长期写着"小红书搜索端点已迁移到 so.xiaohongshu.com/v2、
+            # 旧 edith/v1 返回 300011、Python 侧不可用" —— **这是错的**。
+            # 300011 是"缺 X-s/X-t 签名被风控拒"，**不是端点废弃**。
+            # 我们装上 `xhshow`（纯 Python 签名）后实测：
+            #
+            #     POST edith.xiaohongshu.com/api/sns/web/v1/search/notes
+            #     → 200, success=True, data.items[20~21], 每项自带 xsec_token
+            #     分页 page=1/2/3 三页不同；sort 三档都可用
+            #     **单次 0.2~0.5 秒**（浏览器路径要 ~15 秒）
+            #
+            # 详情同理（`POST /api/sns/web/v1/feed`，~3 秒）。
+            # 所以小红书**不再**放进 BROWSER_ONLY。
+            #
+            # 保留在 BROWSER_ONLY 的只有微博 —— 它需要 **Service Worker
+            # 上下文**（实测 httpx 直连一律 ok=-100，与签名无关）。
+            BROWSER_ONLY = ("weibo", "wb")
             mode = "patchright" if platform in BROWSER_ONLY else "api"
             logger.info(
                 "[_search_via_platforms] platform=%s mode=%s keyword=%s",

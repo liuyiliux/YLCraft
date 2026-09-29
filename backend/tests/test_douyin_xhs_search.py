@@ -141,48 +141,76 @@ def test_xhs_old_v1_endpoint_is_documented_as_dead():
     assert "300011" in src or "失效" in src or "已迁移" in src, "应说明旧端点已失效"
 
 
-def test_xhs_api_mode_fails_loudly_not_silently():
-    """API 模式必须**明确报错**，不能静默返回空列表。
+def test_xhs_api_mode_is_real_and_requires_cookie():
+    """**API 模式现在是主路径**（2026-09-29 打通），仍要"明确报错不静默"。
 
-    原实现把 HTTP 错误、code!=0、异常全部吞成 `return []`，
-    调用方只会看到"没搜到"，属于最费时间的假阴性。
-    实测该端点已返回 code:300011，API 模式本就不可用。
+    ## 修正了一个错误结论
+
+    这里原本断言"API 模式必须抛错，因为端点已返回 code:300011"。
+
+    **300011 是"缺 X-s/X-t 签名被风控拒"，不是端点废弃** ——
+    这句话原测试的 docstring 里就写着，却被当成了端点死了的证据。
+
+    装上 `xhshow` 后实测：
+        POST edith.../api/sns/web/v1/search/notes
+        → 200, success=True, data.items[21]
+
+    现在 API 模式真正去搜；**没有 cookie 时抛可操作错误**
+    （不静默返回空列表 —— 那条原则仍然要守）。
     """
     import asyncio
 
     from app.services.platforms.types import SearchParams
     from app.services.platforms.xiaohongshu.search import search_via_api
 
+    class _Cfg:
+        cookie = ""
+
+    class _Cli:
+        config = _Cfg()
+
     try:
         asyncio.get_event_loop().run_until_complete(
-            search_via_api(None, SearchParams(keyword="小说"))
+            search_via_api(_Cli(), SearchParams(keyword="小说"))
         )
     except RuntimeError as e:
-        msg = str(e)
-        assert "patchright" in msg.lower(), "错误信息要指出正确的替代方案"
-        assert "so.xiaohongshu.com" in msg or "签名" in msg, "要说明原因"
+        assert "Cookie" in str(e), "缺 cookie 要说明清楚"
     else:
-        raise AssertionError("API 模式已停用，应抛 RuntimeError 而不是返回空列表")
+        raise AssertionError("缺 cookie 时应抛 RuntimeError，不能静默返回空")
 
 
-def test_xhs_search_module_records_both_endpoints():
-    """真实端点与旧端点都要记录，方便后来者对照。"""
+def test_xhs_search_endpoint_is_usable():
+    """端点常量要指向**可用**的 edith v1（不是"已死"的）。"""
     from app.services.platforms.xiaohongshu import search as search_mod
 
-    assert search_mod.REAL_V2_ENDPOINT == (
-        "https://so.xiaohongshu.com/api/sns/web/v2/search/notes"
+    assert "edith.xiaohongshu.com" in search_mod.REAL_ENDPOINT
+    assert "/api/sns/web/v1/search/notes" in search_mod.REAL_ENDPOINT
+    # 不该再有"已死端点"这种命名（它误导过两轮排查）
+    assert not hasattr(search_mod, "DEAD_V1_ENDPOINT"), (
+        "不该保留 DEAD_V1_ENDPOINT —— 那个端点其实可用"
     )
-    assert "edith.xiaohongshu.com" in search_mod.DEAD_V1_ENDPOINT
-    assert "DEAD" in search_mod.DEAD_V1_ENDPOINT or "v1" in search_mod.DEAD_V1_ENDPOINT
 
 
-def test_crawler_uses_patchright_for_xhs():
-    """crawler 分发时必须给小红书选 patchright —— 选 api 会撞上已停用的端点。"""
+def test_crawler_uses_api_for_xhs():
+    """**回归**：crawler 分发时必须给小红书选 api（纯 HTTP）。
+
+    原来硬编码在 BROWSER_ONLY 里（基于"端点已停用"的错误结论），
+    导致每次搜索都白开浏览器（15 秒 vs 现在的 3 秒）。
+
+    微博仍留在 BROWSER_ONLY —— 它需要 Service Worker 上下文。
+    """
     from app.services.crawler import service as crawler_service
 
     src = inspect.getsource(crawler_service.CrawlerService._search_via_platforms)
-    assert "patchright" in src, "crawler 应为小红书选 patchright 模式"
-    assert '"xhs"' in src or "'xhs'" in src
+    # BROWSER_ONLY 不该包含 xhs
+    line = next(
+        (ln for ln in src.splitlines() if "BROWSER_ONLY" in ln and "=" in ln), ""
+    )
+    assert line, "应能找到 BROWSER_ONLY 定义"
+    assert '"xhs"' not in line and "'xhs'" not in line, (
+        "小红书不该在 BROWSER_ONLY 里（纯 HTTP 可用）"
+    )
+    assert "weibo" in line, "微博应仍在 BROWSER_ONLY（需要 Service Worker）"
 
 
 def test_xhs_search_patchright_reads_dom():

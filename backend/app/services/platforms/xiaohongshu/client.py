@@ -87,13 +87,18 @@ class XiaohongshuClient(BasePlatformClient):
         return ".xiaohongshu.com"
 
     async def search(self, params: SearchParams) -> List[SearchResult]:
-        """
-        搜索笔记
+        """搜索笔记。
+
+        ## 两条路径（2026-09-29）
+
+        · **api（默认）**：纯 HTTP，`POST /api/sns/web/v1/search/notes`
+          + xhshow 签名。实测 **0.2~0.5 秒**，且返回里**自带
+          `xsec_token`**（详情接口必需），全链路无需浏览器。
+        · patchright：浏览器读 DOM，保留作为兜底。
         """
         if self.config.mode == ClientMode.PATCHRIGHT:
             return await search_via_patchright(self, params)
-        else:
-            return await search_via_api(self, params)
+        return await search_via_api(self, params)
 
     async def get_detail(self, item_id: str, **kwargs) -> Optional[NoteDetail]:
         """
