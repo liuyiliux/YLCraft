@@ -33,7 +33,7 @@
 | `docs/reference/` | 外部参考资料、客户素材、二进制样例。 | 不作为当前实现事实来源。 |
 | `docs/research/` | 专题调研产出：排查计划与结论报告（如任务/事件记录覆盖梳理）。 | 结论要回写到架构或领域文档，这里保留完整推导过程。 |
 
-平台接入入口：**新增平台先读 `docs/platform/ADDING_A_PLATFORM.md`（含必改清单与自动校验脚本）**；已接入平台：`docs/platform/BILIBILI_GUIDE.md`、`docs/platform/DOUYIN_GUIDE.md`、`docs/platform/XIAOHONGSHU_GUIDE.md`、`docs/platform/FANQIE_GUIDE.md`；其余跨平台对比资料仍在 `docs/platform/MULTI_PLATFORM_REFERENCE.md`。本地历史归属维护见 `docs/guides/owner-backfill.md`。
+平台接入入口：**新增平台先读 `docs/platform/ADDING_A_PLATFORM.md`（含必改清单与自动校验脚本）**；**采集功能整体结构见 `docs/platform/COLLECTION_ARCHITECTURE.md`（搜索/详情/下载走哪条路、为什么、踩坑清单）**；已接入平台：`docs/platform/BILIBILI_GUIDE.md`、`docs/platform/DOUYIN_GUIDE.md`、`docs/platform/XIAOHONGSHU_GUIDE.md`、`docs/platform/FANQIE_GUIDE.md`；其余跨平台对比资料仍在 `docs/platform/MULTI_PLATFORM_REFERENCE.md`。本地历史归属维护见 `docs/guides/owner-backfill.md`。
 
 ## 当前主线状态
 
