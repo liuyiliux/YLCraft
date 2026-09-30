@@ -1352,6 +1352,16 @@ export default function CrawlerPage() {
   //
   // `/api/v1/proxy/video` 会**按域名**决定发不发 Referer，
   // 并透传 Range（支持拖进度条）—— 前端不用关心这些差异。
+  //
+  // ⚠️ **只认"媒体直链"，不认"原文链接"**（2026-09-29）
+  //
+  // 踩过的坑：后端原来把 `video_url` 用**原文链接**兜底
+  // （`video_direct or item.url`），于是图集也有值
+  // （`https://www.xiaohongshu.com/explore/...`），
+  // 前端据此把**图集判成视频**、渲染出 0:00 的空播放器，
+  // 而真正的图集被隐藏（"有视频时不显示封面"）。
+  // 后端已修（没直链就留空）；这里再加一道防线 ——
+  // **明显是网页地址的排除掉**。
   const previewVideoUrl = useMemo(() => {
     if (!detailNote) return ''
     const raw = (detailNote.raw_data || {}) as any
@@ -1368,9 +1378,14 @@ export default function CrawlerPage() {
       raw.page_info?.media_info?.stream_url,
     ]
     for (const u of cand) {
-      if (typeof u === 'string' && /^https?:\/\//.test(u)) {
-        // 排除音频（图文笔记的 play_addr 可能指向配乐）
-        if (/\.(mp3|m4a)(\?|$)/i.test(u)) continue
+      if (typeof u !== 'string' || !/^https?:\/\//.test(u)) continue
+      // 排除音频（图文笔记的 play_addr 可能指向配乐）
+      if (/\.(mp3|m4a)(\?|$)/i.test(u)) continue
+      // ⚠️ 排除"网页地址"——那是原文页，不是媒体流。
+      // 判据：常见视频 CDN 域名/扩展名之外，明显是站点页面的排除。
+      if (/\.(mp4|m3u8|webm|mov)(\?|$)/i.test(u)) return u
+      // 没有扩展名但来自已知视频 CDN 的也认（小红书/微博的签名 URL）
+      if (/(douyinvod|weibocdn|twimg\.com\/.*video|xhscdn\.com\/stream|bilivideo)/i.test(u)) {
         return u
       }
     }
