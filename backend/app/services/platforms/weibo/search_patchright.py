@@ -323,6 +323,19 @@ async def search_via_patchright(
         if len(out) >= want:
             break
 
+    # ⚠️ **给前端 `_has_more`**（2026-09-29 补）
+    #
+    # 原来不设 → 前端**没有「下一页」入口**（用户反映"搜索没有更多页"）。
+    #
+    # ⚠️ 微博这里要**如实说"没有"**：实测 `page=2` 返回
+    # **173 字节的 HTML 错误页**（真翻页依赖 `since_id` 游标，
+    # 而 `cardlistInfo.since_id` 是 `None`）—— 即**平台侧没有第 2 页**。
+    #
+    # 所以固定 False，不编造"还有更多"。前端据此不显示翻页按钮 ——
+    # 这比"显示了但点了没反应"好。
+    if out:
+        out[0].raw_data["_has_more"] = False
+
     logger.info("[weibo] 搜索 %r -> %d 条（patchright）", params.keyword, len(out))
     return out[:want]
 

@@ -111,6 +111,123 @@ def extract_frontend_metas(source: str) -> set[str]:
     return set(re.findall(r"value:\s*'([a-z0-9_]+)'", source))
 
 
+# =============================================================================
+# 能力层检查（2026-09-29 加）
+# =============================================================================
+#
+# 上面 1-4 项只保证「登记齐全」。但**登记齐全 ≠ 功能接通** ——
+# 本轮实测踩的四个坑都属于后者，而且**都不报错**：
+#
+#   ① X 的「我的数据」下拉忘了加   → 用户"根本选不到"
+#   ② 微博下面显示抖音的创作者数据 → `else` 无条件走抖音
+#   ③ X 搜索没有"下一页"           → 后端从没设 `has_more`
+#   ④ 下载的素材在库里看不到       → 建节点时漏了 `owner_user_id`
+#
+# 这些只能"各层对照"才查得出来，所以这里做**跨层一致性**检查。
+
+# 平台名 → 前端各下拉里应该出现的值（含别名）
+_FRONTEND_PLATFORM_VALUES = {
+    "xhs": ["xiaohongshu"],
+    "twitter": ["twitter"],
+    "weibo": ["weibo"],
+    "douyin": ["douyin"],
+    "bilibili": ["bili"],
+    "fanqie": ["fanqie"],
+}
+
+# 「我的数据」下拉**本该有**的平台。
+#
+# ⚠️ 只查"应该支持"的，不是所有平台 —— 否则 AI 平台
+# （openai/anthropic/minimax）和只有 Cookie 的平台（zhihu/wechat_mp）
+# 会被误报。
+#
+# 判定依据：后端实现了 `get_self_profile` 或 `get_user_videos`
+# （即真的能查"我的"数据）。
+_MY_DATA_PLATFORMS = {
+    "douyin", "xhs", "bilibili", "weibo", "twitter",
+}
+
+# 有"搜索 + 分页"能力、因而**必须给 has_more** 的平台
+_SEARCH_PAGED_PLATFORMS = {
+    "xhs", "bilibili", "douyin", "weibo", "twitter",
+}
+
+
+def _fe_file(rel: str) -> str:
+    p = REPO_ROOT / "frontend" / "src" / rel
+    try:
+        return p.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+
+def check_capability_layers(plat: str) -> list[tuple[str, bool, str]]:
+    """返回 [(检查项, 是否通过, 未通过时的提示)]。
+
+    检查的是"**后端起效了，但别的层没接上**"这类不报错的坑。
+    """
+    out: list[tuple[str, bool, str]] = []
+
+    # ---- A. 「我的数据」下拉有没有这个平台 ----
+    #
+    # 实测：X 的后端（/users/me + /users/videos）全部可用，
+    # 但前端下拉漏了 → 用户"根本选不到"。
+    my_data = _fe_file("pages/my-platform-data/index.tsx")
+    if my_data and plat in _MY_DATA_PLATFORMS:
+        vals = _FRONTEND_PLATFORM_VALUES.get(plat, [plat])
+        has = any(f"value: '{v}'" in my_data for v in vals)
+        out.append((
+            "前端「我的数据」下拉",
+            has,
+            f"缺 {vals} —— 后端支持但用户选不到（X 就这样漏过）",
+        ))
+
+    # ---- B. 创作者中心不能串平台 ----
+    #
+    # 实测：`if (isXhs) {...} else {...抖音...}` —— else 无条件走抖音，
+    # 选微博会显示**抖音的数据**。
+    creator = _fe_file("pages/my-platform-data/CreatorCenterPanel.tsx")
+    if creator and plat in ("weibo", "twitter", "bilibili"):
+        # 不支持的平台应该"不加载"，而不是落到 else
+        guarded = ("!isXhs && !isDouyin" in creator
+                   or "!isDouyin && !isXhs" in creator)
+        out.append((
+            "创作者中心平台守卫",
+            guarded,
+            "不支持的平台要显式跳过，否则会显示**别的平台的数据**",
+        ))
+
+    # ---- C. 搜索分页要给 has_more ----
+    #
+    # 实测：X 从来没设 `_has_more` → 前端**永远显示"没有下一页"**，
+    # 尽管后端 page=2/3 都能正常翻；B站/抖音/微博同样漏过。
+    #
+    # ⚠️ 要扫**整个平台目录** —— 搜索可能实现在
+    # `search_api.py` / `search_http.py` / `search_patchright.py` /
+    # `client.py` 任一处（微博就在 `search_patchright.py`，
+    # 只扫前三个会漏判成"没实现"）。
+    plat_dir = BACKEND_DIR / "app" / "services" / "platforms" / plat
+    srcs: list[str] = []
+    if plat_dir.is_dir():
+        for p in sorted(plat_dir.glob("*.py")):
+            try:
+                srcs.append(p.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+    if srcs and plat in _SEARCH_PAGED_PLATFORMS:
+        joined = "\n".join(srcs)
+        has_flag = "_has_more" in joined
+        # 只对有搜索的平台要求
+        if "def search" in joined or "async def search" in joined:
+            out.append((
+                "搜索结果带 has_more",
+                has_flag,
+                "不设的话前端**没有『下一页』**（X/B站/抖音都这样漏过）",
+            ))
+
+    return out
+
+
 async def fetch_pg_enum() -> set[str] | None:
     """读取 PG 原生枚举 platformtype 的当前值；非 Postgres 或连不上返回 None。"""
     try:
@@ -204,6 +321,15 @@ def main() -> int:
         # 4) 前端入口
         if plat not in fe_metas:
             missing.append("前端 PLATFORM_METAS 缺条目（账号中心看不到入口）")
+
+        # 5) 能力层（2026-09-29 加）
+        #
+        # 上面 1-4 只保证"登记齐全"，**不保证功能真的接通**。
+        # 这一节查的是"后端起效了但前端/其它层没接上"那类**不报错**的坑
+        # （本轮实测踩了四个，症状都是"悄无声息地不对"）。
+        for label, ok, hint in check_capability_layers(plat):
+            if not ok:
+                missing.append(f"{label} —— {hint}")
 
         if missing:
             print("  MISSING:")
