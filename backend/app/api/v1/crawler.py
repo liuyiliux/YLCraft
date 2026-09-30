@@ -442,6 +442,30 @@ async def search_enhanced(req: SearchEnhancedRequest):
             using=using,
         )
     except Exception as e:
+        # ⚠️ **登录态/风控类错误要给可读状态码，不是笼统的 500**（2026-09-29）
+        #
+        # 实测：小红书被风控时接口返回 461，原来会被
+        # `search_videos` 吞掉并降级 → 响应变成
+        # `{"success": true, "results": [], "message": "找到 0 条结果"}`
+        # —— 用户完全不知道是被风控了。
+        #
+        # 现在 service 层不再吞（见 `CrawlerService.search_videos`），
+        # 这里再把"平台侧拒绝"映射成 **429**（稍后重试/去登录），
+        # 而不是 500（服务端故障）—— 语义不同，前端提示也不同。
+        msg = str(e)
+        if any(k in msg for k in ("461", "403", "401", "风控", "antispam")):
+            logger.warning("[search_enhanced] %s 平台侧拒绝：%s", req.platform, msg[:140])
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    f"{msg}\n\n"
+                    "这是**平台侧拒绝**（通常是登录态失效或触发风控），"
+                    "不是「没搜到」。可尝试：\n"
+                    "  1. 到「账号中心」重新获取该平台登录态\n"
+                    "  2. 稍等一会儿再试（风控常是临时性的）\n"
+                    "  3. 用搜索框旁的「去官网搜」在浏览器里手动搜索"
+                ),
+            )
         logger.error(f"[search_enhanced] Error: {e}")
         raise HTTPException(status_code=500, detail=f"搜索失败: {str(e)}")
 

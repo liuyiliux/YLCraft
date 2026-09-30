@@ -157,6 +157,29 @@ class CrawlerService:
             # 把"环境被风控"误报成"关键词没结果"。直接抛给上层显示可读原因。
             raise
         except Exception as e:
+            # ⚠️ **登录态/风控类错误也不能降级到 yt-dlp**（2026-09-29）
+            #
+            # 实测：小红书被风控时 `_search_via_platforms` 抛
+            # `RuntimeError: [xhs] 搜索接口返回 HTTP 461`，
+            # 而这里**吞掉**并降级到 yt-dlp —— yt-dlp 又返回空，
+            # 于是响应变成：
+            #
+            #     HTTP 200 {"success": true, "results": [],
+            #               "message": "找到 0 条结果"}
+            #
+            # **用户完全不知道是被风控了**（这正是"静默返回空"的老毛病）。
+            #
+            # 判据：错误消息里出现登录态/风控关键词 → 直接抛给上层。
+            msg = str(e)
+            if any(k in msg for k in (
+                "HTTP 461", "HTTP 403", "HTTP 401", "HTTP 429",
+                "未登录", "登录态", "Cookie", "cookie", "风控", "antispam",
+            )):
+                logger.warning(
+                    "[search_videos] %s 登录态/风控类错误，不降级到 yt-dlp：%s",
+                    platform, msg[:120],
+                )
+                raise
             logger.warning(f"[search_videos] platforms module failed: {e}, falling back to yt-dlp")
         # 2. 降级方案：使用 yt-dlp 搜索
         return await self._search_via_ytdlp(platform, keyword, max_results)
@@ -439,6 +462,31 @@ class CrawlerService:
             # 把"环境被限制"误报成"关键词没结果"。
             raise
         except Exception as e:
+            # ⚠️ **登录态/风控类错误也要穿透**（2026-09-29 修）
+            #
+            # 原来一律 `return []` —— 实测小红书被风控（HTTP 461）时：
+            #
+            #     日志：[_search_via_platforms] Error: [xhs] 搜索接口返回 HTTP 461
+            #     响应：HTTP 200 {"success": true, "results": [],
+            #                    "message": "找到 0 条结果"}
+            #
+            # **用户看到"没搜到"，完全不知道是被风控** —— 这是本仓库
+            # 反复出现的老毛病（`ADDING_A_PLATFORM.md` 铁律第 2 条）。
+            #
+            # 而这里正是第一现场（外层 `search_videos` 的 catch 根本
+            # 执行不到，因为异常在这里就被吞了 —— 我第一版修错了地方）。
+            msg = str(e)
+            if any(k in msg for k in (
+                "461", "471", "406", "403", "401", "429",
+                "300011", "300012",
+                "未登录", "登录态", "Cookie", "cookie",
+                "风控", "antispam", "CAPTCHA", "captcha",
+            )):
+                logger.error(
+                    "[_search_via_platforms] %s 登录态/风控类错误（**不吞成空**）：%s",
+                    platform, msg[:160],
+                )
+                raise
             logger.error(f"[_search_via_platforms] Error: {e}")
             return []
 
