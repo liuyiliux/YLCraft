@@ -57,6 +57,15 @@ const PLATFORMS = [
   // 之前漏了 —— 明明后端已支持（`/users/me` + `/users/videos`
   // 都实测可用），但下拉里没有，用户根本选不到。
   { value: 'twitter', label: 'X', connKeys: ['twitter', 'x', 'tw'] },
+  // ⚠️ 快手也在这里（2026-09-30 补）
+  //
+  // 后端「我的数据」已打通（实测 20:46 拿到「逸流AI 粉丝20」），
+  // 但**下拉里又漏了** —— 和 X 那次一模一样的错。
+  // （skill 第 7 步专门写了这条，我还是漏了一次。）
+  //
+  // ⚠️ 快手**需要登录**才能看「我的数据」（搜索不需要）；
+  // 且登录态较短命，失效后要重新扫码。
+  { value: 'kuaishou', label: '快手', connKeys: ['kuaishou', 'ks'] },
 ]
 
 function formatCount(n: number | undefined | null): string {

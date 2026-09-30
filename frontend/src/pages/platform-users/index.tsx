@@ -57,6 +57,9 @@ const PLATFORMS = [
   { value: 'bili', label: 'B站', connKeys: ['bili', 'bilibili'] },
   { value: 'douyin', label: '抖音', connKeys: ['douyin'] },
   { value: 'xiaohongshu', label: '小红书', connKeys: ['xiaohongshu', 'xhs'] },
+  // 快手：搜博主已打通（`/rest/v/search/user`），且**不需要登录**
+  // （实测：cookie 失效时搜索/搜博主照常可用）
+  { value: 'kuaishou', label: '快手', connKeys: ['kuaishou', 'ks'] },
 ]
 
 /** 大数字格式化：48307669 -> 4830.8万 */

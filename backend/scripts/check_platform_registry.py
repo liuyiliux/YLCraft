@@ -149,7 +149,12 @@ _MY_DATA_PLATFORMS = {
 
 # 有"搜索 + 分页"能力、因而**必须给 has_more** 的平台
 _SEARCH_PAGED_PLATFORMS = {
-    "xhs", "bilibili", "douyin", "weibo", "twitter",
+    "xhs", "bilibili", "douyin", "weibo", "twitter", "kuaishou",
+}
+
+# 「搜博主 → 看作品」可用的平台（前端「博主中心」下拉要有）
+_USER_SEARCH_PLATFORMS = {
+    "douyin", "xhs", "bilibili", "kuaishou",
 }
 
 
@@ -168,10 +173,12 @@ def check_capability_layers(plat: str) -> list[tuple[str, bool, str]]:
     """
     out: list[tuple[str, bool, str]] = []
 
-    # ---- A. 「我的数据」下拉有没有这个平台 ----
+    # ---- A. 前端各下拉有没有这个平台 ----
     #
     # 实测：X 的后端（/users/me + /users/videos）全部可用，
     # 但前端下拉漏了 → 用户"根本选不到"。
+    # **快手又漏了一次**（2026-09-30）—— 所以这里要查**全部**入口，
+    # 不是只查「我的数据」那一处。
     my_data = _fe_file("pages/my-platform-data/index.tsx")
     if my_data and plat in _MY_DATA_PLATFORMS:
         vals = _FRONTEND_PLATFORM_VALUES.get(plat, [plat])
@@ -179,7 +186,18 @@ def check_capability_layers(plat: str) -> list[tuple[str, bool, str]]:
         out.append((
             "前端「我的数据」下拉",
             has,
-            f"缺 {vals} —— 后端支持但用户选不到（X 就这样漏过）",
+            f"缺 {vals} —— 后端支持但用户选不到（X/快手都这样漏过）",
+        ))
+
+    # 博主中心（搜人→看作品）——搜博主能力可用的平台都该有
+    users_page = _fe_file("pages/platform-users/index.tsx")
+    if users_page and plat in _USER_SEARCH_PLATFORMS:
+        vals = _FRONTEND_PLATFORM_VALUES.get(plat, [plat])
+        has = any(f"value: '{v}'" in users_page for v in vals)
+        out.append((
+            "前端「博主中心」下拉",
+            has,
+            f"缺 {vals} —— 搜博主后端可用但选不到（快手漏过）",
         ))
 
     # ---- B. 创作者中心不能串平台 ----
