@@ -1083,7 +1083,12 @@ export default function DownloadPage() {
   const platformLabel = result ? (PLATFORM_LABELS[result.platform] || result.platform) : ''
 
   return (
-    <div style={{ maxWidth: 900 }}>
+    // 左右两栏：左边「链接解析（输入 + 解析结果）」，右边「种子 / 磁力下载」。
+    // 原来磁力面板夹在解析输入框和解析结果之间——解析一出结果，结果就压在磁力面板下面，
+    // 两件事混在一列里，既不好找也不好读。它们是**两条独立的路**（一个走平台链接，一个走 BT），
+    // 分开摆是符合语义的；窄屏用 flexWrap 自动退回上下排列。
+    <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+      <div style={{ flex: '1 1 560px', minWidth: 0, maxWidth: 900 }}>
       <Title level={3} style={{ color: THEME.textPrimary, marginBottom: 24 }}>
         <CloudDownloadOutlined style={{ color: THEME.primary, marginRight: 8 }} />
         内容去水印解析
@@ -1141,8 +1146,6 @@ export default function DownloadPage() {
           ))}
         </div>
       </Card>
-
-      <TorrentDownloadPanel />
 
       {/* Loading */}
       {loading && (
@@ -1494,6 +1497,12 @@ export default function DownloadPage() {
           )}
         </div>
       )}
+      </div>
+
+      {/* 种子 / 磁力下载：独立右栏（与上面「链接解析」是两条独立的路） */}
+      <div style={{ flex: '1 1 420px', minWidth: 320, maxWidth: 620 }}>
+        <TorrentDownloadPanel />
+      </div>
     </div>
   )
 }
