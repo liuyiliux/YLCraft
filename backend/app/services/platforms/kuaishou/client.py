@@ -318,6 +318,22 @@ class KuaishouClient(BasePlatformClient):
           · 读到新的 → 更新 `self.config.cookie`（后续请求用新的）
           · 读不到/没变化 → **继续用旧的**（不中断）
 
+        ## ⚠️ 实测：快手有**两组** TTL 完全不同的 cookie（2026-09-30）
+
+            会话凭证  kuaishou.server.webday7_st   域 www.kuaishou.com
+                     名字带 day7，但**实测约 20 分钟**就失效
+            风控凭证  kwscode / kwssectoken         域 .kuaishou.com
+                     **实测 TTL 约 5 分 49 秒**（官方 SDK 在浏览器端本地续期）
+            设备凭证  did / kwfv1                    实测也会过期（我截获过已过期的 did）
+                     kwfv1 就是请求头 `kww` 的来源
+
+        只要其中**任何一个**过期，请求就会失败 ——
+        所以我一度看到"截图能登录、我测试就拿不到"这种诡异现象：
+        其实是 `did`/`kwfv1` 已过期，而 `userId`/`webday7_st` 还在，
+        看起来像"登录态时好时坏"。
+
+        所以重读要**覆盖全部**，不能只挑登录相关的。
+
         ## ⚠️ 不要丢掉域信息
 
         实测 cookie 分属 4 个域（`www.` / `.www.` / `.` / `id.`）——
@@ -325,7 +341,18 @@ class KuaishouClient(BasePlatformClient):
         （丢了域），我们**不学那个做法**。
         """
         try:
-            cookies = await session.ctx.cookies("https://www.kuaishou.com")
+            # 读**多个** URL 以覆盖 4 个域（Playwright 会返回所有匹配该 URL 的 cookie）
+            merged: Dict[str, str] = {}
+            for url in (
+                "https://www.kuaishou.com/",
+                "https://id.kuaishou.com/",
+            ):
+                for c in await session.ctx.cookies(url):
+                    name = c.get("name")
+                    val = c.get("value")
+                    if name and val is not None:
+                        merged[name] = val
+            cookies = [{"name": k, "value": v} for k, v in merged.items()]
         except Exception as exc:
             logger.debug("[kuaishou] 重读 cookie 失败（继续用旧的）：%s",
                          type(exc).__name__)
@@ -337,9 +364,6 @@ class KuaishouClient(BasePlatformClient):
         # 只关心主站相关的域（避免把无关 cookie 混进来）
         parts = []
         for c in cookies:
-            dom = str(c.get("domain") or "")
-            if "kuaishou.com" not in dom:
-                continue
             name = c.get("name")
             val = c.get("value")
             if name and val is not None:
@@ -351,10 +375,15 @@ class KuaishouClient(BasePlatformClient):
         old = self.config.cookie or ""
         if fresh != old:
             self.config.cookie = fresh
+            # 如实报告几组关键凭证的状态（排查"登录态时好时坏"很有用）
             has_login = "userId=" in fresh
+            # 6 分钟 TTL 那组（风控凭证）
+            has_kws = "kwscode=" in fresh and "kwssectoken=" in fresh
             logger.info(
-                "[kuaishou] 已从浏览器重读 cookie（%d 字段，userId=%s）",
+                "[kuaishou] 已从浏览器重读 cookie（%d 字段，userId=%s, "
+                "kwscode+kwssectoken=%s）",
                 len(parts), "有" if has_login else "**无**",
+                "有" if has_kws else "**无**",
             )
 
     async def _inject_cookies(self, ctx) -> None:
