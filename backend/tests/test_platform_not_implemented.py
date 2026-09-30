@@ -64,8 +64,10 @@ def test_supported_platforms_helper_exists():
     got = supported_platforms()
     assert isinstance(got, set)
     assert "douyin" in got
-    # 快手**没有客户端**，不该在里面
-    assert "kuaishou" not in got, "快手还没实现客户端"
+    # ⚠️ 快手**已实现**（2026-09-30）—— 这条断言改成"在"。
+    # 原来它用来验证"未实现平台会显式报错"，现在用别的未实现平台
+    # （如 zhihu）来验证那个行为。
+    assert "kuaishou" in got, "快手应已实现"
 
 
 def test_registry_exposes_supported():
@@ -163,8 +165,14 @@ def test_kuaishou_detector_defaults_to_not_logged_in():
     from app.services.cookies.platforms import kuaishou
 
     src = inspect.getsource(kuaishou.KuaishouDetector.detect)
-    # 结尾必须是 return False
-    assert src.rstrip().endswith("return False")
+    # 每个分支都要落到 return False（保守，不猜）
+    # ⚠️ 不能只断言"结尾是 return False" —— 现在结尾是 try/except 块，
+    # 所以改为：**所有 return 值只能有 False**（或 True 出现前必须过接口）
+    rets = [ln.strip() for ln in src.splitlines() if ln.strip().startswith("return ")]
+    assert rets, "应有 return"
+    assert all(r in ("return False", "return True") for r in rets), f"意外返回：{rets}"
+    # 且**必须问接口**（只判 cookie 会假阳性 —— 访客也有 webday7_st）
+    assert "PROFILE_API" in src, "要用接口确认，不能只信 cookie"
 
 
 def test_kuaishou_detector_does_not_trust_blocked_api():

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 from ..base import BasePlatformClient, register_platform
@@ -35,6 +36,7 @@ from ..session_pool import PooledSession, get_session_pool
 from ..types import SearchParams, SearchResult, UserProfile
 from .apis import (
     BASE,
+    PROFILE_GET,
     SEARCH_FEED,
     SEARCH_USER,
     build_feed_body,
@@ -89,32 +91,63 @@ class KuaishouClient(BasePlatformClient):
     纯 HTTP 模式做不到（见模块 docstring）。
     """
 
-    async def _ensure_signed_url(self) -> Optional[str]:
-        """拿到一个带签名的 `/rest/v/search/feed` URL（有缓存）。"""
+    async def _ensure_signed_url(self, uri: str = SEARCH_FEED) -> Optional[str]:
+        """拿到**指定路径**的带签名 URL（有缓存）。
+
+        ## ⚠️ 签名是**按路径绑定**的（2026-09-30 实测）
+
+        同一页面会发出**多个不同路径**的带签名请求，每个的签名都不同：
+
+            /rest/v/profile/get     HUDR_…PT3TMP-sk0…
+            /rest/v/search/feed     HUDR_…PTnTMP-sk0…      ← 第 26 位就不同
+            /rest/v/search/user     HUDR_…PTXTMP-sk0…
+
+        **用 A 路径的签名去调 B 路径 → `{"result":2}`**。
+
+        我因此踩过两个坑：
+          · 测试时误用 `profile/get` 的签名调 `search/feed` → 全 `result:2`
+          · 客户端里用 `signed.replace(SEARCH_FEED, uri)` 换路径
+            —— **路径换了签名没换** → 必然失败（`search_users` 就是坏的）
+
+        所以现在**按页面实际发出的请求，逐路径抓并缓存**。
+        """
         conn = self.config.conn_id or "-"
-        if _signed_urls.get(conn):
-            return _signed_urls[conn]
+        cache_key = f"{conn}:{uri}"
+        if _signed_urls.get(cache_key):
+            return _signed_urls[cache_key]
 
         async with _lock_for(conn):
             # 双重检查（等锁期间别人可能已抓好）
-            if _signed_urls.get(conn):
-                return _signed_urls[conn]
+            if _signed_urls.get(cache_key):
+                return _signed_urls[cache_key]
 
             session = await self._get_session()
             if session is None:
                 return None
 
-            captured: List[str] = []
+            # **按路径**收集（一个页面会发好几个）
+            captured: Dict[str, str] = {}
 
             def on_request(req):
-                u = req.url
-                if SEARCH_FEED in u and "__NS_hxfalcon=" in u:
-                    captured.append(u)
+                # ⚠️ 事件回调里**任何异常都会被 Playwright 吞掉**，
+                # 表现成"抓不到签名"但看不到原因（实测踩过：
+                # 少 `import re` → `NameError` 被吞 → 误判成"页面没发请求"）。
+                # 所以这里自己兜住并记日志。
+                try:
+                    u = req.url
+                    if "__NS_hxfalcon=" not in u:
+                        return
+                    m = re.search(r"/rest/v/[^?]+", u)
+                    if m:
+                        captured.setdefault(m.group(0), u)
+                except Exception as exc:
+                    logger.warning("[kuaishou] 解析请求 URL 失败：%s: %s",
+                                   type(exc).__name__, exc)
 
             page = session.page
             page.on("request", on_request)
             try:
-                # 打开搜索页 → 页面自己会发一次带签名的请求
+                # 打开搜索页 → 页面自己会发多个带签名的请求
                 await page.goto(
                     search_page_url("美食"),
                     wait_until="domcontentloaded",
@@ -130,15 +163,22 @@ class KuaishouClient(BasePlatformClient):
                     pass
 
             if not captured:
-                logger.warning("[kuaishou] 未抓到签名（页面结构可能变了）")
+                logger.warning(
+                    "[kuaishou] 未抓到签名。常见原因：\n"
+                    "  · 浏览器会话**没有登录态**（未登录时页面不发带签名的请求）\n"
+                    "  · 页面结构变了\n"
+                    "请在「账号中心」确认快手登录态可用。",
+                )
                 return None
 
-            _signed_urls[conn] = captured[0]
+            # **全部路径都缓存**（一次页面加载能抓好几个）
+            for path, url in captured.items():
+                _signed_urls[f"{conn}:{path}"] = url
             logger.info(
-                "[kuaishou] 已抓到签名（%d 字符 falcon）",
-                len(captured[0].split("__NS_hxfalcon=")[-1]),
+                "[kuaishou] 抓到 %d 个路径的签名：%s",
+                len(captured), ", ".join(sorted(captured)),
             )
-            return _signed_urls[conn]
+            return _signed_urls.get(cache_key)
 
     async def _get_session(self) -> Optional[PooledSession]:
         """取（或新建）一个快手浏览器会话（**无头**）。
@@ -208,6 +248,39 @@ class KuaishouClient(BasePlatformClient):
                 "搜索会失败。请在「账号中心」获取快手登录态。",
             )
             return
+
+        # ⚠️ **必须按原始域注入，不能全塞到 `.kuaishou.com`**（2026-09-30 修）
+        #
+        # 实测存库 cookie 的域分布：
+        #
+        #     www.kuaishou.com    kuaishou.server.webday7_st ← **会话令牌在这！**
+        #     .www.kuaishou.com   clientid / kpf / kpn
+        #     .kuaishou.com       did / kwfv1 / userId / kwssectoken
+        #     id.kuaishou.com     passToken / userId
+        #
+        # 原来一律塞到 `.kuaishou.com` —— 后果实测：
+        #
+        #     userId 在 ✅、webday7_st 也在（但域变了）
+        #     页面 UI 依然显示"登录即可享受…立即登录"
+        #     /rest/v/profile/get 依然 {"result":2}
+        #
+        # 即**会话令牌的域不匹配 → 页面 JS 不认这个登录态**。
+        #
+        # `self.config.cookie` 是 `k=v; k2=v2` 形式（已经丢了域信息），
+        # 所以这里按**实测的域归属**还原 —— 同名 cookie 在不同域是
+        # 不同的 cookie，不能合并。
+        #
+        # 判据（实测得出，按 cookie 名分组）：
+        _DOMAIN_OF = {
+            # 会话令牌只在 `www.kuaishou.com`（不带点）
+            "kuaishou.server.webday7_st": "www.kuaishou.com",
+            "kuaishou.server.webday7_ph": "www.kuaishou.com",
+            "ktrace-context": "www.kuaishou.com",
+            # id 域
+            "passToken": "id.kuaishou.com",
+        }
+        _WILDCARD = (".kuaishou.com", ".www.kuaishou.com")
+
         items = []
         for part in cookie.split("; "):
             if "=" not in part:
@@ -215,34 +288,42 @@ class KuaishouClient(BasePlatformClient):
             k, _, v = part.partition("=")
             if not k:
                 continue
-            items.append({"name": k, "value": v,
-                          "domain": ".kuaishou.com", "path": "/"})
+            dom = _DOMAIN_OF.get(k)
+            if dom:
+                items.append({"name": k, "value": v, "domain": dom, "path": "/"})
+            else:
+                for d in _WILDCARD:
+                    items.append({"name": k, "value": v, "domain": d, "path": "/"})
         if not items:
             return
         try:
             await ctx.add_cookies(items)
-            has_login = any(i["name"] == "userId" for i in items)
+            names = {i["name"] for i in items}
             logger.info(
-                "[kuaishou] 已注入 %d 个 cookie（userId=%s）",
-                len(items), "有" if has_login else "**无**",
+                "[kuaishou] 已注入 %d 个 cookie（userId=%s, webday7_st=%s）",
+                len(items),
+                "有" if "userId" in names else "**无**",
+                "有" if "kuaishou.server.webday7_st" in names else "**无**",
             )
         except Exception as exc:
             logger.warning("[kuaishou] 注入 cookie 失败：%s", type(exc).__name__)
 
     async def _post(self, uri: str, body: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """在页面上下文里 POST（复用抓到的签名）。"""
-        signed = await self._ensure_signed_url()
+        """在页面上下文里 POST（用**该路径自己的**签名）。
+
+        ⚠️ **签名绑路径** —— 不能用 `search/feed` 的签名去调别的路径
+        （实测会返回 `{"result":2}`）。见 `_ensure_signed_url` 的说明。
+        """
+        signed = await self._ensure_signed_url(uri)
         if not signed:
             raise RuntimeError(
-                "[kuaishou] 未能获取接口签名。快手签名是混淆 JS，"
-                "纯 HTTP 拿不到 —— 需要在浏览器里打开一次搜索页。"
-                "请确认「账号中心」的快手登录态可用，然后重试。"
+                f"[kuaishou] 未能获取 {uri} 的接口签名。\n"
+                "可能原因：\n"
+                "  1. 浏览器会话**没有登录态** —— 请在「账号中心」"
+                "重新获取快手登录态（未登录时页面不发带签名的请求）\n"
+                "  2. 该路径当前页面不会主动请求（快手前端可能改了调用方式）\n"
+                "  3. 页面结构变化，签名机制升级"
             )
-        # 复用签名，但**换路径**时要重抓（签名可能绑路径）
-        if uri not in signed:
-            signed = signed.replace(SEARCH_FEED, uri)
-            if uri not in signed:
-                raise RuntimeError(f"[kuaishou] 签名不适用于 {uri}")
 
         session = await self._get_session()
         if session is None:
@@ -262,8 +343,8 @@ class KuaishouClient(BasePlatformClient):
         result = payload.get("result")
         if result != 1:
             logger.warning(
-                "[kuaishou] 接口返回 result=%s err=%s",
-                result, payload.get("error_msg"),
+                "[kuaishou] %s 返回 result=%s err=%s",
+                uri, result, payload.get("error_msg"),
             )
             return None
         return payload
@@ -373,7 +454,7 @@ class KuaishouClient(BasePlatformClient):
         seen: set[str] = set()
         pcursor = ""
         for _ in range(3):
-            payload = await self._post_path(
+            payload = await self._post(
                 SEARCH_USER, build_user_body(keyword, pcursor)
             )
             if payload is None:
@@ -405,33 +486,47 @@ class KuaishouClient(BasePlatformClient):
             pcursor = nxt
         return out[:want]
 
-    async def _post_path(self, uri: str, body: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """换路径 POST（先抓一次该路径的签名）。"""
-        conn = self.config.conn_id or "-"
-        # 该路径的签名单独缓存
-        cache_key = f"{conn}:{uri}"
-        if not _signed_urls.get(cache_key):
-            signed_feed = await self._ensure_signed_url()
-            if not signed_feed:
-                return None
-            _signed_urls[cache_key] = signed_feed.replace(SEARCH_FEED, uri)
-        signed = _signed_urls[cache_key]
-        session = await self._get_session()
-        if session is None:
-            return None
-        import json as _json
+    async def get_self_profile(self) -> Optional[UserProfile]:
+        """查**自己**的资料（「我的数据」）。
 
-        raw = await session.page.evaluate(_JS_POST, {"url": signed, "body": body})
-        data = _json.loads(raw) if isinstance(raw, str) else (raw or {})
-        try:
-            payload = _json.loads(data.get("body") or "{}")
-        except Exception:
+        ## 接口来源（报告白名单 + 实测）
+
+            GET /rest/v/profile/get?__NS_hxfalcon=<**该路径自己的**签名>
+
+        实测：这个请求**页面自己就会发**（打开首页/搜索页时），
+        所以签名能一起抓到 —— 见 `_ensure_signed_url`。
+
+        ⚠️ 两个前提：
+          1. **必须有有效登录态** —— 否则返回 `{"result":2}`
+          2. 签名是**该路径专属**的（不能用 search/feed 的签名）
+        """
+        payload = await self._post(PROFILE_GET, {})
+        if payload is None:
             return None
-        if payload.get("result") != 1:
-            logger.warning("[kuaishou] %s result=%s err=%s",
-                           uri, payload.get("result"), payload.get("error_msg"))
+        data = payload.get("data") or payload.get("profile") or {}
+        if not isinstance(data, dict):
+            data = {}
+        user = data.get("user") if isinstance(data.get("user"), dict) else data
+        uid = str(user.get("id") or user.get("userId") or "")
+        name = str(
+            user.get("name") or user.get("userName")
+            or user.get("user_name") or ""
+        )
+        if not uid and not name:
+            logger.info("[kuaishou] profile/get 没拿到资料字段：%s",
+                        str(data)[:120])
             return None
-        return payload
+        return UserProfile(
+            id=uid,
+            name=name,
+            avatar=str(user.get("headUrl") or user.get("headurl") or ""),
+            platform="kuaishou",
+            followers=_to_int(user.get("fan") or user.get("fansCount")),
+            following=_to_int(user.get("follow") or user.get("followCount")),
+            desc=str(user.get("description") or user.get("user_text") or ""),
+            total_videos=_to_int(user.get("photoCount")),
+            raw_data=data if isinstance(data, dict) else {},
+        )
 
     async def get_detail(self, item_id: str):
         """详情：搜索结果里已含全部字段，这里**不重新请求**（返回 None）。"""
