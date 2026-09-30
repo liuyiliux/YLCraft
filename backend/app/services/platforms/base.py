@@ -195,8 +195,26 @@ class BasePlatformClient(abc.ABC):
                     self.config.platform, session_key, session.idle_seconds(),
                 )
             else:
+                # ⚠️ **微博默认无头**（2026-09-29）
+                #
+                # 用户反馈"为啥个人中心的微博老是打开浏览器了？"
+                #
+                # 搜索/用户查询都要走 patchright（微博靠 Service Worker），
+                # 而 `patchright_headless` 默认 False → **每次新会话都弹窗口**。
+                #
+                # 实测（同一个持久化 profile）：
+                #     无头：搜索返回 JSON，cards=14  ✅
+                #     有头：搜索返回 JSON，cards=13  ✅
+                #
+                # **两者都能搜到** —— 原注释"无头会被甩验证码页"已过时。
+                #
+                # 登录流程仍要有头（用户得扫码），但那条走
+                # `PatchrightManager`、不经这里，所以不受影响。
+                headless = self.config.patchright_headless
+                if self.config.platform in ("weibo", "wb"):
+                    headless = True
                 self._patchright_context = await runtime.new_context(
-                    headless=self.config.patchright_headless,
+                    headless=headless,
                     viewport={"width": 1440, "height": 900},
                     user_agent=self.config.user_agent or self._get_default_user_agent(),
                     persistent_platform=self.config.platform,

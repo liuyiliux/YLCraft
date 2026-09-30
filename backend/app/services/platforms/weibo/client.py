@@ -125,6 +125,7 @@ class WeiboClient(BasePlatformClient):
         return await search_via_patchright(
             params,
             conn_key=self.config.conn_id or "",
+            client=self,
             page=max(1, int(getattr(params, "page", 1) or 1)),
         )
 
@@ -176,6 +177,7 @@ class WeiboClient(BasePlatformClient):
         return await search_users_via_patchright(
             keyword,
             conn_key=self.config.conn_id or "",
+            client=self,
             max_results=max_results,
         )
 
@@ -184,7 +186,7 @@ class WeiboClient(BasePlatformClient):
         from .search_patchright import get_user_via_patchright
 
         return await get_user_via_patchright(
-            user_id, conn_key=self.config.conn_id or ""
+            user_id, conn_key=self.config.conn_id or "", client=self
         )
 
     async def get_self_profile(self) -> Optional[UserProfile]:
@@ -197,7 +199,7 @@ class WeiboClient(BasePlatformClient):
         from .search_patchright import get_self_profile_via_patchright
 
         return await get_self_profile_via_patchright(
-            conn_key=self.config.conn_id or ""
+            conn_key=self.config.conn_id or "", client=self
         )
 
     # =========================================================================
