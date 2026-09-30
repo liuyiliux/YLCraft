@@ -76,43 +76,96 @@ async (args) => {
 """
 
 
-async def _get_session(conn_key: str) -> PooledSession:
-    """取（或新建）一个已打开微博首页的会话。"""
-    key = f"weibo:{conn_key or 'default'}"
+async def _get_session(conn_key: str, client=None) -> PooledSession:
+    """取（或新建）一个已打开微博首页的会话。
+
+    ## ⚠️ 优先复用 `client` 已建好的会话（2026-09-29 修，重要）
+
+    用户反馈"为啥个人中心的微博老是打开浏览器了？"以及
+    「我的数据」一直拿不到（`login=False`）。
+
+    实测日志暴露了真正的竞争：
+
+        12:04:50.936  [base] Cookies set to browser → 新建会话（**有 cookie**）
+        12:04:50.941  [weibo] **又启动了一次持久化 profile**   ← 打架
+        12:04:51.397  [weibo] 新建浏览器会话（无头，**没注入 cookie**）
+
+    **两个上下文同时打开同一个持久化 profile**，第二个覆盖了第一个，
+    于是 m 站的登录 cookie（`SSOLoginState` 等）**没生效** → `login=False`。
+
+    根因：`base._init_patchright` 已经建好并**注入了 cookie** 的会话，
+    这里却没有复用它（之前的 key 格式还不一致，两个 key 指同一 profile）。
+
+    **修法**：调用方传 `client` 进来时，直接用它已建好的 page/context，
+    不再新建第二个上下文。
+
+    ## 无头模式（2026-09-29）
+
+    原来用有头 → 每次新会话都**在用户桌面弹窗口**。
+    实测无头同样能搜到（cards=14 vs 13），所以改成无头。
+    """
+    key = f"weibo|{conn_key or '-'}"
+
+    # ① 优先复用 base 已建好的会话（它有注入过 cookie 的上下文）
+    existing_page = getattr(client, "_patchright_page", None)
+    if existing_page is not None:
+        session = PooledSession(
+            ctx=getattr(client, "_patchright_context", None),
+            page=existing_page,
+        )
+        # 借用，不归池所有（归还时不能关掉 base 的上下文）
+        session.borrowed = True
+        if session.alive():
+            await _warm_up(session, borrowed=True)
+            session.touch()
+            return session
+        logger.info("[weibo] client 的会话已失效，改为新建")
+
+    # ② 池里已有 → 复用
     session = _pool.get(key)
     if session is None:
         rt = get_patchright_runtime()
         ctx = await rt.new_context(
-            headless=False,
+            headless=True,
             viewport={"width": 1440, "height": 900},
             persistent_platform="weibo",   # 登录态跨会话保留
         )
         page = await ctx.new_page()
         session = PooledSession(ctx=ctx, page=page)
         _pool.put(key, session)
-        logger.info("[weibo] 新建浏览器会话 key=%s", key)
+        logger.info("[weibo] 新建浏览器会话（无头）key=%s", key)
 
-    if not session.warmed:
-        try:
-            await session.page.goto(HOME_URL, wait_until="domcontentloaded", timeout=60000)
-        except Exception as exc:
-            _pool.drop(key)
-            raise RuntimeError(
-                f"[weibo] 打开 m.weibo.cn 失败：{type(exc).__name__}。"
-                "通常是网络问题或被限流。"
-            ) from exc
-        # 等 Service Worker 注册完成 + 首页请求发完
-        # （实测需要 ~9s；太短会让搜索仍走无 SW 的路径 → ok=-100）
-        await session.page.wait_for_timeout(9000)
-        session.warmed = True
+    await _warm_up(session)
     session.touch()
     return session
+
+
+async def _warm_up(session: PooledSession, *, borrowed: bool = False) -> None:
+    """预热：打开 m.weibo.cn 并等 Service Worker 就绪。
+
+    **预热是必须的**（实测）：太短会让搜索仍走无 SW 的路径 → `ok=-100`。
+    实测需要 ~9 秒。
+    """
+    if session.warmed:
+        return
+    try:
+        await session.page.goto(HOME_URL, wait_until="domcontentloaded", timeout=60000)
+    except Exception as exc:
+        if not borrowed:
+            _pool.drop(f"weibo|{getattr(session, 'conn_key', '') or '-'}")
+        raise RuntimeError(
+            f"[weibo] 打开 m.weibo.cn 失败：{type(exc).__name__}。"
+            "通常是网络问题或被限流。"
+        ) from exc
+    await session.page.wait_for_timeout(9000)
+    session.warmed = True
 
 
 async def search_via_patchright(
     params: SearchParams,
     *,
     conn_key: str = "",
+    client=None,
     page: int = 1,
     max_pages: int = 3,
 ) -> List[SearchResult]:
@@ -135,7 +188,7 @@ async def search_via_patchright(
     raw_st = getattr(params, "search_type", "") or "note"
     search_type = str(getattr(raw_st, "value", raw_st))
 
-    session = await _get_session(conn_key)
+    session = await _get_session(conn_key, client=client)
     out: List[SearchResult] = []
     seen: set[str] = set()
 
@@ -212,6 +265,7 @@ async def search_users_via_patchright(
     keyword: str,
     *,
     conn_key: str = "",
+    client=None,
     page: int = 1,
     max_results: int = 20,
 ) -> List[UserProfile]:
@@ -225,7 +279,7 @@ async def search_users_via_patchright(
     """
     from .apis import build_user_search_params
 
-    session = await _get_session(conn_key)
+    session = await _get_session(conn_key, client=client)
     qp = build_user_search_params(keyword, page=page)
     raw = await session.page.evaluate(JS_SEARCH, {"params": qp})
     data = _load_json(raw, "用户搜索")
@@ -252,6 +306,7 @@ async def get_user_via_patchright(
     uid: str,
     *,
     conn_key: str = "",
+    client=None,
 ) -> Optional[UserProfile]:
     """取微博用户资料。
 
@@ -262,7 +317,7 @@ async def get_user_via_patchright(
     """
     from .apis import build_user_detail_params
 
-    session = await _get_session(conn_key)
+    session = await _get_session(conn_key, client=client)
     raw = await session.page.evaluate(JS_SEARCH, {"params": build_user_detail_params(uid)})
     data = _load_json(raw, "用户详情")
 
@@ -283,6 +338,7 @@ async def get_user_via_patchright(
 async def get_self_profile_via_patchright(
     *,
     conn_key: str = "",
+    client=None,
 ) -> Optional[UserProfile]:
     """取**自己**的资料。
 
@@ -305,7 +361,7 @@ async def get_self_profile_via_patchright(
     **所以现在先查 `/api/config` 的 `login`：为 false 就直接返回 None。**
     宁可不给，也不能给错人的资料 —— 后者比"没有数据"危险得多。
     """
-    session = await _get_session(conn_key)
+    session = await _get_session(conn_key, client=client)
 
     # 1) 先确认登录（否则下面抓到的 uid 一定是别人的）
     try:

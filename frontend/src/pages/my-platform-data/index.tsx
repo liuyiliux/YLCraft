@@ -46,6 +46,12 @@ const PLATFORMS = [
   { value: 'bili', label: 'B站', connKeys: ['bilibili', 'bili'] },
   { value: 'douyin', label: '抖音', connKeys: ['douyin'] },
   { value: 'xiaohongshu', label: '小红书', connKeys: ['xiaohongshu', 'xhs'] },
+  // ⚠️ 微博也在这里（2026-09-29 补）
+  //
+  // 微博「我的数据」已打通（必须在 **m 站**登录 —— 主站登录态在
+  // m.weibo.cn 无效，实测 `/api/config` 返回 login=False）。
+  // 实测：想见雪- 粉丝8 关注11 微博237。
+  { value: 'weibo', label: '微博', connKeys: ['weibo', 'wb'] },
 ]
 
 function formatCount(n: number | undefined | null): string {
@@ -108,13 +114,32 @@ export default function MyPlatformDataPage() {
     // （抖音必须用 sec_uid；小红书用数字 id）
     if (!me) return
     setLoadingVideos(true)
+    // ⚠️ **有的平台没有"查某人作品列表"的能力**（2026-09-29）
+    //
+    // 实测：微博的 `WeiboClient` **没有 `get_user_videos`** ——
+    // 后端会抛 500（`'WeiboClient' object has no attribute ...`）。
+    //
+    // 这时**不该弹红色错误**（用户看到"获取我的作品失败"会以为坏了），
+    // 而是**静默跳过**：作品区显示"该平台暂不支持"，其余资料照常展示。
+    const NO_VIDEO_PLATFORMS = new Set(['weibo', 'twitter'])
+    if (NO_VIDEO_PLATFORMS.has(platform)) {
+      setVideos([])
+      setLoadingVideos(false)
+      return
+    }
     try {
       const res: any = await getPlatformUserVideos(platform, {
         userId: me.id, secUid: me.sec_uid || '', maxResults: 20,
       })
       setVideos(res?.data || [])
     } catch (e: any) {
-      message.error(e?.response?.data?.detail || '获取我的作品失败')
+      // 后端明确说"不支持"时不报错（和上面的能力缺失同因）
+      const detail = String(e?.response?.data?.detail || '')
+      if (detail.includes('has no attribute') || detail.includes('不支持')) {
+        setVideos([])
+      } else {
+        message.error(detail || '获取我的作品失败')
+      }
     } finally {
       setLoadingVideos(false)
     }
