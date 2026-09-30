@@ -475,6 +475,20 @@ class PlatformClientFactory:
         """注册平台客户端类"""
         cls._registry[platform] = client_class
         logger.info(f"Registered platform client: {platform} -> {client_class.__name__}")
+
+    @classmethod
+    def supported(cls) -> set[str]:
+        """已注册的平台名（含别名）。
+
+        ⚠️ **要区分"没实现"和"没搜到"**（2026-09-29）
+
+        实测：前端下拉里有「快手」可点，但后端没客户端 ——
+        原来会**静默返回空列表**，用户看到"找到 0 条结果"，
+        完全不知道是"这个平台还没实现"。假阴性，排查极费时间。
+
+        调用方（`api/v1/crawler.py`）用这个判断并**显式报 501**。
+        """
+        return set(cls._registry.keys())
     
     @classmethod
     def create(

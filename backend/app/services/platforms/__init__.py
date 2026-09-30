@@ -50,6 +50,21 @@ _auto_discover_platforms()
 # 便捷函数
 # =============================================================================
 
+def supported_platforms() -> set[str]:
+    """已注册（**真正实现**）的平台名，含别名。
+
+    ⚠️ **用来区分"没实现"和"没搜到"**（2026-09-29）
+
+    前端下拉里可能有平台可选，但后端没客户端 ——
+    这时必须**显式报错**，不能静默返回空列表
+    （用户会把"没实现"理解成"没搜到"，属假阴性）。
+
+    见 `docs/platform/ADDING_A_PLATFORM.md` 的铁律第 2 条。
+    """
+    _auto_discover_platforms()
+    return PlatformClientFactory.supported()
+
+
 def create_client(
     platform: str,
     mode: str = "api",

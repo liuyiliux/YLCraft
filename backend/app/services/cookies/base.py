@@ -167,7 +167,15 @@ class QrcodeAdapter(ABC):
 PLATFORM_LOGIN_URLS = {
     "xhs": "https://www.xiaohongshu.com",
     "douyin": "https://www.douyin.com",
-    "kuaishou": "https://www.kuaishou.com",
+    # ⚠️ 快手要指向**能触发登录**的页面，不是信息流首页（2026-09-29 修）
+    #
+    # 用户反馈："打开的网址不是登录的 我点击登录是弹窗的 扫码完没判断获取到"
+    #
+    # 原来指向 `https://www.kuaishou.com`（推荐流）—— 用户看到的是一个
+    # 信息流页面，还得自己找登录入口（而且点开是弹窗）。
+    #
+    # `/profile`（我的主页）未登录时会引导登录，比首页直接。
+    "kuaishou": "https://www.kuaishou.com/profile",
     "bilibili": "https://www.bilibili.com",
     "weibo": (
         # ⚠️ **用 m 站的登录入口**（2026-09-29）

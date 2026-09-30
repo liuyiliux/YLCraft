@@ -374,6 +374,31 @@ async def search_enhanced(req: SearchEnhancedRequest):
 
     service = get_crawler_service()
 
+    # ⚠️ **平台没实现要显式报错，不能静默返回空**（2026-09-29）
+    #
+    # 实测：前端搜索页的下拉里有「快手」可点，但后端**没有快手客户端**。
+    # 原来的行为是：
+    #
+    #     日志：Unsupported platform: kuaishou. Available: [...]
+    #     响应：HTTP 200 {"success": true, "results": [],
+    #                    "message": "找到 0 条结果"}
+    #
+    # **用户看到的是"没搜到"**，完全不知道是"这个平台还没实现" ——
+    # 假阴性，排查时最费时间（本仓库的 `ADDING_A_PLATFORM.md` 把它列为铁律）。
+    #
+    # 判据：用 `platforms` 模块的注册表判断，而不是维护第二份名单。
+    from app.services.platforms import supported_platforms
+
+    if req.platform not in supported_platforms():
+        raise HTTPException(
+            status_code=501,
+            detail=(
+                f"平台 {req.platform!r} 尚未实现采集（不是「没搜到」）。"
+                f"当前可用：{', '.join(sorted(supported_platforms()))}。"
+                "如需新增该平台，见 docs/platform/ADDING_A_PLATFORM.md。"
+            ),
+        )
+
     # ===== 普通搜索模式 =====
     try:
         using = "platforms"
