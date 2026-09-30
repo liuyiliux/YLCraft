@@ -163,3 +163,32 @@ def build_user_detail_params(uid: str) -> dict[str, str]:
     jumpfrom/type/value，实测只带 containerid 也能用）。
     """
     return {"containerid": f"{USER_CONTAINER_PREFIX}{uid}"}
+
+
+# 用户微博列表容器前缀（`107603` + uid）
+#
+# 来源：MediaCrawler `media_platform/weibo/client.py`（硬编码 `107603{uid}`）
+#      + `dataabc/weibo-crawler` 的 `get_user_weibo` 用法一致
+#
+#     GET /api/container/getIndex?containerid=107603{uid}&page_type=03&page=N
+#     → data.cards[].mblog{...}
+#
+# ⚠️ 与"用户详情"（`100505{uid}`）是**两个不同的容器**：
+#     100505 → 资料（userInfo）
+#     107603 → 他发的微博（cards[].mblog）
+USER_POSTS_CONTAINER_PREFIX = "107603"
+
+
+def build_user_posts_params(uid: str, page: int = 1) -> dict[str, str]:
+    """构造"某用户发的微博"参数。
+
+        GET /api/container/getIndex?containerid=107603{uid}&page_type=03&page={N}
+        → data.cards[].mblog
+
+    ⚠️ `page_type=03` 必须带 —— 不带会拿到空的 cards。
+    """
+    return {
+        "containerid": f"{USER_POSTS_CONTAINER_PREFIX}{uid}",
+        "page_type": "03",
+        "page": str(max(1, int(page))),
+    }
