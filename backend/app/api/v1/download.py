@@ -20,6 +20,7 @@ import uuid
 import time
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "vendor"))
@@ -1460,26 +1461,41 @@ async def download_images(req: DownloadImagesRequest):
     out_dir = Path(base) / safe_title
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # 图床有防盗链，必须带 Referer
-    referers = {
-        "douyin": "https://www.douyin.com/",
-        "xiaohongshu": "https://www.xiaohongshu.com/",
-        "bilibili": "https://www.bilibili.com/",
-    }
-    referer = referers.get(req.platform, "https://www.douyin.com/")
+    # ⚠️ **图床防盗链：每个平台要的 Referer 不同，有的还"不能带"**
+    # （2026-09-29 修）
+    #
+    # 原来的映射表**只有抖音/小红书/B站**，其余一律兜底成
+    # **抖音的 Referer** —— 实测微博图片因此 **403**：
+    #
+    #     {'url': 'https://wx1.sinaimg.cn/large/...jpg',
+    #      'error': "HTTPStatusError: Client error '403'"}
+    #
+    # 而且各平台行为**方向相反**（和视频那边一样）：
+    #
+    #     微博图片   **必须带** weibo 的 Referer
+    #     X 图片     **不能带** Referer（带了 403）
+    #     抖音/X 视频  见 proxy.py 的 _NO_REFERER_HOSTS
+    #
+    # 所以这里**按域名判断**，而不是只看 `req.platform`
+    # （platform 可能为空或别名，域名更可靠）。
+    from .proxy import _guess_referer, _NO_REFERER_HOSTS
 
     saved: list[str] = []
     failed: list[dict] = []
 
-    async with httpx.AsyncClient(
-        timeout=60.0, follow_redirects=True,
-        headers={"User-Agent": _BROWSER_UA, "Referer": referer},
-    ) as client:
-        for idx, img_url in enumerate(req.urls, start=1):
-            if not img_url or not img_url.startswith("http"):
-                failed.append({"url": img_url, "error": "非法地址"})
-                continue
-            try:
+    for idx, img_url in enumerate(req.urls, start=1):
+        if not img_url or not img_url.startswith("http"):
+            failed.append({"url": img_url, "error": "非法地址"})
+            continue
+        # 逐张按域名决定 Referer（同一批图可能来自不同 CDN）
+        host = (urlparse(img_url).hostname or "").lower()
+        headers = {"User-Agent": _BROWSER_UA}
+        if not any(h in host for h in _NO_REFERER_HOSTS):
+            headers["Referer"] = _guess_referer(img_url)
+        try:
+            async with httpx.AsyncClient(
+                timeout=60.0, follow_redirects=True, headers=headers,
+            ) as client:
                 resp = await client.get(img_url)
                 resp.raise_for_status()
 
@@ -1513,12 +1529,12 @@ async def download_images(req: DownloadImagesRequest):
                     "[download-images] %d/%d 已保存 %s（%d KB）",
                     idx, len(req.urls), file_path.name, len(resp.content) // 1024,
                 )
-            except Exception as exc:
-                logger.warning(
-                    "[download-images] 第 %d 张失败：%s: %s",
-                    idx, type(exc).__name__, exc,
-                )
-                failed.append({"url": img_url, "error": f"{type(exc).__name__}: {exc}"})
+        except Exception as exc:
+            logger.warning(
+                "[download-images] 第 %d 张失败：%s: %s",
+                idx, type(exc).__name__, exc,
+            )
+            failed.append({"url": img_url, "error": f"{type(exc).__name__}: {exc}"})
 
     return DownloadImagesResponse(
         success=len(saved) > 0,
