@@ -382,3 +382,40 @@ def test_detector_does_not_use_signed_api():
     # 账号信息也不该读 DOM（那是**别人的**昵称）
     ext = inspect.getsource(kuaishou.KuaishouDetector.extract_account_info)
     assert "query_selector" not in ext
+
+
+def test_self_profile_parses_flat_fields():
+    """**回归**：`/rest/v/profile/get` 的字段是**扁平的**，不是 `data.user`。
+
+    ## 实测响应（登录态有效时）
+
+        {"result":1, "userName":"逸流AI", "userId":5372574395,
+         "userHead":"https://…jpg", "fans":20, "follows":2,
+         "like":312, "sex":"M", "mobile":"131****1644"}
+
+    **我第一版按 `data.user` 嵌套解析 → 拿到空**（字段名也对不上，
+    比如关注数是 `follows` 而不是 `following`）。
+    """
+    from app.services.platforms.kuaishou import client as ks
+
+    src = inspect.getsource(ks.KuaishouClient.get_self_profile)
+    # 直接读顶层
+    assert 'payload.get("userName")' in src
+    assert 'payload.get("userId")' in src
+    # 不该走嵌套
+    assert 'data.get("user")' not in src, "字段在顶层，不该按 data.user 解析"
+    # 快手的关注数叫 follows
+    assert 'payload.get("follows")' in src
+
+
+def test_route_supports_kuaishou():
+    """**回归**：`/users/*` 路由要支持快手（含别名 ks）。
+
+    漏了这一层 → 「我的数据」页面报"平台不支持"。
+    （skill 第 6 步：路由的 SUPPORTED 是必改项。）
+    """
+    from app.api.v1.users import SUPPORTED
+
+    assert "kuaishou" in SUPPORTED
+    assert "ks" in SUPPORTED
+    assert SUPPORTED["kuaishou"]["conn_platform"] == "KUAISHOU"
