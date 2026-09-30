@@ -380,10 +380,33 @@ class KuaishouClient(BasePlatformClient):
             return None
         result = payload.get("result")
         if result != 1:
+            # ⚠️ **快手登录态很短命**（实测：扫码后约 20 分钟失效）
+            #
+            # 实测的错误码迁移：
+            #
+            #     1   → 正常
+            #     109 → 中间态（约 20 分钟后出现）
+            #     2   → 未登录（再等几分钟）
+            #
+            # 而**搜索不需要登录**（公开数据）—— 所以"搜索能用"会让用户
+            # 误以为登录态还好。只有 `profile/*` 类接口才暴露真相。
+            #
+            # 所以这里给**可操作**的错误，别让它静默变空白。
+            hint = {
+                2: "登录态已失效（快手会话较短命，实测约 20 分钟）",
+                109: "登录态异常（快手的中间态，通常接着会变成未登录）",
+            }.get(result, "接口返回异常")
             logger.warning(
-                "[kuaishou] %s 返回 result=%s err=%s",
-                uri, result, payload.get("error_msg"),
+                "[kuaishou] %s 返回 result=%s err=%s —— %s",
+                uri, result, payload.get("error_msg"), hint,
             )
+            if uri in (PROFILE_GET, PROFILE_FEED):
+                raise RuntimeError(
+                    f"[kuaishou] {hint}（result={result}）。\n"
+                    "⚠️ 快手的**搜索不需要登录**，所以「搜索能用」不等于"
+                    "「登录态有效」。\n"
+                    "请在「账号中心」重新获取快手登录态（扫码）后重试。"
+                )
             return None
         return payload
 
