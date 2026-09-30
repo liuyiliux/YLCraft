@@ -492,3 +492,62 @@ def test_expiry_codes_documented():
     doc = inspect.getsource(ks)
     assert "20 分钟" in doc, "要记录实测的失效时长"
     assert "109" in doc
+
+
+def test_refresh_cookies_from_browser_exists():
+    """**回归**：取数前要**从浏览器重读** cookie。
+
+    ## 为什么（调研结论）
+
+    快手**没有 refresh 接口** —— `kuaishou.server.webday7_st` 是
+    248 字节密文 protobuf，TTL 由**服务端**控制，客户端无法延长。
+
+    全网开源零实现：
+      · MediaCrawler（★66k）`login.py` 只有登录、**没有保活**
+      · `cv-cat/KuaiShou-Spider` 只透传不重建
+        （`auth.py` 注释明说 passToken "intentionally not" 重建）
+
+    但调研给了**被验证过**的路：
+
+    > 核心不是"续期 cookie"，而是**让浏览器替你续期** ——
+    > 快手自己会刷新 `webday7_st`（`/rest/v/profile/*` 带 `Set-Cookie`），
+    > 只需**定期重读** `browser_context.cookies()`。
+
+    用户选的是**不常驻**方案：平时不占窗口，**取数前重读一次**。
+    """
+    from app.services.platforms.kuaishou import client as ks
+
+    assert hasattr(ks.KuaishouClient, "_refresh_cookies_from_browser")
+    src = inspect.getsource(ks.KuaishouClient._ensure_signed_url)
+    assert "_refresh_cookies_from_browser" in src, "取数前要重读一次"
+
+
+def test_refresh_keeps_domain_info():
+    """**回归**：重读 cookie 时**不要丢掉域信息**。
+
+    实测 cookie 分属 4 个域（`www.` / `.www.` / `.` / `id.`）。
+    MediaCrawler 的 `login_by_cookies` 把它们**全压成 `.kuaishou.com`**
+    （丢了域）—— 我们**不学那个做法**。
+
+    另外：读不到新 cookie 时要**继续用旧的**（不中断）。
+    """
+    from app.services.platforms.kuaishou import client as ks
+
+    src = inspect.getsource(ks.KuaishouClient._refresh_cookies_from_browser)
+    assert "kuaishou.com" in src, "要按域过滤"
+    # 读不到要优雅降级
+    assert "type(exc).__name__" in src
+    # 只在变化时更新
+    assert "fresh != old" in src
+
+
+def test_no_keepalive_claim():
+    """**回归**：注释要**如实**说明"快手没有 refresh 接口、延不了"。
+
+    免得后人以为我们做了保活，或再花时间找 refresh 接口。
+    """
+    from app.services.platforms.kuaishou import client as ks
+
+    src = inspect.getsource(ks.KuaishouClient._refresh_cookies_from_browser)
+    assert "没有 refresh 接口" in src or "没有 refresh" in src
+    assert "MediaCrawler" in src, "要留档调研结论与来源"
