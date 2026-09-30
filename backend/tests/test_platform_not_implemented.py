@@ -171,8 +171,12 @@ def test_kuaishou_detector_defaults_to_not_logged_in():
     rets = [ln.strip() for ln in src.splitlines() if ln.strip().startswith("return ")]
     assert rets, "应有 return"
     assert all(r in ("return False", "return True") for r in rets), f"意外返回：{rets}"
-    # 且**必须问接口**（只判 cookie 会假阳性 —— 访客也有 webday7_st）
-    assert "PROFILE_API" in src, "要用接口确认，不能只信 cookie"
+    # ⚠️ **不能用带签名的接口** —— `/rest/v/profile/get` 在签名白名单里，
+    # 检测器拿不到签名 → 返回 `50`（**签名验证失败**），
+    # 我一度把它当成"未登录"，导致**明明登录了却报未登录**。
+    assert "PROFILE_API" not in src, "不该用需要签名的接口做判据"
+    # 要用**页面 UI 的未登录文案**（实测最可靠）
+    assert "LOGIN_HINT_TEXTS" in src, "应看页面有没有'未登录'文案"
 
 
 def test_kuaishou_detector_does_not_trust_blocked_api():
