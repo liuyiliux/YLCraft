@@ -308,3 +308,42 @@ def test_pagination_sequentially_walks_cursor():
 
     src = inspect.getsource(ks.KuaishouClient.search)
     assert "page_no" in src, "要把页码换算成翻页次数"
+
+
+def test_session_injects_cookies():
+    """**回归（关键）**：新建会话时**必须注入 cookie**。
+
+    ## 实测踩的坑（我一度误判成"限流"）
+
+    原来 `_get_session` 只靠持久化 profile、不注入 cookie，
+    而那个 profile 里**没有登录态**（`userId=None`）。后果：
+
+        · 搜索页不发**带签名的请求**（未登录时不发）→ "抓不到签名"
+        · `result:2`（需登录的接口拒绝）
+
+    **我把它误判成"快手限流了，等恢复"** —— 直到手动注入 cookie 后
+    立刻抓到 3 个带签名的请求、搜索恢复正常。
+
+    ## 与微博那次是**同一个坑**
+
+    `base._init_patchright` 会注入 cookie，平台自己的 `_get_session`
+    不注入 → **两条路行为不一致**。快手这次又踩了一遍。
+
+    ## 判据补充
+
+    即使 cookie **在**，也可能**过期** —— 实测注入登录态的 cookie 后：
+        · `document.cookie` 有 `userId` / `webday7_st` ✅
+        · 但页面 UI 仍显示"登录即可享受"（JS 不认）
+        · `profile/get` 返回 `result:2`
+    → 所以"cookie 存在" ≠ "登录态有效"，**过期要重新登录**。
+    """
+    from app.services.platforms.kuaishou import client as ks
+
+    src = inspect.getsource(ks.KuaishouClient._get_session)
+    assert "_inject_cookies" in src, (
+        "新建会话要注入 cookie（否则未登录 → 拿不到签名 → 误判成限流）"
+    )
+    inj = inspect.getsource(ks.KuaishouClient._inject_cookies)
+    assert "add_cookies" in inj
+    assert ".kuaishou.com" in inj
+    assert "userId" in inj, "要能报告登录 cookie 是否存在"
