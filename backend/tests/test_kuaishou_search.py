@@ -49,6 +49,7 @@
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 
 import pytest
 
@@ -419,3 +420,42 @@ def test_route_supports_kuaishou():
     assert "kuaishou" in SUPPORTED
     assert "ks" in SUPPORTED
     assert SUPPORTED["kuaishou"]["conn_platform"] == "KUAISHOU"
+
+
+def test_frontend_dropdowns_have_kuaishou():
+    """**回归**：前端下拉都要有快手（我**第二次**犯同一个错）。
+
+    用户截图：「我的数据」下拉里没有快手 —— 而**后端已经打通了**
+    （20:46 实测拿到「逸流AI 粉丝20」）。
+
+    ⚠️ 这和 **X 那次一模一样**（后端可用、前端漏加）。
+    skill 第 7 步专门写了"至少两处下拉"，我还是漏了一次。
+
+    所以这条测试**把两个下拉都钉住**。
+    """
+    from pathlib import Path
+
+    fe = Path(__file__).resolve().parents[2] / "frontend" / "src" / "pages"
+    for rel in ("my-platform-data/index.tsx", "platform-users/index.tsx"):
+        p = fe / rel
+        if not p.exists():
+            pytest.skip(f"{rel} 不在预期位置")
+        src = p.read_text(encoding="utf-8", errors="ignore")
+        assert "value: 'kuaishou'" in src, f"{rel} 的下拉缺快手（用户选不到）"
+
+
+def test_script_checks_both_frontend_dropdowns():
+    """**回归**：校验脚本要查**两个**前端下拉，不只「我的数据」。
+
+    我第一版只查了 `my-platform-data` —— 于是「博主中心」漏快手时
+    校验仍然全绿（假阴性）。
+    """
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from scripts import check_platform_registry as cpr
+
+    src = inspect.getsource(cpr.check_capability_layers)
+    assert "my-platform-data" in src
+    assert "platform-users" in src, "也要查博主中心下拉"
+    assert hasattr(cpr, "_USER_SEARCH_PLATFORMS")
