@@ -154,6 +154,29 @@ class KuaishouClient(BasePlatformClient):
             if session is None:
                 return None
 
+            # ⚠️ **打开页面前，先把浏览器里的新鲜 cookie 读回来**（2026-09-30）
+            #
+            # ## 为什么（调研结论）
+            #
+            # 快手**没有 refresh 接口** —— `kuaishou.server.webday7_st`
+            # 是 248 字节密文 protobuf，TTL 由**服务端**控制，
+            # 客户端无法延长（全网开源项目零实现：
+            # MediaCrawler 的 `login.py` 只有登录、没有保活）。
+            #
+            # 但调研给出了一条**被验证过**的路：
+            #
+            #   > 核心不是"续期 cookie"，而是**让浏览器替你续期** ——
+            #   > 只要浏览器处于登录态，快手自己会刷新 `webday7_st`
+            #   > （`/rest/v/profile/*` 的响应会带 `Set-Cookie` 下发新值），
+            #   > 你只需**定期重读** `browser_context.cookies()`。
+            #
+            # 所以这里：**每次取数前重读一次浏览器 cookie**，
+            # 把「浏览器已续期」的新值拿回来用。
+            #
+            # ⚠️ 用户选的是**不常驻**方案：平时不占着窗口，
+            # 只在取数前重读 —— 拿不到新的就继续用旧的（不中断）。
+            await self._refresh_cookies_from_browser(session)
+
             # **按路径**收集（一个页面会发好几个）
             captured: Dict[str, str] = {}
 
@@ -268,6 +291,71 @@ class KuaishouClient(BasePlatformClient):
         sess = PooledSession(ctx=ctx, page=page2)
         pool.put(key, sess)
         return sess
+
+    async def _refresh_cookies_from_browser(self, session) -> None:
+        """把浏览器里的**新鲜** cookie 读回来（快手自己会刷新会话）。
+
+        ## 为什么这么做（调研结论，2026-09-30）
+
+        快手**没有 refresh 接口** —— `kuaishou.server.webday7_st` 是
+        248 字节密文 protobuf，TTL 由**服务端**控制，客户端无法延长。
+
+        全网开源项目零实现：
+          · MediaCrawler（★66k）的 `login.py` **只有登录、没有保活**
+          · `cv-cat/KuaiShou-Spider` 也只透传、不重建
+            （其 `auth.py` 注释明说 passToken "intentionally not" 重建）
+
+        但调研给出了一条**被验证过**的路：
+
+        > 核心不是"续期 cookie"，而是**让浏览器替你续期** ——
+        > 只要浏览器处于登录态，快手自己会刷新 `webday7_st`
+        > （`/rest/v/profile/*` 响应会带 `Set-Cookie`），
+        > 你只需**定期重读** `browser_context.cookies()`。
+
+        ## 用户选的方案：**不常驻**
+
+        平时不占着窗口，只在取数前重读一次：
+          · 读到新的 → 更新 `self.config.cookie`（后续请求用新的）
+          · 读不到/没变化 → **继续用旧的**（不中断）
+
+        ## ⚠️ 不要丢掉域信息
+
+        实测 cookie 分属 4 个域（`www.` / `.www.` / `.` / `id.`）——
+        MediaCrawler 的 `login_by_cookies` 把它们**全压成 `.kuaishou.com`**
+        （丢了域），我们**不学那个做法**。
+        """
+        try:
+            cookies = await session.ctx.cookies("https://www.kuaishou.com")
+        except Exception as exc:
+            logger.debug("[kuaishou] 重读 cookie 失败（继续用旧的）：%s",
+                         type(exc).__name__)
+            return
+
+        if not cookies:
+            return
+
+        # 只关心主站相关的域（避免把无关 cookie 混进来）
+        parts = []
+        for c in cookies:
+            dom = str(c.get("domain") or "")
+            if "kuaishou.com" not in dom:
+                continue
+            name = c.get("name")
+            val = c.get("value")
+            if name and val is not None:
+                parts.append(f"{name}={val}")
+        if not parts:
+            return
+
+        fresh = "; ".join(parts)
+        old = self.config.cookie or ""
+        if fresh != old:
+            self.config.cookie = fresh
+            has_login = "userId=" in fresh
+            logger.info(
+                "[kuaishou] 已从浏览器重读 cookie（%d 字段，userId=%s）",
+                len(parts), "有" if has_login else "**无**",
+            )
 
     async def _inject_cookies(self, ctx) -> None:
         """把 `self.config.cookie` 注入浏览器上下文。
