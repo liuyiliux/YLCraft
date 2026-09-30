@@ -423,8 +423,19 @@ async def search_via_http(
         if parsed is not None:
             results.append(parsed)
 
-    logger.info("[twitter] 搜索 %r -> %d 条（HTTP，page=%d，翻 %d 页）",
-                params.keyword, len(results), page_no, pages)
+    # ⚠️ **要告诉前端"还有没有下一页"**（2026-09-29 修）
+    #
+    # X 从来不设 `_has_more` —— 于是前端**永远显示"没有下一页"**，
+    # 尽管后端 page=2/3 都能正常翻（实测首条各不相同）。
+    # 用户反馈"x 搜索没有更多页"，就是这里缺字段。
+    #
+    # 判断依据：**还有 cursor** 就说明还有更多。
+    # （X 是 cursor 分页，没有 total 可给 —— 不编造 total。）
+    if results:
+        results[0].raw_data["_has_more"] = bool(cursor_next)
+
+    logger.info("[twitter] 搜索 %r -> %d 条（HTTP，page=%d，翻 %d 页，has_more=%s）",
+                params.keyword, len(results), page_no, pages, bool(cursor_next))
     return results[:want]
 
 

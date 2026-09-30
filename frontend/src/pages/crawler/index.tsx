@@ -1330,6 +1330,37 @@ export default function CrawlerPage() {
     return detailNote.cover ? [detailNote.cover] : []
   }, [detailNote])
 
+  // 详情里的**视频地址** —— 有就内嵌播放，不用跳出去（2026-09-29）
+  //
+  // 用户反馈："x 的详情里面…如果是视频的 能不能在线播放"
+  //
+  // 各平台视频地址放的位置不同：
+  //   X         raw_data._video_url（搜索/详情时解析出来的 mp4）
+  //   抖音      raw_data.video_url / raw_data._video_url
+  //   微博      raw_data.page_info.media_info（需再解析，这里先兼容常见字段）
+  //   小红书    raw_data.video_url
+  //   B站       走 yt-dlp 解析，这里不内嵌（有专门的下载/解析流程）
+  //
+  // ⚠️ 很多平台会给 **直链，但带防盗链**（Referer 校验）。
+  // 所以播放时也走 `/api/v1/proxy/image` 之外的独立代理不现实 ——
+  // 先直接用原地址（X 的 pbs.twimg.com / video.twimg.com 通常可直接播），
+  // 播不了用户还能点"打开原文"。
+  const previewVideoUrl = useMemo(() => {
+    if (!detailNote) return ''
+    const raw = (detailNote.raw_data || {}) as any
+    const cand = [
+      raw._video_url,
+      raw.video_url,
+      (detailNote as any).video_url,
+      raw.page_info?.media_info?.stream_url_hd,
+      raw.page_info?.media_info?.stream_url,
+    ]
+    for (const u of cand) {
+      if (typeof u === 'string' && /^https?:\/\//.test(u)) return u
+    }
+    return ''
+  }, [detailNote])
+
   // ===== 列定义 =====
   const columns: ColumnsType<CrawlerResult> = [
     {
@@ -2404,6 +2435,25 @@ export default function CrawlerPage() {
               {/* ===== Tab: 详情 — B站 / 其他平台（保留旧实现） ===== */}
               {detailDrawerTab === 'detail' && detailNote.platform !== 'wechat_mp' && (
                 <div>
+                  {/* 视频播放（2026-09-29）
+                     有视频地址就内嵌播放 —— 原来只能点"打开原文"跳出去。 */}
+                  {previewVideoUrl && (
+                    <div style={{ marginBottom: 16 }}>
+                      <video
+                        src={previewVideoUrl}
+                        controls
+                        preload="metadata"
+                        poster={previewMediaUrls[detailMediaIdx] ? proxyImageUrl(previewMediaUrls[detailMediaIdx], 800) : undefined}
+                        style={{
+                          width: '100%', maxHeight: 360, borderRadius: 8,
+                          background: '#000', display: 'block',
+                        }}
+                        // 加载失败时给可操作提示（不静默黑屏）
+                        onError={() => message.warning('视频直链无法直接播放（可能被防盗链限制），请点「打开原文」')}
+                      />
+                    </div>
+                  )}
+
                   {/* 封面预览 */}
                   {previewMediaUrls.length > 0 && (
                     <div style={{ marginBottom: 16, position: 'relative', background: isDark ? '#252538' : '#f5f5f5', borderRadius: 8, overflow: 'hidden', textAlign: 'center' }}>
