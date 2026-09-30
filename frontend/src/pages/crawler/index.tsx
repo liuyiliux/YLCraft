@@ -2490,8 +2490,15 @@ export default function CrawlerPage() {
                     </div>
                   )}
 
-                  {/* 封面预览 */}
-                  {previewMediaUrls.length > 0 && (
+                  {/* 封面/图集预览
+                      ⚠️ **有视频时不显示**（2026-09-29）
+
+                      用户反馈"下面是封面吗 是不是没必要了" —— 对的。
+
+                      视频笔记的"图集"其实只有封面一张，而它已经作为
+                      播放器的 `poster` 显示了，下面再铺一张大图纯属重复。
+                      （图集缩略图条也没意义 —— 只有一张。） */}
+                  {!previewVideoUrl && previewMediaUrls.length > 0 && (
                     <div style={{ marginBottom: 16, position: 'relative', background: isDark ? '#252538' : '#f5f5f5', borderRadius: 8, overflow: 'hidden', textAlign: 'center' }}>
                       {/* 大图用中等尺寸（800px）—— 原图 1~2MB 太慢 */}
                       <Image src={proxyImageUrl(previewMediaUrls[detailMediaIdx], 800)} alt="media"
