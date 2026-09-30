@@ -170,10 +170,64 @@ class KuaishouClient(BasePlatformClient):
             viewport={"width": 1440, "height": 900},
             persistent_platform="kuaishou",
         )
+        # ⚠️ **必须显式注入 cookie**（2026-09-30 修）
+        #
+        # 原来不注入，只靠持久化 profile —— 而实测那个 profile 里
+        # **没有登录态**（`userId=None`），于是：
+        #
+        #   · 搜索页拿不到签名（未登录时页面不发那个带签名的请求）
+        #   · 表现成"抓不到签名"或 `result:2`
+        #
+        # **我一度误判成"快手限流"** —— 直到注入 cookie 后
+        # 立刻抓到 3 个带签名的请求、`userId=5372574395` 恢复。
+        #
+        # 这与微博那次是**同一个坑**：`base._init_patchright`
+        # 会注入 cookie，而平台自己的 `_get_session` 不注入 →
+        # 两条路行为不一致。
+        await self._inject_cookies(ctx)
+
         page2 = await ctx.new_page()
         sess = PooledSession(ctx=ctx, page=page2)
         pool.put(key, sess)
         return sess
+
+    async def _inject_cookies(self, ctx) -> None:
+        """把 `self.config.cookie` 注入浏览器上下文。
+
+        快手需要的 cookie（实测）：
+          · `userId`                      —— 登录标志
+          · `kuaishou.server.webday7_st`  —— 会话令牌
+          · `did` / `kpn` / `kwssectoken` —— 设备与安全
+
+        失败只告警不中断（公开页面仍可看，但**搜索会拿不到签名**）。
+        """
+        cookie = self.config.cookie or ""
+        if not cookie:
+            logger.warning(
+                "[kuaishou] 没有 cookie —— 未登录时页面不会发带签名的请求，"
+                "搜索会失败。请在「账号中心」获取快手登录态。",
+            )
+            return
+        items = []
+        for part in cookie.split("; "):
+            if "=" not in part:
+                continue
+            k, _, v = part.partition("=")
+            if not k:
+                continue
+            items.append({"name": k, "value": v,
+                          "domain": ".kuaishou.com", "path": "/"})
+        if not items:
+            return
+        try:
+            await ctx.add_cookies(items)
+            has_login = any(i["name"] == "userId" for i in items)
+            logger.info(
+                "[kuaishou] 已注入 %d 个 cookie（userId=%s）",
+                len(items), "有" if has_login else "**无**",
+            )
+        except Exception as exc:
+            logger.warning("[kuaishou] 注入 cookie 失败：%s", type(exc).__name__)
 
     async def _post(self, uri: str, body: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """在页面上下文里 POST（复用抓到的签名）。"""
