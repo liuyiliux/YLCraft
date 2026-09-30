@@ -1334,29 +1334,45 @@ export default function CrawlerPage() {
   //
   // 用户反馈："x 的详情里面…如果是视频的 能不能在线播放"
   //
-  // 各平台视频地址放的位置不同：
-  //   X         raw_data._video_url（搜索/详情时解析出来的 mp4）
-  //   抖音      raw_data.video_url / raw_data._video_url
-  //   微博      raw_data.page_info.media_info（需再解析，这里先兼容常见字段）
-  //   小红书    raw_data.video_url
+  // ⚠️ 各平台视频地址**放的位置完全不同**（实测逐个确认）：
+  //
+  //   X         raw_data._video_url            （video.twimg.com）
+  //   微博      raw_data._video_url            （f.video.weibocdn.com）
+  //   抖音      raw_data._video_url            （aweme_info.video.play_addr）
+  //   小红书    detail.video（**裸字符串**，不是 _video_url！）
+  //             实测：`http://sns-video-v6.xhscdn.com/stream/...mp4?sign=...`
   //   B站       走 yt-dlp 解析，这里不内嵌（有专门的下载/解析流程）
   //
-  // ⚠️ 很多平台会给 **直链，但带防盗链**（Referer 校验）。
-  // 所以播放时也走 `/api/v1/proxy/image` 之外的独立代理不现实 ——
-  // 先直接用原地址（X 的 pbs.twimg.com / video.twimg.com 通常可直接播），
-  // 播不了用户还能点"打开原文"。
+  // 防盗链实测（**每个平台行为都不一样**，所以统一走后端代理）：
+  //
+  //   X        带 Referer → **403**；裸请求 → 200    （不能带）
+  //   抖音     裸请求 → **403**；带 douyin Referer → 200（必须带对的）
+  //   微博     怎么都 200                              （无所谓）
+  //   小红书   怎么都 200                              （无所谓）
+  //
+  // `/api/v1/proxy/video` 会**按域名**决定发不发 Referer，
+  // 并透传 Range（支持拖进度条）—— 前端不用关心这些差异。
   const previewVideoUrl = useMemo(() => {
     if (!detailNote) return ''
     const raw = (detailNote.raw_data || {}) as any
     const cand = [
       raw._video_url,
       raw.video_url,
+      // 小红书：详情顶层就是字符串
+      typeof (detailNote as any).video === 'string' ? (detailNote as any).video : '',
       (detailNote as any).video_url,
+      // 抖音：直接翻 aweme_info
+      raw.aweme_info?.video?.play_addr?.url_list?.[0],
+      // 微博：视频在 page_info.media_info
       raw.page_info?.media_info?.stream_url_hd,
       raw.page_info?.media_info?.stream_url,
     ]
     for (const u of cand) {
-      if (typeof u === 'string' && /^https?:\/\//.test(u)) return u
+      if (typeof u === 'string' && /^https?:\/\//.test(u)) {
+        // 排除音频（图文笔记的 play_addr 可能指向配乐）
+        if (/\.(mp3|m4a)(\?|$)/i.test(u)) continue
+        return u
+      }
     }
     return ''
   }, [detailNote])
