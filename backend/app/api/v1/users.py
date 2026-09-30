@@ -48,6 +48,10 @@ SUPPORTED = {
     "twitter": {"conn_platform": "TWITTER", "cookie_domain": "x.com"},
     "x": {"conn_platform": "TWITTER", "cookie_domain": "x.com"},
     "tw": {"conn_platform": "TWITTER", "cookie_domain": "x.com"},
+    # 快手：搜索/搜博主/「我的数据」都已打通（2026-09-30）
+    # ⚠️ 签名要从浏览器抓（`__NS_hxfalcon` 是混淆 JS，纯 HTTP 拿不到）
+    "kuaishou": {"conn_platform": "KUAISHOU", "cookie_domain": "kuaishou"},
+    "ks": {"conn_platform": "KUAISHOU", "cookie_domain": "kuaishou"},
 }
 
 
@@ -168,6 +172,10 @@ async def _client_for(platform: str):
     #       （小红书内部自己签名；X 纯 HTTP，需 transaction-id）
     #   · 微博 → patchright（依赖 Service Worker，见
     #     `services/platforms/weibo/search_patchright.py`）
+    #   · 快手 → **api（但它内部会开浏览器）**
+    #       签名 `__NS_hxfalcon` 是混淆 JS，纯 HTTP 拿不到 ——
+    #       客户端自己起一个**无头**会话抓签名（见 `kuaishou/client.py`）。
+    #       所以这里传 `api` 是对的，浏览器由客户端内部管理。
     client_name = platform
     if client_name in ("xhs",):
         client_name = "xiaohongshu"
@@ -175,6 +183,8 @@ async def _client_for(platform: str):
         client_name = "weibo"
     elif client_name in ("x", "tw"):
         client_name = "twitter"
+    elif client_name in ("ks",):
+        client_name = "kuaishou"
     mode = "patchright" if client_name == "weibo" else "api"
     client = create_client(client_name, mode=mode, cookie=cookie,
                            conn_id=conn_id_str(platform))

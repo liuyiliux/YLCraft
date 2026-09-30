@@ -37,6 +37,7 @@ from ..types import SearchParams, SearchResult, UserProfile
 from .apis import (
     BASE,
     PROFILE_GET,
+    _to_int,
     SEARCH_FEED,
     SEARCH_USER,
     build_feed_body,
@@ -489,43 +490,62 @@ class KuaishouClient(BasePlatformClient):
     async def get_self_profile(self) -> Optional[UserProfile]:
         """查**自己**的资料（「我的数据」）。
 
-        ## 接口来源（报告白名单 + 实测）
+        ## 接口（实测打通，2026-09-30）
 
-            GET /rest/v/profile/get?__NS_hxfalcon=<**该路径自己的**签名>
+            GET /rest/v/profile/get?__NS_hxfalcon=<该路径自己的签名>
 
-        实测：这个请求**页面自己就会发**（打开首页/搜索页时），
-        所以签名能一起抓到 —— 见 `_ensure_signed_url`。
+        ## ⚠️ 响应字段是**扁平的**，不是嵌套的！
 
-        ⚠️ 两个前提：
-          1. **必须有有效登录态** —— 否则返回 `{"result":2}`
-          2. 签名是**该路径专属**的（不能用 search/feed 的签名）
+        实测返回（登录态有效时）：
+
+            {
+              "result": 1,
+              "userName": "逸流AI",
+              "userId": 5372574395,
+              "userHead": "https://p66.a.kwimgs.com/uhead/...",
+              "fans": 20,
+              "follows": 2,          ← 注意是 `follows`，不是 `following`
+              "like": 312,           ← 获赞
+              "sex": "M",
+              "mobile": "131****1644",
+              "eid": "3xdefy9fk9fcadc",
+              "userTex": "",
+              "userDefineId": "5372574395"
+            }
+
+        **我第一版按 `data.user` 嵌套解析 → 拿到空**（字段名也对不上）。
+        所以这里**直接读顶层**。
+
+        ## 两个前提
+
+          1. **必须有有效登录态** —— 否则 `result=2`
+          2. 签名是**该路径专属**的（不能用 `search/feed` 的签名）
         """
         payload = await self._post(PROFILE_GET, {})
         if payload is None:
             return None
-        data = payload.get("data") or payload.get("profile") or {}
-        if not isinstance(data, dict):
-            data = {}
-        user = data.get("user") if isinstance(data.get("user"), dict) else data
-        uid = str(user.get("id") or user.get("userId") or "")
-        name = str(
-            user.get("name") or user.get("userName")
-            or user.get("user_name") or ""
-        )
+
+        # ⚠️ 字段在**顶层**（实测），不是 `data.user`
+        uid = str(payload.get("userId") or payload.get("userDefineId") or "")
+        name = str(payload.get("userName") or "")
         if not uid and not name:
-            logger.info("[kuaishou] profile/get 没拿到资料字段：%s",
-                        str(data)[:120])
+            logger.info(
+                "[kuaishou] profile/get 字段与预期不符，顶层键：%s",
+                sorted(payload.keys())[:14],
+            )
             return None
+
         return UserProfile(
             id=uid,
             name=name,
-            avatar=str(user.get("headUrl") or user.get("headurl") or ""),
+            avatar=str(payload.get("userHead") or ""),
             platform="kuaishou",
-            followers=_to_int(user.get("fan") or user.get("fansCount")),
-            following=_to_int(user.get("follow") or user.get("followCount")),
-            desc=str(user.get("description") or user.get("user_text") or ""),
-            total_videos=_to_int(user.get("photoCount")),
-            raw_data=data if isinstance(data, dict) else {},
+            followers=_to_int(payload.get("fans")),
+            # ⚠️ 快手叫 `follows`（关注数），不是 `following`
+            following=_to_int(payload.get("follows")),
+            total_likes=_to_int(payload.get("like")),
+            desc=str(payload.get("userTex") or ""),
+            raw_data=payload,
         )
 
     async def get_detail(self, item_id: str):
