@@ -109,7 +109,13 @@ def test_kuaishou_login_url_is_not_homepage():
     from app.services.cookies.base import PLATFORM_LOGIN_URLS
 
     url = PLATFORM_LOGIN_URLS["kuaishou"]
-    assert url.rstrip("/") != "https://www.kuaishou.com", "不能指向首页（信息流）"
+    # ⚠️ 踩过两次：
+    #   ① 首页（推荐流）—— 用户要自己在信息流里找登录
+    #   ② `/profile` —— **跳到 404**！真实路径是 `/profile/{userId}`
+    assert not url.rstrip("/").endswith("/profile"), (
+        "裸 /profile 会 404（真实路径带 userId）"
+    )
+    assert "kuaishou.com" in url
 
 
 # =============================================================================
@@ -129,14 +135,23 @@ def test_kuaishou_detector_does_not_use_loose_class_selectors():
     assert 'class*="nickname"' not in src, "不该用模糊 class 选择器判登录"
 
 
-def test_kuaishou_detector_uses_cookie_first():
-    """**回归**：要用 **cookie** 判据（登录才有 `kuaishou.server.web_st`）。"""
+def test_kuaishou_detector_uses_cookie():
+    """**回归**：要用 **cookie** 判据。
+
+    实测登录后的 cookie 名是 **`kuaishou.server.webday7_st`**（带 `day7`），
+    **不是** `kuaishou.server.web_st` —— 我第一版按印象写错了。
+
+    所以代码用**后缀匹配**（`kuaishou.server.web` + `_st`），
+    平台改名（`webday7` / `web`）也不会失效。
+    """
     from app.services.cookies.platforms import kuaishou
 
-    assert "kuaishou.server.web_st" in kuaishou.LOGIN_COOKIES
+    assert "userId" in kuaishou.LOGIN_COOKIES_EXACT
+    assert kuaishou.LOGIN_COOKIE_PREFIX == "kuaishou.server.web"
+    assert kuaishou.LOGIN_COOKIE_SUFFIX == "_st"
     src = inspect.getsource(kuaishou.KuaishouDetector.detect)
     assert "cookies(" in src, "应读浏览器 cookie"
-    assert "LOGIN_COOKIES" in src
+    assert "LOGIN_COOKIE_SUFFIX" in src, "应用后缀匹配（防平台改名）"
 
 
 def test_kuaishou_detector_defaults_to_not_logged_in():
@@ -152,13 +167,24 @@ def test_kuaishou_detector_defaults_to_not_logged_in():
     assert src.rstrip().endswith("return False")
 
 
-def test_kuaishou_detector_queries_site_api():
-    """要有**站点接口**兜底（文档要求"问站点自己的接口"）。"""
+def test_kuaishou_detector_does_not_trust_blocked_api():
+    """**回归**：不能把被风控挡的接口当登录判据。
+
+    实测 `/rest/wd/user/profile` 返回：
+
+        {"result":2001,"error_msg":"[2001] antispam need captcha"}
+
+    有风控 —— 用它判断会让"已登录"被误判成"未登录"
+    （用户就遇到"扫码完没判断获取到"）。
+    """
     from app.services.cookies.platforms import kuaishou
 
-    assert "rest/wd/user/profile" in kuaishou.USER_PROFILE_API
     src = inspect.getsource(kuaishou.KuaishouDetector.detect)
-    assert "USER_PROFILE_API" in src
+    assert "UNUSABLE_PROFILE_API" not in src, (
+        "不该用被风控的接口做判据"
+    )
+    # 但要**留档**，免得后人再试
+    assert "antispam" in inspect.getsource(kuaishou)
 
 
 def test_kuaishou_extract_does_not_read_dom_nickname():
