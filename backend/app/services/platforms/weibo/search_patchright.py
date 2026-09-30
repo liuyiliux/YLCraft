@@ -66,7 +66,23 @@ JS_SEARCH = """
 async (args) => {
   const p = new URLSearchParams(args.params);
   const r = await fetch('https://m.weibo.cn/api/container/getIndex?' + p,
-                        { credentials: 'include' });
+                        {
+                          credentials: 'include',
+                          // ⚠️ **必须带这些头**（2026-09-29 实测）
+                          //
+                          // 微博对"需要登录"的接口（如用户微博列表的
+                          // `page>=2`）会校验 referer —— 不带就被踢到
+                          // `passport.weibo.com/sso/signin`（`ok=-100`）。
+                          //
+                          // 实测：加 referer + x-requested-with 后
+                          // `page=2/3` 都能正常返回。
+                          headers: {
+                            'accept': 'application/json, text/plain, */*',
+                            'x-requested-with': 'XMLHttpRequest',
+                            'mweibo-pwa': '1',
+                          },
+                          referrer: args.referrer || 'https://m.weibo.cn/',
+                        });
   const t = await r.text();
   if (!t || t[0] !== '{') {
     return JSON.stringify({ _error: 'not_json', http: r.status, head: t.slice(0, 120) });
@@ -131,6 +147,20 @@ async def _get_session(conn_key: str, client=None) -> PooledSession:
             persistent_platform="weibo",   # 登录态跨会话保留
         )
         page = await ctx.new_page()
+        # ⚠️ **必须显式注入 cookie**（2026-09-29 修）
+        #
+        # 原来这里不注入，只靠持久化 profile —— 实测那条路的登录态是
+        # **访客态**（`/api/config` 返回 `login=False`、`MLOGIN=0`、
+        # `SUB` 是访客 SUB）。
+        #
+        # 后果：`page=2` 这类**要求登录**的接口被踢到
+        # `passport.weibo.com/sso/signin`（`ok=-100`），
+        # 而 `page=1` 是公开数据所以能拿到 —— 表现为
+        # "用户微博列表只有第一页"。
+        #
+        # base 那条路（`_set_cookies_to_browser`）是显式注入的，
+        # 两条路不一致才是根因。这里对齐。
+        await _inject_cookies(ctx, conn_key)
         session = PooledSession(ctx=ctx, page=page)
         _pool.put(key, session)
         logger.info("[weibo] 新建浏览器会话（无头）key=%s", key)
@@ -138,6 +168,42 @@ async def _get_session(conn_key: str, client=None) -> PooledSession:
     await _warm_up(session)
     session.touch()
     return session
+
+
+async def _inject_cookies(ctx, conn_key: str) -> None:
+    """把数据库里存的微博 cookie 注入浏览器上下文。
+
+    微博的 cookie 域是 `.weibo.cn`（m 站登录态，含 `SSOLoginState`）——
+    **不能只靠持久化 profile**：实测那条路的 cookie 会退化成访客态。
+
+    失败只告警不中断（搜索/公开数据仍可用，
+    只是需要登录的能力会报可操作错误）。
+    """
+    try:
+        from ..login_health import netscape_to_header, resolve_connection
+
+        _cid, raw = resolve_connection(conn_key or "", "WEIBO")
+        if not raw:
+            logger.info("[weibo] 没有可用的 cookie（公开功能仍可用）")
+            return
+        cookie = netscape_to_header(raw, "weibo")
+        if not cookie:
+            return
+        pairs = [p for p in cookie.split("; ") if "=" in p]
+        items = []
+        for part in pairs:
+            k, _, v = part.partition("=")
+            # 同时种到 m 站与主站域（m 站接口要 `.weibo.cn`）
+            for dom in (".weibo.cn", ".weibo.com"):
+                items.append({"name": k, "value": v, "domain": dom, "path": "/"})
+        if items:
+            await ctx.add_cookies(items)
+            logger.info(
+                "[weibo] 已注入 %d 个 cookie（含 SSOLoginState=%s）",
+                len(items), "SSOLoginState" in cookie,
+            )
+    except Exception as exc:
+        logger.warning("[weibo] 注入 cookie 失败（公开功能仍可用）：%s", exc)
 
 
 async def _warm_up(session: PooledSession, *, borrowed: bool = False) -> None:
@@ -300,6 +366,100 @@ async def search_users_via_patchright(
 
     logger.info("[weibo] 用户搜索 %r -> %d 个", keyword, len(out))
     return out
+
+
+async def get_user_posts_via_patchright(
+    uid: str,
+    *,
+    page: int = 1,
+    max_results: int = 20,
+    conn_key: str = "",
+    client=None,
+) -> List[SearchResult]:
+    """取某个用户发的微博列表（**实测打通 2026-09-29**）。
+
+    ## 参数（**都要**，少一个就失败）
+
+        GET /api/container/getIndex
+            ?type=uid&value={uid}                  ← 必须
+            &containerid=107603{uid}               ← 必须
+            &page={N}
+
+    ⚠️ 三个坑（都实测踩过）：
+
+    1. **`containerid` 是 `107603{uid}`**（不是用户详情的 `100505{uid}`）。
+       来源：MediaCrawler 硬编码。
+
+    2. **必须带 `type=uid&value={uid}`** —— 只给 containerid + page
+       会返回 HTML 错误页（2700 字节）。
+
+    3. **必须带 `referer`**（见 `JS_SEARCH`）—— 不带会被踢到
+       `passport.weibo.com/sso/signin`（`ok=-100`）。
+       而且 `page>=2` **要求登录态**（`page=1` 是公开数据）。
+
+    ## 翻页
+
+    用 `page=N`（不是 since_id —— 实测 `cardlistInfo.since_id` 是 None）。
+    实测 page=1/2/3 各返回 10 条不同内容。
+
+    ## 前置：登录态
+
+    ⚠️ 池会话**必须显式注入 cookie**（见 `_inject_cookies`）——
+    只靠持久化 profile 会退化成访客态，`page=2` 直接 `ok=-100`。
+    """
+    from .apis import build_user_posts_params
+    from .client import parse_mblog
+
+    session = await _get_session(conn_key, client=client)
+
+    want = max(1, max_results)
+    # 每页固定 10 条，要够数就多翻几页
+    pages_needed = max(1, (want + 9) // 10)
+
+    out: List[SearchResult] = []
+    seen: set[str] = set()
+
+    for i in range(pages_needed):
+        page_no = page + i
+        params = build_user_posts_params(uid, page=page_no)
+        # ⚠️ 补上 type/value —— 少这两个会返回 HTML 错误页
+        params["type"] = "uid"
+        params["value"] = str(uid)
+
+        raw = await session.page.evaluate(
+            JS_SEARCH,
+            {"params": params, "referrer": f"https://m.weibo.cn/u/{uid}"},
+        )
+        data = _load_json(raw, f"用户微博列表 page={page_no}")
+
+        if data.get("ok") != 1:
+            # ok=-100 = 被踢到登录页。这里的**可操作**提示很重要：
+            # 用户看到"只有一页"会以为"这人就发了这么多"。
+            logger.info(
+                "[weibo] 用户微博列表 page=%d 返回 ok=%s（通常需要登录态）",
+                page_no, data.get("ok"),
+            )
+            break
+
+        cards = (data.get("data") or {}).get("cards") or []
+        mblogs = [c.get("mblog") for c in cards
+                  if isinstance(c, dict) and isinstance(c.get("mblog"), dict)]
+        if not mblogs:
+            break
+        for mb in mblogs:
+            mid = str(mb.get("id") or "")
+            if not mid or mid in seen:
+                continue
+            seen.add(mid)
+            parsed = parse_mblog(mb)
+            if parsed is not None:
+                out.append(parsed)
+
+        if len(out) >= want:
+            break
+
+    logger.info("[weibo] 用户 %s 的微博 -> %d 条", uid, len(out))
+    return out[:want]
 
 
 async def get_user_via_patchright(

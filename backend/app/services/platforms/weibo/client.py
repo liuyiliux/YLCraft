@@ -203,6 +203,36 @@ class WeiboClient(BasePlatformClient):
         )
 
     # =========================================================================
+    # 某用户发的微博列表（2026-09-29 打通）
+    # =========================================================================
+
+    async def get_user_videos(
+        self,
+        user_id: str,
+        max_results: int = 20,
+    ) -> List[SearchResult]:
+        """取某个用户发的微博列表。
+
+        ⚠️ `user_id` 是**微博 uid（数字）**，不是昵称。
+
+        实测（自己的 uid 7628413874）：page=1/2/3 各 10 条不同内容。
+
+        前置：会话**必须注入登录 cookie** —— `page>=2` 要求登录态
+        （`page=1` 是公开数据）。见 `search_patchright._inject_cookies`。
+        """
+        from .search_patchright import get_user_posts_via_patchright
+
+        uid = str(user_id or "").strip()
+        if not uid:
+            return []
+        return await get_user_posts_via_patchright(
+            uid,
+            max_results=max_results,
+            conn_key=self.config.conn_id or "",
+            client=self,
+        )
+
+    # =========================================================================
     # 统一请求出口
     # =========================================================================
 
