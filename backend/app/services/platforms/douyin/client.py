@@ -710,6 +710,34 @@ def parse_search_item(item: Dict[str, Any]) -> Optional[SearchResult]:
     # 图文/视频：有 image_infos 视为图文
     is_image = bool(info.get("image_infos"))
 
+    # ⚠️ **提取无水印视频地址**（2026-09-29 补）
+    #
+    # 原来是缺的 —— 搜索结果里 `type=video` 却**没有播放地址**，
+    # 用户点详情播放直接失败（实测 9/9 条视频都缺）。
+    #
+    # 地址在 `video.play_addr.url_list`（实测 3 个候选）。
+    #
+    # ⚠️ **必须挑 mp4，且排除图文笔记的配乐**：
+    # 实测图文笔记的 `video.play_addr` 指向的是 **mp3**（配乐），
+    # 拿它当视频播会失败。
+    video_url = ""
+    if not is_image and isinstance(video, dict):
+        for key in ("play_addr", "play_addr_h264", "play_addr_265", "download_addr"):
+            addr = video.get(key)
+            if not isinstance(addr, dict):
+                continue
+            for u in (addr.get("url_list") or []):
+                s = str(u)
+                if not s.startswith("http"):
+                    continue
+                # 排除音频（图文笔记的坑）
+                if ".mp3" in s or ".m4a" in s or "audio" in s.lower():
+                    continue
+                video_url = s
+                break
+            if video_url:
+                break
+
     return SearchResult(
         id=aweme_id,
         title=desc,  # 抖音没有独立标题，用正文首行
@@ -727,7 +755,11 @@ def parse_search_item(item: Dict[str, Any]) -> Optional[SearchResult]:
         desc=desc,
         create_time=create_time,
         duration=duration,
-        raw_data=item,
+        raw_data={
+            **item,
+            # 前端详情播放读这个（与 X / 微博的字段名统一）
+            "_video_url": video_url,
+        },
     )
 
 
