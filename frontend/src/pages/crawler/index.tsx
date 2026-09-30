@@ -425,12 +425,22 @@ function getPlatformInfo(pf: string): PlatformInfo {
  *
  * ## 用途：程序化搜索被风控时的**降级出口**
  *
- * 实测（2026-09-29）小红书会返回 **HTTP 461**（风控），
+ * 实测（2026-09-29）小红书会返回 **HTTP 461**
+ * （调研确认：**461 = 人机验证 CAPTCHA 拦截**，不是签名错误），
  * 用户提出"加一个搜索跳转，让我手动搜" —— 就是这里。
  *
  * ⚠️ 这是**降级路径**，不是替代品：
  *   · 拿不到结构化数据（不能导入素材库、不能批量下载）
  *   · 但"至少能查" —— 比直接报错好
+ *   · 真人浏览器操作（真实 TLS 指纹 / 真实 b1 / 真人节奏）**几乎不触发风控**
+ *
+ * ## ⚠️ 小红书**必须带尾部斜杠**（实测，很容易漏）
+ *
+ *     /search_result?keyword=x   → HTTP **301** → 且降级成 `http://`！
+ *     /search_result/?keyword=x  → HTTP 200  ✅  '美食 - 小红书搜索'
+ *
+ * 少了斜杠会多一跳、还掉到 http，可能直接失败。
+ * **免登录可用**（实测无 cookie 也能拿到完整 SSR HTML）。
  *
  * ## URL 都是**实测过**的（不是猜的）
  *
@@ -443,8 +453,9 @@ function getPlatformInfo(pf: string): PlatformInfo {
  *   X       格式正确（我方网络访问不了，但浏览器可用）
  */
 const MANUAL_SEARCH_URLS: Record<string, string> = {
-  xhs: 'https://www.xiaohongshu.com/search_result?keyword={kw}',
-  xiaohongshu: 'https://www.xiaohongshu.com/search_result?keyword={kw}',
+  // ⚠️ 注意结尾的 `/` —— 少了会 301 且降级成 http（实测）
+  xhs: 'https://www.xiaohongshu.com/search_result/?keyword={kw}',
+  xiaohongshu: 'https://www.xiaohongshu.com/search_result/?keyword={kw}',
   dy: 'https://www.douyin.com/search/{kw}',
   douyin: 'https://www.douyin.com/search/{kw}',
   bili: 'https://search.bilibili.com/all?keyword={kw}',

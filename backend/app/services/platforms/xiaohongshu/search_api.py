@@ -171,22 +171,41 @@ async def search_via_api(client, params: SearchParams) -> List[SearchResult]:
     async with httpx.AsyncClient(timeout=40, follow_redirects=True) as c:
         resp = await c.post(f"{EDITH_BASE}{SEARCH_URI}", json=body, headers=headers)
 
-    if resp.status_code == 461:
-        raise RuntimeError(
-            "[xhs] 搜索接口返回 HTTP 461 —— Cookie 可能已失效，"
-            "请在「账号中心」重新登录小红书。"
-        )
-    if resp.status_code in (401, 403):
-        raise RuntimeError(
-            f"[xhs] 搜索被拒绝（HTTP {resp.status_code}）—— 登录态可能已失效。"
-        )
+    # ⚠️ **用统一的风控识别，而不是只看状态码**（2026-09-29）
+    #
+    # 实测这一条响应极具误导性：
+    #
+    #     HTTP 461，但 body 是 {"code":0,"success":true,"data":{}}
+    #
+    # **看着像"成功但没数据"** → 会被当成"没搜到"，
+    # 而真相是 `Verifytype: 217`（人机验证）。
+    # 另有 `code:300011`（账号异常）/ `300012`（IP 被封）等更具体的信号
+    # —— 它们的**解法不同**（换账号 vs 换 IP），所以必须分开报。
+    #
+    # 见 `risk.py`（错误码表来源：MediaCrawler 实测归纳）。
+    from .risk import detect_risk
+
+    body_json = None
+    try:
+        body_json = resp.json()
+    except Exception:
+        body_json = None
+
+    signal = detect_risk(
+        status_code=resp.status_code,
+        headers=dict(resp.headers),
+        body=body_json,
+    )
+    if signal is not None:
+        raise RuntimeError(f"[xhs] {signal.message()}")
+
     if resp.status_code != 200:
         raise RuntimeError(
             f"[xhs] 搜索接口返回 HTTP {resp.status_code}。"
             f"（body 前 120：{resp.text[:120]!r}）"
         )
 
-    payload = resp.json()
+    payload = body_json if isinstance(body_json, dict) else {}
     if not payload.get("success"):
         raise RuntimeError(
             f"[xhs] 搜索失败：code={payload.get('code')} "
