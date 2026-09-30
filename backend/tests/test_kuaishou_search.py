@@ -225,7 +225,8 @@ def test_signature_is_cached():
 
     assert hasattr(ks, "_signed_urls"), "要有签名缓存"
     src = inspect.getsource(ks.KuaishouClient._ensure_signed_url)
-    assert "_signed_urls.get(conn)" in src, "要先查缓存"
+    # 缓存 key 是 `{conn}:{uri}`（**签名绑路径**，不能按 conn 存一个）
+    assert "_signed_urls.get(cache_key)" in src, "要先查缓存"
     assert "asyncio.Lock" in inspect.getsource(ks._lock_for), "并发要加锁"
 
 

@@ -38,12 +38,16 @@
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 
 BASE = "https://www.kuaishou.com"
 SEARCH_FEED = "/rest/v/search/feed"
 SEARCH_USER = "/rest/v/search/user"
+# 「我的数据」——来自调研报告的 SIG4_WHITELIST + 实测（页面自己会请求它）
+PROFILE_GET = "/rest/v/profile/get"
+# 用户作品列表（同属白名单，未实测）
+PROFILE_FEED = "/rest/v/profile/feed"
 NEW_RECO = "/new-reco"
 SEARCH_PAGE = "/search/video"
 
