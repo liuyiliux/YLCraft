@@ -73,6 +73,24 @@ def build_feed_body(keyword: str, pcursor: str = "") -> Dict[str, Any]:
     }
 
 
+def build_profile_feed_body(user_id: str, pcursor: str = "") -> Dict[str, Any]:
+    """构造「用户作品列表」的请求体（**实测字段**，2026-09-30）。
+
+    打开用户主页抓到的真实请求：
+
+        POST /rest/v/profile/feed?__NS_hxfalcon=…
+        body: {"user_id":"5372574395","pcursor":"","page":"profile"}
+
+    ⚠️ `page` 是**固定字符串 `"profile"`**（不是页码）；
+    翻页用 `pcursor` 游标。
+    """
+    return {
+        "user_id": str(user_id),
+        "pcursor": pcursor or "",
+        "page": "profile",
+    }
+
+
 def build_user_body(keyword: str, pcursor: str = "") -> Dict[str, Any]:
     """构造 `/rest/v/search/user` 的请求体（搜用户，实测）。
 

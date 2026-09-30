@@ -40,7 +40,9 @@ from .apis import (
     _to_int,
     SEARCH_FEED,
     SEARCH_USER,
+    PROFILE_FEED,
     build_feed_body,
+    build_profile_feed_body,
     build_user_body,
     parse_feed,
     parse_user,
@@ -52,8 +54,13 @@ logger = logging.getLogger("ylcraft.platforms.kuaishou")
 # 会话池 key（与 base 的格式一致：**竖线**分隔）
 _POOL_KEY_FMT = "kuaishou|{conn}"
 
-# 签名缓存：conn_id -> signed_url（**不含**关键词，可复用）
+# 签名缓存：`{conn}:{path}` -> signed_url
+#
+# ⚠️ key 必须含**路径** —— 签名是**按路径绑定**的（实测：
+# 同一页面 3 个路径 3 个不同签名，第 26 位就不同）。
 _signed_urls: Dict[str, str] = {}
+# 自己的 uid 缓存（抓 `profile/feed` 签名时要去自己的主页）
+_self_uid_cache: Dict[str, str] = {}
 # 每个 conn 一把锁，避免并发重复抓签名
 _locks: Dict[str, asyncio.Lock] = {}
 
@@ -91,6 +98,27 @@ class KuaishouClient(BasePlatformClient):
     ⚠️ 签名要从浏览器抓 —— 所以**必须有 Playwright 会话**，
     纯 HTTP 模式做不到（见模块 docstring）。
     """
+
+    def _pages_for(self, uri: str) -> List[str]:
+        """返回**会发出该路径请求**的页面 URL（按优先级）。
+
+        实测（2026-09-30）：
+
+            搜索页 `/search/video?searchKey=…`
+                → /rest/v/search/feed, /rest/v/search/user, /rest/v/profile/get
+            用户主页 `/profile/{uid}`
+                → /rest/v/profile/feed          ← **只有这里才有**
+
+        所以抓 `profile/feed` 的签名必须去用户主页。
+        没有 uid 时先取自己的（`profile/get` 能拿到）。
+        """
+        if uri == PROFILE_FEED:
+            uid = _self_uid_cache.get(self.config.conn_id or "-")
+            if uid:
+                return [f"{BASE}/profile/{uid}", search_page_url("美食")]
+            # 还不知道 uid → 先去搜索页（那里会带 profile/get，能拿 uid）
+            return [search_page_url("美食")]
+        return [search_page_url("美食")]
 
     async def _ensure_signed_url(self, uri: str = SEARCH_FEED) -> Optional[str]:
         """拿到**指定路径**的带签名 URL（有缓存）。
@@ -148,15 +176,24 @@ class KuaishouClient(BasePlatformClient):
             page = session.page
             page.on("request", on_request)
             try:
-                # 打开搜索页 → 页面自己会发多个带签名的请求
-                await page.goto(
-                    search_page_url("美食"),
-                    wait_until="domcontentloaded",
-                    timeout=60000,
-                )
-                await page.wait_for_timeout(11000)
-            except Exception as exc:
-                logger.warning("[kuaishou] 打开搜索页失败：%s", type(exc).__name__)
+                # ## ⚠️ 要打开**会请求该路径**的页面（2026-09-30 修）
+                #
+                # 实测每个路径由不同页面发出：
+                #
+                #     搜索页    → /rest/v/search/feed, /search/user, /profile/get
+                #     用户主页  → /rest/v/profile/feed        ← 只有这里才有！
+                #
+                # 所以只打开搜索页时，`profile/feed` 的签名**永远抓不到**。
+                for url in self._pages_for(uri):
+                    if uri in captured:
+                        break
+                    try:
+                        await page.goto(url, wait_until="domcontentloaded",
+                                        timeout=60000)
+                        await page.wait_for_timeout(11000)
+                    except Exception as exc:
+                        logger.warning("[kuaishou] 打开 %s 失败：%s",
+                                       url[:60], type(exc).__name__)
             finally:
                 try:
                     page.remove_listener("request", on_request)
@@ -535,6 +572,9 @@ class KuaishouClient(BasePlatformClient):
             )
             return None
 
+        # 记下自己的 uid —— 抓 `profile/feed` 签名时要访问自己的主页
+        _self_uid_cache[self.config.conn_id or "-"] = uid
+
         return UserProfile(
             id=uid,
             name=name,
@@ -547,6 +587,57 @@ class KuaishouClient(BasePlatformClient):
             desc=str(payload.get("userTex") or ""),
             raw_data=payload,
         )
+
+    async def get_user_videos(
+        self,
+        user_id: str,
+        max_results: int = 20,
+    ) -> List[SearchResult]:
+        """取某个用户的**作品列表**（实测打通 2026-09-30）。
+
+        ## 接口（打开用户主页抓到的真实请求）
+
+            POST /rest/v/profile/feed?__NS_hxfalcon=<该路径自己的签名>
+            body: {"user_id":"5372574395","pcursor":"","page":"profile"}
+
+        ⚠️ **签名要去用户主页抓** —— 搜索页**不会**请求这个路径
+        （见 `_pages_for`）。
+
+        ⚠️ `page` 是固定字符串 `"profile"`（不是页码）；翻页用 `pcursor`。
+        """
+        want = max(1, max_results)
+        uid = str(user_id or "").strip()
+        if not uid:
+            return []
+
+        out: List[SearchResult] = []
+        seen: set[str] = set()
+        pcursor = ""
+        for _ in range(max(1, (want + 19) // 20) + 1):
+            payload = await self._post(
+                PROFILE_FEED, build_profile_feed_body(uid, pcursor)
+            )
+            if payload is None:
+                break
+            feeds = payload.get("feeds") or payload.get("list") or []
+            for feed in feeds:
+                parsed = parse_feed(feed)
+                if parsed is None or parsed["id"] in seen:
+                    continue
+                seen.add(parsed["id"])
+                out.append(self._to_result(parsed))
+            if len(out) >= want:
+                break
+            nxt = str(payload.get("pcursor") or "")
+            if not nxt or nxt == pcursor:
+                break
+            pcursor = nxt
+
+        results = out[:want]
+        if results:
+            results[0].raw_data["_has_more"] = bool(pcursor)
+        logger.info("[kuaishou] 用户 %s 的作品 -> %d 条", uid, len(results))
+        return results
 
     async def get_detail(self, item_id: str):
         """详情：搜索结果里已含全部字段，这里**不重新请求**（返回 None）。"""
