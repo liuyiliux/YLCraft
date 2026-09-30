@@ -327,6 +327,18 @@ class DouyinClient(BasePlatformClient):
                 len(collected), want, offset,
             )
 
+        # ⚠️ **给前端 `_has_more`**（2026-09-29 补）
+        #
+        # 原来不设 → 前端**没有「下一页」入口**（用户反映"搜索没有更多页"）。
+        #
+        # 但抖音这里要**如实**：实测 offset 翻页服务端已失效
+        # （见方法 docstring：offset=20 返回 0 条，浏览器里也一样）。
+        # 所以只有"本页拿满且有 cursor"时才说还有更多 —— 不编造。
+        if collected and len(collected) >= page_size:
+            collected[0].raw_data["_has_more"] = bool(data.get("has_more"))
+        elif collected:
+            collected[0].raw_data["_has_more"] = False
+
         return collected[:want]
 
     async def search_page(

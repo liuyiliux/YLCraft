@@ -554,6 +554,15 @@ class BilibiliClient(BasePlatformClient):
         # 把总条数存入第一个结果的 raw_data，供上层读取
         if results and total:
             results[0].raw_data["_total"] = total
+        # ⚠️ **还要给 `_has_more`**（2026-09-29 补）
+        #
+        # 前端靠它决定要不要显示「下一页」。只给 `_total` 不够 ——
+        # 实测 B站能正常翻（page=2/3 首条都不同），但前端**没有翻页入口**
+        # （用户反映"搜索没有更多页"，X 也是同一个问题）。
+        #
+        # 判据：本页拿满了 page_size 就认为还有更多（B站按页给）。
+        if results:
+            results[0].raw_data["_has_more"] = len(results) >= page_size
 
         return results
 

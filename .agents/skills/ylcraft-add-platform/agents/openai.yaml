@@ -1,0 +1,4 @@
+interface:
+  display_name: "YLCraft Add Platform"
+  short_description: "Add or audit a content platform across all seven layers."
+  default_prompt: "Use $ylcraft-add-platform to add a new platform end-to-end (backend + frontend + cookies + download + assets) and verify it with the full matrix."
