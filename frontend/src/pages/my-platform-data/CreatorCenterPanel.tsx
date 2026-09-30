@@ -81,6 +81,7 @@ function RateTag({ rate, theme }: { rate?: number | null; theme: any }) {
 export default function CreatorCenterPanel({ platform }: { platform: string }) {
   const { theme: THEME } = useTheme()
   const isXhs = platform === 'xiaohongshu'
+  const isDouyin = platform === 'douyin'
 
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
@@ -92,6 +93,20 @@ export default function CreatorCenterPanel({ platform }: { platform: string }) {
   const [works, setWorks] = useState<any[]>([])
 
   const load = useCallback(async () => {
+    // ⚠️ **只有抖音/小红书有创作者中心**（2026-09-29 修）
+    //
+    // 原来写成 `if (isXhs) {...} else {...抖音...}` ——
+    // **`else` 无条件走抖音**，于是选了**微博**也会拉抖音的创作者数据，
+    // 界面上显示的是"别人的数据"（用户反馈"微博下面有不知道是抖音
+    // 还是小红书的数据"）。
+    //
+    // 微博/X 没有对应的创作者中心接口，所以**直接不加载**。
+    if (!isXhs && !isDouyin) {
+      setMetrics([]); setWorks([]); setFans(null); setSummary('')
+      setErr('')
+      setLoading(false)
+      return
+    }
     setLoading(true); setErr(''); setMetrics([]); setSummary(''); setFans(null); setWorks([])
     try {
       if (isXhs) {

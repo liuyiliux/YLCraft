@@ -52,6 +52,11 @@ const PLATFORMS = [
   // m.weibo.cn 无效，实测 `/api/config` 返回 login=False）。
   // 实测：想见雪- 粉丝8 关注11 微博237。
   { value: 'weibo', label: '微博', connKeys: ['weibo', 'wb'] },
+  // ⚠️ X 也在这里（2026-09-29 补）
+  //
+  // 之前漏了 —— 明明后端已支持（`/users/me` + `/users/videos`
+  // 都实测可用），但下拉里没有，用户根本选不到。
+  { value: 'twitter', label: 'X', connKeys: ['twitter', 'x', 'tw'] },
 ]
 
 function formatCount(n: number | undefined | null): string {
@@ -311,8 +316,13 @@ export default function MyPlatformDataPage() {
               />
             </Card>
 
-            {/* 创作者中心：只有号主能看的运营数据（曝光/完播率/主页访客…） */}
-            <CreatorCenterPanel platform={platform} />
+            {/* 创作者中心：只有号主能看的运营数据（曝光/完播率/主页访客…）
+                ⚠️ **只有抖音/小红书有**（2026-09-29）——
+                微博/X 没有对应接口，无脑渲染会拉到**别的平台的数据**
+                （用户反馈"微博下面有不知道是抖音还是小红书的数据"）。 */}
+            {(platform === 'douyin' || platform === 'xiaohongshu') && (
+              <CreatorCenterPanel platform={platform} />
+            )}
           </>
         ) : (
           <Card style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>
