@@ -33,7 +33,7 @@ from typing import Any, Dict, List, Optional
 
 from ..base import BasePlatformClient, register_platform
 from ..session_pool import PooledSession, get_session_pool
-from ..types import SearchParams, SearchResult, UserProfile
+from ..types import LoginExpiredError, SearchParams, SearchResult, UserProfile
 from .apis import (
     BASE,
     PROFILE_GET,
@@ -489,7 +489,9 @@ class KuaishouClient(BasePlatformClient):
                 uri, result, payload.get("error_msg"), hint,
             )
             if uri in (PROFILE_GET, PROFILE_FEED):
-                raise RuntimeError(
+                # ⚠️ 用 `LoginExpiredError` —— API 层会映射成 **401**
+                # （不是 500）。语义是"需要重新登录"，用户可以自己解决。
+                raise LoginExpiredError(
                     f"[kuaishou] {hint}（result={result}）。\n"
                     "⚠️ 快手的**搜索不需要登录**，所以「搜索能用」不等于"
                     "「登录态有效」。\n"

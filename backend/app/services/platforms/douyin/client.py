@@ -24,6 +24,7 @@ from ..base import BasePlatformClient, register_platform
 from ..types import (
     ClientConfig,
     ClientMode,
+    LoginExpiredError,
     NoteDetail,
     SearchParams,
     SearchResult,
@@ -517,8 +518,23 @@ class DouyinClient(BasePlatformClient):
         )
         user = data.get("user")
         if not isinstance(user, dict) or not user:
-            logger.warning("[douyin] profile/self 未返回 user（可能未登录）")
-            return None
+            # ⚠️ **要给可操作错误，不能静默返回 None**（2026-09-30）
+            #
+            # 原来只 `logger.warning` + `return None` —— 用户看到**空白**，
+            # 不知道是登录态失效了。
+            #
+            # 抖音的 `status_code` 能说明原因（实测）：
+            #   8    → 未登录
+            #   0+空 user → 风控/环境被降级
+            sc = data.get("status_code")
+            reason = {
+                8: "未登录（status_code=8）",
+            }.get(sc, f"接口未返回 user（status_code={sc}）")
+            logger.warning("[douyin] profile/self %s", reason)
+            raise LoginExpiredError(
+                f"[douyin] {reason} —— 取不到自己的资料。\n"
+                "请在「账号中心」重新获取抖音登录态后重试。"
+            )
         profile = parse_user_info(user)
         # 自查接口给的是 uid 而非 sec_uid 时，sec_uid 也在 user 里
         return profile

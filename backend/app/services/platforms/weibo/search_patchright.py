@@ -42,6 +42,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from ...browser.patchright_runtime import get_patchright_runtime
+from ..types import LoginExpiredError
 from ..session_pool import PooledSession, SessionPool
 from ..types import SearchParams, SearchResult, UserProfile
 from .apis import build_search_params
@@ -545,11 +546,26 @@ async def get_self_profile_via_patchright(
         return None
 
     if not (config.get("data") or {}).get("login"):
+        # ⚠️ **抛可操作错误，不能静默返回 None**（2026-09-30）
+        #
+        # 原来只 `logger.info` + `return None` —— 用户看到**空白**，
+        # 不知道是"没登录"还是"接口坏了"。
+        #
+        # ⚠️ 而且**必须登录才继续**：未登录时页面里的 `/profile/{uid}`
+        # 全是**别的用户**（实测抓到 uid=7918597670「蓟海棠」275万粉），
+        # 继续下去会拿到**别人的资料** —— 那比没有数据危险得多。
         logger.info(
             "[weibo] 未登录 —— 「我的数据」需要登录后才能确定身份"
             "（未登录时页面里的 /profile/ 链接都是别的用户，不能拿来当自己）"
         )
-        return None
+        raise LoginExpiredError(
+            "[weibo] 未登录 —— 「我的数据」必须先登录才能确定身份。\n"
+            "⚠️ 微博的**搜索不需要登录**（Service Worker 上下文），"
+            "所以「搜索能用」不等于「已登录」。\n"
+            "请在「账号中心」重新获取微博登录态（注意要在 **m 站**登录："
+            "主站的登录态在 m.weibo.cn 无效，实测 `/api/config` 返回 "
+            "login=False）。"
+        )
 
     # 2) 已登录才从页面找自己的 uid
     uid = await session.page.evaluate(JS_FIND_SELF_UID)
