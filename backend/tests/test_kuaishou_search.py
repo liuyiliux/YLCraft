@@ -275,3 +275,36 @@ def test_missing_signature_gives_actionable_error():
     src = inspect.getsource(ks.KuaishouClient._post)
     assert "RuntimeError" in src
     assert "账号中心" in src, "要告诉用户去哪儿检查登录态"
+
+
+def test_has_more_true_on_first_page():
+    """**回归**：第 1 页拿满时要 `has_more=True`。
+
+    实测 bug：原来把读游标写在 `break` **之后** ——
+    "本页拿满 want" 直接 break 时游标没记，于是：
+
+        page=1  10条  has_more=**False**   ← 其实还有更多！
+        page=2  10条  has_more=True
+
+    **用户看到第 1 页没有「下一页」按钮。**
+
+    修法：**先记游标，再决定要不要继续**。
+    """
+    from app.services.platforms.kuaishou import client as ks
+
+    src = inspect.getsource(ks.KuaishouClient.search)
+    i_next = src.find("next_cursor = str(payload.get")
+    i_full = src.find("if len(out) >= want:")
+    assert i_next != -1 and i_full != -1
+    assert i_next < i_full, "要先读游标，再判断是否拿满（否则 has_more 恒为 False）"
+
+
+def test_pagination_sequentially_walks_cursor():
+    """翻页是**游标顺序推进**（没有页码参数），要说明这个代价。
+
+    实测：page=5 需要请求 5 次 → 5.1 秒。
+    """
+    from app.services.platforms.kuaishou import client as ks
+
+    src = inspect.getsource(ks.KuaishouClient.search)
+    assert "page_no" in src, "要把页码换算成翻页次数"

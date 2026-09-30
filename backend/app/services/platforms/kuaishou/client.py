@@ -251,10 +251,23 @@ class KuaishouClient(BasePlatformClient):
                 seen.add(parsed["id"])
                 out.append(self._to_result(parsed))
 
-            if len(out) >= want:
-                break
+            # ⚠️ **先记下游标，再决定要不要继续**（2026-09-30 修）
+            #
+            # 原来把读游标写在 `break` **之后** —— 于是"本页拿满 want"
+            # 直接 break 时游标没记，`_has_more` 恒为 False：
+            #
+            #     page=1  10条  has_more=**False**   ← 其实还有更多！
+            #     page=2  10条  has_more=True
+            #
+            # 用户看到第 1 页没有「下一页」按钮。
             next_cursor = str(payload.get("pcursor") or "")
+
+            if len(out) >= want:
+                # 拿够了 —— 但要知道"还有没有下一页"
+                pcursor = next_cursor
+                break
             if not next_cursor or next_cursor == pcursor:
+                pcursor = ""
                 break
             pcursor = next_cursor
 
