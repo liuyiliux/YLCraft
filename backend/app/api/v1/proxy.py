@@ -11,8 +11,8 @@ import mimetypes
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
-from starlette.responses import Response
+from fastapi import APIRouter, HTTPException, Query, Request
+from starlette.responses import Response, StreamingResponse
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.proxy")
@@ -128,6 +128,122 @@ async def proxy_image(
     支持缓存（Cache-Control: public, max-age=86400）。
     """
     return await fetch_remote_image_response(url)
+
+
+# =============================================================================
+# 视频代理（2026-09-29）
+# =============================================================================
+#
+# ## 为什么必须代理（实测）
+#
+# 用户反馈：详情里点播放 → "视频直链无法直接播放（可能被防盗链限制）"。
+#
+# 实测 X 的视频直链（`video.twimg.com`）：
+#
+#     裸请求（无 Referer）           → HTTP 200  ✅
+#     带 Origin/Referer（localhost） → **HTTP 403** ❌
+#     带 Range                       → HTTP 206  ✅
+#
+# **浏览器 `<video>` 必然会带 Referer** —— 所以直链在浏览器里**一定失败**。
+# 这与图片相反：图片**需要** Referer，视频**不能有** Referer。
+#
+# 所以视频走独立代理：**不发 Referer**，并把浏览器的 `Range` 头透传
+# 给源站（否则拖不了进度条，也不能边下边播）。
+#
+# ## 与图片代理的关键差异
+#
+#   · 不发 `Referer`（发了反而 403）
+#   · **透传 `Range`** 并回传 `206` + `Content-Range`（支持拖动）
+#   · 不读全量到内存（视频 4MB~几十 MB）—— 但为了简单起见，
+#     这里仍用流式转发给客户端，避免一次性占用内存
+
+# 明确**不发** Referer 的域名（发了会被拒）。
+# 实测 video.twimg.com 带 Referer → 403。
+_NO_REFERER_HOSTS = ("twimg.com", "video.twimg.com")
+
+
+@router.get("/video", summary="视频代理（去 Referer + 支持 Range）")
+async def proxy_video(
+    url: str = Query(..., description="视频 URL，需要 URL编码"),
+    request: Request = None,  # type: ignore[assignment]
+):
+    """视频代理：**剥掉 Referer**、**透传 Range**。
+
+    ## 为什么要剥 Referer
+
+    实测 X 的 CDN：带 `Referer` → **403**；不带 → 200。
+    而浏览器 `<video>` 一定会带 —— 所以必须由后端代请求。
+
+    ## 为什么要透传 Range
+
+    浏览器的 `<video>` 会先发 `Range: bytes=0-` 探测，
+    拖动进度条也会发 Range。不透传的话：
+      · 不能拖动
+      · 部分浏览器直接报错（拿不到 206）
+
+    ## 响应
+
+    把源站的 `status_code`（200/206）、`Content-Range`、
+    `Accept-Ranges`、`Content-Length` 原样回给前端。
+    """
+    if not url or not url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="无效的视频 URL")
+
+    hostname = (urlparse(url).hostname or "").lower()
+    send_referer = not any(h in hostname for h in _NO_REFERER_HOSTS)
+
+    headers: dict[str, str] = {
+        "User-Agent": _BROWSER_UA,
+        "Accept": "*/*",
+    }
+    if send_referer:
+        headers["Referer"] = _guess_referer(url)
+    # 透传 Range（拖动进度条 / 边下边播都靠它）
+    range_header = request.headers.get("range") if request is not None else None
+    if range_header:
+        headers["Range"] = range_header
+
+    try:
+        client = httpx.AsyncClient(timeout=60.0, verify=False, follow_redirects=True)
+        req = client.build_request("GET", url, headers=headers)
+        resp = await client.send(req, stream=True)
+    except Exception as exc:
+        logger.error("[proxy/video] 请求失败: %s: %s", type(exc).__name__, exc)
+        raise HTTPException(status_code=502, detail=f"视频代理失败: {type(exc).__name__}")
+
+    if resp.status_code >= 400:
+        await resp.aclose()
+        await client.aclose()
+        logger.warning("[proxy/video] HTTP %s for %s", resp.status_code, url[:80])
+        raise HTTPException(
+            status_code=resp.status_code,
+            detail=f"视频请求失败: HTTP {resp.status_code}",
+        )
+
+    # 只回传播放需要的头
+    out_headers = {
+        "Cache-Control": "public, max-age=3600",
+        "Access-Control-Allow-Origin": "*",
+        "Accept-Ranges": resp.headers.get("accept-ranges", "bytes"),
+    }
+    for key in ("content-range", "content-length"):
+        if resp.headers.get(key):
+            out_headers[key.title()] = resp.headers[key]
+
+    async def _stream():
+        try:
+            async for chunk in resp.aiter_bytes(64 * 1024):
+                yield chunk
+        finally:
+            await resp.aclose()
+            await client.aclose()
+
+    return StreamingResponse(
+        _stream(),
+        status_code=resp.status_code,
+        media_type=resp.headers.get("content-type", "video/mp4"),
+        headers=out_headers,
+    )
 
 
 # =============================================================================
