@@ -101,14 +101,36 @@ STRONG_COOKIE_PREFIX = "kuaishou.server.web"
 #   · 检测器报"成功"（**假阳性**）
 #   · 存下的是**未登录的 cookie**
 #   · 用户下次来还得扫码（"为啥又要扫码"）
-#   · `profile/get` 恒返回 `result:2`（页面 UI 也显示"登录即可享受"）
 #
-# `ADDING_A_PLATFORM.md` 早就警告过：
-#   "会把游客误判成已登录，存下一个**没有登录凭证的废连接**"
+# ## ⚠️ 但 `/rest/v/profile/get` **不能用**（我的第二次踩坑）
 #
-# **可靠判据**：`/rest/v/profile/get` —— 登录时 `result=1`，
-# 未登录时 `result=2`（实测：页面自己发也是 2）。
-PROFILE_API = "https://www.kuaishou.com/rest/v/profile/get"
+# 我改成用它做确认 —— 而实测它在**没有签名**时返回：
+#
+#     {"result":50,"error_msg":"签名验证失败"}
+#
+# **`50` 是"签名验证失败"，不是"未登录"**（未登录才是 `2`）。
+# 于是用户明明登录了（页面左下角有头像），检测器却报"未登录"：
+#
+#     [kuaishou] cookie 有登录痕迹，但接口返回 result=50 → 判为未登录
+#
+# 而 `/rest/v/profile/get` 在**签名白名单**里（调研报告 `SIG4_WHITELIST`），
+# 检测器里拿不到签名 → 必然 50。
+#
+# ## 所以现在的判据：**看页面 UI 的"未登录"提示**
+#
+# 实测可靠（比 cookie 稳、比带签名的接口简单）：
+#
+#     未登录 → 页面出现「登录即可享受…立即登录」
+#     已登录 → 该文案**消失**（左下角出现自己的头像）
+#
+# 判不出来一律按"未登录"（`ADDING_A_PLATFORM.md` 的规矩）。
+UNUSABLE_SIGNED_API = "https://www.kuaishou.com/rest/v/profile/get"
+
+# 未登录时页面会出现的文案（实测）
+LOGIN_HINT_TEXTS = (
+    "登录即可享受",
+    "立即登录",
+)
 
 # 实测**不可用**的校验接口（留档，免得后人再试）：
 #
@@ -136,23 +158,30 @@ async (url) => {
 class KuaishouDetector(PlatformDetector):
     """快手登录检测。
 
-    ## 判据：**cookie 有登录痕迹 → 再用接口确认**（2026-09-30 修正）
+    ## 判据：**cookie 初筛 + 页面 UI 确认**（2026-09-30 第二次修正）
 
-    见模块 docstring：
-      · 原来用模糊 CSS 选择器 —— 快手首页本来就有别人的头像/昵称，未登录也命中
-      · 改成只判 cookie 后**仍然假阳性** —— 实测访客也有 `webday7_st`，
-        于是"检测成功 → 存下废连接 → 用户下次还得扫码"
-      · 现在加**接口确认**：`/rest/v/profile/get` 登录时 `result=1`、
-        未登录 `result=2`
+    踩过两次：
+
+      · 第一次用模糊 CSS 选择器 —— 首页有**别人的**头像/昵称，未登录也命中
+      · 第二次改成只判 cookie —— **访客也有 `webday7_st`**，仍然假阳性
+        （用户："为啥又要扫码"）
+      · 第三次我用 `/rest/v/profile/get` 做确认 —— 但它在**签名白名单**里，
+        检测器拿不到签名 → 返回 **`result=50`（签名验证失败）**，
+        被我误当成"未登录" → **明明登录了却报未登录**
+
+    **现在的判据**：看页面**是否出现未登录文案**（实测最可靠）：
+
+        未登录 → 出现「登录即可享受…立即登录」
+        已登录 → 该文案**消失**（左下角出现自己的头像）
     """
 
     async def detect(self, page) -> bool:
-        """检测用户是否已登录快手（cookie 初筛 + **接口确认**）。"""
+        """检测用户是否已登录快手。"""
+        # ---- 初筛：cookie 里连登录痕迹都没有 → 直接未登录（省一次 DOM 查询）----
         try:
             cookies = await page.context.cookies("https://www.kuaishou.com")
         except Exception as exc:
             logger.warning("[kuaishou] 读 cookie 失败：%s", type(exc).__name__)
-            # 读不到就按未登录 —— 宁可不给，也不要存废连接
             return False
 
         names = {c.get("name") for c in (cookies or [])}
@@ -161,52 +190,54 @@ class KuaishouDetector(PlatformDetector):
             for n in names
         )
         has_uid = any(n in names for n in LOGIN_COOKIES_EXACT)
-
-        # ---- 初筛：连登录痕迹都没有 → 直接未登录（省一次请求）----
         if not has_sess and not has_uid:
             logger.info("[kuaishou] 未检测到登录 cookie（只有设备标识）")
             return False
 
-        # ---- 确认：必须问站点接口 ----
+        # ---- 确认：看页面有没有"未登录"文案 ----
         #
-        # ⚠️ **不能只信 cookie**：实测访客也有 `webday7_st`，
-        # 只判 cookie 会把游客当成已登录（用户反馈"为啥又要扫码"）。
+        # ⚠️ **不能用带签名的接口**（`/rest/v/profile/get` 在白名单里，
+        # 检测器拿不到签名 → `result=50` 会被误当成未登录）。
+        #
+        # ⚠️ **不能用 DOM 上的头像/昵称** —— 首页那些是**别人的**。
         try:
-            raw = await page.evaluate(_JS_FETCH, PROFILE_API)
-            import json as _json
-
-            data = _json.loads(raw) if isinstance(raw, str) else (raw or {})
-            result = data.get("result")
-            if result == 1:
-                logger.info("[kuaishou] 接口确认已登录（profile/get result=1）")
-                return True
-            logger.info(
-                "[kuaishou] cookie 有登录痕迹，但接口返回 result=%s "
-                "→ **判为未登录**（访客也有 webday7_st，不能只看 cookie）",
-                result,
+            text = await page.evaluate(
+                "() => (document.body.innerText || '')"
             )
-            return False
         except Exception as exc:
-            logger.warning(
-                "[kuaishou] 接口确认失败（%s）→ 保守判为未登录",
-                type(exc).__name__,
-            )
-            # 判不出来一律按"未登录"（`ADDING_A_PLATFORM.md` 的规矩）
+            logger.warning("[kuaishou] 读页面文本失败：%s → 保守判未登录",
+                           type(exc).__name__)
             return False
-            return True
+
+        blob = str(text or "")
+        if not blob.strip():
+            logger.info("[kuaishou] 页面为空 → 保守判未登录")
+            return False
+
+        hit = [t for t in LOGIN_HINT_TEXTS if t in blob]
+        if hit:
+            logger.info(
+                "[kuaishou] 页面出现未登录提示 %s（cookie 有痕迹但**未登录**）",
+                hit,
+            )
+            return False
+
+        logger.info(
+            "[kuaishou] 页面无未登录提示 + cookie 有登录痕迹 → 判为已登录",
+        )
+        return True
 
     async def extract_account_info(self, page) -> dict:
         """提取快手账号信息。
 
-        ## 来源（按可靠性排序）
+        ⚠️ **只从 cookie 取 `userId`**，昵称/头像**留空**（不编造）：
 
-        1. **`/rest/v/profile/get`**（登录时 `result=1`）—— 能拿到昵称/头像。
-           实测未登录时返回 `result=2`，所以拿不到就**留空**（不编造）。
-        2. `userId` 从 cookie 取（**注意：访客也可能有这个 cookie**，
-           所以只在接口确认后才可信）。
+          · **不读 DOM** —— 实测首页的昵称/头像是**别人的**（信息流作者）
+          · **不用 `/rest/v/profile/get`** —— 它在签名白名单里，
+            这里拿不到签名（返回 `result=50`，见模块 docstring）
 
-        ⚠️ **不读 DOM** —— 实测快手首页的昵称/头像是**别人的**
-        （信息流作者），不是登录用户。
+        需要昵称的话，用 `userId` 去请求**公开的用户主页接口**
+        （那是另一条路，还没做）。
         """
         info = {
             "account_id": None,
@@ -215,33 +246,7 @@ class KuaishouDetector(PlatformDetector):
             "account_url": None,
         }
 
-        # ① 接口优先（能拿到昵称/头像）
-        try:
-            raw = await page.evaluate(_JS_FETCH, PROFILE_API)
-            import json as _json
-
-            data = _json.loads(raw) if isinstance(raw, str) else (raw or {})
-            if data.get("result") == 1:
-                d = data.get("data") or {}
-                user = d.get("user") if isinstance(d.get("user"), dict) else d
-                uid = str(user.get("id") or user.get("userId") or "")
-                if uid:
-                    info["account_id"] = uid
-                    info["account_url"] = (
-                        f"https://www.kuaishou.com/profile/{uid}"
-                    )
-                name = user.get("name") or user.get("userName")
-                avatar = user.get("headUrl") or user.get("headurl")
-                if name:
-                    info["account_name"] = str(name)
-                if avatar:
-                    info["account_avatar"] = str(avatar)
-                if info["account_id"] or info["account_name"]:
-                    return info
-        except Exception as exc:
-            logger.debug("[kuaishou] 接口取资料失败：%s", type(exc).__name__)
-
-        # ② 兜底：cookie 里的 userId（**不取昵称** —— 拿不到就留空）
+        # 兜底：cookie 里的 userId（**不取昵称** —— 拿不到就留空）
         try:
             cookies = await page.context.cookies("https://www.kuaishou.com")
             for c in cookies or []:

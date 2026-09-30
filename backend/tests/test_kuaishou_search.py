@@ -348,3 +348,37 @@ def test_session_injects_cookies():
     assert "add_cookies" in inj
     assert ".kuaishou.com" in inj
     assert "userId" in inj, "要能报告登录 cookie 是否存在"
+
+
+def test_detector_does_not_use_signed_api():
+    """**回归**：检测器**不能**用需要签名的接口做判据。
+
+    ## 我踩的第三次坑
+
+    为了修"访客也有 webday7_st"的假阳性，我改用
+    `/rest/v/profile/get` 做确认 —— **但它在签名白名单里**
+    （调研报告 `SIG4_WHITELIST`），检测器拿不到签名，于是返回：
+
+        {"result":50,"error_msg":"签名验证失败"}
+
+    **`50` 是签名失败，不是未登录**（未登录是 `2`）。我把它当成
+    "未登录" → 用户明明登录了（左下角有头像），检测器却报未登录。
+
+    ## 正确判据（实测）
+
+        未登录 → 页面出现「登录即可享受…立即登录」
+        已登录 → 该文案消失
+
+    `LOGIN_HINT_TEXTS` 就是这两个文案。
+    """
+    from app.services.cookies.platforms import kuaishou
+
+    assert "登录即可享受" in kuaishou.LOGIN_HINT_TEXTS
+    assert hasattr(kuaishou, "UNUSABLE_SIGNED_API"), "要留档不可用的接口"
+    src = inspect.getsource(kuaishou.KuaishouDetector.detect)
+    assert "LOGIN_HINT_TEXTS" in src
+    assert "PROFILE_API" not in src, "不该用需要签名的接口"
+
+    # 账号信息也不该读 DOM（那是**别人的**昵称）
+    ext = inspect.getsource(kuaishou.KuaishouDetector.extract_account_info)
+    assert "query_selector" not in ext
