@@ -2440,7 +2440,18 @@ export default function CrawlerPage() {
                   {previewVideoUrl && (
                     <div style={{ marginBottom: 16 }}>
                       <video
-                        src={previewVideoUrl}
+                        // ⚠️ **必须走后端代理**（2026-09-29 实测）
+                        //
+                        // 浏览器 `<video>` 一定会带 `Referer`，而 X 的 CDN
+                        // **带 Referer 就返回 403**：
+                        //
+                        //     裸请求（无 Referer）           → 200 ✅
+                        //     带 Origin/Referer（localhost） → **403** ❌
+                        //
+                        // 所以直链在浏览器里**必然失败**（用户报
+                        // "视频直链无法直接播放"）。走后端代理，
+                        // 由后端**剥掉 Referer** 并透传 `Range`。
+                        src={`/api/v1/proxy/video?url=${encodeURIComponent(previewVideoUrl)}`}
                         controls
                         preload="metadata"
                         poster={previewMediaUrls[detailMediaIdx] ? proxyImageUrl(previewMediaUrls[detailMediaIdx], 800) : undefined}
@@ -2449,8 +2460,17 @@ export default function CrawlerPage() {
                           background: '#000', display: 'block',
                         }}
                         // 加载失败时给可操作提示（不静默黑屏）
-                        onError={() => message.warning('视频直链无法直接播放（可能被防盗链限制），请点「打开原文」')}
+                        onError={() => message.warning('视频无法播放（源站可能已删除或限制），请点「打开原文」')}
                       />
+                      <div style={{ marginTop: 6, textAlign: 'right' }}>
+                        <Button
+                          type="link" size="small" icon={<DownloadOutlined />}
+                          href={`/api/v1/proxy/video?url=${encodeURIComponent(previewVideoUrl)}`}
+                          target="_blank"
+                        >
+                          在新窗口打开视频
+                        </Button>
+                      </div>
                     </div>
                   )}
 
