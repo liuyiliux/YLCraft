@@ -167,15 +167,20 @@ class QrcodeAdapter(ABC):
 PLATFORM_LOGIN_URLS = {
     "xhs": "https://www.xiaohongshu.com",
     "douyin": "https://www.douyin.com",
-    # ⚠️ 快手要指向**能触发登录**的页面，不是信息流首页（2026-09-29 修）
+    # ⚠️ 快手：用**能触发登录**的页面，不要首页也不要瞎猜路径（2026-09-29）
     #
-    # 用户反馈："打开的网址不是登录的 我点击登录是弹窗的 扫码完没判断获取到"
+    # 用户反馈："打开的网址不是登录的 我点击登录是弹窗的"
     #
-    # 原来指向 `https://www.kuaishou.com`（推荐流）—— 用户看到的是一个
-    # 信息流页面，还得自己找登录入口（而且点开是弹窗）。
+    # 踩过两次：
+    #   ① `https://www.kuaishou.com`（推荐流）—— 用户要在信息流里自己找登录
+    #   ② `https://www.kuaishou.com/profile` —— **跳到 404**！
+    #      实测个人页真实路径是 `/profile/{userId}`（带 ID），
+    #      裸 `/profile` 不存在。
     #
-    # `/profile`（我的主页）未登录时会引导登录，比首页直接。
-    "kuaishou": "https://www.kuaishou.com/profile",
+    # 所以回到首页 —— 但**检测逻辑改成 cookie 优先**
+    # （见 `cookies/platforms/kuaishou.py`），
+    # 这样用户即使不主动点登录，只要 profile 里已有登录态也能被识别。
+    "kuaishou": "https://www.kuaishou.com/new-reco",
     "bilibili": "https://www.bilibili.com",
     "weibo": (
         # ⚠️ **用 m 站的登录入口**（2026-09-29）
