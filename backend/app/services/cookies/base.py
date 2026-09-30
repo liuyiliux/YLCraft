@@ -29,6 +29,17 @@ class AcquisitionStatus(str, Enum):
     COOKIES_EXTRACTED = "cookies_extracted"         # Cookie 已提取
     SAVING = "saving"                                # 正在保存
     SUCCESS = "success"                              # 成功
+    # ⚠️ **"已保存成功，窗口再留一会儿让用户确认/覆盖"**（2026-09-29 加）
+    #
+    # 原来这段确认期把状态**改回 `WAITING_FOR_LOGIN`** ——
+    # 于是前端显示"请在浏览器中完成登录"，看起来像**卡住了**：
+    #
+    #     用户反馈："还是等待 但是这里看有cookie了"
+    #     （cookie 明明已存库，连接也是 ACTIVE，但弹窗一直转）
+    #
+    # 语义上这也是错的：此时**已经成功了**，只是窗口没关。
+    # 所以单独一个状态，前端按"成功"渲染。
+    CONFIRMING = "confirming"                        # 已保存，窗口保留待确认
     FAILED = "failed"                                # 失败
     CANCELLED = "cancelled"                          # 已取消
     EXPIRED = "expired"                              # 二维码过期
@@ -46,6 +57,9 @@ STATUS_MESSAGES = {
     AcquisitionStatus.COOKIES_EXTRACTED: "Cookie 提取成功",
     AcquisitionStatus.SAVING: "正在保存...",
     AcquisitionStatus.SUCCESS: "Cookie 获取成功！",
+    # 已成功、窗口保留待确认 —— 文案要说清"**已经成功了**"，
+    # 否则用户以为还在等（原来复用了"请在浏览器中完成登录"，就是这个问题）
+    AcquisitionStatus.CONFIRMING: "Cookie 已保存成功！窗口会保留一会儿，可直接关闭",
     AcquisitionStatus.FAILED: "获取失败",
     AcquisitionStatus.CANCELLED: "已取消",
     AcquisitionStatus.EXPIRED: "二维码已过期，请刷新重试",

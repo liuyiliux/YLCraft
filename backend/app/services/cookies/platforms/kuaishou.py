@@ -30,26 +30,37 @@ YLCraft — 快手平台适配器
 > 登录检测必须问站点自己的接口，不能看 URL、也不能只看 CSS 类名。
 > ……**判不出来一律按"未登录"处理**，不要乐观假设。
 
-### 现在的判据（**cookie 优先，全部实测确认**）
+### Q: 检测的是「有 cookie」还是「真的登录了」？
 
-1. **cookie 判据**（唯一可靠的）
-   —— 实测登录后 cookie 里有 **`userId`**（如 `5372574395`）：
+**用户问得很对**（2026-09-29）。实测两种情况：
 
-       clientid / did / kpf / kpn / ktrace-context / kwfv1 /
-       kwpsecproductname / kwscode / kwssectoken /
-       kuaishou.server.webday7_ph / kuaishou.server.webday7_st / **userId**
+    未登录（全新上下文，无 cookie）  → False  ✅ 正确
+    只有伪造的 userId                → **True** ⚠️ **误判！**
 
-   ⚠️ 注意实际名字是 **`kuaishou.server.webday7_st`**（带 `day7`），
-   **不是** `kuaishou.server.web_st` —— 我第一版按印象写错了。
-   所以这里用**后缀匹配**（`kuaishou.server.web` + `_st`），
-   免得平台改 cookie 名（`webday7` / `web` 都见过）。
+**即"有 cookie"≠"cookie 有效"** —— 这正是 `ADDING_A_PLATFORM.md` 警告过的：
 
-2. ~~站点接口~~ —— **实测不可用**：
-   `/rest/wd/user/profile` 返回
-   `{"result":2001,"error_msg":"[2001] antispam need captcha"}` ——
-   **有风控，不能当登录判据**。
+> 会把游客误判成已登录，存下一个**没有登录凭证的废连接**，
+> 之后所有搜索都失败且**极难定位**。
 
-3. 判不出来 → **按未登录处理**（保守，不猜）。
+### 但快手**没有可用的校验接口**（都实测过）
+
+    /rest/wd/user/profile   → {"result":2001,"antispam need captcha"}  ← 风控
+    /rest/wd/user/fullInfo  → 空响应
+    /rest/wd/user/userInfo  → 空响应
+    /rest/wd/user/profile?userId=X → {"result":2}  （真假 userId 都是 2，无法区分）
+
+所以**做不到"真实验证"**。
+
+### 折中做法（**如实暴露不确定性，而不是假装可靠**）
+
+  1. cookie 命中 → 返回 True，但**把判据等级放进日志**：
+     `userId` 是弱判据（可能是脏数据），
+     `kuaishou.server.web*_st` 是强判据（服务端下发的会话）
+  2. cookie 不命中 → False
+  3. **不谎报"已验证"** —— 因为验证不了
+
+**给上层的建议**（写在注释里）：快手连接"是否有效"最终要靠
+**实际搜索能否成功**来确认；检测只用来避免存"完全没登录"的废连接。
 """
 
 from __future__ import annotations
@@ -71,12 +82,21 @@ LOGIN_COOKIES_EXACT = ("userId",)
 LOGIN_COOKIE_SUFFIX = "_st"
 LOGIN_COOKIE_PREFIX = "kuaishou.server.web"
 
-# ⚠️ 实测**不可用**的接口（保留记录，避免后人再试）
+# 会话 cookie（强判据：服务端下发的登录会话）
+#
+# 与 `userId`（弱判据 —— 可能是脏数据）区分，用于日志里如实标注可信度。
+STRONG_COOKIE_PREFIX = "kuaishou.server.web"
+
+# ⚠️ 实测**不可用**的校验接口（留档，免得后人再试）：
 #
 #     GET /rest/wd/user/profile
-#     → {"result":2001,"error_msg":"[2001] antispam need captcha"}
+#     → {"result":2001,"error_msg":"[2001] antispam need captcha"}   ← 风控
 #
-# 有风控，**不能当登录判据**。
+#     GET /rest/wd/user/fullInfo    → 空响应
+#     GET /rest/wd/user/userInfo    → 空响应
+#     GET /rest/wd/user/profile?userId={真|假}  → 都是 {"result":2}，无法区分
+#
+# 所以**快手做不到"验证 cookie 是否真的有效"**，只能判"有没有"。
 UNUSABLE_PROFILE_API = "https://www.kuaishou.com/rest/wd/user/profile"
 
 # 在页面上下文里 fetch（带上 cookie），返回原始 JSON 字符串
@@ -95,15 +115,19 @@ async (url) => {
 class KuaishouDetector(PlatformDetector):
     """快手登录检测。
 
-    ## 判据：**cookie → 未登录**
+    ## 判据：**cookie → 未登录**（⚠️ 只能判"有没有"，**判不了"有没有效"**）
 
-    见模块 docstring：原来用模糊 CSS 选择器，
-    而快手首页本来就有别人的头像/昵称，**未登录也会命中**。
-    站点接口又被风控挡住，所以**只信 cookie**。
+    见模块 docstring：
+      · 原来用模糊 CSS 选择器 —— 快手首页本来就有别人的头像/昵称，未登录也命中
+      · 站点接口全被风控挡或无法区分真假 userId → **做不到真实验证**
     """
 
     async def detect(self, page) -> bool:
-        """检测用户是否已登录快手（只看 cookie）。"""
+        """检测用户是否已登录快手。
+
+        ⚠️ **只判"有没有登录 cookie"，判不了"cookie 是否有效"**。
+        真实验证要靠实际搜索能否成功（见模块 docstring）。
+        """
         try:
             cookies = await page.context.cookies("https://www.kuaishou.com")
         except Exception as exc:
@@ -113,25 +137,28 @@ class KuaishouDetector(PlatformDetector):
 
         names = {c.get("name") for c in (cookies or [])}
 
-        # 精确命中：userId
-        hit = [n for n in LOGIN_COOKIES_EXACT if n in names]
-        if hit:
-            logger.info("[kuaishou] 检测到登录 cookie：%s", ", ".join(hit))
-            return True
-
-        # 后缀命中：kuaishou.server.web*_st（名字含 day7 之类）
+        # ① 强判据：服务端下发的会话 cookie
         sess = [
             n for n in names
-            if n.startswith(LOGIN_COOKIE_PREFIX) and n.endswith(LOGIN_COOKIE_SUFFIX)
+            if n.startswith(STRONG_COOKIE_PREFIX) and n.endswith(LOGIN_COOKIE_SUFFIX)
         ]
         if sess:
-            logger.info("[kuaishou] 检测到会话 cookie：%s", ", ".join(sess))
+            logger.info(
+                "[kuaishou] 检测到**会话** cookie（强判据）：%s", ", ".join(sess),
+            )
             return True
 
-        # 判不出来 → **按未登录处理**（保守，不猜）
-        #
-        # 宁可不给，也不要存一个"看着登录了但没凭证"的废连接 ——
-        # 那会导致之后所有搜索都失败，且极难定位。
+        # ② 弱判据：userId（存在但可能是脏数据 —— 实测伪造的也会命中）
+        hit = [n for n in LOGIN_COOKIES_EXACT if n in names]
+        if hit:
+            logger.info(
+                "[kuaishou] 检测到 %s（**弱判据** —— 只能说明有登录痕迹，"
+                "无法确认真实性；快手没有可用的校验接口）",
+                ", ".join(hit),
+            )
+            return True
+
+        # ③ 判不出来 → **按未登录处理**（保守，不猜）
         logger.info("[kuaishou] 未检测到登录 cookie（只有设备标识）")
         return False
 
