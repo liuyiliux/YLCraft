@@ -459,3 +459,36 @@ def test_script_checks_both_frontend_dropdowns():
     assert "my-platform-data" in src
     assert "platform-users" in src, "也要查博主中心下拉"
     assert hasattr(cpr, "_USER_SEARCH_PLATFORMS")
+
+
+def test_login_expiry_error_is_actionable():
+    """**回归**：快手登录态失效时要给**可操作**错误。
+
+    ## 实测：快手登录态很短命
+
+        20:46  扫码成功 → profile/get result=1（拿到「逸流AI 粉丝20」）
+        21:0x  → result=**109**
+        21:0x  → result=**2**（未登录）
+
+    **约 20 分钟就失效**。而**搜索不需要登录**（公开数据）——
+    所以"搜索能用"会让用户误以为登录态还好。
+
+    而原来 `profile/*` 失败只 `logger.warning` + `return None`，
+    用户看到**空白**，不知道该重新登录。
+    """
+    from app.services.platforms.kuaishou import client as ks
+
+    src = inspect.getsource(ks.KuaishouClient._post)
+    assert "RuntimeError" in src, "profile 类接口失败要抛可操作错误"
+    assert "账号中心" in src, "要告诉用户去哪儿重新登录"
+    assert "搜索不需要登录" in src, "要点明'搜索能用≠登录有效'"
+    assert "109" in src, "要留档中间态错误码"
+
+
+def test_expiry_codes_documented():
+    """要记录错误码迁移（1 → 109 → 2）与短命事实。"""
+    from app.services.platforms.kuaishou import client as ks
+
+    doc = inspect.getsource(ks)
+    assert "20 分钟" in doc, "要记录实测的失效时长"
+    assert "109" in doc
