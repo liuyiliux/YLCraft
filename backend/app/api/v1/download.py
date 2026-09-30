@@ -26,7 +26,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "vendor"))
 
 import yt_dlp
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse, StreamingResponse, Response
 
@@ -37,6 +37,10 @@ from app.services.video.parser import (
     _extract_url_from_text,
 )
 from app.core.config import ensure_download_path, get_ffmpeg_path
+from app.core.user_auth import (
+    AuthenticatedPrincipal,
+    get_authenticated_principal_optional,
+)
 from app.services.download import parse_with_manager, download_with_manager, get_supported_platforms
 
 router = APIRouter()
@@ -148,6 +152,26 @@ async def _find_asset_hub_node_id(session, source_urls: list[str]) -> str:
     return str(result.scalar_one_or_none() or "")
 
 
+def _owner_of(principal: "AuthenticatedPrincipal | None") -> str | None:
+    """从认证主体取用户 id（未登录返回 None）。
+
+    ⚠️ **素材必须带 owner，否则素材库看不见**（2026-09-29）
+
+    下载/解析创建的素材节点原来不写 `owner_user_id`，
+    而素材库列表按 owner 过滤：
+
+        能看到的旧素材   owner=2741e5fb...（root）
+        新下载的素材     owner=**None**  → 列表里查不到
+
+    用户反馈"x 下载的视频为什么在素材库没记录"就是这个。
+
+    未登录（本地单机模式）时返回 None —— 不报错，
+    列表那边有 `include_legacy_owner` 兜底。
+    """
+    user = getattr(principal, "user", None)
+    return getattr(user, "id", None) or None
+
+
 async def _create_parsed_asset_hub_node(
     session,
     *,
@@ -161,9 +185,26 @@ async def _create_parsed_asset_hub_node(
     width: int = 0,
     height: int = 0,
     metadata: dict | None = None,
+    owner_user_id: str | None = None,
 ) -> str:
+    """建"已解析"素材节点。
+
+    ⚠️ **必须传 `owner_user_id`**（2026-09-29 修）
+
+    原来不传（默认 None），而素材库列表按 owner 过滤 ——
+    用户**看不到自己下载的素材**（反馈"x 下载的视频为什么在素材库没记录"）。
+    实测：能看到的旧节点 `owner=2741e5fb...`（root），
+    新下载的 `owner=None`。
+    """
     existing_id = await _find_asset_hub_node_id(session, [source_url])
     if existing_id:
+        # 已存在也要补 owner（历史节点可能是无主的）
+        if owner_user_id:
+            node = await session.get(AssetNode, existing_id)
+            if node is not None and not getattr(node, "owner_user_id", None):
+                await AssetNodeService(session).update(
+                    node_id=existing_id, owner_user_id=owner_user_id,
+                )
         return existing_id
 
     from app.db.models.asset_hub import AssetNode, AssetType
@@ -172,6 +213,7 @@ async def _create_parsed_asset_hub_node(
     node = await AssetNodeService(session).create(
         name=title or "未命名素材",
         asset_type=AssetType(asset_type),
+        owner_user_id=owner_user_id,
         thumbnail_url=cover_url or None,
         metadata={
             "source": "download_parse",
@@ -204,8 +246,9 @@ async def _save_downloaded_asset_hub_file(
     lineage: dict | None = None,
     tags: list[str] | None = None,
     mime_type: str = "",
+    owner_user_id: str | None = None,
 ) -> str:
-    from app.db.models.asset_hub import AssetType
+    from app.db.models.asset_hub import AssetNode, AssetType
     from app.services.asset_hub import AssetHubFacade
     from app.services.asset_hub.node_service import AssetNodeService
     from app.services.asset_hub.representation_service import AssetRepresentationService
@@ -222,6 +265,13 @@ async def _save_downloaded_asset_hub_file(
 
     meta = dict(metadata or {})
     if node_id:
+        # 无主的历史节点要补 owner（否则素材库里看不见）
+        if owner_user_id:
+            existing = await session.get(AssetNode, node_id)
+            if existing is not None and not getattr(existing, "owner_user_id", None):
+                await AssetNodeService(session).update(
+                    node_id=node_id, owner_user_id=owner_user_id,
+                )
         await AssetNodeService(session).update(
             node_id=node_id,
             name=title or path.stem,
@@ -462,7 +512,19 @@ async def _get_qualities(url: str, title: str, platform: str) -> list[VideoQuali
 
 
 @router.post("/parse", response_model=ParseResponse, summary="解析视频链接")
-async def parse_download_url(req: ParseRequest):
+async def parse_download_url(
+    req: ParseRequest,
+    # ⚠️ **要拿当前用户**（2026-09-29）
+    #
+    # 下载/解析创建的素材节点原来**不写 `owner_user_id`**（默认 None），
+    # 而素材库页面按 owner 过滤 —— 于是用户**看不到自己下载的素材**
+    # （用户反馈"x 下载的视频为什么在素材库没记录"）。
+    #
+    # 用 optional 版：未登录（本地单机模式）时不报错，只是不设 owner。
+    principal: AuthenticatedPrincipal | None = Depends(
+        get_authenticated_principal_optional
+    ),
+):
     """解析视频链接，返回元数据 + 多清晰度列表。
 
     入参可以是**纯链接**，也可以是**平台分享文本**——
@@ -519,6 +581,7 @@ async def parse_download_url(req: ParseRequest):
                             "digest": digest,
                             "image_count": len(images),
                         },
+                        owner_user_id=_owner_of(principal),
                     )
             except Exception as asset_e:
                 logger.warning(f"[parse/wechat_mp] asset tracking failed: {asset_e}")
@@ -579,6 +642,7 @@ async def parse_download_url(req: ParseRequest):
                         width=width,
                         height=height,
                         metadata={"parse_method": "platform_manager", "page_url": page_url},
+                        owner_user_id=_owner_of(principal),
                     )
                     logger.info(f"[parse] asset tracked (platform) | id={parsed_asset_id}")
             except Exception as asset_e:
@@ -724,6 +788,7 @@ async def parse_download_url(req: ParseRequest):
                 metadata=info,
                 width=width,
                 height=height,
+                owner_user_id=_owner_of(principal),
             )
             logger.info(f"[parse] asset tracked | id={parsed_asset_id} | platform={platform}")
     except Exception as e:
@@ -1077,7 +1142,8 @@ _download_tasks: dict[str, dict] = {}
 class DownloadTask:
     def __init__(self, task_id: str, url: str, quality: str | None,
                  title: str | None, page_url: str | None, is_audio: bool,
-                 asset_id: str | None = None):
+                 asset_id: str | None = None,
+                 owner_user_id: str | None = None):
         self.task_id = task_id
         self.url = url
         self.quality = quality
@@ -1085,6 +1151,8 @@ class DownloadTask:
         self.page_url = page_url
         self.is_audio = is_audio
         self.asset_id = asset_id  # 素材ID（解析时创建）
+        # ⚠️ 素材归属：不设的话素材库列表看不到（按 owner 过滤）
+        self.owner_user_id = owner_user_id
         self.status = "PENDING"
         self.progress = 0
         self.progress_message = ""
@@ -1250,6 +1318,8 @@ async def _run_download_task(task: DownloadTask):
                         },
                         tags=[platform or "download"],
                         mime_type="audio/mpeg" if task.is_audio else "video/mp4",
+                        # 素材归属 —— 不设的话素材库列表（按 owner 过滤）看不到
+                        owner_user_id=task.owner_user_id,
                     )
                 except Exception as hub_e:
                     logger.warning(f"[_run_download_task] Asset Hub 写入失败: {hub_e}")
@@ -1339,7 +1409,14 @@ class TaskCreateRequest(BaseModel):
 
 
 @router.post("/tasks", summary="创建下载任务（后台，后台轮询）")
-async def create_download_task(req: TaskCreateRequest, background: BackgroundTasks):
+async def create_download_task(
+    req: TaskCreateRequest,
+    background: BackgroundTasks,
+    # 素材要归属到当前用户 —— 否则素材库列表（按 owner 过滤）看不到
+    principal: AuthenticatedPrincipal | None = Depends(
+        get_authenticated_principal_optional
+    ),
+):
     """创建后台下载任务，立即返回 task_id，前端轮询状态"""
     task_id = str(uuid.uuid4())[:12]
     task = DownloadTask(
@@ -1350,6 +1427,7 @@ async def create_download_task(req: TaskCreateRequest, background: BackgroundTas
         page_url=req.page_url,
         is_audio=req.is_audio,
         asset_id=req.asset_id,
+        owner_user_id=_owner_of(principal),
     )
     _download_tasks[task_id] = task.__dict__
     background.add_task(_run_download_task, task)
