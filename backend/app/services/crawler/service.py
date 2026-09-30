@@ -393,9 +393,23 @@ class CrawlerService:
                         title=item.title,
                         desc=item.desc if item.desc else None,
                         cover=item.cover,
-                        # 有视频直链就用它；否则退回详情页 URL
-                        # （抖音此前就踩过：video_url 放详情页会导致下载器取不到流）
-                        video_url=video_direct or item.url,
+                        # ⚠️ **没有视频直链就留空，不能拿"原文链接"兜底**
+                        # （2026-09-29 修）
+                        #
+                        # 原来是 `video_direct or item.url` —— 于是**图集也有
+                        # video_url**（值是 `https://www.xiaohongshu.com/explore/...`）。
+                        #
+                        # 后果（用户反馈"小红书有图集的被识别为视频了"）：
+                        # 前端靠"video_url 有没有值"判断是不是视频 →
+                        # **图集被判成视频**，详情里渲染出一个 0:00 的空播放器，
+                        # 而真正的图集被隐藏（因为"有视频时不显示封面"）。
+                        #
+                        # 而且注释里自己都写了"抖音此前就踩过：video_url 放详情页
+                        # 会导致下载器取不到流" —— 那个坑和这个是同一个根因：
+                        # **把"页面地址"和"媒体直链"混在一个字段里**。
+                        #
+                        # 想跳原文有独立的 `url` 字段，不需要 video_url 兜底。
+                        video_url=video_direct,
                         images=extra_images,
                         author=item.author,
                         author_id=item.author_id,
