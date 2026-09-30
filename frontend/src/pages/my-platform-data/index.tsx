@@ -111,29 +111,27 @@ export default function MyPlatformDataPage() {
     }
 
     // 用资料里的 user_id / sec_uid 拉自己的作品
-    // （抖音必须用 sec_uid；小红书用数字 id）
+    // （抖音必须用 sec_uid；小红书/微博用数字 id；X 传 handle 也行，
+    //   后端会自动转成数字 userId）
     if (!me) return
     setLoadingVideos(true)
-    // ⚠️ **有的平台没有"查某人作品列表"的能力**（2026-09-29）
+    // ⚠️ 微博 / X 的作品列表**已经实现**（2026-09-29）
     //
-    // 实测：微博的 `WeiboClient` **没有 `get_user_videos`** ——
-    // 后端会抛 500（`'WeiboClient' object has no attribute ...`）。
+    // 原来这里对它们**直接跳过**（当时 `WeiboClient` 没有
+    // `get_user_videos`，后端会 500）。现在两边都打通了：
     //
-    // 这时**不该弹红色错误**（用户看到"获取我的作品失败"会以为坏了），
-    // 而是**静默跳过**：作品区显示"该平台暂不支持"，其余资料照常展示。
-    const NO_VIDEO_PLATFORMS = new Set(['weibo', 'twitter'])
-    if (NO_VIDEO_PLATFORMS.has(platform)) {
-      setVideos([])
-      setLoadingVideos(false)
-      return
-    }
+    //   微博  containerid=107603{uid} → cards[].mblog
+    //   X     UserTweets（handle 自动转数字 id）
+    //
+    // 所以不再跳过，正常请求。若后端确实不支持（如番茄），
+    // 下面的 catch 会兜住并静默处理。
     try {
       const res: any = await getPlatformUserVideos(platform, {
         userId: me.id, secUid: me.sec_uid || '', maxResults: 20,
       })
       setVideos(res?.data || [])
     } catch (e: any) {
-      // 后端明确说"不支持"时不报错（和上面的能力缺失同因）
+      // 后端明确说"不支持"时不报错（能力缺失不是故障）
       const detail = String(e?.response?.data?.detail || '')
       if (detail.includes('has no attribute') || detail.includes('不支持')) {
         setVideos([])

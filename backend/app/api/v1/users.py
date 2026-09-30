@@ -473,21 +473,33 @@ async def get_user_profile(
 @router.get(
     "/videos",
     response_model=UserVideosResponse,
-    summary="获取用户作品列表（抖音/小红书）",
+    summary="获取用户作品列表（抖音/小红书/微博/X/B站）",
 )
 async def get_user_videos(
-    platform: str = Query(..., description="平台：douyin / xiaohongshu"),
-    user_id: str = Query("", description="用户 ID（小红书用数字 id）"),
+    platform: str = Query(..., description="平台：douyin / xiaohongshu / weibo / twitter"),
+    user_id: str = Query("", description="用户 ID（各平台含义见下）"),
     sec_uid: str = Query("", description="抖音专用：sec_uid（**抖音必须用它**）"),
     max_results: int = Query(20, ge=1, le=50),
 ):
-    """取用户作品列表（含图文与视频，带分页）。"""
+    """取用户作品列表（含图文与视频，带分页）。
+
+    ## 各平台的 `user_id` 含义（**实测确认**）
+
+        抖音     sec_uid（**必须**，用 user_id 会失败）
+        小红书   数字 id
+        微博     数字 uid
+        X        数字 userId **或 handle**（后端会自动转换）
+
+    实测：
+        微博  15 条（`containerid=107603{uid}` → `cards[].mblog`）
+        X     2 条（`UserTweets`，handle 自动转数字 id）
+    """
     client = await _client_for(platform)
     target = sec_uid if (sec_uid and platform.lower() == "douyin") else user_id
     if not target:
         raise HTTPException(
             status_code=400,
-            detail="缺少用户标识：抖音请传 sec_uid，小红书请传 user_id",
+            detail="缺少用户标识：抖音请传 sec_uid，其余平台请传 user_id",
         )
     try:
         async with client:
