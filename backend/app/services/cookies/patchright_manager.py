@@ -291,7 +291,17 @@ class PatchrightAcquisitionManager:
                     # 不操作的话到点自动关，不影响正常流程。
                     confirm = LOGIN_CONFIRM_SECONDS
                     if confirm > 0:
-                        session.status = AcquisitionStatus.WAITING_FOR_LOGIN
+                        # ⚠️ **不能用 `WAITING_FOR_LOGIN`**（2026-09-29 修）
+                        #
+                        # 这里其实**已经成功了**（cookie 已存库、连接已 ACTIVE），
+                        # 只是窗口再留一会儿。而原来把状态改回
+                        # `WAITING_FOR_LOGIN` → 前端显示"请在浏览器中完成登录"，
+                        # 看起来像卡住：
+                        #
+                        #     用户反馈："还是等待 但是这里看有cookie了"
+                        #
+                        # 用专门的 `CONFIRMING`，前端按"成功"渲染。
+                        session.status = AcquisitionStatus.CONFIRMING
                         session.updated_at = __import__('datetime').datetime.now()
                         logger.info(
                             "[PatchrightManager] 已保存 Cookie，窗口保留 %ds "

@@ -17,6 +17,7 @@ import {
   PlayCircleOutlined, MessageOutlined, QuestionCircleOutlined,
   GlobalOutlined, ImportOutlined, EyeOutlined, TwitterOutlined, YoutubeOutlined,
   LinkOutlined, ReloadOutlined, CloudDownloadOutlined, CheckCircleOutlined,
+  ExportOutlined,
   CloseCircleOutlined, FileExcelOutlined, LoadingOutlined, DatabaseOutlined,
   HeartOutlined, StarOutlined, CommentOutlined, PictureOutlined,
   UserOutlined, TeamOutlined, ReadOutlined, ProfileOutlined, PayCircleOutlined,
@@ -417,6 +418,54 @@ function normalizeWechatHtml(str: string): string {
 
 function getPlatformInfo(pf: string): PlatformInfo {
   return PLATFORM_MAP[pf] || { value: pf, label: pf, icon: <GlobalOutlined />, color: '#8b8ba8' }
+}
+
+/**
+ * 各平台**网页版搜索页**的 URL 模板（`{kw}` 会被替换成 URL 编码的关键词）。
+ *
+ * ## 用途：程序化搜索被风控时的**降级出口**
+ *
+ * 实测（2026-09-29）小红书会返回 **HTTP 461**（风控），
+ * 用户提出"加一个搜索跳转，让我手动搜" —— 就是这里。
+ *
+ * ⚠️ 这是**降级路径**，不是替代品：
+ *   · 拿不到结构化数据（不能导入素材库、不能批量下载）
+ *   · 但"至少能查" —— 比直接报错好
+ *
+ * ## URL 都是**实测过**的（不是猜的）
+ *
+ *   小红书  HTTP 200  '美食 - 小红书搜索'      ✅
+ *   B站     HTTP 200  '美食-哔哩哔哩'           ✅
+ *   抖音    HTTP 200                            ✅
+ *   快手    HTTP 200  '快手'                    ✅
+ *   微博    需登录（浏览器里已登录，所以可用）
+ *   知乎    需登录
+ *   X       格式正确（我方网络访问不了，但浏览器可用）
+ */
+const MANUAL_SEARCH_URLS: Record<string, string> = {
+  xhs: 'https://www.xiaohongshu.com/search_result?keyword={kw}',
+  xiaohongshu: 'https://www.xiaohongshu.com/search_result?keyword={kw}',
+  dy: 'https://www.douyin.com/search/{kw}',
+  douyin: 'https://www.douyin.com/search/{kw}',
+  bili: 'https://search.bilibili.com/all?keyword={kw}',
+  bilibili: 'https://search.bilibili.com/all?keyword={kw}',
+  ks: 'https://www.kuaishou.com/search/video?searchKey={kw}',
+  kuaishou: 'https://www.kuaishou.com/search/video?searchKey={kw}',
+  wb: 'https://s.weibo.com/weibo?q={kw}',
+  weibo: 'https://s.weibo.com/weibo?q={kw}',
+  zhihu: 'https://www.zhihu.com/search?q={kw}',
+  tw: 'https://x.com/search?q={kw}',
+  twitter: 'https://x.com/search?q={kw}',
+  x: 'https://x.com/search?q={kw}',
+  youtube: 'https://www.youtube.com/results?search_query={kw}',
+  tiktok: 'https://www.tiktok.com/search?q={kw}',
+}
+
+/** 构造某平台的**网页搜索页** URL；没有已知模板时返回空串。 */
+function manualSearchUrl(platform: string, keyword: string): string {
+  const tpl = MANUAL_SEARCH_URLS[platform]
+  if (!tpl) return ''
+  return tpl.replace('{kw}', encodeURIComponent(keyword))
 }
 
 function getPlatformSearchConfig(pf: string): PlatformSearchConfig {
@@ -1691,6 +1740,32 @@ export default function CrawlerPage() {
                 loading={loading}
                 onSearch={() => { setCurrentPage(1); handleSearch(1); }}
               />
+            </Col>
+            {/* 手动搜索（2026-09-29）
+                平台上做风控时（实测小红书 461），程序化搜索会被拦 ——
+                给出「去官网搜」的出口：用浏览器打开该平台的搜索页，
+                用户自己搜、自己看，不受我们这边风控影响。
+
+                ⚠️ 这是**降级路径**，不是替代品：它拿不到结构化数据
+                （没法导入素材库），只是"至少能查"。 */}
+            <Col flex="none">
+              <Tooltip title={`在浏览器里打开${getPlatformInfo(platform).label}的搜索页（程序化搜索被风控时的备选）`}>
+                <Button
+                  icon={<ExportOutlined />}
+                  onClick={() => {
+                    const kw = keyword.trim()
+                    if (!kw) { message.warning('先输入关键词'); return }
+                    const url = manualSearchUrl(platform, kw)
+                    if (!url) {
+                      message.info(`${getPlatformInfo(platform).label}没有已知的网页搜索页`)
+                      return
+                    }
+                    window.open(url, '_blank', 'noopener,noreferrer')
+                  }}
+                >
+                  去官网搜
+                </Button>
+              </Tooltip>
             </Col>
             {platform === 'bili' && (
               <Col xs={24} sm={8} md={7}>

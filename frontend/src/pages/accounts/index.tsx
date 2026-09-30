@@ -567,7 +567,7 @@ function QrLoginPanel({
   const statusColor = (s: string): string => {
     if (s === 'success') return theme.success
     if (['failed', 'expired', 'cancelled'].includes(s)) return theme.error
-    if (['saving', 'cookies_extracting', 'cookies_extracted'].includes(s)) return theme.primary
+    if (['saving', 'confirming', 'cookies_extracting', 'cookies_extracted'].includes(s)) return theme.primary
     return theme.warning
   }
 
@@ -996,7 +996,7 @@ function BrowserLoginPanel({
   const statusColor = (s: string): string => {
     if (s === 'success') return theme.success
     if (['failed', 'expired', 'cancelled'].includes(s)) return theme.error
-    if (['saving', 'cookies_extracting', 'cookies_extracted'].includes(s)) return theme.primary
+    if (['saving', 'confirming', 'cookies_extracting', 'cookies_extracted'].includes(s)) return theme.primary
     return theme.warning
   }
 
@@ -1006,7 +1006,7 @@ function BrowserLoginPanel({
       case 'page_loading': return 1
       case 'waiting_for_login': return 2
       case 'cookies_extracting': case 'cookies_extracted': return 3
-      case 'saving': case 'success': case 'failed': case 'cancelled': case 'expired': return 4
+      case 'saving': case 'confirming': case 'success': case 'failed': case 'cancelled': case 'expired': return 4
       default: return 0
     }
   }
@@ -1020,6 +1020,7 @@ function BrowserLoginPanel({
       case 'cookies_extracting': return 70
       case 'cookies_extracted': return 80
       case 'saving': return 90
+      case 'confirming': return 100   // 已成功，窗口保留待确认
       case 'success': return 100
       default: return 0
     }
