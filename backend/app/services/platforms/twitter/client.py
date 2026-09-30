@@ -211,3 +211,51 @@ class TwitterClient(BasePlatformClient):
                 "请在「账号中心」用浏览器方式登录一次 x.com。"
             )
         return await get_self_profile_via_http(cookie_header=cookie)
+
+    # =========================================================================
+    # 用户的推文列表（2026-09-29 打通）
+    # =========================================================================
+
+    async def get_user_videos(
+        self,
+        user_id: str,
+        max_results: int = 20,
+    ) -> List[SearchResult]:
+        """取某个用户发的推文列表（**纯 HTTP**）。
+
+        ## 参数说明
+
+        `user_id` 这里要 **数字 userId**（不是 handle）——
+        `UserTweets` 的 variables 用的是 `userId`。
+
+        调用方（`/users/videos`）通常只有 handle，
+        所以这里**自动转换**：不是纯数字就先 `UserByScreenName` 拿 `rest_id`。
+
+        实测（自己的账号 @308YYtGer5EWPqj）解析出 2 条推文，
+        正文 / 点赞 / 转发 / 时间都对。
+        """
+        from .search_http import fetch_user_tweets
+
+        cookie = self.header_cookie()
+        if not cookie:
+            raise TwitterAuthError("[twitter] 取推文列表需要登录态。")
+
+        uid = str(user_id or "").strip().lstrip("@")
+        if not uid:
+            return []
+
+        # handle → 数字 id（UserTweets 只认数字 id）
+        if not uid.isdigit():
+            profile = await self.get_user_profile(uid)
+            if profile is None:
+                logger.info("[twitter] 找不到用户 %s，无法取推文列表", uid)
+                return []
+            uid = str(profile.id or "")
+            if not uid.isdigit():
+                logger.info("[twitter] 用户 %s 没拿到数字 id", user_id)
+                return []
+
+        data = await fetch_user_tweets(
+            uid, cookie_header=cookie, max_results=max_results
+        )
+        return data.get("tweets") or []

@@ -47,6 +47,7 @@ from .apis import (
     SEARCH_OP,
     USER_BY_SCREEN_NAME_FIELD_TOGGLES,
     USER_BY_SCREEN_NAME_OP,
+    USER_TWEETS_OP,
     WEB_BEARER,
     build_search_variables,
     build_user_lookup_variables,
@@ -602,6 +603,188 @@ def _to_int(value: Any) -> int:
         return int(value)
     except (TypeError, ValueError):
         return 0
+
+
+async def fetch_user_tweets(
+    uid: str,
+    *,
+    cookie_header: str,
+    max_results: int = 20,
+    cursor: str = "",
+) -> Dict[str, Any]:
+    """取某个用户的推文列表（`UserTweets`）—— **纯 HTTP**。
+
+    ## 参数来源
+
+    twscrape `api.py::user_tweets_raw`：
+
+        op = "SXVCYB8XHSS25nzIljNtZA/UserTweets"
+        kv = {"userId": uid, "count": 40, "includePromotedContent": True,
+              "withQuickPromoteEligibilityTweetFields": True,
+              "withVoice": True, "withV2Timeline": True}
+
+    ⚠️ 用 **`userId`（数字 id）**，不是 handle ——
+    调用方要先用 `UserByScreenName` 拿 `rest_id`。
+
+    ## 实测响应路径（2026-09-29）
+
+        data.user.result.timeline.timeline.instructions[].entries[]
+        推文项  entryId 以 `tweet-` 开头
+        游标项  entryId 以 `cursor-bottom-` 开头，value 在 `content.value`
+
+    实测（自己的账号）解析出 2 条，正文/互动数/时间都对。
+
+    Returns:
+        {"tweets": [...], "cursor": "下一页游标或空", "has_more": bool}
+    """
+    if not cookie_header:
+        raise TwitterAuthError("[twitter] 取推文列表需要登录态。")
+    if not uid:
+        raise RuntimeError("[twitter] 取推文列表需要数字 userId。")
+
+    from .apis import build_user_tweets_variables
+
+    variables = build_user_tweets_variables(uid, count=max_results, cursor=cursor)
+    payload = await _request_page_raw(
+        cookie_header, USER_TWEETS_OP, variables
+    )
+
+    # 路径：data.user.result.timeline.timeline.instructions[]
+    result = ((payload.get("data") or {}).get("user") or {}).get("result") or {}
+    timeline = (result.get("timeline_v2") or result.get("timeline") or {})
+    tl = timeline.get("timeline") or {}
+    instructions = tl.get("instructions") or []
+
+    tweets: List[SearchResult] = []
+    next_cursor = ""
+
+    for ins in instructions:
+        if not isinstance(ins, dict):
+            continue
+        for e in (ins.get("entries") or []):
+            if not isinstance(e, dict):
+                continue
+            eid = str(e.get("entryId") or "")
+            content = e.get("content") or {}
+
+            # 游标项
+            if "cursor-bottom" in eid or content.get("cursorType") == "Bottom":
+                val = content.get("value")
+                if isinstance(val, str) and val:
+                    next_cursor = val
+                continue
+
+            # 推文项
+            if not eid.startswith("tweet-"):
+                continue
+            item = content.get("itemContent") or {}
+            tr = item.get("tweet_results") or {}
+            tw = tr.get("result") or {}
+            # 转推/引用可能是 TweetWithVisibilityResults
+            if tw.get("__typename") == "TweetWithVisibilityResults":
+                tw = tw.get("tweet") or {}
+            parsed = _parse_tweet_result(tw)
+            if parsed is not None:
+                tweets.append(parsed)
+
+    logger.info(
+        "[twitter] UserTweets uid=%s -> %d 条（cursor=%s）",
+        uid, len(tweets), "有" if next_cursor else "无",
+    )
+    return {
+        "tweets": tweets,
+        "cursor": next_cursor,
+        "has_more": bool(next_cursor),
+    }
+
+
+def _parse_tweet_result(tw: Dict[str, Any]) -> Optional[SearchResult]:
+    """把 timeline 里的 tweet 对象转成 `SearchResult`。
+
+    结构（新旧并存，两套都兼容）：
+
+        legacy.full_text / favorite_count / retweet_count / reply_count /
+               created_at / lang
+        legacy.extended_entities.media[] → 图片或视频
+        core.screen_name（新版把作者名放这里）
+        rest_id（顶层）
+
+    取不到的字段留空/0，**不编造**。
+    """
+    if not isinstance(tw, dict):
+        return None
+    legacy = tw.get("legacy") if isinstance(tw.get("legacy"), dict) else {}
+    tid = str(tw.get("rest_id") or legacy.get("id_str") or "")
+    text = str(legacy.get("full_text") or "")
+    if not tid or not text:
+        return None
+
+    # 作者 handle：旧版在 legacy 的 user 子对象里，新版在 core
+    handle = ""
+    user = legacy.get("user") if isinstance(legacy.get("user"), dict) else {}
+    core = tw.get("core") if isinstance(tw.get("core"), dict) else {}
+    ucore = core.get("user_results") if isinstance(core.get("user_results"), dict) else {}
+    ures = (ucore.get("result") or {}) if isinstance(ucore, dict) else {}
+    ulegacy = ures.get("legacy") if isinstance(ures.get("legacy"), dict) else {}
+    ucore2 = ures.get("core") if isinstance(ures.get("core"), dict) else {}
+    handle = str(
+        ucore2.get("screen_name") or ulegacy.get("screen_name")
+        or user.get("screen_name") or ""
+    )
+
+    # 媒体
+    images: List[str] = []
+    video = ""
+    entities = legacy.get("extended_entities") or legacy.get("entities") or {}
+    for m in (entities.get("media") or []):
+        if not isinstance(m, dict):
+            continue
+        mtype = m.get("type")
+        if mtype == "photo":
+            u = m.get("media_url_https") or m.get("media_url") or ""
+            if u:
+                images.append(str(u))
+        elif mtype in ("video", "animated_gif"):
+            variants = ((m.get("video_info") or {}).get("variants") or [])
+            best = ""
+            best_bitrate = -1
+            for v in variants:
+                if not isinstance(v, dict):
+                    continue
+                if v.get("content_type") != "video/mp4":
+                    continue
+                br = v.get("bitrate") or 0
+                if br > best_bitrate:
+                    best_bitrate = br
+                    best = str(v.get("url") or "")
+            if best:
+                video = best
+            cover = m.get("media_url_https") or ""
+            if cover and not images:
+                images.append(str(cover))
+
+    return SearchResult(
+        id=tid,
+        title=text[:80],
+        desc=text,
+        author=handle,
+        author_id=handle,
+        cover=images[0] if images else "",
+        url=f"https://x.com/{handle}/status/{tid}" if handle else f"https://x.com/i/status/{tid}",
+        platform="twitter",
+        type="video" if video else "note",
+        likes=int(legacy.get("favorite_count") or 0),
+        comments=int(legacy.get("reply_count") or 0),
+        shares=int(legacy.get("retweet_count") or 0),
+        views=0,   # 实测拿不到 → 0（不编造）
+        create_time=str(legacy.get("created_at") or ""),
+        raw_data={
+            "_images": images,
+            "_video_url": video,
+            "handle": handle,
+            "lang": legacy.get("lang") or "",
+        },
+    )
 
 
 async def get_self_profile_via_http(*, cookie_header: str) -> Optional[UserProfile]:

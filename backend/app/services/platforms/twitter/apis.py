@@ -70,6 +70,54 @@ USER_BY_SCREEN_NAME_FIELD_TOGGLES: dict = {
     "profile_label_improvements_pcf_label_in_post_enabled": False,
 }
 
+# =============================================================================
+# 用户推文列表（UserTweets）—— 2026-09-29 实测打通
+# =============================================================================
+#
+# 来源：twscrape `api.py::OP_UserTweets` + `user_tweets_raw`
+#
+#     kv = {
+#         "userId": str(uid),
+#         "count": 40,
+#         "includePromotedContent": True,
+#         "withQuickPromoteEligibilityTweetFields": True,
+#         "withVoice": True,
+#         "withV2Timeline": True,
+#     }
+#
+# ⚠️ 用的是 **`userId`（数字 id）**，不是 handle ——
+# 所以要先用 `UserByScreenName` 拿 `rest_id`。
+#
+# 实测响应路径（与 twscrape 文档说的略不同）：
+#     data.user.result.timeline.timeline.instructions[].entries[]
+#     推文项  entryId 以 `tweet-` 开头，content.entryType=TimelineTimelineItem
+#     游标项  entryId 以 `cursor-bottom-` 开头，content.cursorType=Bottom
+#
+# 实测（自己的账号）：解析出 2 条推文，正文/互动数/时间都对。
+USER_TWEETS_QUERY_ID = "SXVCYB8XHSS25nzIljNtZA"
+USER_TWEETS_OP = f"{USER_TWEETS_QUERY_ID}/UserTweets"
+
+# 带回复的（暂未使用，留着备用）
+USER_TWEETS_AND_REPLIES_OP = "qUpkZU6eN8MbtQb7rC_pYg/UserTweetsAndReplies"
+# 只看媒体
+USER_MEDIA_OP = "VyudDWQnr9vJNw7GasFz2g/UserMedia"
+
+
+def build_user_tweets_variables(uid: str, count: int = 20,
+                                cursor: str = "") -> dict:
+    """构造 UserTweets 的 variables（来源 twscrape `user_tweets_raw`）。"""
+    v = {
+        "userId": str(uid),
+        "count": max(1, min(int(count), 40)),
+        "includePromotedContent": True,
+        "withQuickPromoteEligibilityTweetFields": True,
+        "withVoice": True,
+        "withV2Timeline": True,
+    }
+    if cursor:
+        v["cursor"] = cursor
+    return v
+
 # 网页端公开 Bearer（非用户凭证，是 X 网页版固定值）
 #
 # 来源：twscrape `account.py::TOKEN`
