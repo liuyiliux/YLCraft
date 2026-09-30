@@ -691,15 +691,33 @@ def parse_search_item(item: Dict[str, Any]) -> Optional[SearchResult]:
     collects = _to_int(stats.get("collect_count"))
     views = _to_int(stats.get("play_count"))
 
-    # 封面：视频取 cover，图文取 image_infos 首图
+    # ⚠️ **图集的图片在 `images`，不是 `image_infos`**（2026-09-29 实测）
+    #
+    # 抖音搜索里的**图集**（`aweme_type=68`）：
+    #
+    #     image_infos   → **不是列表**（空/其它类型）
+    #     images        → **10 张图**（每项 {uri, url_list}）
+    #
+    # 原来只读 `image_infos`，于是：
+    #   · 图集被误判成 `video`（is_image=False）
+    #   · 图片一张都拿不到
+    #   · 「图文下载」退化成只有封面
+    #
+    # 两个字段都读（兼容不同接口形态），`images` 优先。
+    album_images = info.get("images")
+    if not (isinstance(album_images, list) and album_images):
+        album_images = info.get("image_infos")
+
+    # 封面：视频取 cover，图文取首图
     cover = ""
     video = info.get("video") or {}
     if isinstance(video, dict):
         cover = _first_url(video.get("cover")) or _first_url(video.get("origin_cover"))
-    if not cover:
-        images = info.get("image_infos")
-        if isinstance(images, list) and images:
-            cover = _first_url(images[0].get("url_list") or images[0])
+    if not cover and isinstance(album_images, list) and album_images:
+        first = album_images[0]
+        cover = _first_url(
+            (first.get("url_list") if isinstance(first, dict) else None) or first
+        )
 
     # 时长（秒）：抖音给的是毫秒
     duration_ms = _to_int(video.get("duration")) if isinstance(video, dict) else 0
@@ -707,8 +725,20 @@ def parse_search_item(item: Dict[str, Any]) -> Optional[SearchResult]:
 
     create_time = _format_ts(info.get("create_time"))
 
-    # 图文/视频：有 image_infos 视为图文
-    is_image = bool(info.get("image_infos"))
+    # 图文/视频：**优先信 `aweme_type`**（权威字段），再退回"有没有图"
+    #
+    #     0   = 视频
+    #     68  = 图集（图文）
+    #
+    # 实测：纯看 `images` 也准，但 `aweme_type` 是抖音自己的标注，
+    # 更可靠（图集可能一张图都没有时的边界情况）。
+    aweme_type = str(info.get("aweme_type") or "")
+    if aweme_type == "68":
+        is_image = True
+    elif aweme_type == "0":
+        is_image = False
+    else:
+        is_image = bool(album_images)
 
     # ⚠️ **提取无水印视频地址**（2026-09-29 补）
     #
@@ -759,8 +789,40 @@ def parse_search_item(item: Dict[str, Any]) -> Optional[SearchResult]:
             **item,
             # 前端详情播放读这个（与 X / 微博的字段名统一）
             "_video_url": video_url,
+            # ⚠️ **图集图片也要放这里**（2026-09-29）
+            #
+            # `SearchResult` 没有 images 字段，平台统一把多图放在
+            # `raw_data._images`（`crawler/service.py` 从这里取，
+            # 填进 `CrawlerResult.images`）。
+            #
+            # 原来抖音**没放** —— 于是图集：
+            #   · 前端详情看不到图
+            #   · 「图文下载」退化成只有封面一张
+            "_images": _album_image_urls(album_images) if is_image else [],
         },
     )
+
+
+def _album_image_urls(album_images: Any) -> List[str]:
+    """从抖音的图集字段里取原图地址列表。
+
+    两种形态都兼容：
+        `images[]`       → {uri, url_list: [...]}
+        `image_infos[]`  → 同上
+    取不到的不编造（返回空）。
+    """
+    out: List[str] = []
+    if not isinstance(album_images, list):
+        return out
+    for img in album_images:
+        if not isinstance(img, dict):
+            if isinstance(img, str) and img.startswith("http"):
+                out.append(img)
+            continue
+        u = _first_url(img.get("url_list")) or _first_url(img)
+        if u:
+            out.append(u)
+    return out
 
 
 def _detail_from_raw(raw: Dict[str, Any], item_id: str) -> NoteDetail:
@@ -806,18 +868,23 @@ def _detail_from_raw(raw: Dict[str, Any], item_id: str) -> NoteDetail:
     cover = _first_url(video.get("cover")) or _first_url(video.get("origin_cover"))
 
     # 图集（图文笔记）
-    images: List[str] = []
-    image_infos = info.get("image_infos")
-    if isinstance(image_infos, list):
-        for img in image_infos:
-            url = _first_url(img.get("url_list") if isinstance(img, dict) else img)
-            if url:
-                images.append(url)
+    # ⚠️ 图集的图片在 `images`（不是 `image_infos`）—— 见 `parse_search_item`
+    # 的说明。两个字段都读，`images` 优先。
+    images: List[str] = _album_image_urls(info.get("images"))
+    if not images:
+        images = _album_image_urls(info.get("image_infos"))
     if not cover and images:
         cover = images[0]
 
     duration_ms = _to_int(video.get("duration"))
-    is_image = bool(images)
+    # 优先信 `aweme_type`（0=视频，68=图集）
+    aweme_type = str(info.get("aweme_type") or "")
+    if aweme_type == "68":
+        is_image = True
+    elif aweme_type == "0":
+        is_image = False
+    else:
+        is_image = bool(images)
 
     return NoteDetail(
         id=aweme_id,
