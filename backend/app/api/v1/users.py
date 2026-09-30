@@ -28,6 +28,11 @@ from app.services.platforms.login_health import (
     netscape_to_header,
     resolve_connection,
 )
+# ⚠️ 登录失效的**统一异常** —— `/users/me` 要把它映射成 401（不是 500）
+#
+# 语义：需要用户**重新登录**（≠ 风控，风控是 PlatformUnavailableError）。
+# 详见 `platforms/types.py::LoginExpiredError` 的说明。
+from app.services.platforms.types import LoginExpiredError
 
 logger = logging.getLogger("ylcraft.api.users")
 
@@ -165,6 +170,7 @@ async def _client_for(platform: str):
             ),
         )
     from app.services.platforms import create_client
+    from app.services.platforms.types import LoginExpiredError
 
     cookie = netscape_to_header(raw, cfg["cookie_domain"])
     # mode 按平台选：
@@ -264,13 +270,25 @@ async def get_self_profile(
         async with client:
             profile = await client.get_self_profile()
         if profile is None:
+            # 平台没抛 LoginExpiredError，但也拿不到 ——
+            # 仍然返回 success=False（前端显示"未获取到"），
+            # 但**提示要可操作**（指向重新登录）。
             return UserProfileResponse(
                 success=False, data=None,
-                message="未能获取自己的资料 —— 登录态可能已失效，请重新获取 Cookie",
+                message="未能获取自己的资料 —— 登录态可能已失效，"
+                        "请在「账号中心」重新获取该平台登录态",
             )
         return UserProfileResponse(success=True, data=_to_item(profile), message="获取成功")
     except HTTPException:
         raise
+    except LoginExpiredError as exc:
+        # ⚠️ **登录失效要 401，不是 500**（2026-09-30）
+        #
+        # 语义不同：500 = 服务端故障（用户什么都做不了）；
+        # 401 = 需要重新登录（用户可以自己解决）。前端据此提示
+        # "请重新登录"，而不是"加载失败"。
+        logger.warning("[users/me] %s 登录态失效: %s", platform, str(exc)[:160])
+        raise HTTPException(status_code=401, detail=str(exc))
     except Exception as exc:
         logger.error("[users/me] %s 失败: %s", platform, exc)
         raise HTTPException(status_code=500, detail=f"获取我的资料失败: {exc}")

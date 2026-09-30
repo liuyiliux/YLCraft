@@ -40,7 +40,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-from ..types import SearchParams, SearchResult, UserProfile
+from ..types import LoginExpiredError, SearchParams, SearchResult, UserProfile
 from .apis import (
     GQL_URL,
     REQUIRED_COOKIES,
@@ -72,8 +72,13 @@ logger = logging.getLogger("ylcraft.platforms.twitter.http")
 MAX_PAGE = 10
 
 
-class TwitterAuthError(RuntimeError):
-    """X 凭证缺失或失效（需要用户重新登录）。"""
+class TwitterAuthError(LoginExpiredError):
+    """X 凭证缺失或失效（需要用户重新登录）。
+
+    ⚠️ **继承 `LoginExpiredError`**（2026-09-30 改）——
+    这样 API 层能把它映射成 **401**（而不是 500），
+    前端据此提示"请重新登录 X"，而不是"加载失败"。
+    """
 
 
 def cookie_map(header: str) -> Dict[str, str]:
