@@ -35,6 +35,10 @@ def _auto_discover_platforms():
         # youtube（2026-10-01）：VPN 通了之后用 yt-dlp 实现的采集客户端
         # （搜索/详情/频道），见 platforms/youtube/ 的实测记录。
         "youtube",
+        # telegram（2026-10-01）：A 方案免登录抓公开频道（含频道内
+        # `?q=` 关键词搜索）+ B 方案 MTProto 登录（全局搜索/我的频道）。
+        # 见 platforms/telegram/ 的实测记录。
+        "telegram",
     ]
     
     for module_name in platform_modules:

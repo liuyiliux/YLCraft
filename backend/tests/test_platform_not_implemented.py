@@ -140,38 +140,32 @@ def test_unimplemented_platforms_are_exactly_the_silent_empty_risk():
     assert "zhihu" not in sup, "知乎已移除（2026-10-01）"
 
 
-def test_youtube_implemented_and_telegram_still_pending():
-    """**状态守卫**：youtube 已实现；telegram 仍未实现（且原因已变）。
+def test_youtube_and_telegram_both_implemented():
+    """**状态守卫**：youtube / telegram 现在**都已实现**。
 
-    ## 这条测试的来历（它已经完成过一次使命）
+    ## 这条测试的来历（它已经完成过两次使命）
 
     2026-10-01 上午写成"youtube/telegram **都**未实现，因为网络不通"，
-    设计意图是：**网络通了就让它失败，提醒去实现**。
+    设计意图是：**状态一变就让它失败，提醒更新**。它如期失败了两次：
 
-    当天下午用户开了 VPN —— 它如期失败了，于是实现了 youtube
-    （yt-dlp，见 `tests/test_youtube_client.py`），现在改成：
+      ① 下午用户开 VPN → 实现了 youtube（yt-dlp，
+         见 `tests/test_youtube_client.py`）→ 改成"youtube 已实现 / telegram 未实现"
+      ② 用户要求做 Telegram → 实现了 A（t.me/s 免登录）+ B（MTProto 登录）
+         → 改成现在这样（**两个都必须已实现**）
 
-        youtube  → **必须已实现**（否则是回归）
-        telegram → 仍未实现，但原因**不再是网络**：
-                   `t.me` 现在已经能访问（HTTP 200），缺的是产品决策 ——
-                   公开频道列表 vs MTProto 关键词搜索是两条路，
-                   要用户先选（见 ADDING_A_PLATFORM.md）。
+    这正说明这种"状态守卫测试"有用：任何一边回退都会立刻红。
 
-    这样写的好处：任何一边状态变化都会让这条测试失败，
-    逼着后来的人更新文档，而不是留下过时的注释。
+    实测依据见 `docs/platform/TELEGRAM_GUIDE.md` 与
+    `docs/platform/ADDING_A_PLATFORM.md`。
     """
     from app.services.platforms import supported_platforms
 
     sup = supported_platforms()
-    # 网络已通 + 客户端已实现 —— 不该再退回 501
-    assert "youtube" in sup, (
-        "youtube 应已实现（2026-10-01 VPN 打通后用 yt-dlp 实现）；"
-        "若被移除，请说明原因并更新本文档"
-    )
-    # telegram 仍待产品决策（不是网络问题）
-    assert "telegram" not in sup, (
-        "telegram 若已实现，请更新本测试与 docs/platform/ADDING_A_PLATFORM.md"
-    )
+    for p in ("youtube", "telegram"):
+        assert p in sup, (
+            f"{p} 应已实现（2026-10-01）。若被移除，请说明原因并更新 "
+            "docs/platform/{ADDING_A_PLATFORM,TELEGRAM_GUIDE}.md"
+        )
 
 
 def test_501_message_is_actionable():

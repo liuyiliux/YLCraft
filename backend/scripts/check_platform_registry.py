@@ -61,6 +61,13 @@ UI_ONLY_PLATFORMS = {"openai", "anthropic", "minimax", "google", "s3", "ftp", "w
 #    保留在 KNOWN_GAPS 是为了让校验器知道这是**已知且有理由**的状态，
 #    而不是漏配。若将来要支持"登录后才能看的内容"（会员/年龄限制），
 #    再补 detector 并从本表移出。
+#
+# ⚠️ `telegram`（2026-10-01）：同 youtube —— **公开频道免登录**
+#    （`t.me/s`，含频道内 `?q=` 关键词搜索，已实现）。
+#    它的凭证走的是 **MTProto 登录**（api_id/api_hash + 手机号验证码），
+#    在 `/api/v1/telegram/auth/*` 与 `/telegram-login` 页面，
+#    **不走**账号中心的"浏览器抓 cookie"流程 —— 所以这里缺 detector
+#    同样是**设计如此**，不是待办。
 KNOWN_GAPS = {"telegram", "tiktok", "youtube"}
 
 

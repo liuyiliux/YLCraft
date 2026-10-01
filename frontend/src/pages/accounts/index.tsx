@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../constants/theme'
 import {
   Card,
@@ -56,6 +57,7 @@ import {
   SyncOutlined,
   ImportOutlined,
   MessageOutlined,
+  SendOutlined,
 } from '@ant-design/icons'
 import {
   listPlatformConnections,
@@ -101,9 +103,18 @@ const PLATFORM_METAS: PlatformMeta[] = [
   // 但本元数据表此前漏了它，导致账号中心渲染不出番茄入口、无法创建连接。
   { value: 'fanqie',     label: '番茄小说', icon: <span style={{fontSize:18}}>🍅</span>, color: '#ff5a5f', authTypes: ['cookie'], supportQrcode: false },
   { value: 'wechat_mp',  label: '微信公众号', icon: <MessageOutlined style={{color:'#07C160',fontSize:16}} />, color: '#07C160', authTypes: ['qrcode'], supportQrcode: true },
-  { value: 'youtube',    label: 'YouTube', icon: <span style={{fontSize:18}}>▶️</span>, color: '#ff0000', authTypes: ['cookie'], supportQrcode: false },
+  // YouTube **免登录**（yt-dlp 取公开数据）—— 没有"凭证"这回事，
+  // 标 none 让账号中心不再要求抓 cookie（2026-10-01）
+  { value: 'youtube',    label: 'YouTube', icon: <span style={{fontSize:18}}>▶️</span>, color: '#ff0000', authTypes: ['none'], supportQrcode: false },
   { value: 'tiktok',     label: 'TikTok',  icon: <span style={{fontSize:18}}>♪</span>,  color: '#000000', authTypes: ['cookie'], supportQrcode: false },
   { value: 'twitter',    label: 'X',       icon: <span style={{fontSize:18}}>🐦</span>, color: '#1da1f2', authTypes: ['cookie'], supportQrcode: false },
+  // ⚠️ Telegram 走 **MTProto 登录**，不是 cookie/扫码 ——
+  // 账号中心对它要显示「去登录」并跳到 `/telegram-login`
+  // （api_id/api_hash + 手机号验证码 + 可选两步验证密码）。
+  // 用 `authTypes: ['telegram']` 标记，渲染分支据此走专用入口。
+  // ⚠️ 但**公开频道不需要登录**（t.me/s 免登录，含频道内 `?q=` 搜索），
+  // 所以这个凭证是"可选"的 —— 只为「已加入搜索 / 我的频道 / 私有频道」。
+  { value: 'telegram',   label: 'Telegram', icon: <SendOutlined style={{color:'#0088cc',fontSize:16}} />, color: '#0088cc', authTypes: ['telegram'], supportQrcode: false },
   { value: 'openai',     label: 'OpenAI',  icon: <ThunderboltOutlined style={{color:'#10a37f',fontSize:16}} />, color: '#10a37f', authTypes: ['api_key'], supportQrcode: false },
   { value: 'anthropic',  label: 'Anthropic', icon: <ThunderboltOutlined style={{color:'#d4a0e7',fontSize:16}} />, color: '#d4a0e7', authTypes: ['api_key'], supportQrcode: false },
   { value: 'minimax',    label: 'MiniMax', icon: <ThunderboltOutlined style={{color:'#00d4ff',fontSize:16}} />, color: '#00d4ff', authTypes: ['api_key'], supportQrcode: false },
@@ -1437,6 +1448,8 @@ function AddAccountDrawer({
 // ===== 主页面 =====
 export default function PlatformsPage() {
   const { theme } = useTheme()
+  // Telegram 的登录是独立页面（MTProto 多步流程），这里只做跳转
+  const navigate = useNavigate()
   const [connections, setConnections] = useState<PlatformConnectionResponse[]>([])
   const [loading, setLoading] = useState(false)
   const [supportedPlatforms, setSupportedPlatforms] = useState<any[]>([])
@@ -1702,6 +1715,10 @@ export default function PlatformsPage() {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {inactivePlatforms.map(pm => {
               const isApiPlatform = !pm.authTypes.includes('cookie')
+              // ⚠️ Telegram 走 **MTProto 多步登录**，不能走"添加连接"抽屉
+              // （那套是抓 cookie / 扫码的一次性动作）。
+              // 点它直接跳到专用的登录页（2026-10-01）。
+              const isTelegram = pm.authTypes.includes('telegram')
               return (
                 <Button
                   key={pm.value}
@@ -1713,7 +1730,11 @@ export default function PlatformsPage() {
                     borderRadius: 6,
                   }}
                   icon={pm.icon}
-                  onClick={() => onOpenAddDrawer(pm.value)}
+                  onClick={() =>
+                    isTelegram
+                      ? navigate('/telegram-login')
+                      : onOpenAddDrawer(pm.value)
+                  }
                 >
                   {pm.label} <PlusOutlined style={{ fontSize: 10 }} />
                 </Button>

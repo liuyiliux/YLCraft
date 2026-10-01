@@ -516,6 +516,17 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load platforms router: {e}")
 
+    # Telegram 专用路由（MTProto 多步登录 + 频道能力）
+    #
+    # 为什么不并进 platforms：Telegram 的登录是**多步状态机**
+    # （api_id/api_hash → 手机号 → 验证码 → 可选两步验证密码），
+    # 与其它平台"抓一次 cookie"完全不同（2026-10-01）。
+    try:
+        from app.api.v1 import telegram
+        app.include_router(telegram.router, prefix="/api/v1", tags=["Telegram"])
+    except Exception as e:
+        logger.warning(f"Could not load telegram router: {e}")
+
     # AI 连接器路由
     try:
         from app.api.v1 import ai_connectors
