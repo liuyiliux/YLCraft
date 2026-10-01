@@ -140,33 +140,37 @@ def test_unimplemented_platforms_are_exactly_the_silent_empty_risk():
     assert "zhihu" not in sup, "知乎已移除（2026-10-01）"
 
 
-def test_youtube_and_telegram_stay_unimplemented_until_network_works():
-    """**记录事实**：youtube / telegram 未实现，是因为**本机网络不通**。
+def test_youtube_implemented_and_telegram_still_pending():
+    """**状态守卫**：youtube 已实现；telegram 仍未实现（且原因已变）。
 
-    ## 为什么写成测试（而不是只写注释）
+    ## 这条测试的来历（它已经完成过一次使命）
 
-    用户明确要求做 YouTube 和 Telegram。如果只写注释，
-    下一个 AI 很可能直接开始写客户端 —— 写完才发现连不上，
-    又造一个"假支持"。这条测试把**前置条件**固化下来：
+    2026-10-01 上午写成"youtube/telegram **都**未实现，因为网络不通"，
+    设计意图是：**网络通了就让它失败，提醒去实现**。
 
-        网络通了 → 这条测试会失败 → 提醒去实现（并删掉这条）
-        网络不通 → 保持 501，不会假装"搜到 0 条"
+    当天下午用户开了 VPN —— 它如期失败了，于是实现了 youtube
+    （yt-dlp，见 `tests/test_youtube_client.py`），现在改成：
 
-    实测依据（2026-10-01，见 `docs/platform/ADDING_A_PLATFORM.md`）：
-        DNS www.youtube.com → 157.240.7.20（**Facebook 的 IP**，DNS 污染）
-        https://www.youtube.com/robots.txt / https://t.me/s/telegram → 超时
-        yt-dlp ytsearch3:"..."                                   → 超时
-        本机代理 127.0.0.1:10090 存在但 **ProxyEnable=0 且无进程监听**
+        youtube  → **必须已实现**（否则是回归）
+        telegram → 仍未实现，但原因**不再是网络**：
+                   `t.me` 现在已经能访问（HTTP 200），缺的是产品决策 ——
+                   公开频道列表 vs MTProto 关键词搜索是两条路，
+                   要用户先选（见 ADDING_A_PLATFORM.md）。
+
+    这样写的好处：任何一边状态变化都会让这条测试失败，
+    逼着后来的人更新文档，而不是留下过时的注释。
     """
     from app.services.platforms import supported_platforms
 
     sup = supported_platforms()
-    # 只要网络还不通，就不该"实现"它们（实现了也无法验证 = 假支持）
-    assert "youtube" not in sup, (
-        "youtube 若已实现，请先确认网络可达并更新本测试与文档"
+    # 网络已通 + 客户端已实现 —— 不该再退回 501
+    assert "youtube" in sup, (
+        "youtube 应已实现（2026-10-01 VPN 打通后用 yt-dlp 实现）；"
+        "若被移除，请说明原因并更新本文档"
     )
+    # telegram 仍待产品决策（不是网络问题）
     assert "telegram" not in sup, (
-        "telegram 若已实现，请先确认网络可达并更新本测试与文档"
+        "telegram 若已实现，请更新本测试与 docs/platform/ADDING_A_PLATFORM.md"
     )
 
 

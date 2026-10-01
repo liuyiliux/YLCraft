@@ -86,50 +86,69 @@ python scripts/check_platform_registry.py --allow-known  # 全量但放行已知
 已知历史缺口（`telegram`/`tiktok`/`youtube` 缺 Detector 与前端入口，
 本就未支持浏览器取 Cookie）在脚本的 `KNOWN_GAPS` 里单列，**新平台不得加入**。
 
-## ⚠️ `youtube` / `telegram`：**本机网络不通**，不是"没时间做"（2026-10-01 实测）
+## ✅ `youtube`：VPN 通了之后已实现（2026-10-01 当天闭环）
 
-用户要求"最后吧 YouTube 和 telegram"。**先探网络，再动手** —— 结果探到的是
-一个环境事实，而不是一个编码问题。实测（`urllib` / `yt-dlp`，统一 15s 超时）：
+上面那次探查（网络不通）之后，用户开了 VPN，**当天就把 YouTube 做完了**。
+留档这次的完整过程，因为它演示了"先探网络、再动手"的价值。
 
-```
-DNS  www.youtube.com          → 157.240.7.20      ← ⚠️ 这是 **Facebook 的 IP**
-DNS  youtubei.googleapis.com  → 31.13.90.19       ← ⚠️ 同样是 Facebook 段
-HTTP https://www.youtube.com/robots.txt            → 超时
-HTTP https://t.me/telegram                         → 超时
-HTTP https://t.me/s/telegram   （公开频道预览页）    → 超时
-yt-dlp  ytsearch3:"python tutorial"                → 超时
-yt-dlp  https://www.youtube.com/watch?v=dQw4w9WgXcQ → 超时
-```
-
-`t.me` / `telegram.org` 的 DNS 倒是正常的（`149.154.167.99` / `104.244.43.231`），
-但 **TCP 443 连不出去**。
-
-**根因**：本机有代理配置但**没启用、也没进程**监听：
+**网络验证（VPN 开启后重跑同一组探针）**：
 
 ```
-HKCU:\...\Internet Settings\ProxyServer = 127.0.0.1:10090
-                                     ProxyEnable = 0        ← 关着
-Test-NetConnection 127.0.0.1:10090                     → False（没人监听）
-常见端口 7890/7897/10809/10808/1080/20171              → 全 False
-代理进程（clash/v2ray/xray/sing-box/mihomo/hiddify…）  → 一个都没有
+DNS  www.youtube.com  → 104.244.42.197（不再是 Facebook 的 IP）
+HTTP https://www.youtube.com/robots.txt  → 200 OK
+HTTP https://t.me/telegram               → 200 OK
+127.0.0.1:10090 代理端口               → 有进程监听了
 ```
 
-**结论与纪律**：
+**实现方案：yt-dlp**（不自己逆向 innertube —— 签名/API 轮换它内部全处理了，
+而且项目下载链路一直在用它）。
 
-1. **不要在不通的网络上去"实现"这两个平台** —— 写完也无法验证，
-   只会再造一个"假支持"（列出来、点了没结果），正是本文档铁律禁止的。
-2. 因此 `youtube` 目前**不在** `supported_platforms()` 里；两个搜索端点
-   （`/crawler/search` 与 `/crawler/search-enhanced`）都会显式报 **501**
-   「尚未实现采集（不是「没搜到」）」。
-3. 前端 `PLATFORM_SEARCH_CONFIG.youtube` 里的 `sortOptions`/`filters`
-   是**按 YouTube 公开语义写的、从未跑通**，已在代码注释里标明"未实测"。
-4. 用户开 VPN 后要做的事：先重跑上面的探针确认连通 → 再按本文档走
-   客户端 + 抓包 + 实测排序 → 最后把 `youtube` 加进自动发现列表。
+实测（全部 firsthand，2026-10-01）：
 
-Telegram 另有一条**与网络无关**的硬约束：`https://t.me/s/<channel>` 只能看
-**公开频道的消息列表**，**关键词搜索需要 MTProto 登录**
-（`telethon` + `api_id`/`api_hash` + 手机号验证码），
-不是"给个 cookie 就能搜"。接入前要先和用户确认走哪条路。
+| 调用 | 结果 |
+|------|------|
+| `ytsearch5:python tutorial` | 5 条（相关度，首条 Mosh） |
+| `...&sp=EgIIAQ%3D%3D` | 54 条（**最新**，首条 92 秒的新视频） |
+| `...&sp=CAMSAhAB` | 479 条（**播放量**，首条 freeCodeCamp 4937 万） |
+| `...&sp=EgIQAg%3D%3D` | 频道（`UC...` 24 位） |
+| `/@freecodecamp/videos` | 1724 条 |
+| `/download/parse` | 返回 googlevideo 720p 直链 + 封面 + 时长（下载链路直接可用） |
+
+**三档排序首条互不相同** → 真排序，不是假选项。
+
+**三个实测踩到的坑（都写进代码注释 + 回归测试了）**：
+
+1. **`ytsearchdateN:` 语法不支持** —— 实测 `Unsupported url scheme:
+   "ytsearchdate3"`。所以"最新"排序必须用 **`sp=` 参数的完整搜索 URL**。
+2. **搜索结果会混入播放列表** —— `PL...` 开头的卡片（id 几十位、
+   duration=None）不是视频，点详情打不开（这就是第一轮实测拿到 404
+   的原因）。判据：**视频 ID 恰好 11 位**。
+3. **频道 ID ≠ handle** —— `UC68KSmHePPePCjW4v57VPQg` 拼成
+   `@UC68...` 会 **404**，必须走 `/channel/{id}/videos`。
+
+**已知边界（如实）**：
+  · 详情**不给** video 直链 —— YouTube 是分段加密流，直链几分钟失效；
+    下载走 `/api/v1/download` 的 yt-dlp 链路（实测可用）。
+  · 时长过滤在**客户端**做：YouTube 只认一个 `sp=`，排序与时长互斥。
+  · 免登录：公开数据不需要 Cookie，所以 `users.py::SUPPORTED` 里
+    youtube 带 `no_login` 标记（不要求先有连接）。
+
+**教训**：`KNOWN_GAPS` 里的 `youtube` 我**保留**了（因为它确实没有
+cookie detector）——但注释改成了"**设计如此**：免登录平台没有
+'浏览器取 Cookie'这回事"，而不是"待办"。否则后人会以为漏配了。
+
+## ⚠️ `telegram`：仍未实现（网络已通，但缺的是别的东西）
+
+VPN 通了之后 `t.me` 也能访问了（HTTP 200），但 Telegram 有**两条**
+与网络无关的约束：
+
+  · `https://t.me/s/<channel>` 只能看**公开频道的消息列表**，
+    没有关键词搜索能力。
+  · **关键词搜索需要 MTProto 登录**（`telethon` + `api_id`/`api_hash`
+    + 手机号验证码），是另一套东西，不是"给个 cookie 就能搜"。
+
+**接入前必须先和用户确认走哪条路**（只能按频道采集 vs 上 MTProto），
+不要自作主张。所以 `telegram` 保持未实现 + 501。
 
 ## 搜索类平台的三个额外约束
 

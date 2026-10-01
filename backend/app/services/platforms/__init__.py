@@ -32,6 +32,9 @@ def _auto_discover_platforms():
         # ⚠️ 知乎（zhihu）已移除（2026-10-01 用户要求）。
         # 它从来只有登记（cookies/detector + yt-dlp 降级），没有真实采集客户端，
         # 属于"假支持"：选了只会走 yt-dlp 兜底，结果不可靠。
+        # youtube（2026-10-01）：VPN 通了之后用 yt-dlp 实现的采集客户端
+        # （搜索/详情/频道），见 platforms/youtube/ 的实测记录。
+        "youtube",
     ]
     
     for module_name in platform_modules:
