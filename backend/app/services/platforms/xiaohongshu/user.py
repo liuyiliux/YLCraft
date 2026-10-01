@@ -93,11 +93,22 @@ def _check_code(data: Dict[str, Any], what: str) -> None:
     小红书成功时 code 可能是 0 **或** 1000（实测：搜索返回 1000，其余返回 0），
     所以两者都算成功。失败时给可读原因——**不静默返回空**，
     否则会把"签名失效"误报成"没有数据"。
+
+    ⚠️ **code=-100（登录已过期）必须是 `LoginExpiredError`**（2026-10-01 加，
+    与 `search_api.py` 同步）。否则用户搜索路径会把它当成普通失败，
+    API 层映射成 500 而不是 401，用户不知道该重新登录。
     """
     code = data.get("code")
     if code in (0, 1000):
         return
     msg = data.get("msg") or data.get("message") or ""
+    if code == -100:
+        from app.services.platforms.types import LoginExpiredError
+
+        raise LoginExpiredError(
+            f"[xhs] {what} 失败：登录已过期（code=-100）。"
+            "请到「账号中心」重新获取小红书登录态后重试。"
+        )
     if "signature" in str(msg).lower() or code == -1:
         raise RuntimeError(
             f"[xhs] {what} 签名校验失败（code={code}, msg={msg}）。"

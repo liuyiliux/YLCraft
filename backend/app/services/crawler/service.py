@@ -500,6 +500,12 @@ class CrawlerService:
                 "300011", "300012",
                 "未登录", "登录态", "Cookie", "cookie",
                 "风控", "antispam", "CAPTCHA", "captcha",
+                # ⚠️ 2026-10-01 补（小红书实测）：
+                # code=-100 msg='登录已过期' —— 原来不含上面任何关键词，
+                # 被吞成"找到 0 条结果"（假阴性）。平台侧现在会同时抛
+                # LoginExpiredError（类型判断），这里是字符串层的双保险，
+                # 覆盖其它还没改成类型抛错的平台。
+                "登录已过期", "登录过期", "请重新登录",
             )):
                 logger.error(
                     "[_search_via_platforms] %s 登录态/风控类错误（**不吞成空**）：%s",
@@ -681,6 +687,24 @@ class CrawlerService:
                 "raw_data": getattr(detail, "raw_data", {}) or {},
             }
 
+        except PlatformUnavailableError:
+            # ⚠️ **平台侧拒绝必须穿透**（2026-10-01 修）
+            #
+            # 原来一律 `return {}` → 路由层把空 dict 变成
+            # **404 "笔记不存在或获取失败"** —— 但作品存在，
+            # 是请求被拒（风控/UA/登录态）。用户会以为"这条笔记没了"。
+            #
+            # 实测（抖音详情，搜索正常但详情 404）：
+            #     GET www-hj.douyin.com/aweme/v1/web/aweme/detail/
+            #     → HTTP 200 + **空响应体**（抖音用这种形式表示拒绝）
+            #     → PlatformUnavailableError → 被这里吞成 {} → 404
+            #
+            # 语义：404 = 不存在（用户无能为力）；
+            #       4xx/5xx 可读错误 = 被拒（可以重试/重新登录）。
+            raise
+        except LoginExpiredError:
+            # 登录态失效同理 —— 提示"重新登录"，而不是"笔记不存在"
+            raise
         except Exception as e:
             logger.error(f"[get_note_detail] Error: {e}")
             return {}
