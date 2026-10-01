@@ -52,6 +52,15 @@ UI_ONLY_PLATFORMS = {"openai", "anthropic", "minimax", "google", "s3", "ftp", "w
 #
 # ⚠️ 修好一个就从这里删掉 —— 否则校验器会对已修的平台继续放行，
 # 缺口会重新溜进来（`twitter` 2026-09-28 修好后已移出）。
+#
+# ⚠️ `youtube`（2026-10-01）：**采集客户端已实现**（platforms/youtube/，
+#    搜索/详情/频道都通了，用户开 VPN 后实测），但它**不需要登录** ——
+#    yt-dlp 走公开数据，公开内容无需 Cookie。
+#    所以这里的"缺 detector"是**设计如此**，不是待办：
+#    没有登录态就没有"浏览器取 Cookie"这回事。
+#    保留在 KNOWN_GAPS 是为了让校验器知道这是**已知且有理由**的状态，
+#    而不是漏配。若将来要支持"登录后才能看的内容"（会员/年龄限制），
+#    再补 detector 并从本表移出。
 KNOWN_GAPS = {"telegram", "tiktok", "youtube"}
 
 

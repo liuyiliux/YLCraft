@@ -310,22 +310,17 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
   // ⚠️ 知乎（zhihu）已移除（2026-10-01 用户要求）：它只有"登记"，
   // 没有真实采集客户端 —— 选了只能走 yt-dlp 兜底，结果不可靠，属于假支持。
   //
-  // ⚠️⚠️ **YouTube 目前是"未实现"，不是"能搜但结果少"**（2026-10-01 实测）
+  // ✅ **YouTube 已实现**（2026-10-01，用户开 VPN 后用 yt-dlp 打通）
   //
-  // 后端注册表 `supported_platforms()` 里**没有 youtube** —— 没有采集客户端。
-  // 现在两个搜索端点都会显式报 **501**「平台 'youtube' 尚未实现采集（不是「没搜到」）」，
-  // 不会再假装"找到 0 条结果"。
+  // 之前网络不通（DNS 污染 + 无代理），报 501 未实现；VPN 通了之后
+  // 用 yt-dlp 实现了搜索/详情/频道（backend/app/services/platforms/youtube/）。
   //
-  // 为什么没实现：**本机网络到 YouTube 根本不通**（实测 firsthand）：
-  //     DNS www.youtube.com → 157.240.7.20  ← **Facebook 的 IP（DNS 被污染）**
-  //     https://www.youtube.com/robots.txt   → 超时
-  //     yt-dlp ytsearch3:"python tutorial"   → 超时
-  //     本机代理配置存在（127.0.0.1:10090）但 **ProxyEnable=0 且端口没在监听**
-  // 所以下面的 sortOptions / filters 是**按 YouTube 公开语义写的、但从未跑通验证**。
-  // 用户开 VPN 后如果能连通，再按 `ADDING_A_PLATFORM.md` 做真实客户端 + 实测排序。
+  // 排序为**实测生效**（三档首条互不相同，2026-10-01）：
+  //     relevance 相关度 / date 最新(sp=EgIIAQ==) / viewCount 播放量(sp=CAMSAhAB)
+  // ⚠️ `rating`（评分）YouTube 早已下线该排序档，别加回来（假选项）。
   //
-  // 排序依据（YouTube 搜索页的 `sp` 参数语义，**未实测**）：
-  //     relevance / date(上传日期) / viewCount(播放量) / rating(评分)
+  // 时长过滤：YouTube 的 sp= 与排序参数互斥（只认一个），
+  // 所以「排序+时长」组合时排序优先、时长由后端客户端过滤。
   youtube: {
     searchTypes: [
       {
@@ -334,7 +329,6 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
           { value: 'relevance', label: '相关度' },
           { value: 'date', label: '最新' },
           { value: 'viewCount', label: '播放量' },
-          { value: 'rating', label: '评分' },
         ],
         defaultSort: 'relevance',
         filters: [
@@ -352,10 +346,8 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
       },
       {
         value: 'user', label: '频道', icon: <UserOutlined />,
-        sortOptions: [
-          { value: 'relevance', label: '相关度' },
-        ],
-        defaultSort: 'relevance',
+        sortOptions: [],
+        defaultSort: '',
       },
     ],
     defaultSearchType: 'note',

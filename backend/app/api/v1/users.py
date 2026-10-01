@@ -57,6 +57,14 @@ SUPPORTED = {
     # ⚠️ 签名要从浏览器抓（`__NS_hxfalcon` 是混淆 JS，纯 HTTP 拿不到）
     "kuaishou": {"conn_platform": "KUAISHOU", "cookie_domain": "kuaishou"},
     "ks": {"conn_platform": "KUAISHOU", "cookie_domain": "kuaishou"},
+    # YouTube（2026-10-01 VPN 打通后实现）：**免登录** ——
+    # 公开频道数据用 yt-dlp 直接取，不需要 Cookie，
+    # 所以 `no_login=True`（见 `_client_for` 的说明）。
+    "youtube": {
+        "conn_platform": "YOUTUBE",
+        "cookie_domain": "youtube",
+        "no_login": "1",
+    },
 }
 
 
@@ -158,8 +166,26 @@ def _get_cookie_for(platform: str) -> str:
 
 
 async def _client_for(platform: str):
-    """按连接取 cookie，建平台客户端。"""
+    """按连接取 cookie，建平台客户端。
+
+    ⚠️ **免登录平台（`no_login`）不需要连接**（2026-10-01 加）
+    YouTube 的公开数据用 yt-dlp 直接取，没有"登录态"这回事。
+    原来这里无条件要求 `resolve_connection` 取到连接，
+    否则 400「没有可用的连接」—— 对免登录平台是错的（明明能用）。
+    """
     cfg = _resolve(platform)
+    if cfg.get("no_login"):
+        from app.services.platforms import create_client
+
+        client = create_client(
+            "youtube" if platform == "youtube" else platform,
+            mode="api",
+            cookie="",
+        )
+        if client is None:
+            raise HTTPException(status_code=500, detail=f"{platform} 客户端未注册")
+        return client
+
     _conn_id, raw = resolve_connection("", cfg["conn_platform"])
     if not raw:
         raise HTTPException(
