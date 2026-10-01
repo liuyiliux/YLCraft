@@ -443,6 +443,10 @@ async def _get_qualities(url: str, title: str, platform: str) -> list[VideoQuali
             "noplaylist": True,
             "format": "bestvideo+bestaudio/best",
             "http_headers": headers,
+            # ⚠️ 枚举清晰度也要重试 —— 抖音/YouTube 的元数据接口会间歇抖动，
+            # 不重试会让"这个视频没有清晰度"变成假象（实测踩过）。
+            "extractor_retries": 3,
+            "retries": 5,
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             if cookie_jar:
@@ -853,7 +857,118 @@ def _get_cookie_file_for_ytdlp(url: str) -> Optional[str]:
         logger.warning(f'[_cookie] 获取 cookie 文件失败: {e}')
     return None
 
-def _ytdlp_download(url: str, quality_label: str | None, title: str | None, page_url: str | None = None, is_audio: bool = False) -> str:
+# =============================================================================
+# yt-dlp 辅助：cookie 临时副本 + 进度取值
+# =============================================================================
+
+# 本次进程内创建的 cookie 临时副本（下载完清理）
+_TEMP_COOKIES: list[str] = []
+
+
+def _cleanup_temp_cookies() -> None:
+    """清理 cookie 临时副本。
+
+    ⚠️ 必须清 —— 里面是**登录凭证**（与 `CookieManager` 的共享文件
+    同内容）。留在临时目录里既占空间，也是凭证泄露面。
+    """
+    while _TEMP_COOKIES:
+        p = _TEMP_COOKIES.pop()
+        try:
+            if os.path.exists(p):
+                os.remove(p)
+        except Exception as exc:
+            logger.debug("[download] 清理 cookie 副本失败 %s: %s", p, exc)
+
+
+def ytdlp_progress_percent(d: dict) -> float:
+    """从 yt-dlp 的进度回调字典算百分比。
+
+    ## ⚠️ 必须走**回退链**（2026-10-01 修）
+
+    yt-dlp 的 `total_bytes` **可能为 None**（HLS/DASH 分片流常见 ——
+    事先不知道总大小）。直接拿它算会得到 0%，任务进度条**一直不动**，
+    用户以为卡死了。
+
+    正确的回退链（来源：yt-dlp `YoutubeDL.py` 的 hook 文档）：
+
+        total_bytes              ← 有就用
+        total_bytes_estimate     ← 退而求其次
+        fragment_index/fragment_count  ← 分片流：按分片数算
+        （都没有 → 0.0，如实返回"未知"而不是假装 100%）
+
+    Args:
+        d: yt-dlp 传给 `progress_hooks` 的字典
+
+    Returns:
+        0.0 ~ 100.0；无法确定时返回 0.0
+    """
+    if not isinstance(d, dict):
+        return 0.0
+
+    downloaded = d.get("downloaded_bytes") or 0
+
+    total = d.get("total_bytes")
+    if not total:
+        total = d.get("total_bytes_estimate")
+    if total and total > 0:
+        return max(0.0, min(100.0, downloaded / total * 100.0))
+
+    # 分片流：按分片进度
+    fi = d.get("fragment_index")
+    fc = d.get("fragment_count")
+    if fi and fc and fc > 0:
+        return max(0.0, min(100.0, fi / fc * 100.0))
+
+    # 未知 —— 如实返回 0（不假装 100%）
+    return 0.0
+
+
+def _make_progress_hook(task_id: str, lo: float = 15.0, hi: float = 85.0):
+    """造一个 yt-dlp 的进度 hook，把**实时字节进度**写回任务表。
+
+    ## 为什么需要（2026-10-01）
+
+    原来任务进度是**阶段式**的（5% → 10% → 90% → 100%），
+    中间那段真实下载期间进度条**完全不动** —— 下 4K 长视频时
+    用户会以为卡死了。
+
+    ## 映射
+
+    yt-dlp 的 0~100% 映射到任务的 `lo~hi` 区间
+    （默认 15~85，给"解析"和"写素材库"留出余量）。
+
+    ## ⚠️ 线程安全
+
+    hook 在 **yt-dlp 的工作线程**里被调用（我们跑在
+    `run_in_executor`），而任务表是主线程的 dict。
+    这里只做**赋值**（`dict` 单键赋值在 CPython 下是原子的），
+    不做读-改-写复合操作，所以不需要锁。
+    """
+    def _hook(d: dict) -> None:
+        try:
+            status = d.get("status")
+            if status == "finished":
+                pct = hi
+            else:
+                pct = lo + (hi - lo) * (ytdlp_progress_percent(d) / 100.0)
+            t = _download_tasks.get(task_id)
+            if isinstance(t, dict):
+                t["progress"] = round(pct, 1)
+                speed = d.get("speed")
+                if speed:
+                    t["progress_message"] = (
+                        f"下载中… {pct:.0f}%（{speed / 1024 / 1024:.1f} MB/s）"
+                    )
+                else:
+                    t["progress_message"] = f"下载中… {pct:.0f}%"
+        except Exception:
+            # 进度上报**绝不能**让下载失败
+            pass
+
+    return _hook
+
+
+def _ytdlp_download(url: str, quality_label: str | None, title: str | None, page_url: str | None = None, is_audio: bool = False, task_id: str = "") -> str:
     """用 yt-dlp 下载视频（兜底方案）
 
     关键点：使用 cookie 文件路径（Netscape 格式），不用内存 CookieJar。
@@ -907,12 +1022,65 @@ def _ytdlp_download(url: str, quality_label: str | None, title: str | None, page
         "restrict_filenames": True,
         "keepvideo": False,
         "http_headers": effective_headers,
+        # =====================================================================
+        # ⚠️ **重试参数必须显式设**（2026-10-01 修，实测确认是真 bug）
+        #
+        # yt-dlp 的这些默认值**库模式与 CLI 不一致**：
+        #
+        #     fragment_retries:  **库模式 0**，CLI 10
+        #     retries:           库模式无默认，CLI 10
+        #
+        # 我们是**库调用**，所以原来**分片下载（HLS/DASH）是零重试** ——
+        # 任何一个分片抖动就整个失败。抖音/YouTube 这类分片流受影响最大。
+        #
+        # 来源：yt-dlp `options.py` 的 `default=10` 是 CLI 层；
+        # `downloader/fragment.py` 的 docstring 明写
+        # "Default is 0 for API, but 10 for CLI"。
+        # =====================================================================
+        "retries": 10,
+        "fragment_retries": 10,
+        "file_access_retries": 3,
+        "extractor_retries": 3,
+        # ⚠️ `throttledratelimit` **不是限速**，而是"连接活着但卡死"的
+        # **重新提取触发器**（`downloader/http.py` 抛 ThrottledDownload）。
+        # 实测场景：VPN 抖动时 TCP 连接还在、但速度掉到几 KB/s，
+        # 不设这个会一直挂着直到超时。100KB/s 是保守值。
+        "throttledratelimit": 100 * 1024,
     }
 
-    # 关键：传 cookie 文件，不传 CookieJar
+    # 实时进度上报（有 task_id 才挂——单次下载接口不需要）
+    if task_id:
+        ydl_opts["progress_hooks"] = [_make_progress_hook(task_id)]
+
+    # ⚠️ **cookie 要传临时副本**（2026-10-01 修，实测确认）
+    #
+    # yt-dlp 退出时会把 cookiejar **回写**到 `cookiefile`，而且是
+    # **截断写（'w'）**。源码链：
+    #     with YoutubeDL(...) → __exit__ → close() → save_cookies()
+    #     → cookiejar.save()  → open(filename, 'w')
+    #
+    # 我们传的是 `CookieManager` 的**共享路径**，而**数据库里的
+    # cookie_content 才是权威**。回写会让两者分叉 ——
+    # 下次读到的文件可能已被 yt-dlp 改写（少了字段/顺序变了），
+    # 排查时极难定位（"cookie 明明有啊"）。
+    #
+    # 所以复制一份临时文件给它写。
     if cookie_file and os.path.exists(cookie_file):
-        ydl_opts["cookiefile"] = cookie_file
-        logger.info(f"[download] yt-dlp cookiefile={cookie_file}")
+        try:
+            import shutil
+            import tempfile
+
+            fd, tmp_cookie = tempfile.mkstemp(prefix="ytdlp_cookie_", suffix=".txt")
+            os.close(fd)
+            shutil.copyfile(cookie_file, tmp_cookie)
+            ydl_opts["cookiefile"] = tmp_cookie
+            logger.info(
+                "[download] yt-dlp 使用 cookie 临时副本（避免回写污染共享文件）"
+            )
+            _TEMP_COOKIES.append(tmp_cookie)
+        except Exception as exc:
+            logger.warning("[download] 复制 cookie 副本失败，改用原文件：%s", exc)
+            ydl_opts["cookiefile"] = cookie_file
 
     ffmpeg_path = get_ffmpeg_path()
     if ffmpeg_path:
@@ -920,7 +1088,41 @@ def _ytdlp_download(url: str, quality_label: str | None, title: str | None, page
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         logger.info(f"[download] yt-dlp extracting info for {effective_url[:80]}")
-        info = ydl.extract_info(effective_url, download=True)
+        try:
+            info = ydl.extract_info(effective_url, download=True)
+        except Exception as exc:
+            # ⚠️ **YouTube 取流 403 要专门提示**（2026-10-01 实测）
+            #
+            # 实测：YouTube **元数据/清晰度枚举是好的**
+            # （`extract_info(download=False)` 一直成功），
+            # 但**下载视频数据**会被拒：
+            #
+            #     ERROR: unable to download video data: HTTP Error 403
+            #
+            # 裸 yt-dlp（不带我们的任何代码）也一样 ——
+            # 所以这是 **YouTube 对匿名下载的限制**
+            # （需要登录 cookie 或 PO Token），不是我们的 bug。
+            #
+            # 不静默失败：给用户**可操作**的说明，而不是一句
+            # "HTTP Error 403: Forbidden"（用户看不懂该干嘛）。
+            msg = str(exc)
+            if "403" in msg and ("youtube" in effective_url.lower()
+                                 or "youtu.be" in effective_url.lower()):
+                raise ValueError(
+                    "YouTube 拒绝了**视频数据**的下载（HTTP 403）。\n"
+                    "注意：这不是「视频不存在」—— 实测**元数据和清晰度都能正常取到**，"
+                    "只有取流被拒。\n"
+                    "原因：YouTube 对**未登录的匿名下载**做了限制（需要登录 cookie "
+                    "或 PO Token）。\n"
+                    "可尝试：\n"
+                    "  1. 该视频用「去官网」在浏览器里下载\n"
+                    "  2. 在「账号中心」为 YouTube 配一次登录 cookie 再重试\n"
+                    "  3. 部分视频（尤其有版权声明的）YouTube 不允许第三方下载"
+                ) from exc
+            raise
+        finally:
+            # 清掉 cookie 临时副本（yt-dlp 已回写到这里，没用了）
+            _cleanup_temp_cookies()
         if not info:
             raise ValueError("yt-dlp 未能获取视频信息")
 
@@ -1201,7 +1403,7 @@ async def _run_download_task(task: DownloadTask):
                 loop.run_in_executor(
                     None, _ytdlp_download,
                     task.url, task.quality, task.title,
-                    task.page_url, task.is_audio,
+                    task.page_url, task.is_audio, task.task_id,
                 ),
                 timeout=1800,
             )
