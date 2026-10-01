@@ -1503,6 +1503,45 @@ export const getPlatformHealth = (platform: string, connId = '', keyword = '') =
 // 停用后 `resolve_connection` 不再返回该连接的凭证 ——
 // 包括"conn_id 失效回退到最新连接"那条兜底路径也会跳过它。
 
+// ===== 统一评论接口（所有平台一个入口）=====
+//
+// ⚠️ 原来评论只有 B站有（`/api/v1/bilibili/comments`），
+// 前端的评论 tab 也只在 B站分支渲染 —— 其它平台点「评论」是空白。
+// 统一入口让未实现的平台返回 **501 + 具体原因**，
+// 而不是空列表（"没实现" ≠ "这条没评论"）。
+
+/** 取某条内容的评论（目前仅 B站可用；其它平台返回 501 + 原因） */
+export const getComments = (params: {
+  platform: string
+  item_id: string
+  page?: number
+  page_size?: number
+  sort?: number
+  offset?: string
+  conn_id?: string
+}) => {
+  const qs = new URLSearchParams()
+  qs.set('platform', params.platform)
+  qs.set('item_id', params.item_id)
+  if (params.page) qs.set('page', String(params.page))
+  if (params.page_size) qs.set('page_size', String(params.page_size))
+  if (params.sort !== undefined) qs.set('sort', String(params.sort))
+  if (params.offset) qs.set('offset', params.offset)
+  if (params.conn_id) qs.set('conn_id', params.conn_id)
+  return request(`/comments?${qs.toString()}`) as Promise<{
+    success: boolean
+    data?: {
+      platform: string
+      item_id: string
+      total: number
+      comments: Array<Record<string, any>>
+      has_more: boolean
+      next_offset: string
+    }
+    message: string
+  }>
+}
+
 /** 停用连接（风控冷却等）。`reason` 会记进备注留档。 */
 export const disablePlatformConnection = (connId: string, reason = '') =>
   request(`/platforms/${connId}/disable${reason ? `?reason=${encodeURIComponent(reason)}` : ''}`, {

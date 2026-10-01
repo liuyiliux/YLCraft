@@ -527,6 +527,18 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load telegram router: {e}")
 
+    # **统一**评论接口（所有平台一个入口）
+    #
+    # 原来评论只有 B站有（`/api/v1/bilibili/comments`），
+    # 前端的评论 tab 也只在 B站分支渲染（2026-10-01）。
+    # 统一入口让未实现的平台**明确报 501 + 原因**，
+    # 而不是返回空列表（那会让用户以为"这条没评论"）。
+    try:
+        from app.api.v1 import comments
+        app.include_router(comments.router, prefix="/api/v1/comments", tags=["Comments"])
+    except Exception as e:
+        logger.warning(f"Could not load comments router: {e}")
+
     # **统一**平台体检（所有平台一个入口）
     #
     # 原来体检是各平台各写一份（B站/抖音/小红书），结果**前端只接了 B站那个**
