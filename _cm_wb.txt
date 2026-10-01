@@ -1,0 +1,42 @@
+﻿feat(comments): 微博评论（hotflow，纯 HTTP，实测 20 条）
+
+## 接口（2026-10-01 实测确认）
+
+    GET https://m.weibo.cn/comments/hotflow
+        ?id={微博ID}&mid={同值}&max_id_type={0|1}&max_id={游标}
+    Referer: https://m.weibo.cn/detail/{微博ID}   ← 必需
+
+⚠️ 实测对比选型的：
+    buildComments（PC 端） → ok:-100 未登录 ❌
+    hotflow（移动端）     → ok:1 正常 ✅    ← 用它
+
+**不需要浏览器/Service Worker** —— 微博搜索要 patchright，但评论是纯 httpx 就行
+（MediaCrawler 的 WeiboClient 也是纯 httpx，Playwright 只用于登录）。
+
+## ⚠️ 三个实测到的坑（都写进代码注释了）
+
+1. **评论在 `data.data[]`（双层）**，不是顶层 `data` —— 我第一版按顶层取拿到空列表。游标也在 `data` 层。
+2. **登录态分情况**：第 1 页**匿名可用**（反复验证 `ok:1`）；**翻页需要登录**（匿名 `ok:-100`）。
+   → 没 cookie 时只返回首页，如实返回（不报错、也不谎称"0 条评论"）。
+3. **限流非常敏感**：调研实测连续探测约 10 次即被踢登录态 → 每页 sleep 2s、并发 1。
+
+## 字段（实测）
+
+    id / text(**HTML，需 _strip_html 去标签**) / like_count
+    created_at(**RFC2822 字符串**，如 "Tue Sep 29 18:18:23 +0800 2026"，非时间戳 → 新增 _rfc2822_to_ts 转换)
+    user.screen_name / user.id / user.profile_image_url
+    source("来自 湖南" → 剥掉"来自"得 IP 属地)
+    pic / pics（取 large.url 原图）
+
+⚠️ 评论项里的 `total_number` 实测恒为 0，别当回复数；外层 `data.total_number` 才是总评论数。
+⚠️ 楼中楼字段 `comments` 存在但实测常为空 —— 兼容读取，不保证有。
+
+## 实测输出
+
+    get_comments("5348544672437044") → 20 条
+      [樱小桃_H] 给你吃～ @中国书画诗词院
+         赞=2 时间=1790705903 属地=湖南 图=1
+
+## 同时：统一接口加了微博的 conn_platform/cookie_domain 映射
+⚠️ 微博 cookie 域名必须是 `.weibo.cn`（实测主站 weibo.com 的 cookie
+在 m.weibo.cn 无效，api/config 返回 login=false）。
