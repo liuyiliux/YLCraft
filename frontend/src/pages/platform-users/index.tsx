@@ -60,7 +60,27 @@ const PLATFORMS = [
   // 快手：搜博主已打通（`/rest/v/search/user`），且**不需要登录**
   // （实测：cookie 失效时搜索/搜博主照常可用）
   { value: 'kuaishou', label: '快手', connKeys: ['kuaishou', 'ks'] },
+  // ⚠️ 微博（2026-10-01 补）：后端 `search_users`/`get_user_profile`/
+  // `get_user_videos` 早就实现了（`users.py::SUPPORTED` 里有 weibo/wb），
+  // 但**下拉里一直没有** —— 用户根本选不到，属"业务可用但 UI 无入口"
+  // （skill 里点名的坑，X 和快手都犯过）。这里补上。
+  { value: 'weibo', label: '微博', connKeys: ['weibo', 'wb'] },
+  // ⚠️ YouTube（2026-10-01 补）：同上 —— 后端已实现（频道搜索/资料/视频），
+  // 但它**免登录**（`no_login`），所以下面"选连接"那块要允许无连接。
+  { value: 'youtube', label: 'YouTube', connKeys: ['youtube'] },
+  // ⚠️ Telegram（2026-10-01 补）：后端已实现频道搜索/资料/消息列表。
+  // 同样免登录（公开频道走 `t.me/s`）。
+  { value: 'telegram', label: 'Telegram', connKeys: ['telegram'] },
 ]
+
+/** **免登录**平台：不需要先在账号中心建连接就能用。
+ *
+ * ⚠️ 与 `backend/app/api/v1/users.py::SUPPORTED` 的 `no_login` 标记对应。
+ * YouTube 走 yt-dlp 取公开数据、Telegram 走 `t.me/s` 公开预览 ——
+ * 两者都没有"登录态"这回事，所以**不能**要求用户先建连接，
+ * 否则界面上会一直显示"未找到连接"而用不了（明明能用）。
+ */
+const NO_LOGIN_PLATFORMS = new Set(['youtube', 'telegram'])
 
 /** 大数字格式化：48307669 -> 4830.8万 */
 function formatCount(n: number | undefined | null): string {
@@ -344,6 +364,18 @@ export default function PlatformUserPage() {
         } else {
           message.warning(res?.message || '未能获取该 UP 主资料')
         }
+      } else if (platform === 'kuaishou') {
+        // ⚠️ **快手不调 profile 接口**（2026-10-01 实测确认它没有这个能力）：
+        //   · `profile/get` 是**无参查自己**，传 userId 无效
+        //   · 搜用户接口**不按 id 索引**（用 uid 反查搜不到）
+        //   · 搜索结果里的用户字段**不含粉丝数/作品数**
+        // 所以直接用**搜索结果里已有的**信息渲染（昵称/头像/简介都在），
+        // 而不是去调一个必然失败的接口、再弹一个错误提示。
+        // 后端 `KuaishouClient.get_user_profile` 也如实抛 NotImplementedError。
+        setProfile(user)
+        if (!user.followers) {
+          message.info('快手不提供博主粉丝数接口 —— 展示的是搜索得到的信息')
+        }
       } else {
         const res: any = await getPlatformUserProfile(platform, {
           userId: user.id, secUid: user.sec_uid || '',
@@ -389,7 +421,11 @@ export default function PlatformUserPage() {
   const deepLinkUid = searchParams.get('uid') || ''
   const deepLinkDone = useRef(false)
   useEffect(() => {
-    if (!deepLinkUid || deepLinkDone.current || conns.length === 0) return
+    // ⚠️ 免登录平台没有连接，所以不能用 `conns.length === 0` 直接 return ——
+    // 那会让 YouTube/Telegram 的深链（`?platform=youtube&uid=xx`）**永远不触发**。
+    const hasConnOrNoLogin =
+      conns.length > 0 || NO_LOGIN_PLATFORMS.has(platform)
+    if (!deepLinkUid || deepLinkDone.current || !hasConnOrNoLogin) return
     deepLinkDone.current = true
     void loadUserDetail({ id: deepLinkUid, name: '', avatar: '' } as PlatformUserItem)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -634,6 +670,14 @@ export default function PlatformUserPage() {
                 }))}
               />
             </Space>
+          ) : NO_LOGIN_PLATFORMS.has(platform) ? (
+            // ⚠️ 免登录平台**不要**显示"未找到连接，否则搜索会失败" ——
+            // 它不需要连接就能用（YouTube 走 yt-dlp、Telegram 走 t.me/s）。
+            // 显示那句警告会让用户以为"得先去账号中心配一下"，
+            // 而其实直接搜就行（实测后端 `no_login` 分支不要求连接）。
+            <Text style={{ fontSize: 12, color: '#52c41a' }}>
+              {platformLabel} 无需登录 —— 直接搜索即可（取公开数据）。
+            </Text>
           ) : (
             <Text style={{ fontSize: 12, color: '#f59e0b' }}>
               未找到{platformLabel}连接 —— 请先到「账号中心」获取并保存登录态，

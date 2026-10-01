@@ -65,6 +65,31 @@ SUPPORTED = {
         "cookie_domain": "youtube",
         "no_login": "1",
     },
+    # Telegram（2026-10-01 补）：公开频道**免登录**（`t.me/s`）——
+    # 频道搜索/资料/消息列表都不需要凭证，所以同样 `no_login`。
+    #
+    # ⚠️ 但它的 `search_users` 只能搜**你已加入的**频道
+    # （MTProto 的限制，见 platforms/telegram/client.py 的说明）——
+    # 未登录时会抛出可操作的错误，不会假装"搜到 0 个"。
+    "telegram": {
+        "conn_platform": "TELEGRAM",
+        "cookie_domain": "t.me",
+        "no_login": "1",
+    },
+}
+
+
+# 平台别名 → 平台客户端的注册名。
+#
+# ⚠️ 提到模块级（原来是散在 `_client_for` 里的 if-else）——
+# 因为现在**两处**要用：`_client_for` 的免登录分支和普通分支。
+# 散着写迟早漏一处（本仓库"同一个映射写两遍必然漂移"的教训）。
+_CLIENT_ALIAS = {
+    "xhs": "xiaohongshu",
+    "wb": "weibo",
+    "x": "twitter",
+    "tw": "twitter",
+    "ks": "kuaishou",
 }
 
 
@@ -169,19 +194,23 @@ async def _client_for(platform: str):
     """按连接取 cookie，建平台客户端。
 
     ⚠️ **免登录平台（`no_login`）不需要连接**（2026-10-01 加）
-    YouTube 的公开数据用 yt-dlp 直接取，没有"登录态"这回事。
+    YouTube/Telegram 的公开数据直接用各自的公开路径取
+    （yt-dlp / `t.me/s`），没有"登录态"这回事。
     原来这里无条件要求 `resolve_connection` 取到连接，
     否则 400「没有可用的连接」—— 对免登录平台是错的（明明能用）。
+
+    ⚠️ 这里**不要写死平台名**（我第一版写的是
+    `"youtube" if platform == "youtube" else platform`）——
+    每加一个免登录平台都要改这里，迟早漏。直接用 `platform` 本身，
+    注册表里别名（如 `ks`→`kuaishou`）走下面的别名映射。
     """
     cfg = _resolve(platform)
     if cfg.get("no_login"):
         from app.services.platforms import create_client
 
-        client = create_client(
-            "youtube" if platform == "youtube" else platform,
-            mode="api",
-            cookie="",
-        )
+        # 统一走别名映射（`xhs`→`xiaohongshu` 等），不再按平台名特判
+        client_name = _CLIENT_ALIAS.get(platform, platform)
+        client = create_client(client_name, mode="api", cookie="")
         if client is None:
             raise HTTPException(status_code=500, detail=f"{platform} 客户端未注册")
         return client
@@ -208,15 +237,7 @@ async def _client_for(platform: str):
     #       签名 `__NS_hxfalcon` 是混淆 JS，纯 HTTP 拿不到 ——
     #       客户端自己起一个**无头**会话抓签名（见 `kuaishou/client.py`）。
     #       所以这里传 `api` 是对的，浏览器由客户端内部管理。
-    client_name = platform
-    if client_name in ("xhs",):
-        client_name = "xiaohongshu"
-    elif client_name in ("wb",):
-        client_name = "weibo"
-    elif client_name in ("x", "tw"):
-        client_name = "twitter"
-    elif client_name in ("ks",):
-        client_name = "kuaishou"
+    client_name = _CLIENT_ALIAS.get(platform, platform)
     mode = "patchright" if client_name == "weibo" else "api"
     client = create_client(client_name, mode=mode, cookie=cookie,
                            conn_id=conn_id_str(platform))
