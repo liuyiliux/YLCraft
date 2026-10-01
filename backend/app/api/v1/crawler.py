@@ -38,6 +38,11 @@ from app.services.crawler import (
 )
 from app.services.crawler.models import NoteDetail, SearchFilter, SearchEnhancedRequest, NoteDetailResponse, FetchNoWatermarkRequest
 
+# ⚠️ 模块级导入（不要放进函数里）——
+# 之前 `users.py` 就因为只在 `_client_for` 作用域里 import，
+# 运行时抛 NameError。这里统一放模块顶部。
+from app.services.platforms.types import LoginExpiredError
+
 router = APIRouter()
 logger = logging.getLogger("ylcraft.api.crawler")
 
@@ -320,6 +325,22 @@ async def search_materials(req: SearchRequest):
         )
     except NotImplementedError as e:
         raise HTTPException(status_code=501, detail=str(e))
+    except LoginExpiredError as e:
+        # ⚠️ **登录态失效 → 401**（2026-10-01 补，与 `search_enhanced` 对齐）
+        #
+        # 这个端点（画布 platform_search 节点 + 博主中心"作品搜索"）
+        # 原来没有这个分支，快手登录过期时返回
+        # `HTTP 500 "搜索失败: ..."` —— 服务端没坏，是登录过期了。
+        # 用户看到"搜索失败"不会想到"该重新登录"。
+        logger.warning("[search] %s 登录态失效：%s", req.platform, str(e)[:140])
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                f"{e}\n\n"
+                "这是**登录态失效**（不是「没搜到」，也不是服务端故障）。"
+                "请到「账号中心」重新获取该平台登录态后重试。"
+            ),
+        )
     except Exception as e:
         logger.error(f"[search] Error: {e}")
         raise HTTPException(status_code=500, detail=f"搜索失败: {str(e)}")
@@ -484,6 +505,34 @@ async def search_enhanced(req: SearchEnhancedRequest):
         # 这里再把"平台侧拒绝"映射成 **429**（稍后重试/去登录），
         # 而不是 500（服务端故障）—— 语义不同，前端提示也不同。
         msg = str(e)
+
+        # ⚠️ **登录态失效要单独映射成 401**（2026-10-01 补）
+        #
+        # 实测：快手 cookie 过期后搜索返回
+        #
+        #     [kuaishou] 未能获取 /rest/v/search/feed 的接口签名
+        #     → HTTP 500 "搜索失败: ..."
+        #
+        # **500 是错的** —— 服务端没坏，是登录态过期了。
+        # 用户看到"搜索失败"只会以为是 bug，不会想到"该重新登录了"。
+        #
+        # 这个异常在 `get_self_profile`（账号中心）早就映射成 401 了，
+        # 但**搜索路径漏了** —— 同一类"守卫只加在一个入口"的毛病。
+        # 注意顺序：必须放在下面的 429 判断**之前**
+        # （快手的报错文本里带 `/rest/v/...`，但 429 那组关键词
+        #   是 461/403/401/风控/antispam，不会误命中；不过显式优先更安全）。
+        if isinstance(e, LoginExpiredError):
+            logger.warning(
+                "[search_enhanced] %s 登录态失效：%s", req.platform, msg[:140]
+            )
+            raise HTTPException(
+                status_code=401,
+                detail=(
+                    f"{msg}\n\n"
+                    "这是**登录态失效**（不是「没搜到」，也不是服务端故障）。"
+                    "请到「账号中心」重新获取该平台登录态后重试。"
+                ),
+            )
         if any(k in msg for k in ("461", "403", "401", "风控", "antispam")):
             logger.warning("[search_enhanced] %s 平台侧拒绝：%s", req.platform, msg[:140])
             raise HTTPException(
