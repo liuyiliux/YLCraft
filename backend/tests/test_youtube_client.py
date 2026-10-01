@@ -116,6 +116,29 @@ def test_channel_id_and_handle_use_different_paths():
         assert '"UC"' in src or "'UC'" in src, f"{fn.__name__} 要判 UC 前缀"
 
 
+def test_provides_both_user_video_method_names():
+    """**回归**：`get_user_videos` 和 `get_user_notes` 两个名字都要有。
+
+    ## 实测踩到的坑
+
+    `users.py::/users/videos` 路由调的是 **`get_user_videos`**，
+    而基类里同类能力叫 **`get_user_notes`**。我只实现了后者，
+    于是 `/users/videos?platform=youtube` 报：
+
+        HTTP 500: 'YoutubeClient' object has no attribute 'get_user_videos'
+
+    "实现了但路由找不到" —— 又一个"名字对不上"的静默失败。
+    两个名字都提供（别名），任一方改名都不会再断。
+    """
+    from app.services.platforms.youtube.client import YoutubeClient
+
+    assert hasattr(YoutubeClient, "get_user_videos"), (
+        "users.py::/users/videos 调 get_user_videos —— 缺了会 500"
+    )
+    assert hasattr(YoutubeClient, "get_user_notes"), "基类同名能力也要有"
+    assert hasattr(YoutubeClient, "search_users"), "频道搜索"
+
+
 def test_duration_filter_is_client_side():
     """**回归**：时长过滤在**客户端**做，不靠 sp 参数。
 
