@@ -18,7 +18,7 @@ from app.services.crawler.models import NoteDetail, SearchFilter, SearchEnhanced
 # 平台"当前环境不可用"（如抖音对自动化降级）——要原样抛给上层，
 # 不能被当成"搜索失败"降级重试（那样会把风控伪装成"0 条结果"）。
 from app.services.platforms.douyin.client import PlatformUnavailableError
-from app.services.platforms.types import LoginExpiredError
+from app.services.platforms.types import LoginExpiredError, PlatformError
 
 logger = logging.getLogger("ylcraft.crawler")
 
@@ -157,36 +157,48 @@ class CrawlerService:
             # yt-dlp 只会再返回一次空，最终让用户看到"找到 0 条结果"，
             # 把"环境被风控"误报成"关键词没结果"。直接抛给上层显示可读原因。
             raise
-        except LoginExpiredError:
-            # ⚠️ **登录态失效同样不能降级到 yt-dlp**（2026-10-01 加）
-            # 降级只会再空一次，把"该重新登录"伪装成"没搜到"。
-            # 用类型判断，不靠关键词猜（快手那条报错就不含关键词）。
-            raise
-        except Exception as e:
-            # ⚠️ **登录态/风控类错误也不能降级到 yt-dlp**（2026-09-29）
+        except PlatformError as e:
+            # ⚠️ **类型化异常体系**（2026-10-01 重构，替代字符串匹配）
             #
-            # 实测：小红书被风控时 `_search_via_platforms` 抛
-            # `RuntimeError: [xhs] 搜索接口返回 HTTP 461`，
-            # 而这里**吞掉**并降级到 yt-dlp —— yt-dlp 又返回空，
-            # 于是响应变成：
+            # 原来是靠关键词匹配判断"该不该降级到 yt-dlp"：
             #
-            #     HTTP 200 {"success": true, "results": [],
-            #               "message": "找到 0 条结果"}
+            #     if any(k in msg for k in ("HTTP 461", "未登录", "风控", ...)):
+            #         raise
             #
-            # **用户完全不知道是被风控了**（这正是"静默返回空"的老毛病）。
+            # **这是全项目最脆弱的一处**：改一次错误文案（比如把
+            # "未登录"改成"登录已过期"）就让判断**静默失效** ——
+            # 异常被吞成 `return []`，用户看到"找到 0 条结果"，
+            # 而真相是被风控/登录失效。本仓库为此反复踩坑（4 次）。
             #
-            # 判据：错误消息里出现登录态/风控关键词 → 直接抛给上层。
-            msg = str(e)
-            if any(k in msg for k in (
-                "HTTP 461", "HTTP 403", "HTTP 401", "HTTP 429",
-                "未登录", "登录态", "Cookie", "cookie", "风控", "antispam",
-            )):
+            # 现在改成看**异常自己声明的语义**：
+            #   `should_fallback=False` → 不降级（风控/登录失效/内容不存在）
+            #   `should_fallback=True`  → 可以降级（网络抖动，yt-dlp 可能走通）
+            #
+            # 判据由**平台自己**给出（它最清楚抛的是什么），
+            # 不再让上层靠猜文案。
+            if not getattr(e, "should_fallback", False):
                 logger.warning(
-                    "[search_videos] %s 登录态/风控类错误，不降级到 yt-dlp：%s",
-                    platform, msg[:120],
+                    "[search_videos] %s 平台侧拒绝（%s，不降级到 yt-dlp）：%s",
+                    platform, type(e).__name__, str(e)[:120],
                 )
                 raise
-            logger.warning(f"[search_videos] platforms module failed: {e}, falling back to yt-dlp")
+            logger.info(
+                "[search_videos] %s 网络类问题（%s），降级到 yt-dlp 重试",
+                platform, type(e).__name__,
+            )
+        except Exception as e:
+            # 非 PlatformError 的意外异常：保守起见**不降级**。
+            #
+            # ⚠️ 与旧行为相反（旧代码对未知异常会降级）。
+            # 理由：未知异常往往意味着"我们的代码有问题"或
+            # "平台改版了"，此时降级到 yt-dlp 只会用一个**可能成功的
+            # 空结果**掩盖真实故障 —— 正是本仓库反复记录的"静默返回空"。
+            # 宁可让用户看到明确的错误，也不要给一个误导性的"没搜到"。
+            logger.error(
+                "[search_videos] %s 未预期的异常（%s），不降级：%s",
+                platform, type(e).__name__, str(e)[:200],
+            )
+            raise
         # 2. 降级方案：使用 yt-dlp 搜索
         return await self._search_via_ytdlp(platform, keyword, max_results)
 
@@ -467,53 +479,39 @@ class CrawlerService:
             # 必须穿透出去——吞成 return [] 会让用户看到"找到 0 条结果"，
             # 把"环境被限制"误报成"关键词没结果"。
             raise
-        except LoginExpiredError:
-            # ⚠️ **登录态失效要原样穿透**（2026-10-01 加）
+        except PlatformError as e:
+            # ⚠️ **类型化异常体系**（2026-10-01 重构，替代字符串匹配）
             #
-            # 实测：快手 cookie 过期后搜索抛
-            #     [kuaishou] 未能获取 /rest/v/search/feed 的接口签名 ...
-            # 它**不含**下面那组关键词（461/403/风控/…），
-            # 所以原来会走到 `return []` → 用户看到"找到 0 条结果"，
-            # 完全不知道是登录过期了。
+            # 原来是靠关键词匹配判断"该不该吞成 return []"：
             #
-            # 这里用**类型判断**（不是字符串匹配）—— 平台自己最清楚
-            # 哪个信号代表"要重新登录"，不该让上层靠猜关键词。
-            # API 层据此映射成 **401**，前端提示"请重新登录"。
+            #     if any(k in msg for k in ("461", "403", "风控", ...)):
+            #         raise
+            #     return []      ← 吞成"找到 0 条结果"
+            #
+            # **这是全项目最脆弱的一处**（第一现场）：改一次文案就让
+            # 判断静默失效，用户看到"没搜到"而真相是被风控。
+            # 我为此修过 3 轮（快手签名、小红书 -100、抖音空 body），
+            # 每次都是"又发现一个不含关键词的报错文本"——
+            # 说明**匹配文案这条路本身走不通**。
+            #
+            # 现在按异常自己声明的语义分类：
+            #   · 风控/登录失效/内容不存在 → **穿透**（让用户看到真原因）
+            #   · 网络类 → 也穿透（外层会决定是否降级 yt-dlp）
+            # 即：**任何 PlatformError 都不在这里吞**。
+            logger.error(
+                "[_search_via_platforms] %s 平台侧错误（%s，**不吞成空**）：%s",
+                platform, type(e).__name__, str(e)[:160],
+            )
             raise
         except Exception as e:
-            # ⚠️ **登录态/风控类错误也要穿透**（2026-09-29 修）
-            #
-            # 原来一律 `return []` —— 实测小红书被风控（HTTP 461）时：
-            #
-            #     日志：[_search_via_platforms] Error: [xhs] 搜索接口返回 HTTP 461
-            #     响应：HTTP 200 {"success": true, "results": [],
-            #                    "message": "找到 0 条结果"}
-            #
-            # **用户看到"没搜到"，完全不知道是被风控** —— 这是本仓库
-            # 反复出现的老毛病（`ADDING_A_PLATFORM.md` 铁律第 2 条）。
-            #
-            # 而这里正是第一现场（外层 `search_videos` 的 catch 根本
-            # 执行不到，因为异常在这里就被吞了 —— 我第一版修错了地方）。
-            msg = str(e)
-            if any(k in msg for k in (
-                "461", "471", "406", "403", "401", "429",
-                "300011", "300012",
-                "未登录", "登录态", "Cookie", "cookie",
-                "风控", "antispam", "CAPTCHA", "captcha",
-                # ⚠️ 2026-10-01 补（小红书实测）：
-                # code=-100 msg='登录已过期' —— 原来不含上面任何关键词，
-                # 被吞成"找到 0 条结果"（假阴性）。平台侧现在会同时抛
-                # LoginExpiredError（类型判断），这里是字符串层的双保险，
-                # 覆盖其它还没改成类型抛错的平台。
-                "登录已过期", "登录过期", "请重新登录",
-            )):
-                logger.error(
-                    "[_search_via_platforms] %s 登录态/风控类错误（**不吞成空**）：%s",
-                    platform, msg[:160],
-                )
-                raise
-            logger.error(f"[_search_via_platforms] Error: {e}")
-            return []
+            # 非 PlatformError：我们的代码问题或平台改版。
+            # ⚠️ 与旧行为相反（旧代码吞成 []）—— 见上，
+            # 吞空会把"故障"伪装成"没结果"，是本仓库反复记录的毛病。
+            logger.error(
+                "[_search_via_platforms] %s 未预期异常（%s），不吞成空：%s",
+                platform, type(e).__name__, str(e)[:200],
+            )
+            raise
 
     async def _search_via_ytdlp(
         self,

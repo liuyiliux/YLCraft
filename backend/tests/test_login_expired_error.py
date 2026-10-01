@@ -198,18 +198,23 @@ def test_search_route_maps_login_expired_to_401():
 
 
 def test_search_route_checks_login_expired_before_generic_rejection():
-    """**回归**：401 分支要放在 429（风控）分支**之前**。
+    """**回归**：401（登录失效）分支要放在 429（风控）分支**之前**。
 
     顺序错了的话，登录失效可能被 429 抢走 ——
     提示会变成"稍后重试/去登录"，而正确答案是**必须**重新登录。
+
+    ⚠️ 2026-10-01 重构后：判断从"关键词匹配"改成"异常类型"，
+    所以这里断言的是**类型分支的先后顺序**（原来断言 `"antispam"` 字面量，
+    重构后那个字面量已经不存在了 —— 这正是重构的目的）。
     """
     from app.api.v1 import crawler
 
     src = inspect.getsource(crawler.search_enhanced)
     i_login = src.find("LoginExpiredError")
-    i_antispam = src.find('"antispam"')
-    assert i_login != -1 and i_antispam != -1
-    assert i_login < i_antispam, "401 判断必须在 429（风控）判断之前"
+    i_risk = src.find("RiskControlError")
+    assert i_login != -1, "要有 LoginExpiredError 分支"
+    assert i_risk != -1, "要有 RiskControlError 分支"
+    assert i_login < i_risk, "401 判断必须在 429（风控）判断之前"
 
 
 def test_both_search_routes_map_login_expired_to_401():
@@ -233,21 +238,26 @@ def test_both_search_routes_map_login_expired_to_401():
 def test_crawler_service_does_not_swallow_login_expired():
     """**回归**：service 层不能把 `LoginExpiredError` 吞成 `return []`。
 
-    `_search_via_platforms` 的兜底 `except Exception` 会 `return []`
+    `_search_via_platforms` 的旧兜底是 `except Exception: return []`
     （→ "找到 0 条结果"），而快手的报错文本
     （`未能获取 /rest/v/search/feed 的接口签名`）
     **不含** 461/403/风控 那组关键词，所以原来一定会被吞掉。
 
-    修法：用**类型判断**（`except LoginExpiredError: raise`），
-    不靠猜关键词。`search_videos` 里也要拦住，免得降级到 yt-dlp
-    再空一次、把"该重新登录"伪装成"没搜到"。
+    ⚠️ 2026-10-01 重构后：改成**统一 `except PlatformError: raise`**
+    （覆盖所有平台侧错误，不只登录失效），
+    所以这里断言 "PlatformError" 而不是逐个列异常名 ——
+    新加异常类型时**不需要**再来改这两个函数（原设计的问题就在这）。
     """
     from app.services.crawler import service as svc
 
     for fn in (svc.CrawlerService._search_via_platforms, svc.CrawlerService.search_videos):
         src = inspect.getsource(fn)
-        assert "LoginExpiredError" in src, (
-            f"{fn.__name__} 没拦住 LoginExpiredError（会被吞成空/降级 yt-dlp）"
+        assert "PlatformError" in src, (
+            f"{fn.__name__} 要捕获 PlatformError（统一处理平台侧错误，不吞成空）"
+        )
+        # 不能有裸的 return [] 兜底
+        assert "return []" not in src.split("except Exception")[-1][:200], (
+            f"{fn.__name__} 的兜底不该 return []（会把故障伪装成'没搜到'）"
         )
 
 

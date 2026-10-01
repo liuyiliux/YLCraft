@@ -50,6 +50,7 @@ import httpx
 
 from .models import TelegramChannel, TelegramMessage
 from .parser import detect_structure_change, parse_channel_page
+from ..types import NetworkError, RiskControlError
 
 logger = logging.getLogger("ylcraft.platforms.telegram")
 
@@ -92,10 +93,21 @@ def _proxy_from_env() -> Optional[str]:
     return None
 
 
-class TelegramPublicError(RuntimeError):
+class TelegramPublicError(RiskControlError):
     """公开预览页抓取失败（可读原因）。
 
     与"频道没有消息"区分：这里是"拿不到 / 结构变了"。
+
+    ## ⚠️ 2026-10-01：挂到类型化异常体系下
+
+    继承 `RiskControlError`（`retryable=False` / `should_fallback=False`）——
+    因为绝大多数情况是频道不存在 / 私有 / 结构变化，
+    这些**重试和降级都没用**。
+
+    ⚠️ **但网络类失败是例外**：`fetch_page` 在检测到
+    超时/连不上时会改抛 `NetworkError`（可重试、可降级），
+    见那里的实现 —— 否则"VPN 断了"会被当成"频道不存在"，
+    用户会去反复检查用户名（明明没拼错）。
     """
 
 
@@ -226,7 +238,12 @@ class TelegramPublicClient:
                 f"（已尝试代理 {self.proxy}）" if self.proxy
                 else "（未检测到代理设置）"
             )
-            raise TelegramPublicError(
+            # ⚠️ 网络问题抛 `NetworkError`（不是 TelegramPublicError）——
+            # 它声明 retryable=True / should_fallback=True，
+            # 而"频道不存在/私有"是 TelegramPublicError（不可重试）。
+            # 两者混在一起的话，"VPN 断了"会被当成"频道名拼错了"，
+            # 用户会去反复检查一个没拼错的名字（2026-10-01）。
+            raise NetworkError(
                 f"[telegram] 无法连接 t.me（{type(last_err).__name__}）{hint}。"
                 "请确认 **VPN 已开启**；若 VPN 是 PAC/规则模式，"
                 "可能需要给 python 进程设置 HTTPS_PROXY 环境变量。"

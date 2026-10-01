@@ -26,6 +26,8 @@ from ..types import (
     ClientMode,
     LoginExpiredError,
     NoteDetail,
+    PlatformError,
+    RiskControlError,
     SearchParams,
     SearchResult,
     SearchType,
@@ -57,7 +59,7 @@ from .apis import (
 logger = logging.getLogger("ylcraft.platforms.douyin")
 
 
-class PlatformUnavailableError(RuntimeError):
+class PlatformUnavailableError(RiskControlError):
     """平台对当前环境不可用（不是"没搜到"，是平台侧拒绝）。
 
     典型场景：抖音对自动化环境整体降级——搜索返回空、
@@ -65,6 +67,17 @@ class PlatformUnavailableError(RuntimeError):
 
     单独定义一个异常类型，是为了让上层**不要**把它当成"搜索失败"去降级重试：
     重试只会再失败一次，并把"环境被风控"伪装成"找到 0 条结果"。
+
+    ## ⚠️ 2026-10-01 重构：改为继承 `RiskControlError`
+
+    它本质就是**风控**（平台侧主动拒绝），所以挂到新的类型化异常体系下：
+    `retryable=False` / `should_fallback=False`。
+
+    这样上层可以统一写 `except PlatformError` 判断，
+    **不再靠字符串匹配**（原来 `any(k in msg for k in ("461", "风控", ...))`
+    在改文案时会静默失效）。
+
+    保留旧名字是为了**不破坏既有引用**（多处 import 了它）。
     """
 
 
@@ -86,7 +99,12 @@ class DouyinSearchRateLimited(PlatformUnavailableError):
 
     继承 `PlatformUnavailableError` 是为了让上层**不要**降级到
     yt-dlp 再试一次（那只会再空一次，把限流伪装成"没结果"）。
+
+    ⚠️ 但限流**是可以重试的**（等一会儿就好），所以这里把
+    `retryable` 覆写为 True —— 与"账号异常/人机验证"不同
+    （那种重试会升级为封号）。调用方据此选择"退避重试"还是"直接报错"。
     """
+    retryable = True
 
 
 @register_platform("douyin")
