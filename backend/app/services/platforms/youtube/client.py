@@ -192,6 +192,121 @@ class YoutubeClient(BasePlatformClient):
             paged[0].raw_data["_total"] = len(results)
         return paged
 
+    async def get_comments(
+        self,
+        item_id: str,
+        max_results: int = 20,
+        page: int = 1,
+        cursor: str = "",
+    ) -> List[Dict[str, Any]]:
+        """取视频评论（走 yt-dlp 的 innertube 实现）。
+
+        ## ⚠️ 为什么用 yt-dlp（2026-10-01 调研 + 实测确认）
+
+        自己调 innertube `/youtubei/v1/next` 理论上可行，但：
+          · YouTube 正在从 `commentRenderer` 迁到 `commentViewModel`
+            + `frameworkUpdates.entityBatchUpdate.mutations` 实体表
+          · 两套格式要同时维护，且会随 YouTube 改动持续返工
+          · yt-dlp **两套都实现了**
+        实测自造 continuation token 拿不到评论（HTTP 200 但 14KB 无评论字段）
+        —— 那只是 yt-dlp 的兜底路径，主路径是从 watch 页 `ytInitialData` 取。
+
+        ## ⚠️⚠️ 最关键的一条：必须设 `max_comments` 上限
+
+        不设就是**无上限**，会一直翻页到取完。实测某视频报
+        ~10,631,705 条评论，不设上限跑了 **10 分钟没停**，只能杀掉。
+        这里按 `max_results` 严格限制（另加安全上限 MAX）。
+
+        ## 耗时（实测，同一视频）
+
+            顶层 100 条 → 4.5s
+            顶层 500 条 → 17.25s
+            带回复       → 显著变慢（每条回复线程额外一次请求）
+
+        所以**默认只取顶层**（max_replies=0），回复靠前端按需再取。
+
+        ## 不需要 API key / 不需要登录
+
+        实测未传 cookie、未传 key 直接取到 100 条。
+        """
+        import asyncio
+
+        import yt_dlp
+
+        vid = str(item_id or "").strip()
+        if not vid:
+            return []
+
+        # ⚠️ 安全上限：即便调用方要很多，也不超过这个数（防跑飞）
+        MAX_SAFE = 200
+        want = min(max(1, int(max_results or 20)), MAX_SAFE)
+
+        def _run():
+            opts = _ydl_opts(flat=False)   # ⚠️ flat 模式没有 comments
+            opts["getcomments"] = True
+            opts["extractor_args"] = {
+                "youtube": {
+                    # 五段语义：max_comments, max_parents, max_replies,
+                    #           max_replies_per_thread, max_depth
+                    "max_comments": [str(want), str(want), "0", "10", "1"],
+                    # 默认只要顶层（回复靠按需再取，省时间）
+                    "comment_sort": ["top"],
+                }
+            }
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                return ydl.extract_info(
+                    f"https://www.youtube.com/watch?v={vid}", download=False
+                )
+
+        try:
+            info = await asyncio.to_thread(_run)
+        except Exception as exc:
+            msg = str(exc)
+            if "timed out" in msg.lower() or "connect" in msg.lower():
+                raise NetworkError(
+                    f"[youtube] 取评论时无法连接（{type(exc).__name__}）。"
+                    "请确认 VPN 已开启。"
+                ) from exc
+            raise RuntimeError(f"[youtube] 取评论失败: {msg[:200]}") from exc
+
+        if not info:
+            return []
+
+        out: List[Dict[str, Any]] = []
+        for c in info.get("comments") or []:
+            if not isinstance(c, dict):
+                continue
+            # ⚠️ 顶层评论 parent == "root"；回复的 parent 是父评论 id
+            parent = c.get("parent")
+            if parent != "root":
+                continue   # 默认只要顶层
+            ts = c.get("timestamp")
+            create_time = ""
+            if isinstance(ts, (int, float)) and ts > 0:
+                import datetime as _dt
+
+                try:
+                    create_time = _dt.datetime.fromtimestamp(int(ts)).isoformat()
+                except Exception:
+                    create_time = ""
+            out.append({
+                "id": str(c.get("id") or ""),
+                "content": c.get("text") or "",
+                "author": c.get("author") or "",
+                "author_id": c.get("author_id") or "",
+                "avatar": c.get("author_thumbnail") or "",
+                "likes": int(c.get("like_count") or 0),
+                # ⚠️ yt-dlp 的 timestamp 是**估算值**（源码标了 FIXME），
+                #    精度只到月/年 —— 如实给，不假装精确
+                "create_time": create_time,
+                "reply_count": 0,   # yt-dlp 返回平铺列表，无回复计数
+                "location": "",
+                "replies": [],
+                "_time_text": c.get("_time_text") or "",   # 原始相对时间文本
+                "_is_pinned": bool(c.get("is_pinned")),
+            })
+        return out[:want]
+
     async def _extract_entries(self, url: str, n: int = 20) -> List[Dict[str, Any]]:
         """跑 yt-dlp（在线程池里，避免阻塞事件循环）。"""
         import asyncio
