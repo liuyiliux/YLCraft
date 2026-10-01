@@ -37,19 +37,40 @@ def resolve_connection(conn_id: str, platform: str = "") -> tuple[str, str]:
     实际只是引用了过期的 ID。
 
     策略：
-      1. 传入的 ID 存在 → 用它
-      2. 不存在但给了 platform → 回退到该平台**最近更新**的连接
+      1. 传入的 ID 存在**且未禁用** → 用它
+      2. 不存在（或**被禁用**）但给了 platform → 回退到该平台**最近更新的未禁用连接**
       3. 都没有 → 返回 ("", "")
+
+    ## ⚠️ 用户主动禁用的连接**一律不返回**（2026-10-01 加）
+
+    这条很关键：前端让用户能"禁用"某个连接（风控期停一阵）。
+    如果这里不排除禁用项，会出现：
+
+      · 用户点了禁用 → 前端传旧 conn_id → 这里照样返回它的 cookie
+        → **禁用形同虚设**，请求还在打那个账号
+
+    所以两处都要排除：显式传的 ID 若已禁用，也走回退逻辑。
     """
     from app.db.database import SessionLocal
-    from app.db.models.platform_connection import PlatformConnection
+    from app.db.models.platform_connection import (
+        ConnectionStatus,
+        PlatformConnection,
+    )
 
     session = SessionLocal()
     try:
         if conn_id:
             row = session.get(PlatformConnection, conn_id)
-            if row:
+            if row and row.status != ConnectionStatus.DISABLED:
                 return row.id, (row.cookie_content or "")
+            if row:
+                # 显式传了一条**已禁用**的连接 —— 不回退也不返回它。
+                # 返回空让上层报"该连接已禁用"，比默默使用它好：
+                # 后者会让用户以为"禁用了还在跑"（实测过这类困惑）。
+                logger.info(
+                    "[login-health] conn_id=%s 已被用户禁用，不返回凭证", conn_id
+                )
+                return row.id, ""
 
         if platform:
             from sqlmodel import select
@@ -79,19 +100,32 @@ def resolve_connection(conn_id: str, platform: str = "") -> tuple[str, str]:
                     )
                     return "", ""
 
+            # ⚠️ **必须排除用户主动禁用的连接**（2026-10-01）
+            #
+            # 这个兜底是"conn_id 失效时回退到该平台最新连接"。
+            # 如果最新那条**被用户禁用了**，回退过去就等于**禁用失效** ——
+            # 用户点了禁用，却仍在用那个账号发请求（正是他想避免的）。
+            #
+            # 所以按 updated_at 倒序找**第一条未禁用的**。
+            from app.db.models.platform_connection import ConnectionStatus
+
             stmt = (
                 select(PlatformConnection)
                 .where(PlatformConnection.platform == plat_enum)
+                .where(PlatformConnection.status != ConnectionStatus.DISABLED)
                 .order_by(PlatformConnection.updated_at.desc())
                 .limit(1)
             )
             row = session.exec(stmt).first()
             if row:
                 logger.info(
-                    "[login-health] conn_id=%s 不存在，回退到该平台最新连接 %s",
+                    "[login-health] conn_id=%s 不存在，回退到该平台最新**未禁用**连接 %s",
                     conn_id, row.id,
                 )
                 return row.id, (row.cookie_content or "")
+            # 全被禁用了 → 返回空，让上层报"该平台连接已全部禁用"
+            # （比默默用一个禁用连接好 —— 后者会让用户以为禁用没生效）
+            logger.info("[login-health] %s 的连接都已禁用，不返回凭证", platform)
         return "", ""
     finally:
         session.close()

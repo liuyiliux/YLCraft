@@ -1494,6 +1494,27 @@ export const getPlatformHealth = (platform: string, connId = '', keyword = '') =
   return request(`/platforms/${platform}/health${suffix}`) as Promise<PlatformHealthResponse>
 }
 
+// ===== 连接启用/停用 =====
+//
+// ⚠️ 与"删除"的区别：**停用保留凭证**，随时能启用回来。
+// 典型场景：平台风控期（如小红书 461）想停一阵，避免反复触发
+// （重试会升级为更长的封禁）。
+//
+// 停用后 `resolve_connection` 不再返回该连接的凭证 ——
+// 包括"conn_id 失效回退到最新连接"那条兜底路径也会跳过它。
+
+/** 停用连接（风控冷却等）。`reason` 会记进备注留档。 */
+export const disablePlatformConnection = (connId: string, reason = '') =>
+  request(`/platforms/${connId}/disable${reason ? `?reason=${encodeURIComponent(reason)}` : ''}`, {
+    method: 'POST',
+  }) as Promise<{ success: boolean; message: string; conn_id: string; status: string }>
+
+/** 启用被停用的连接（凭证还在，**不需要重新登录**）。 */
+export const enablePlatformConnection = (connId: string) =>
+  request(`/platforms/${connId}/enable`, { method: 'POST' }) as Promise<{
+    success: boolean; message: string; conn_id: string; status: string
+  }>
+
 // ===== 用户查询（抖音 / 小红书 的用户搜索、资料、作品列表）=====
 //
 // 后端统一成 /users/*?platform=xxx（B站仍用 /bilibili/up/* 那一套）

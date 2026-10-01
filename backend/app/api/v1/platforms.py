@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 from sqlmodel import Session
 
@@ -200,6 +200,96 @@ async def delete_connection(
     return {
         "success": True,
         "message": "删除成功",
+    }
+
+
+@router.post("/{conn_id}/disable", summary="停用连接（风控冷却等）")
+async def disable_connection(
+    conn_id: str,
+    reason: str = Query("", description="停用原因（留档，如「小红书被风控」）"),
+    service: PlatformConnectionService = Depends(get_platform_service),
+):
+    """**用户主动停用**一个连接。
+
+    ## 与"删除"的区别
+
+      · 删除 → 凭证没了，恢复要重新登录
+      · 停用 → **凭证保留**，随时能启用回来
+
+    典型场景：**平台风控期**（如小红书 461）想停一阵，避免
+    反复触发（重试会升级为更长的封禁）。
+
+    ## 停用后会发生什么
+
+      · `resolve_connection` **不再返回**这条连接的凭证
+        —— 包括"conn_id 失效回退到最新连接"那条兜底路径也会跳过它
+      · 体检/搜索会提示"该连接已停用"，而不是默默继续用
+
+    ⚠️ 这与 `status=expired/failed` **语义不同**：
+    那两个是**系统判定**凭证坏了，这个是**用户主动关**。
+    所以停用的连接**不该**被当成"需要重新登录"去提示用户。
+    """
+    conn = service.get(conn_id)
+    if not conn:
+        raise HTTPException(status_code=404, detail="连接不存在")
+
+    from app.db.models.platform_connection import (
+        ConnectionStatus,
+        PlatformConnectionUpdate,
+    )
+
+    service.update(conn_id, PlatformConnectionUpdate(status=ConnectionStatus.DISABLED))
+    if reason:
+        # ⚠️ 停用原因记在 `description`（备注），不是 `error_message` ——
+        # `PlatformConnectionUpdate` **没有** error_message 字段，
+        # 而且语义上也不该混：error_message 是"系统报的错误"，
+        # 停用原因是"**用户自己写的备注**"。
+        prev = (conn.description or "").strip()
+        service.update(
+            conn_id,
+            PlatformConnectionUpdate(
+                description=f"{prev}\n[停用] {reason}".strip() if prev else f"[停用] {reason}"
+            ),
+        )
+    logger.info("[platforms] 连接 %s 已停用（原因：%s）", conn_id, reason or "-")
+    return {
+        "success": True,
+        "message": "已停用 —— 搜索/体检会跳过该连接，凭证仍保留",
+        "conn_id": conn_id,
+        "status": ConnectionStatus.DISABLED.value,
+    }
+
+
+@router.post("/{conn_id}/enable", summary="启用连接（恢复使用）")
+async def enable_connection(
+    conn_id: str,
+    service: PlatformConnectionService = Depends(get_platform_service),
+):
+    """**重新启用**一个被停用的连接。
+
+    停用只是"不参与搜索"，凭证一直保留 ——
+    所以恢复**不需要重新登录**（除非凭证本身也过期了，
+    那种情况体检会告诉你要重新登录）。
+    """
+    conn = service.get(conn_id)
+    if not conn:
+        raise HTTPException(status_code=404, detail="连接不存在")
+
+    from app.db.models.platform_connection import (
+        ConnectionStatus,
+        PlatformConnectionUpdate,
+    )
+
+    # 恢复成 `unknown` 而不是 `active`：
+    # 我们**没有验证**过它现在是否有效，不能替用户断言"有效"
+    # （那是体检的职责）。用 unknown 表示"待验证"。
+    service.update(conn_id, PlatformConnectionUpdate(status=ConnectionStatus.UNKNOWN))
+    logger.info("[platforms] 连接 %s 已启用", conn_id)
+    return {
+        "success": True,
+        "message": "已启用 —— 建议跑一次「体检」确认登录态是否仍然有效",
+        "conn_id": conn_id,
+        "status": ConnectionStatus.UNKNOWN.value,
     }
 
 

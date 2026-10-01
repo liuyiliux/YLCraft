@@ -15,6 +15,7 @@ import type { ColumnsType } from 'antd/es/table'
 import {
   SearchOutlined, DownloadOutlined, BookOutlined, VideoCameraOutlined,
   PlayCircleOutlined, MessageOutlined, QuestionCircleOutlined,
+  PauseCircleOutlined,
   GlobalOutlined, ImportOutlined, EyeOutlined, TwitterOutlined, YoutubeOutlined,
   LinkOutlined, ReloadOutlined, CloudDownloadOutlined, CheckCircleOutlined,
   ExportOutlined,
@@ -31,7 +32,7 @@ import { useResizableColumns } from '../../hooks/useResizableColumns'
 import {
   searchEnhanced, importCrawler, getNoteDetail, getSubtitles, downloadCrawlerSubtitle, listPlatformConnections,
   getDanmaku, downloadDanmaku, getBiliStats, getBiliComments, sendBiliComment, getBiliVideoInfo,
-  getBiliLoginHealth, getPlatformHealth, wechatMpGetArticles, wechatMpDownloadSingle, wechatMpDownloadBatch, wechatMpImportAssets,
+  getBiliLoginHealth, getPlatformHealth, disablePlatformConnection, enablePlatformConnection, wechatMpGetArticles, wechatMpDownloadSingle, wechatMpDownloadBatch, wechatMpImportAssets,
   wechatMpExportEpub, openFolder,
 } from '../../api'
 import type { CrawlerResult, PlatformConnectionResponse, PlatformHealthCheck, PlatformHealthResponse } from '../../api'
@@ -1005,45 +1006,86 @@ export default function CrawlerPage() {
   }
 
   // 加载平台连接
-  useEffect(() => {
-    listPlatformConnections().then((res: any) => {
-      const activeConnections = (res.connections || []).filter(
-        (c: PlatformConnectionResponse) => c.status === 'active'
-      )
-      setPlatformConnections(activeConnections)
+  //
+  // ⚠️ **必须保留「已停用」的连接**（2026-10-01 修）
+  //
+  // 原来这里只留 `status === 'active'` —— 于是用户停用某连接后，
+  // 它**从下拉里消失了**，用户**再也找不到「启用」按钮**
+  // （停用变成了不可逆的"软删除"，与设计意图相反）。
+  //
+  // 现在保留 `active` + `disabled`：
+  //   · active    → 正常可用
+  //   · disabled  → 显示 ⏸ 标记 + 「启用」按钮
+  // 其它状态（expired/failed/unknown）仍过滤掉 ——
+  // 那些是"凭证坏了"，下去会搜索失败，应该去账号中心重新登录。
+  const loadPlatformConnections = useCallback(async () => {
+    try {
+      const res: any = await listPlatformConnections()
+      const keep = (c: PlatformConnectionResponse) =>
+        c.status === 'active' || c.status === 'disabled'
+      setPlatformConnections((res.connections || []).filter(keep))
       const conns = (res.connections || []).filter(
-        (c: PlatformConnectionResponse) => c.platform === 'bilibili' && c.status === 'active'
+        (c: PlatformConnectionResponse) => c.platform === 'bilibili' && keep(c)
       )
       setBiliConnections(conns)
-      if (conns.length > 0 && !selectedBiliConn) {
-        setSelectedBiliConn(conns[0].id)
-      }
-      // 同时加载已登录的微信公众平台连接（用于"查看公众号文章"）
+      setSelectedBiliConn(current => current || conns[0]?.id || '')
       const wechatConns = (res.connections || []).filter(
         (c: PlatformConnectionResponse) => c.platform === 'wechat_mp' && c.status === 'active'
       )
       if (wechatConns.length > 0) {
         setWechatConnId(wechatConns[0].id)
       }
-    }).catch(() => {
+    } catch {
       // 静默失败，不影响主功能
-    })
+    }
   }, [])
+
+  useEffect(() => {
+    void loadPlatformConnections()
+  }, [loadPlatformConnections])
 
   const searchConnections = useMemo(() => platformConnections.filter(
     connection => connection.platform === connectionPlatformForSearch(platform)
   ), [platform, platformConnections])
   const showSearchConnectionPicker = platform !== 'bili' && platform !== 'wechat_mp' && searchConnections.length > 0
 
+  // ===== 每个平台**分别记住**选中的账号（2026-10-01）=====
+  //
+  // ⚠️ 原来是一个全局 `selectedSearchConn`，切平台时被立刻重置：
+  //
+  //     setSelectedSearchConn(searchConnections[0]?.id || '')
+  //
+  // 后果：如果你在小红书选了「账号B」，切到抖音再切回来，
+  // **又变回第一个账号**了 —— 多账号用户每次都要重选（实测反馈）。
+  //
+  // 改成按平台存一张表：`{xhs: 'conn-id-b', douyin: 'conn-id-x'}`。
+  // 切回来时优先用**上次为该平台选的那个**。
+  const [connByPlatform, setConnByPlatform] = useState<Record<string, string>>({})
+
   useEffect(() => {
     if (platform === 'bili' || platform === 'wechat_mp') {
       setSelectedSearchConn('')
       return
     }
-    setSelectedSearchConn(current => searchConnections.some(connection => connection.id === current)
-      ? current
-      : (searchConnections[0]?.id || ''))
+    // 优先用"上次为这个平台选的"，其次第一个**未停用**的
+    const remembered = connByPlatform[platform]
+    const stillValid = remembered && searchConnections.some(c => c.id === remembered)
+    if (stillValid) {
+      setSelectedSearchConn(remembered)
+      return
+    }
+    // ⚠️ 默认**跳过已停用的连接** —— 否则用户停用了 A，
+    // 下次进来又自动选中 A、搜索直接失败，还得手动换。
+    const firstUsable = searchConnections.find(c => c.status !== 'disabled')
+    setSelectedSearchConn(firstUsable?.id || searchConnections[0]?.id || '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [platform, searchConnections])
+
+  /** 选账号时**同时记进 per-platform 表**（这样切回来还记得）。 */
+  const pickSearchConn = useCallback((connId: string) => {
+    setSelectedSearchConn(connId)
+    setConnByPlatform(prev => ({ ...prev, [platform]: connId }))
+  }, [platform])
 
   useEffect(() => {
     setBiliHealth(null)
@@ -1187,6 +1229,35 @@ export default function CrawlerPage() {
 
   // ===== 通用体检（所有平台）=====
 
+  // ===== 连接 停用/启用（2026-10-01）=====
+  //
+  // 为什么需要：平台风控期（如小红书 461）想**停一阵**。
+  // 反复重试会让风控升级（甚至封号），而"删掉连接"又要重新登录 ——
+  // 停用是中间选项：**不发请求，但保留凭证**。
+  const [connToggleLoading, setConnToggleLoading] = useState(false)
+
+  const toggleConnection = async (connId: string, enable: boolean) => {
+    setConnToggleLoading(true)
+    try {
+      if (enable) {
+        const res = await enablePlatformConnection(connId)
+        message.success(res?.message || '已启用')
+      } else {
+        const res = await disablePlatformConnection(connId, '用户手动停用')
+        message.success(res?.message || '已停用')
+      }
+      // 重新拉连接列表（status 变了，界面要跟着变）
+      await loadPlatformConnections()
+      // 清掉上一次体检结论（它已过时 —— 状态刚变过）
+      setHealth(null)
+      setBiliHealth(null)
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail || (enable ? '启用失败' : '停用失败'))
+    } finally {
+      setConnToggleLoading(false)
+    }
+  }
+
   /** 跑一次通用体检（真搜一次，可能要几秒）。 */
   const runHealthCheck = async () => {
     setHealthLoading(true)
@@ -1294,56 +1365,99 @@ export default function CrawlerPage() {
     )
   }
 
-  /** ② 次要行：连接选择 + 体检按钮（**所有平台一致**）。
+  /** ② 次要行：账号选择 + 停用/启用 + 体检（**所有平台一致**）。
    *
    * 设计要点：
    *   · 体检按钮**永远显示**（原来只有 B站有，用户会疑惑"为啥它特殊"）
-   *   · 连接下拉按平台状态显示不同提示（有连接/免登录/未配置）
-   *   · 整行**没内容时不留空**（免登录平台没连接 —— 但体检按钮还在，
-   *     所以实际上永远有内容）
+   *   · 账号下拉**记住每平台的选择**（切回来不用重选）
+   *   · 有「**不使用账号（游客态）**」选项 + **明确的风险提示**
+   *   · 有「**停用**」按钮 —— 风控期一键停掉，不再发请求
+   *   · 已停用的连接在界面里**显式标出来**（不是静默跳过）
    */
   const renderSecondaryRow = () => {
     const pf = getPlatformInfo(platform)
     const isNoLogin = platform === 'youtube' || platform === 'telegram'
     const conns = platform === 'bili' ? biliConnections : searchConnections
     const connValue = platform === 'bili' ? selectedBiliConn : selectedSearchConn
-    const setConnValue = platform === 'bili' ? setSelectedBiliConn : setSelectedSearchConn
+    // B站走它自己的 state；其它平台要走 `pickSearchConn`（会记住选择）
+    const setConnValue = (v: string) => {
+      if (platform === 'bili') setSelectedBiliConn(v)
+      else pickSearchConn(v)
+    }
+
+    const NO_ACCOUNT = '__no_account__'
+    const currentConn = conns.find((c: any) => c.id === connValue)
+    const isDisabled = currentConn?.status === 'disabled'
+    const isGuest = connValue === NO_ACCOUNT
 
     return (
-      <Row gutter={[12, 8]} align="middle" style={{ marginTop: 10 }} wrap={false}>
-        <Col flex="1 1 auto" style={{ minWidth: 0 }}>
-          {conns.length > 0 ? (
-            <Space size={8} style={{ width: '100%' }}>
-              <Text style={{ fontSize: 12, color: textSec, whiteSpace: 'nowrap' }}>
-                {pf.label}账号：
+      <>
+        <Row gutter={[12, 8]} align="middle" style={{ marginTop: 10 }} wrap={false}>
+          <Col flex="1 1 auto" style={{ minWidth: 0 }}>
+            {conns.length > 0 ? (
+              <Space size={8} style={{ width: '100%' }} wrap>
+                <Text style={{ fontSize: 12, color: textSec, whiteSpace: 'nowrap' }}>
+                  {pf.label}账号：
+                </Text>
+                <Select
+                  size="small"
+                  value={connValue || undefined}
+                  onChange={setConnValue}
+                  style={{ minWidth: 240 }}
+                  options={[
+                    // ⚠️ 「不使用账号」是**真实选项**，但要配风险提示 ——
+                    // 很多平台不支持匿名搜索（小红书直接返回 -100），
+                    // 用户选了会以为"这样就不封号了"，实际是"搜不了"。
+                    { value: NO_ACCOUNT, label: '🚫 不使用账号（游客态）' },
+                    ...conns.map((c: any) => ({
+                      value: c.id,
+                      label: `${c.status === 'disabled' ? '⏸ ' : ''}${c.name}${c.account_name ? ` · ${c.account_name}` : ''}${c.status === 'active' ? ' ✓' : ''}`,
+                    })),
+                  ]}
+                />
+                {/* 停用 / 启用（2026-10-01）*/}
+                {connValue && connValue !== NO_ACCOUNT && (
+                  isDisabled ? (
+                    <Button
+                      size="small"
+                      type="primary"
+                      icon={<PlayCircleOutlined />}
+                      loading={connToggleLoading}
+                      onClick={() => toggleConnection(connValue, true)}
+                    >
+                      启用
+                    </Button>
+                  ) : (
+                    <Tooltip title="停用后不再用它发请求（凭证保留，随时能启用）—— 平台被风控时可一键停掉">
+                      <Button
+                        size="small"
+                        danger
+                        icon={<PauseCircleOutlined />}
+                        loading={connToggleLoading}
+                        onClick={() => toggleConnection(connValue, false)}
+                      >
+                        停用
+                      </Button>
+                    </Tooltip>
+                  )
+                )}
+              </Space>
+            ) : isNoLogin ? (
+              <Text style={{ fontSize: 12, color: BILI_COLORS.success }}>
+                {pf.label} 无需登录 —— 直接搜索即可（取公开数据）
               </Text>
-              <Select
-                size="small"
-                value={connValue || undefined}
-                onChange={setConnValue}
-                style={{ minWidth: 220 }}
-                options={conns.map((c: any) => ({
-                  value: c.id,
-                  label: `${c.name}${c.account_name ? ` · ${c.account_name}` : ''}${c.status === 'active' ? ' ✓' : ''}`,
-                }))}
-              />
-            </Space>
-          ) : isNoLogin ? (
-            <Text style={{ fontSize: 12, color: BILI_COLORS.success }}>
-              {pf.label} 无需登录 —— 直接搜索即可（取公开数据）
-            </Text>
-          ) : (
-            <Text style={{ fontSize: 12, color: '#f59e0b' }}>
-              未找到{pf.label}连接 —— 请先到「账号中心」获取并保存登录态，否则搜索会失败
-            </Text>
-          )}
-        </Col>
-        <Col flex="none">
-          {/* ⚠️ 体检按钮**所有平台都有**（2026-10-01 统一）——
-              原来只有 B站分支渲染，而抖音/小红书的接口其实早就实现了
-              （`/douyin/login-health`、`/xhs/login-health`），
-              属于"后端实现了但前端没接"。现在统一走
-              `/api/v1/platforms/{platform}/health`（最小搜索探针）。 */}
+            ) : (
+              <Text style={{ fontSize: 12, color: '#f59e0b' }}>
+                未找到{pf.label}连接 —— 请先到「账号中心」获取并保存登录态，否则搜索会失败
+              </Text>
+            )}
+          </Col>
+          <Col flex="none">
+            {/* ⚠️ 体检按钮**所有平台都有**（2026-10-01 统一）——
+                原来只有 B站分支渲染，而抖音/小红书的接口其实早就实现了
+                （`/douyin/login-health`、`/xhs/login-health`），
+                属于"后端实现了但前端没接"。现在统一走
+                `/api/v1/platforms/{platform}/health`（最小搜索探针）。 */}
           <Tooltip title="真搜一次来验证：平台是否可用、登录态是否有效、有没有被风控">
             <Button
               size="small"
@@ -1360,6 +1474,44 @@ export default function CrawlerPage() {
           </Tooltip>
         </Col>
       </Row>
+
+      {/* ⚠️ 游客态 / 已停用 的**显著提示**（2026-10-01）
+          这两种状态都会让搜索失败或结果异常，必须在发起前就讲清楚，
+          而不是等用户点了搜索再报错。 */}
+      {isGuest && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginTop: 8 }}
+          message="已选择「不使用账号」（游客态）"
+          description={
+            <span style={{ fontSize: 12 }}>
+              多数平台**不支持匿名搜索**：
+              小红书会直接返回 <Text code>-100</Text>（缺登录态），
+              抖音/快手匿名结果极少且更容易被判定为爬虫。
+              <br />
+              ⚠️ 这**不是**"避免风控"的办法 —— 风控主要看 <Text strong>IP</Text> 和
+              <Text strong>请求频率</Text>。要避风控请用<Text strong>「停用」</Text>（停一段时间）
+              或<Text strong>换 IP</Text>。
+            </span>
+          }
+        />
+      )}
+      {isDisabled && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginTop: 8 }}
+          message={`该账号已停用${currentConn?.description?.includes('[停用]') ? ` —— ${String(currentConn.description).split('[停用]').pop()?.trim()}` : ''}`}
+          description={
+            <span style={{ fontSize: 12 }}>
+              停用期间**不会用它发任何请求**（凭证仍保留，不需要重新登录）。
+              要恢复请点上方的「启用」。想换账号直接在下拉里选别的。
+            </span>
+          }
+        />
+      )}
+    </>
     )
   }
 
