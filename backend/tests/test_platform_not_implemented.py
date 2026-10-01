@@ -66,7 +66,7 @@ def test_supported_platforms_helper_exists():
     assert "douyin" in got
     # ⚠️ 快手**已实现**（2026-09-30）—— 这条断言改成"在"。
     # 原来它用来验证"未实现平台会显式报错"，现在用别的未实现平台
-    # （如 zhihu）来验证那个行为。
+    # （如 telegram）来验证那个行为。
     assert "kuaishou" in got, "快手应已实现"
 
 
@@ -88,6 +88,86 @@ def test_crawler_raises_501_for_unimplemented():
     src = inspect.getsource(crawler.search_enhanced)
     assert "supported_platforms" in src, "要用注册表判断"
     assert "501" in src, "要抛 501（未实现），不是 200 空结果"
+
+
+def test_both_search_endpoints_guard_unimplemented():
+    """**回归**：`/search` **和** `/search-enhanced` 都要有 501 守卫。
+
+    ## 为什么补这条（2026-10-01）
+
+    `search_enhanced` 早在 2026-09-29 就有了守卫，但这个守卫
+    **只加在一个端点上** —— 另一个端点漏了。实测：
+
+        POST /api/v1/crawler/search-enhanced  {"platform":"youtube",...}
+        → HTTP 501  ✅
+
+        POST /api/v1/crawler/search           {"platform":"youtube",...}
+        → HTTP 200  ❌ {"results":[],"message":"找到 0 条结果"}
+
+    `/crawler/search` 是**画布 platform_search 节点 + 博主中心"作品搜索"**
+    走的端点。所以那条路径上"选了个没实现的平台"依然表现为"没搜到"。
+
+    教训：**同一个守卫加在多个入口时，要给每个入口都写断言**
+    —— 只测一个入口，另一个漏了也照样绿。
+    """
+    from app.api.v1 import crawler
+
+    for fn in (crawler.search_materials, crawler.search_enhanced):
+        src = inspect.getsource(fn)
+        assert "supported_platforms" in src, (
+            f"{fn.__name__} 缺 supported_platforms 守卫（会静默返回空）"
+        )
+        assert "501" in src, (
+            f"{fn.__name__} 缺 501（应报「未实现」，不是 200 空结果）"
+        )
+
+
+def test_unimplemented_platforms_are_exactly_the_silent_empty_risk():
+    """**回归**：确实存在"前端能选、后端没实现"的平台（守卫有真实作用）。
+
+    前端 `PLATFORMS` 下拉里有 youtube / telegram，但后端当时**没有**
+    对应采集客户端。如果哪天这些都实现了，本测试会提醒删掉守卫的
+    注释说明（而不是留着一段讲古的注释）。
+    """
+    from app.services.platforms import supported_platforms
+
+    sup = supported_platforms()
+    # 这些是**已实现**的（必须有）
+    for implemented in ("xhs", "xiaohongshu", "douyin", "dy", "kuaishou", "ks",
+                        "bili", "weibo", "wb", "twitter", "x", "fanqie"):
+        assert implemented in sup, f"{implemented} 应已实现"
+    # 知乎已移除 —— 不能再出现在注册表里
+    assert "zhihu" not in sup, "知乎已移除（2026-10-01）"
+
+
+def test_youtube_and_telegram_stay_unimplemented_until_network_works():
+    """**记录事实**：youtube / telegram 未实现，是因为**本机网络不通**。
+
+    ## 为什么写成测试（而不是只写注释）
+
+    用户明确要求做 YouTube 和 Telegram。如果只写注释，
+    下一个 AI 很可能直接开始写客户端 —— 写完才发现连不上，
+    又造一个"假支持"。这条测试把**前置条件**固化下来：
+
+        网络通了 → 这条测试会失败 → 提醒去实现（并删掉这条）
+        网络不通 → 保持 501，不会假装"搜到 0 条"
+
+    实测依据（2026-10-01，见 `docs/platform/ADDING_A_PLATFORM.md`）：
+        DNS www.youtube.com → 157.240.7.20（**Facebook 的 IP**，DNS 污染）
+        https://www.youtube.com/robots.txt / https://t.me/s/telegram → 超时
+        yt-dlp ytsearch3:"..."                                   → 超时
+        本机代理 127.0.0.1:10090 存在但 **ProxyEnable=0 且无进程监听**
+    """
+    from app.services.platforms import supported_platforms
+
+    sup = supported_platforms()
+    # 只要网络还不通，就不该"实现"它们（实现了也无法验证 = 假支持）
+    assert "youtube" not in sup, (
+        "youtube 若已实现，请先确认网络可达并更新本测试与文档"
+    )
+    assert "telegram" not in sup, (
+        "telegram 若已实现，请先确认网络可达并更新本测试与文档"
+    )
 
 
 def test_501_message_is_actionable():

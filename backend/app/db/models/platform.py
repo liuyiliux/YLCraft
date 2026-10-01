@@ -22,7 +22,7 @@ class SocialMediaPlatform(str, enum.Enum):
     KUAISHOU = "kuaishou"   # 快手
     BILIBILI = "bilibili"   # B站
     WEIBO = "weibo"         # 微博
-    ZHIHU = "zhihu"         # 知乎
+    # ZHIHU 已移除（2026-10-01 用户要求）。
     YOUTUBE = "youtube"     # YouTube
     TIKTOK = "tiktok"       # TikTok
     REDDIT = "reddit"       # Reddit
@@ -108,7 +108,6 @@ SOCIAL_MEDIA_METADATA = {
     "kuaishou": {"name": "快手", "color": "#ff5000", "category": "social"},
     "bilibili": {"name": "B站", "color": "#00aeec", "category": "social"},
     "weibo": {"name": "微博", "color": "#ff8200", "category": "social"},
-    "zhihu": {"name": "知乎", "color": "#0066ff", "category": "social"},
     "youtube": {"name": "YouTube", "color": "#ff0000", "category": "social"},
     "tiktok": {"name": "TikTok", "color": "#000000", "category": "social"},
 }

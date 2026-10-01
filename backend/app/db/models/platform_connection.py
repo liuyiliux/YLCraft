@@ -30,7 +30,7 @@ class PlatformType(str, enum.Enum):
     KUAISHOU = "kuaishou"   # 快手
     BILIBILI = "bilibili"   # B站
     WEIBO = "weibo"          # 微博
-    ZHIHU = "zhihu"          # 知乎
+    # ZHIHU 已移除（2026-10-01 用户要求）。字段保留以免破坏既有数据（历史连接 platform='zhihu'）。
     YOUTUBE = "youtube"      # YouTube
     TIKTOK = "tiktok"       # TikTok
     TWITTER = "twitter"      # Twitter/X

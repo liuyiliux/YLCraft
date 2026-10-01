@@ -138,7 +138,7 @@ _FRONTEND_PLATFORM_VALUES = {
 # 「我的数据」下拉**本该有**的平台。
 #
 # ⚠️ 只查"应该支持"的，不是所有平台 —— 否则 AI 平台
-# （openai/anthropic/minimax）和只有 Cookie 的平台（zhihu/wechat_mp）
+# （openai/anthropic/minimax）和只有 Cookie 的平台（telegram/wechat_mp；zhihu 已于 2026-10-01 移除）
 # 会被误报。
 #
 # 判定依据：后端实现了 `get_self_profile` 或 `get_user_videos`

@@ -1633,7 +1633,6 @@ class AgentService:
             ("dy", "抖音", ["抖音", "douyin", "dy"]),
             ("ks", "快手", ["快手", "kuaishou", "ks"]),
             ("wb", "微博", ["微博", "weibo", "wb"]),
-            ("zhihu", "知乎", ["知乎", "zhihu"]),
             ("wechat_mp", "公众号", ["公众号", "微信公号", "wechat"]),
         ]
         for value, label, terms in aliases:
@@ -1656,7 +1655,7 @@ class AgentService:
         for term in [
             "B站", "b站", "b 站", "哔哩哔哩", "哔哩", "bilibili", "bili",
             "小红书", "xhs", "rednote", "抖音", "douyin", "dy", "快手", "kuaishou", "ks",
-            "微博", "weibo", "wb", "知乎", "zhihu", "公众号", "微信公号", "wechat",
+            "微博", "weibo", "wb", "公众号", "微信公号", "wechat",
         ]:
             result = re.sub(re.escape(term), "", result, flags=re.I)
         return result

@@ -158,7 +158,7 @@ PLATFORMS = [
     {"value": "ks",    "label": "快手",     "icon": "play-circle", "color": "#ff5000"},
     {"value": "bili",  "label": "B站",     "icon": "tv",          "color": "#00aeec"},
     {"value": "wb",    "label": "微博",     "icon": "message",     "color": "#ff8200"},
-    {"value": "zhihu", "label": "知乎",     "icon": "question",    "color": "#0066ff"},
+    # ⚠️ zhihu 已移除（2026-10-01 用户要求）
     {"value": "wechat_mp", "label": "微信公众号", "icon": "wechat", "color": "#07C160"},
 ]
 
@@ -205,7 +205,7 @@ class ImportResponse(BaseModel):
 
 class SearchEnhancedRequest(BaseModel):
     """增强搜索请求"""
-    platform: str = Field(..., description="平台: xhs/dy/ks/bili/wb/zhihu")
+    platform: str = Field(..., description="平台: xhs/dy/ks/bili/wb")
     keyword: str = Field(..., description="搜索关键词")
     search_type: str = Field("note", description="搜索类型: note/user/article/global_article/bangumi/movie/live")
     max_results: int = Field(20, description="每页结果数", ge=1, le=100)
@@ -264,11 +264,42 @@ async def search_materials(req: SearchRequest):
 
     画布的 platform_search 节点走的就是这个端点，
     因此画布搜抖音一直为空，直到这里补上登录态。
+
+    ⚠️ **未实现平台要报 501，不能静默返回空**（2026-10-01 修）
+
+    `search_enhanced` 早就有这个守卫（2026-09-29 加），但**这个端点漏了**。
+    实测（2026-10-01）：
+
+        POST /api/v1/crawler/search-enhanced  {"platform":"youtube",...}
+        → HTTP 501  ✅ 「平台 'youtube' 尚未实现采集（不是「没搜到」）」
+
+        POST /api/v1/crawler/search           {"platform":"youtube",...}
+        → HTTP 200  ❌ {"success":true,"results":[],"message":"找到 0 条结果"}
+
+    后果和当年快手那个 bug 一模一样：**画布 / 博主中心的"作品搜索"**
+    选到未实现平台时，用户看到的是"没搜到"，而不是"这个平台没实现"。
+    这正是 `docs/platform/ADDING_A_PLATFORM.md` 铁律第 2 条禁止的假阴性。
+
+    所以这里用**同一个注册表**判断，保证两个端点行为一致
+    （不要维护第二份"支持列表"——两份名单必然会漂移）。
     """
     logger.info(
         "[search] platform=%s keyword=%s max=%s conn=%s",
         req.platform, req.keyword, req.max_results, bool(req.conn_id),
     )
+
+    # 未实现的平台显式报 501（与 `search_enhanced` 同一判据）
+    from app.services.platforms import supported_platforms
+
+    if req.platform not in supported_platforms():
+        raise HTTPException(
+            status_code=501,
+            detail=(
+                f"平台 {req.platform!r} 尚未实现采集（不是「没搜到」）。"
+                f"当前可用：{', '.join(sorted(supported_platforms()))}。"
+                "如需新增该平台，见 docs/platform/ADDING_A_PLATFORM.md。"
+            ),
+        )
 
     try:
         service = get_crawler_service()

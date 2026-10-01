@@ -151,7 +151,7 @@ BUILTIN_SKILL_TEMPLATES: tuple[BuiltinSkillTemplate, ...] = (
     ),
     BuiltinSkillTemplate(
         name="platform_source_search",
-        description="搜索 B站、小红书、抖音、快手、微博、知乎、公众号等外部平台，并把结果用于素材或项目推进。",
+        description="搜索 B站、小红书、抖音、快手、微博、公众号等外部平台，并把结果用于素材或项目推进。",
         skill_type="workflow",
         content=(
             "平台搜索前先确认平台、关键词、搜索类型和最大结果数；如果用户只补充平台或关键词，要继承当前对话上下文。"

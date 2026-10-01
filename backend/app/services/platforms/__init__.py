@@ -28,8 +28,10 @@ def _auto_discover_platforms():
         "kuaishou",
         "weibo",
         "twitter",
-        "zhihu",
         "fanqie",
+        # ⚠️ 知乎（zhihu）已移除（2026-10-01 用户要求）。
+        # 它从来只有登记（cookies/detector + yt-dlp 降级），没有真实采集客户端，
+        # 属于"假支持"：选了只会走 yt-dlp 兜底，结果不可靠。
     ]
     
     for module_name in platform_modules:
@@ -75,7 +77,7 @@ def create_client(
     创建平台客户端（便捷函数）
     
     Args:
-        platform: 平台标识 (xhs, bili, dy, ks, wb, zhihu)
+        platform: 平台标识 (xhs, bili, dy, ks, wb)
         mode: "api" 或 "patchright"
         cookie: Cookie 字符串
         **kwargs: 其他配置（timeout, proxy, etc.）

@@ -48,7 +48,7 @@ SUPPORTED_PLATFORMS = [
     {"value": "kuaishou",   "label": "快手",     "icon": "play-circle", "color": "#ff5000",  "auth_types": ["cookie"]},
     {"value": "bilibili",   "label": "B站",      "icon": "tv",          "color": "#00aeec",  "auth_types": ["cookie"]},
     {"value": "weibo",      "label": "微博",     "icon": "message",     "color": "#ff8200",  "auth_types": ["cookie"]},
-    {"value": "zhihu",      "label": "知乎",     "icon": "question",    "color": "#0066ff",  "auth_types": ["cookie"]},
+    # ⚠️ zhihu 已移除（2026-10-01 用户要求）
     {"value": "wechat_mp",  "label": "微信公众号", "icon": "wechat",     "color": "#07C160",  "auth_types": ["qrcode"]},
     {"value": "fanqie",     "label": "番茄小说",   "icon": "book",       "color": "#ff5a5f",  "auth_types": ["cookie"], "view": True, "publish": True, "credential": "cookie"},
     {"value": "youtube",    "label": "YouTube",   "icon": "youtube",     "color": "#ff0000",  "auth_types": ["cookie"]},

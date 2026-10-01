@@ -211,7 +211,6 @@ PLATFORM_LOGIN_URLS = {
         # 有完整的扫码登录页（实测截图确认）。
         "https://m.weibo.cn/login"
     ),
-    "zhihu": "https://www.zhihu.com",
     "youtube": "https://www.youtube.com",
     "tiktok": "https://www.tiktok.com",
     "twitter": "https://x.com",
@@ -232,7 +231,6 @@ PLATFORM_DOMAINS = {
     # （`SUB`）与主站 `weibo.com` 是**不同的值**。
     # 只存 `.weibo.com` 会漏掉 m 站的登录 cookie。
     "weibo": ".weibo.cn,m.weibo.cn,.weibo.com,passport.weibo.com,t.cn",
-    "zhihu": ".zhihu.com",
     "youtube": ".youtube.com,youtu.be",
     "tiktok": ".tiktok.com",
     "twitter": ".twitter.com,.x.com,t.co,pbs.twimg.com,abs.twimg.com",
@@ -249,7 +247,6 @@ PLATFORM_TEST_URLS = {
     "kuaishou": "https://www.kuaishou.com/short-video/3xpdvbqr5y5g",
     "bilibili": "https://www.bilibili.com/video/BV1xx411c7XD",
     "weibo": "https://weibo.com/7741392674/status/5028368969279244",
-    "zhihu": "https://www.zhihu.com/question/264939990",
     "youtube": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
     "tiktok": "https://www.tiktok.com/@tiktok/video/7043492019477857454",
     "twitter": "https://x.com/Twitter/status/12345",
@@ -272,7 +269,6 @@ PLATFORM_USER_AGENTS = {
     "kuaishou": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "bilibili": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "weibo": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "zhihu": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     # 微信公众号需要与 bizlogin 端点校验一致的 Chrome 149
     "wechat_mp": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
 }

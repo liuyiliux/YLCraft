@@ -1,7 +1,7 @@
 """
 YLCraft — 素材采集服务
 使用新的 platforms 模块进行多平台视频/图文素材搜索与采集
-支持平台：小红书、B站、抖音、快手、微博、知乎
+支持平台：小红书、B站、抖音、快手、微博
 """
 
 from __future__ import annotations
@@ -33,11 +33,11 @@ class CrawlerPlatform:
     KUAISHOU = "ks"  # 快手
     BILIBILI = "bili" # B站
     WEIBO = "wb"      # 微博
-    ZHIHU = "zhihu"   # 知乎
+    # ZHIHU 已移除（2026-10-01 用户要求）。
 
 class SearchRequest(BaseModel):
     """搜索请求"""
-    platform: str = Field(..., description="平台: xhs/dy/ks/bili/wb/zhihu")
+    platform: str = Field(..., description="平台: xhs/dy/ks/bili/wb")
     keyword: str = Field(..., description="搜索关键词")
     max_results: int = Field(20, description="最大结果数", ge=1, le=100)
     crawl_type: str = Field("search", description="采集类型")
@@ -510,7 +510,6 @@ class CrawlerService:
             "ks": f"ytsearch{max_results}:\"{keyword} site:kuaishou.com\"",
             "wb": f"ytsearch{max_results}:\"{keyword} site:weibo.com\"",
             "xhs": f"ytsearch{max_results}:\"{keyword} site:xiaohongshu.com\"",
-            "zhihu": f"ytsearch{max_results}:\"{keyword} site:zhihu.com\"",
         }
 
         actual_url = platform_search_map.get(platform, search_url)

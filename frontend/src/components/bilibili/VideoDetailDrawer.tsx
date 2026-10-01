@@ -40,7 +40,7 @@ function getPlatformInfo(platform: string) {
     dy: { label: '抖音', color: '#000000' },
     ks: { label: '快手', color: '#ff5000' },
     wb: { label: '微博', color: '#ff8200' },
-    zhihu: { label: '知乎', color: '#0066ff' },
+    // ⚠️ 知乎（zhihu）已移除（2026-10-01 用户要求）。
     // 平台已改名 X（原 Twitter）
     twitter: { label: 'X', color: '#1DA1F2' },
     youtube: { label: 'YouTube', color: '#FF0000' },

@@ -110,7 +110,7 @@ async def list_platform_connections(platform: str = "", include_inactive: bool =
     description="Search external content platforms for video/image/article/user material.",
     category="platform_source",
     examples=["搜索小红书 AI短剧 分镜", "搜索 B站 角色设定 教程", "找抖音爆款短剧素材"],
-    input_schema_note="platform and keyword are required. platform examples: xhs/dy/ks/bili/wb/zhihu/wechat_mp. max_results max 100.",
+    input_schema_note="platform and keyword are required. platform examples: xhs/dy/ks/bili/wb/wechat_mp. max_results max 100.",
     output_schema_note="Returns success, total, using, message, and compact result summaries. Direct media URLs are summarized as availability flags.",
     risk_level="external",
     output_type="platform_source_search_results",

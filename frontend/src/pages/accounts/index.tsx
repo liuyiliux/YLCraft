@@ -96,7 +96,7 @@ const PLATFORM_METAS: PlatformMeta[] = [
   { value: 'kuaishou',   label: '快手',    icon: <span style={{fontSize:18}}>🎥</span>, color: '#ff5000', authTypes: ['cookie'], supportQrcode: true },
   { value: 'bilibili',   label: 'B站',     icon: <span style={{fontSize:18}}>📺</span>, color: '#00aeec', authTypes: ['cookie'], supportQrcode: true },
   { value: 'weibo',      label: '微博',    icon: <span style={{fontSize:18}}>💬</span>, color: '#ff8200', authTypes: ['cookie'], supportQrcode: false },
-  { value: 'zhihu',      label: '知乎',    icon: <span style={{fontSize:18}}>❓</span>, color: '#0066ff', authTypes: ['cookie'], supportQrcode: false },
+  // ⚠️ 知乎（zhihu）已移除（2026-10-01 用户要求）。
   // 番茄小说：后端 SUPPORTED_PLATFORMS 早已支持（api/v1/platforms.py），
   // 但本元数据表此前漏了它，导致账号中心渲染不出番茄入口、无法创建连接。
   { value: 'fanqie',     label: '番茄小说', icon: <span style={{fontSize:18}}>🍅</span>, color: '#ff5a5f', authTypes: ['cookie'], supportQrcode: false },

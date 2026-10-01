@@ -1,13 +1,13 @@
 ---
 name: platform_source_search
 title: 外部平台搜索
-description: 搜索 B站、小红书、抖音、快手、微博、知乎、公众号等外部平台，并把结果用于素材或项目推进。
+description: 搜索 B站、小红书、抖音、快手、微博、公众号等外部平台，并把结果用于素材或项目推进。
 version: 1.0.0
 skill_type: workflow
 category: platform
 tags: [platform, search, crawler, asset]
 triggers:
-  keywords: [平台, B站, 小红书, 抖音, 快手, 微博, 知乎, 公众号, 外部搜索, 搜视频]
+  keywords: [平台, B站, 小红书, 抖音, 快手, 微博, 公众号, 外部搜索, 搜视频]
   context_keys: [platform, crawler_context]
   tools: [search_platform_sources, search_platform_sources_enhanced, get_platform_note_detail]
 requires_tools: [search_platform_sources]

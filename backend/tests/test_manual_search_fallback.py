@@ -23,7 +23,6 @@
     抖音    HTTP 200                            ✅
     快手    HTTP 200  '快手'                    ✅
     微博    需登录（浏览器里已登录，可用）
-    知乎    需登录
     X       格式正确（我方网络访问不了，浏览器可用）
 
 ## 顺带确认的一件事：快手**没有可用的「我是谁」接口**
@@ -86,16 +85,24 @@ def test_manual_search_urls_are_verified():
     """URL 要用**实测过的**形态（各平台不一样，不能瞎写）。
 
     实测（2026-09-29）：
-        小红书 /search_result?keyword=
+        小红书 /search_result/?keyword=   ← **必须有结尾 `/`**
         抖音   /search/{kw}
         B站    search.bilibili.com/all?keyword=
         快手   /search/video?searchKey=
         微博   s.weibo.com/weibo?q=
+
+    ⚠️ **修（2026-10-01）：小红书那条断言少了结尾的 `/`。**
+
+    原断言写的是 `search_result?keyword=`，而代码里（实测正确形态）是
+    `search_result/?keyword=` —— 少了 `/` 会 **HTTP 301 且降级成 http**。
+    断言与代码从写下那天起就对不上，这条测试一直是红的
+    （"常红的测试等于没有测试"，顺手修掉）。
     """
     src = _src()
     i = src.find("MANUAL_SEARCH_URLS")
     seg = src[i:i + 1600]
-    assert "search_result?keyword=" in seg, "小红书是这个形态"
+    # 必须是带结尾 `/` 的形态（少了会 301 且降级成 http）
+    assert "search_result/?keyword=" in seg, "小红书是这个形态（注意结尾 /）"
     assert "search.bilibili.com/all?keyword=" in seg
     assert "/search/video?searchKey=" in seg, "快手用 searchKey"
     assert "s.weibo.com/weibo?q=" in seg
