@@ -171,10 +171,39 @@ def test_frontend_keeps_disabled_connections_visible():
     与设计意图完全相反）。
     """
     src = _crawler()
-    i = src.find("loadPlatformConnections")
+    i = src.find("const loadPlatformConnections")
     assert i != -1
-    seg = src[i:i + 1500]
+    seg = src[i:i + 1200]
     assert "'disabled'" in seg, "要保留已停用的连接（否则找不回启用按钮）"
+
+
+def test_frontend_keeps_unknown_connections_visible():
+    """**回归（第二次修，实测踩到）**：也要保留 `unknown` 状态的连接。
+
+    ## 实测经过
+
+    我只改成 `active || disabled` 后，**`unknown` 的连接仍然不显示** ——
+    而小红书实测正是 `unknown`（未测试过），于是界面显示
+    "未找到小红书连接"，**下拉和停用按钮全都不渲染**。
+
+    用户反馈："没看到停用按钮"。
+
+    ⚠️ `unknown` 只是"没测过"，**凭证是在的、搜索照样能用**
+    （实测小红书搜索能跑）。不该因为没测过就把它藏起来。
+
+    判据应该是"凭证在不在"，而不是"有没有测过"。
+    """
+    src = _crawler()
+    i = src.find("const loadPlatformConnections")
+    assert i != -1
+    seg = src[i:i + 1200]
+    assert "'unknown'" in seg, (
+        "要保留 unknown 状态的连接 —— 实测小红书就是 unknown，"
+        "漏了它会导致整个下拉和停用按钮都不渲染"
+    )
+    # 同时只能过滤掉"凭证真坏了"的两种
+    assert "'expired'" not in seg, "不该显式保留 expired（凭证已坏）"
+    assert "'failed'" not in seg, "不该显式保留 failed（凭证已坏）"
 
 
 def test_frontend_default_skips_disabled():
