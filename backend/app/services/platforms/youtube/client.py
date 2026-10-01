@@ -358,6 +358,18 @@ class YoutubeClient(BasePlatformClient):
             desc=(info.get("description") or "")[:300],
         )
 
+    async def get_user_videos(self, user_id: str, max_results: int = 20) -> List[SearchResult]:
+        """频道视频列表（**路由用的方法名**）。
+
+        ⚠️ `users.py::/users/videos` 调的是 `get_user_videos`，
+        而基类里同类能力叫 `get_user_notes`。两个名字都提供，
+        避免"实现了但路由找不到"——
+
+        实测踩过：只写 `get_user_notes` 时 `/users/videos` 报
+        `'YoutubeClient' object has no attribute 'get_user_videos'` → 500。
+        """
+        return await self.get_user_notes(user_id, max_results=max_results)
+
     async def get_user_notes(self, user_id: str, max_results: int = 20) -> List[SearchResult]:
         """频道视频列表。
 
