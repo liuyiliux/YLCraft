@@ -32,7 +32,7 @@ import { useResizableColumns } from '../../hooks/useResizableColumns'
 import {
   searchEnhanced, importCrawler, getNoteDetail, getSubtitles, downloadCrawlerSubtitle, listPlatformConnections,
   getDanmaku, downloadDanmaku, getBiliStats, getBiliComments, sendBiliComment, getBiliVideoInfo,
-  getBiliLoginHealth, getPlatformHealth, disablePlatformConnection, enablePlatformConnection, wechatMpGetArticles, wechatMpDownloadSingle, wechatMpDownloadBatch, wechatMpImportAssets,
+  getBiliLoginHealth, getPlatformHealth, getComments, disablePlatformConnection, enablePlatformConnection, wechatMpGetArticles, wechatMpDownloadSingle, wechatMpDownloadBatch, wechatMpImportAssets,
   wechatMpExportEpub, openFolder,
 } from '../../api'
 import type { CrawlerResult, PlatformConnectionResponse, PlatformHealthCheck, PlatformHealthResponse } from '../../api'
@@ -1732,38 +1732,65 @@ export default function CrawlerPage() {
     }
   }
 
-  // ===== B站专属：评论 =====
-  const fetchComments = async (bvid: string, page = 1, sort?: number, offset?: string) => {
+  // ===== 评论（走**统一**接口，不再只支持 B站）=====
+  //
+  // ⚠️ 2026-10-01 改：原来只调 `getBiliComments`（B站专属），
+  // 而评论 tab 也只在 B站分支渲染 —— 用户在其它平台点「评论」
+  // 看到的是空白（以为"这条没有评论"，其实是功能没接）。
+  //
+  // 现在统一走 `/api/v1/comments?platform=x&item_id=y`：
+  //   · 已实现的平台（B站）→ 正常返回
+  //   · 未实现的平台       → 后端返回 **501 + 具体原因**
+  //     前端要**显示这个原因**，而不是当成"获取失败"
+  //     （"没实现"和"失败了"对用户是完全不同的两件事）
+  const [commentUnsupported, setCommentUnsupported] = useState<string>('')
+
+  const fetchComments = async (itemId: string, page = 1, sort?: number, offset?: string) => {
     setCommentLoading(true)
     setCommentPage(page)
     const useSort = sort !== undefined ? sort : commentSort
     const useOffset = offset !== undefined ? offset : ''
-    console.log(`[Comments] Fetching: page=${page}, sort=${useSort}, offset=${useOffset}`)
     try {
-      const res: any = await getBiliComments(bvid, { page, sort: useSort, offset: useOffset, conn_id: selectedBiliConn })
-      console.log(`[Comments] Response:`, res)
+      const res: any = await getComments({
+        platform: detailNote?.platform || platform,
+        item_id: itemId,
+        page,
+        page_size: 20,
+        sort: useSort,
+        offset: useOffset,
+        conn_id: detailNote?.platform === 'bili' ? selectedBiliConn : selectedSearchConn,
+      })
       if (res?.success) {
         const newComments = res.data?.comments || []
-        console.log(`[Comments] New comments: ${newComments.length}, next_offset: ${res.data?.next_offset}, has_more: ${res.data?.has_more}`)
         if (page === 1 && !offset) {
-          // 首次加载或切换排序，清空列表
           setComments(newComments)
         } else {
-          // 加载更多，追加到现有列表
           setComments(prev => [...prev, ...newComments])
         }
         setCommentTotal(res.data?.total || 0)
         setCommentNextOffset(res.data?.next_offset || '')
         setCommentHasMore(res.data?.has_more || false)
+        setCommentUnsupported('')
       } else {
-        message.error(getBiliHealthIssue('comments') || res?.detail || res?.message || '获取评论失败')
+        message.error(res?.detail || res?.message || '获取评论失败')
         if (page === 1) {
           setComments([])
         }
       }
     } catch (err: any) {
-      message.error(getBiliHealthIssue('comments') || err?.response?.data?.detail || err?.message || '获取评论失败')
-      console.error(`[Comments] Error:`, err)
+      // ⚠️ 501 = **平台未实现**（不是"获取失败"）——
+      // 把原因存起来给 UI 显示，不弹错误提示
+      if (err?.response?.status === 501) {
+        setCommentUnsupported(String(err?.response?.data?.detail || '该平台暂不支持评论采集'))
+      } else {
+        const detail = err?.response?.data?.detail
+        message.error(
+          (detail && String(detail).slice(0, 90))
+          || (detailNote?.platform === 'bili' ? getBiliHealthIssue('comments') : '')
+          || err?.message
+          || '获取评论失败',
+        )
+      }
       if (page === 1) {
         setComments([])
       }
@@ -3431,10 +3458,27 @@ export default function CrawlerPage() {
               )}
 
               {/* ===== Tab: 评论 ===== */}
-              {detailDrawerTab === 'comments' && detailNote.platform === 'bili' && (
+              {detailDrawerTab === 'comments' && (
                 <div>
+                  {/* ⚠️ 平台未实现评论采集时：显示后端给的**原因**，
+                      不要显示"暂无评论"（那会让用户以为这条没评论）。 */}
+                  {commentUnsupported && (
+                    <div style={{ textAlign: 'center', padding: '28px 16px' }}>
+                      <MessageOutlined style={{ fontSize: 40, color: textSec, opacity: 0.4 }} />
+                      <div style={{ marginTop: 12, color: textPri, fontWeight: 600, fontSize: 14 }}>
+                        {getPlatformInfo(detailNote.platform).label}暂不支持评论采集
+                      </div>
+                      <div style={{
+                        marginTop: 8, color: textSec, fontSize: 12,
+                        lineHeight: 1.6, whiteSpace: 'pre-wrap',
+                        maxWidth: 460, margin: '8px auto 0',
+                      }}>
+                        {commentUnsupported}
+                      </div>
+                    </div>
+                  )}
                   {/* 发评论 */}
-                  {biliConnections.length > 0 ? (
+                  {!commentUnsupported && biliConnections.length > 0 && detailNote.platform === 'bili' && (
                     <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
                       <Input.TextArea
                         placeholder="发送评论（需登录态）..."
@@ -3454,7 +3498,9 @@ export default function CrawlerPage() {
                         发送
                       </Button>
                     </div>
-                  ) : (
+                  )}
+                  {/* 非 B站平台（或没登录态）：不发评论框 */}
+                  {!commentUnsupported && detailNote.platform === 'bili' && biliConnections.length === 0 && (
                     <div style={{ textAlign: 'center', padding: '12px 16px', background: `${BILI_COLORS.warning}15`, borderRadius: 8, marginBottom: 12 }}>
                       <div style={{ color: textSec, fontSize: 13 }}>评论功能需要登录态</div>
                       <Button size="small" type="link"
@@ -3494,26 +3540,57 @@ export default function CrawlerPage() {
                   ) : (
                     <>
                       <div style={{ maxHeight: 600, overflowY: 'auto', paddingRight: 4 }}>
+                        {/* ⚠️ 字段兼容两种形态（2026-10-01）：
+                            · 统一接口 `/api/v1/comments`：
+                              id / author / content / likes / create_time / reply_count / avatar
+                            · B站旧接口（getBiliComments）：
+                              rpid / user_name / message / like_count / ctime / rcount / user_avatar
+                            统一结构优先，旧字段兜底 —— 上游改了也不会显示空白。 */}
                         {comments.map((c: any) => (
-                          <div key={c.rpid} style={{
+                          <div key={c.id || c.rpid} style={{
                             padding: '10px 0', borderBottom: `1px solid ${borderColor}`,
                           }}>
                             <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                              <div style={{
-                                width: 32, height: 32, borderRadius: '50%',
-                                background: BILI_COLORS.primary, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                color: '#fff', fontSize: 12, flexShrink: 0,
-                              }}>
-                                {c.user_name?.[0] || '?'}
-                              </div>
+                              {(() => {
+                                const avatar = c.avatar || c.user_avatar
+                                const name = c.author || c.user_name || '?'
+                                if (avatar) {
+                                  return (
+                                    <img
+                                      src={`/api/v1/proxy/image?url=${encodeURIComponent(avatar)}`}
+                                      alt=""
+                                      style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, objectFit: 'cover' }}
+                                    />
+                                  )
+                                }
+                                return (
+                                  <div style={{
+                                    width: 32, height: 32, borderRadius: '50%',
+                                    background: BILI_COLORS.primary, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    color: '#fff', fontSize: 12, flexShrink: 0,
+                                  }}>
+                                    {name[0]}
+                                  </div>
+                                )
+                              })()}
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                                  <Text style={{ color: textPri, fontSize: 13, fontWeight: 600 }}>{c.user_name}</Text>
-                                  {c.rcount > 0 && <Tag style={{ fontSize: 11 }}>{c.rcount} 回复</Tag>}
+                                  <Text style={{ color: textPri, fontSize: 13, fontWeight: 600 }}>
+                                    {c.author || c.user_name}
+                                  </Text>
+                                  {(c.reply_count ?? c.rcount) > 0 && (
+                                    <Tag style={{ fontSize: 11 }}>{c.reply_count ?? c.rcount} 回复</Tag>
+                                  )}
                                 </div>
-                                <Text style={{ color: textPri, fontSize: 13 }}>{c.message}</Text>
+                                <Text style={{ color: textPri, fontSize: 13 }}>{c.content || c.message}</Text>
                                 <div style={{ marginTop: 4, fontSize: 11, color: textSec }}>
-                                  {new Date(c.ctime * 1000).toLocaleString('zh-CN')} · {c.like_count} 赞
+                                  {c.create_time
+                                    ? new Date(c.create_time).toLocaleString('zh-CN')
+                                    : c.ctime
+                                      ? new Date(c.ctime * 1000).toLocaleString('zh-CN')
+                                      : ''}
+                                  {' · '}
+                                  {c.likes ?? c.like_count ?? 0} 赞
                                 </div>
                               </div>
                             </div>
