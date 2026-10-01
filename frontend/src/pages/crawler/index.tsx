@@ -24,6 +24,7 @@ import {
   FileTextOutlined, DownOutlined, BarChartOutlined, LikeOutlined, ShareAltOutlined,
   SendOutlined, VideoCameraAddOutlined, CopyOutlined, ArrowUpOutlined,
   CalendarOutlined, FolderOpenOutlined, SyncOutlined, AppstoreOutlined,
+  ClockCircleOutlined, SwapOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
 import { useResizableColumns } from '../../hooks/useResizableColumns'
@@ -456,6 +457,74 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
 const SEARCH_KEYWORDS = ['AI教程', '短剧', '美食探店', '穿搭', '数码评测', 'vlog', 'travel']
 
 // ===== 工具函数 =====
+/**
+ * 清洗 Telegram 消息的 HTML（白名单）。
+ *
+ * ## 为什么需要
+ *
+ * Telegram 消息正文里有 `<a>`/`<br>`/加粗/emoji，后端在
+ * `raw_data.html` 里给了原始 HTML。但**不能直接
+ * `dangerouslySetInnerHTML` 原始 HTML** —— 那是 XSS 入口：
+ * 虽然来源是 Telegram，消息里可以嵌任意标签
+ * （例如转发别人发的带 `<script>` 的内容）。
+ *
+ * ## 策略：白名单 + 只留安全属性
+ *
+ *   允许的标签：a / br / b / i / u / s / code / pre / tg-spoiler
+ *   允许的属性：`<a>` 只留 href（且必须是 http/https/tg 协议）
+ *   **一律丢掉**：script / style / iframe / img / on* 事件属性
+ *
+ * ## ⚠️ 不用 DOMPurify 的原因
+ *
+ * 那是又一个 npm 依赖（~50KB），而这里的输入面很窄
+ * （只有 Telegram 正文，且后端已剥过一遍）。用正则做白名单
+ * 足够，且**没有引入依赖**。
+ * 如果将来要渲染其它来源的 HTML，再换 DOMPurify。
+ */
+function sanitizeTelegramHtml(html: string): string {
+  let s = String(html || '')
+  // 1) 先干掉**整体**危险元素（含内容）—— 必须在标签白名单之前
+  s = s.replace(/<\s*(script|style|iframe|object|embed|link|meta)[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
+  s = s.replace(/<\s*(script|style|iframe|object|embed|link|meta)[^>]*\/?>/gi, '')
+  // 2) 允许的标签（保留），其余标签**只脱标签、留文字**
+  const allowed = /^(a|br|b|strong|i|em|u|s|code|pre|tg-spoiler)$/i
+  s = s.replace(/<\/?([a-zA-Z][a-zA-Z0-9-]*)((?:[^>"']|"[^"]*"|'[^']*')*)\/?>/g,
+    (m, tag: string, attrs: string) => {
+      if (!allowed.test(tag)) return ''
+      const isClose = m.startsWith('</')
+      const t = tag.toLowerCase()
+      if (isClose) return `</${t}>`
+      if (t === 'br') return '<br/>'
+      if (t === 'a') {
+        // 只留 href，且校验协议（挡 javascript: / data:）
+        const hrefMatch = attrs.match(/href\s*=\s*("([^"]*)"|'([^']*)')/i)
+        const href = hrefMatch ? (hrefMatch[2] ?? hrefMatch[3] ?? '') : ''
+        const safe = /^(https?:|tg:|mailto:)/i.test(href.trim())
+        return safe
+          ? `<a href="${href.replace(/"/g, '&quot;')}" target="_blank" rel="noreferrer noopener">`
+          : '<a>'
+      }
+      return `<${t}>`
+    })
+  return s
+}
+
+/**
+ * 秒 → `4:26:52` / `1:23`（时长展示）。
+ *
+ * ⚠️ 不能只写 `m:ss` —— YouTube 的长课程有 4 小时以上的
+ * （实测 `16012` 秒 = 4:26:52）。截断小时会显示成 `26:52`，
+ * 用户以为视频只有 26 分钟。
+ */
+function formatDuration(sec: number | undefined | null): string {
+  const s = Math.max(0, Math.floor(Number(sec) || 0))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const ss = s % 60
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return h > 0 ? `${h}:${pad(m)}:${pad(ss)}` : `${m}:${pad(ss)}`
+}
+
 function stripHtml(str: string): string {
   return str.replace(/<[^>]+>/g, '').replace(/&[^;]+;/g, '')
 }
@@ -2749,6 +2818,27 @@ export default function CrawlerPage() {
                         </Space>
                       </Descriptions.Item>
                     )}
+                    {/* ⚠️ **播放量 + 时长**（2026-10-01 补）
+                        原来通用详情**只显示 赞/收藏/评论/分享**，
+                        把「播放量」和「时长」漏了 —— 而这两个恰恰是
+                        YouTube / Telegram / B站 最核心的数字。
+                        实测症状：YouTube 详情看不出视频多长、多少人看过
+                        （列表里有，点进去反而没有）。
+
+                        这两个字段后端**一直在传**（YouTube duration=16012、
+                        views=4937万），是前端没渲染。 */}
+                    {((detailNote as any).views > 0 || (detailNote as any).duration > 0) && (
+                      <Descriptions.Item label="播放/时长">
+                        <Space size={10} style={{ fontSize: 13, fontWeight: 600, color: textPri }}>
+                          {(detailNote as any).views > 0 && (
+                            <span><EyeOutlined style={{ color: '#8b5cf6' }} /> 播放 {formatNum((detailNote as any).views)}</span>
+                          )}
+                          {(detailNote as any).duration > 0 && (
+                            <span><ClockCircleOutlined style={{ color: '#0ea5e9' }} /> {formatDuration((detailNote as any).duration)}</span>
+                          )}
+                        </Space>
+                      </Descriptions.Item>
+                    )}
                     {/* 发布时间（API 路径能拿到，之前没展示） */}
                     {(detailNote as any).create_time && (
                       <Descriptions.Item label="发布时间">
@@ -2792,9 +2882,55 @@ export default function CrawlerPage() {
 
                   {/* 描述 */}
                   <Text style={{ color: textPri, fontWeight: 600 }}>描述</Text>
-                  <div style={{ color: textSec, fontSize: 13, marginTop: 8, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-                    {detailNote.desc || '暂无描述'}
-                  </div>
+                  {/* ⚠️ **Telegram 用富文本渲染**（2026-10-01 补）
+                      Telegram 消息正文里有 `<a>` 链接、`<br>` 换行、
+                      加粗等 —— 后端在 `raw_data.html` 里给了原始 HTML。
+                      用纯文本渲染会把**所有外链变成不可点击的字符串**
+                      （用户得手动复制），而 Telegram 消息大量依赖外链。
+
+                      安全处理：只保留白名单标签（a/br/b/i/u/s/code/pre），
+                      去掉所有 on* 事件属性与 script/style ——
+                      ⚠️ **不能直接 dangerouslySetInnerHTML 原始 HTML**
+                      （那是 XSS 入口，虽然来源是 Telegram，
+                      但 HTML 里可能嵌任意标签）。 */}
+                  {detailNote.platform === 'telegram' && (detailNote as any).raw_data?.html ? (
+                    <div
+                      style={{ color: textSec, fontSize: 13, marginTop: 8, lineHeight: 1.7 }}
+                      dangerouslySetInnerHTML={{
+                        __html: sanitizeTelegramHtml(String((detailNote as any).raw_data.html)),
+                      }}
+                    />
+                  ) : (
+                    <div style={{ color: textSec, fontSize: 13, marginTop: 8, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                      {detailNote.desc || '暂无描述'}
+                    </div>
+                  )}
+
+                  {/* Telegram 消息的**转发来源 / 外链列表**（其它平台没有这两个） */}
+                  {detailNote.platform === 'telegram' && (
+                    <>
+                      {(detailNote as any).raw_data?.forward_from && (
+                        <div style={{ marginTop: 8, fontSize: 12, color: textSec }}>
+                          <SwapOutlined /> 转发自：<Text strong>{(detailNote as any).raw_data.forward_from}</Text>
+                        </div>
+                      )}
+                      {Array.isArray((detailNote as any).raw_data?.links) && (detailNote as any).raw_data.links.length > 0 && (
+                        <div style={{ marginTop: 8 }}>
+                          <Text style={{ fontSize: 12, color: textSec }}>正文外链：</Text>
+                          <div style={{ marginTop: 4 }}>
+                            <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                              {((detailNote as any).raw_data.links as string[]).slice(0, 8).map((u, i) => (
+                                <a key={i} href={u} target="_blank" rel="noreferrer"
+                                  style={{ fontSize: 12, wordBreak: 'break-all', color: THEME.primary }}>
+                                  {u.length > 72 ? u.slice(0, 72) + '…' : u}
+                                </a>
+                              ))}
+                            </Space>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
 
                   <Divider style={{ borderColor }} />
 
