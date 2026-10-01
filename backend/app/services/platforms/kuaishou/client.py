@@ -688,6 +688,49 @@ class KuaishouClient(BasePlatformClient):
             pcursor = nxt
         return out[:want]
 
+    async def get_user_profile(self, user_id: str) -> UserProfile:
+        """取**别人**的资料。
+
+        ## ⚠️ 快手**没有这个能力** —— 实测确认（2026-10-01）
+
+        我本来想"用搜索反查 userId"绕过，**实测行不通**：
+
+            search_users("3xktibdxreacj6w")  → 命中不到那个用户
+            （搜 uid 字符串不会返回该用户；搜索是按**昵称/内容**索引的）
+
+        而其它可能的路也都不通：
+
+          · `/rest/v/profile/get` 是**无参查自己**（传 userId 无效）
+            实测：`?userId={真|假}` 都返回 `{"result":2}`，**无法区分**
+            （这条早就在 `cookies/platforms/kuaishou.py` 里留过档）
+          · `/rest/v/profile/feed`（按 userId 取作品）**需要登录签名**
+            且它返回的是**作品**，不是资料
+          · 搜索结果里的用户字段**只有** `user_id/user_name/headurl/
+            user_text/verified/isFollowing` —— **没有粉丝数/作品数**
+
+        所以这里**如实抛错**，而不是：
+          · 返回一个粉丝数为 0 的空壳（那是**假数据**，用户会以为
+            这博主真的 0 粉）
+          · 假装能查（用户会反复重试）
+
+        前端「博主中心」点快手用户时，应当**直接用搜索结果里已有的
+        字段**渲染（昵称/头像/简介都在），不要调这个接口。
+        —— 见 `frontend/src/pages/platform-users/index.tsx` 对
+        `kuaishou` 的处理（搜到的用户直接够用）。
+
+        ⚠️ 如果将来发现有效路径（比如登录态有效时某个接口能查），
+        再实现它并把这段注释改掉 —— **不要再猜**。
+        """
+        raise NotImplementedError(
+            "[kuaishou] 快手没有公开的「按 id 查博主资料」接口。\n"
+            "实测确认（2026-10-01）：\n"
+            "  · profile/get 是无参的（只能查自己）\n"
+            "  · 搜用户接口不按 id 索引\n"
+            "  · 搜索结果里的用户字段**不含粉丝数/作品数**\n"
+            "所以请直接使用**搜索结果里的用户信息**（昵称/头像/简介都有）。\n"
+            "粉丝数需要快手后续开放接口，或登录态下另找路径。"
+        )
+
     async def get_self_profile(self) -> Optional[UserProfile]:
         """查**自己**的资料（「我的数据」）。
 
