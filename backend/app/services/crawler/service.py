@@ -677,12 +677,22 @@ class CrawlerService:
                 "shares": detail.shares,
                 "collect_count": getattr(detail, "collects", 0) or 0,
                 "views": getattr(detail, "views", 0) or 0,
+                # ⚠️ **`duration` 原来漏了**（2026-10-01 修）
+                #
+                # `platforms.types.NoteDetail` 有 `duration`，YouTube/Telegram
+                # 都认真填了（YouTube 实测 16012 秒），但这里**没往字典里放**
+                # —— 于是前端拿到的详情里时长**恒为 0**。
+                # 表现为"YouTube 详情不显示时长"（列表里有、点进去没有）。
+                # 字段一行的事，但漏了就是静默丢数据。
+                "duration": getattr(detail, "duration", 0) or 0,
                 # 发布时间 / 标签：API 路径能拿到（小红书 `time` / `tag_list`）
                 "create_time": getattr(detail, "create_time", "") or "",
                 "tags": getattr(detail, "tags", []) or [],
                 # ⚠️ `raw_data` 要带出来 —— 前端依赖它拿 `xsec_token`
                 # （再点别的操作时要用）。原来没带，前端拿到空对象。
                 "raw_data": getattr(detail, "raw_data", {}) or {},
+                # 视频封面：YouTube/Telegram 有（原来也漏了）
+                "video_cover": getattr(detail, "video_cover", "") or "",
             }
 
         except PlatformUnavailableError:

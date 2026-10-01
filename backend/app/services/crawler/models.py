@@ -21,6 +21,7 @@ class NoteDetail(BaseModel):
     desc: str = Field("", description="描述/正文")
     images: List[str] = Field(default_factory=list, description="无水印图片URL列表")
     video: str = Field("", description="无水印视频URL")
+    video_cover: str = Field("", description="视频封面图URL")
     author: str = Field("", description="作者名称")
     author_id: str = Field("", description="作者ID")
     likes: int = Field(0, description="点赞数")
@@ -28,6 +29,12 @@ class NoteDetail(BaseModel):
     shares: int = Field(0, description="分享数")
     collect_count: int = Field(0, description="收藏数")
     duration: int = Field(0, description="视频时长（秒）")
+    # ⚠️ `views` 是 2026-10-01 补的 ——
+    # service 层一直在往字典里放它（YouTube 实测 4937万播放），
+    # 但这个模型**没有这个字段** → pydantic 默认**静默忽略**多余字段
+    # → 前端永远拿不到播放量。
+    # 与 `collect_count` 那个坑同类（"传错名字 pydantic 静默忽略"）。
+    views: int = Field(0, description="播放/浏览数")
     create_time: str = Field("", description="发布时间")
     tags: List[str] = Field(default_factory=list, description="标签列表")
     raw_data: dict = Field(default_factory=dict, description="原始数据")
