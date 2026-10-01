@@ -1460,6 +1460,40 @@ export const getTelegramChannel = (channel: string, limit = 20, keyword = '') =>
     }>
   }>
 
+// ===== 统一平台体检（所有平台一个入口）=====
+//
+// ⚠️ 原来体检是各平台各写一份接口（B站/抖音/小红书），
+// 而**前端只接了 B站那个** —— 用户看到"为什么只有 B站有体检按钮"。
+// 这个统一入口用"最小搜索探针"（真搜一次），覆盖所有平台，
+// 包括免登录的 YouTube/Telegram（它们的体检有意义：VPN 断了就搜不到）。
+
+export interface PlatformHealthCheck {
+  key: string
+  label: string
+  ok: boolean
+  message: string
+  data?: Record<string, any>
+}
+
+export interface PlatformHealthResponse {
+  success: boolean
+  data?: {
+    platform: string
+    ready: boolean
+    needs_login: boolean
+    checks: Record<string, PlatformHealthCheck>
+  }
+}
+
+/** 对任意平台做体检（真搜一次，耗时取决于平台） */
+export const getPlatformHealth = (platform: string, connId = '', keyword = '') => {
+  const qs = new URLSearchParams()
+  if (connId) qs.set('conn_id', connId)
+  if (keyword) qs.set('keyword', keyword)
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return request(`/platforms/${platform}/health${suffix}`) as Promise<PlatformHealthResponse>
+}
+
 // ===== 用户查询（抖音 / 小红书 的用户搜索、资料、作品列表）=====
 //
 // 后端统一成 /users/*?platform=xxx（B站仍用 /bilibili/up/* 那一套）

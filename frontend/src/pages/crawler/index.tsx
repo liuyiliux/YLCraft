@@ -31,10 +31,10 @@ import { useResizableColumns } from '../../hooks/useResizableColumns'
 import {
   searchEnhanced, importCrawler, getNoteDetail, getSubtitles, downloadCrawlerSubtitle, listPlatformConnections,
   getDanmaku, downloadDanmaku, getBiliStats, getBiliComments, sendBiliComment, getBiliVideoInfo,
-  getBiliLoginHealth, wechatMpGetArticles, wechatMpDownloadSingle, wechatMpDownloadBatch, wechatMpImportAssets,
+  getBiliLoginHealth, getPlatformHealth, wechatMpGetArticles, wechatMpDownloadSingle, wechatMpDownloadBatch, wechatMpImportAssets,
   wechatMpExportEpub, openFolder,
 } from '../../api'
-import type { CrawlerResult, PlatformConnectionResponse } from '../../api'
+import type { CrawlerResult, PlatformConnectionResponse, PlatformHealthCheck, PlatformHealthResponse } from '../../api'
 import { formatNum, parseCreateTime, formatTime } from '../../utils/format'
 
 // B站配色
@@ -83,6 +83,17 @@ interface BiliHealthResult {
   checks?: Record<string, BiliHealthCheck>
   message?: string
 }
+
+/** 通用体检（所有平台）—— 后端 `/api/v1/platforms/{platform}/health`
+ *
+ * ⚠️ 与 B站的详细体检**同构**（都有 checks/ready），所以渲染可以复用；
+ * 但来源不同：这个跑的是**最小搜索探针**（真搜一次），
+ * B站那个查的是 cookie 分项（字幕/评论/发评论的授权）。
+ *
+ * 类型直接用 api 导出的 `PlatformHealthResponse`
+ * （不要在页面里再抄一份 —— 两边定义漂移了编译器也发现不了）。
+ */
+type PlatformHealthResult = PlatformHealthResponse
 
 const PLATFORMS: PlatformInfo[] = [
   { value: 'xhs', label: '小红书', icon: <BookOutlined />, color: '#fe2c55' },
@@ -791,6 +802,14 @@ export default function CrawlerPage() {
   const [biliHealth, setBiliHealth] = useState<BiliHealthResult | null>(null)
   const [biliHealthLoading, setBiliHealthLoading] = useState(false)
 
+  // ===== 通用体检（所有平台）=====
+  //
+  // ⚠️ 与 `biliHealth` **分开存**：B站那套是**详细版**（6 个分项：
+  // cookie/字幕/评论/发评论…），通用版是**搜索探针**（所有平台都能跑）。
+  // 两者格式同构（都有 checks/ready），但用途不同，混在一起会互相覆盖。
+  const [health, setHealth] = useState<PlatformHealthResult | null>(null)
+  const [healthLoading, setHealthLoading] = useState(false)
+
   // B站专属状态
   const [danmakuList, setDanmakuList] = useState<any[]>([])
   const [danmakuLoading, setDanmakuLoading] = useState(false)
@@ -1030,6 +1049,13 @@ export default function CrawlerPage() {
     setBiliHealth(null)
   }, [selectedBiliConn])
 
+  // 切换平台时清空**通用体检**结果 ——
+  // 否则会看到"小红书标签下显示 B站的体检结论"这种错位
+  // （与本页已有的"切平台清空搜索结果"同一个道理，实测踩过）。
+  useEffect(() => {
+    setHealth(null)
+  }, [platform])
+
   // 滚动监听：显示/隐藏回到顶部按钮
   useEffect(() => {
     const handleScroll = () => {
@@ -1156,6 +1182,184 @@ export default function CrawlerPage() {
           })}
         </div>
       </div>
+    )
+  }
+
+  // ===== 通用体检（所有平台）=====
+
+  /** 跑一次通用体检（真搜一次，可能要几秒）。 */
+  const runHealthCheck = async () => {
+    setHealthLoading(true)
+    setHealth(null)
+    try {
+      const connId = platform === 'bili' ? selectedBiliConn : selectedSearchConn
+      const res = await getPlatformHealth(platform, connId || '')
+      setHealth(res)
+      const ready = res?.data?.ready
+      const needsLogin = res?.data?.needs_login
+      if (ready) {
+        message.success(`${getPlatformInfo(platform).label} 体检通过`)
+      } else if (needsLogin) {
+        message.error('登录态失效 —— 请到「账号中心」重新获取')
+      } else {
+        message.warning('体检未通过，请查看下方原因')
+      }
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || e?.message || '体检失败'
+      setHealth({
+        success: false,
+        data: {
+          platform, ready: false, needs_login: false,
+          checks: {
+            error: { key: 'error', label: '体检', ok: false, message: String(msg) },
+          },
+        },
+      })
+      message.error(String(msg).slice(0, 80))
+    } finally {
+      setHealthLoading(false)
+    }
+  }
+
+  /** 渲染通用体检面板（所有平台同构）。 */
+  const renderHealthPanel = () => {
+    if (!health?.data) return null
+    const d = health.data
+    // 按后端给的顺序渲染（implemented → credential → search）
+    const order = ['implemented', 'credential', 'search', 'error']
+    const checks = order
+      .map(k => d.checks?.[k])
+      .filter(Boolean) as PlatformHealthCheck[]
+    if (checks.length === 0) return null
+
+    const okColor = '#52c41a'
+    const badColor = '#ff4d4f'
+    const headColor = d.ready ? okColor : '#faad14'
+
+    return (
+      <div style={{
+        marginTop: 12, padding: 12, borderRadius: 8,
+        border: `1px solid ${headColor}55`,
+        background: `${headColor}10`,
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 10 }}>
+          <Space size={8} wrap>
+            <Badge status={d.ready ? 'success' : 'warning'} />
+            <Text style={{ color: textPri, fontWeight: 600 }}>
+              {getPlatformInfo(platform).label} 体检
+              {d.ready ? '通过' : d.needs_login ? '未通过 · 需重新登录' : '未通过'}
+            </Text>
+          </Space>
+          <Button size="small" icon={<ReloadOutlined />} loading={healthLoading} onClick={runHealthCheck}>
+            复检
+          </Button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8 }}>
+          {checks.map(c => {
+            const color = c.ok ? okColor : badColor
+            const Icon = c.ok ? CheckCircleOutlined : CloseCircleOutlined
+            return (
+              <div key={c.key} style={{
+                minHeight: 78, padding: '9px 10px', borderRadius: 8,
+                border: `1px solid ${color}33`,
+                background: isDark ? '#1f1f1f' : '#ffffff',
+              }}>
+                <Space size={6} style={{ marginBottom: 4 }}>
+                  <Icon style={{ color }} />
+                  <Text style={{ color: textPri, fontWeight: 600, fontSize: 13 }}>{c.label}</Text>
+                  <Tag color={c.ok ? 'success' : 'error'} style={{ margin: 0 }}>
+                    {c.ok ? '正常' : '异常'}
+                  </Tag>
+                </Space>
+                {/* ⚠️ 用 pre-wrap：体检说明里**特意**带了换行
+                    （如"注意区分两种情况：·… ·…"），
+                    不换行会挤成一坨难读 */}
+                <div style={{ color: c.ok ? textSec : color, fontSize: 12, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+                  {c.message}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        {/* 需要重新登录时，直接给个跳账号中心的入口 */}
+        {d.needs_login && (
+          <div style={{ marginTop: 10 }}>
+            <Button size="small" type="primary" danger
+              onClick={() => window.open('/accounts', '_blank', 'noopener,noreferrer')}>
+              去「账号中心」重新获取登录态
+            </Button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  /** ② 次要行：连接选择 + 体检按钮（**所有平台一致**）。
+   *
+   * 设计要点：
+   *   · 体检按钮**永远显示**（原来只有 B站有，用户会疑惑"为啥它特殊"）
+   *   · 连接下拉按平台状态显示不同提示（有连接/免登录/未配置）
+   *   · 整行**没内容时不留空**（免登录平台没连接 —— 但体检按钮还在，
+   *     所以实际上永远有内容）
+   */
+  const renderSecondaryRow = () => {
+    const pf = getPlatformInfo(platform)
+    const isNoLogin = platform === 'youtube' || platform === 'telegram'
+    const conns = platform === 'bili' ? biliConnections : searchConnections
+    const connValue = platform === 'bili' ? selectedBiliConn : selectedSearchConn
+    const setConnValue = platform === 'bili' ? setSelectedBiliConn : setSelectedSearchConn
+
+    return (
+      <Row gutter={[12, 8]} align="middle" style={{ marginTop: 10 }} wrap={false}>
+        <Col flex="1 1 auto" style={{ minWidth: 0 }}>
+          {conns.length > 0 ? (
+            <Space size={8} style={{ width: '100%' }}>
+              <Text style={{ fontSize: 12, color: textSec, whiteSpace: 'nowrap' }}>
+                {pf.label}账号：
+              </Text>
+              <Select
+                size="small"
+                value={connValue || undefined}
+                onChange={setConnValue}
+                style={{ minWidth: 220 }}
+                options={conns.map((c: any) => ({
+                  value: c.id,
+                  label: `${c.name}${c.account_name ? ` · ${c.account_name}` : ''}${c.status === 'active' ? ' ✓' : ''}`,
+                }))}
+              />
+            </Space>
+          ) : isNoLogin ? (
+            <Text style={{ fontSize: 12, color: BILI_COLORS.success }}>
+              {pf.label} 无需登录 —— 直接搜索即可（取公开数据）
+            </Text>
+          ) : (
+            <Text style={{ fontSize: 12, color: '#f59e0b' }}>
+              未找到{pf.label}连接 —— 请先到「账号中心」获取并保存登录态，否则搜索会失败
+            </Text>
+          )}
+        </Col>
+        <Col flex="none">
+          {/* ⚠️ 体检按钮**所有平台都有**（2026-10-01 统一）——
+              原来只有 B站分支渲染，而抖音/小红书的接口其实早就实现了
+              （`/douyin/login-health`、`/xhs/login-health`），
+              属于"后端实现了但前端没接"。现在统一走
+              `/api/v1/platforms/{platform}/health`（最小搜索探针）。 */}
+          <Tooltip title="真搜一次来验证：平台是否可用、登录态是否有效、有没有被风控">
+            <Button
+              size="small"
+              icon={<CheckCircleOutlined />}
+              loading={healthLoading || (platform === 'bili' && biliHealthLoading)}
+              onClick={() => {
+                // B站保留详细体检（6 个分项），同时也跑通用探针
+                if (platform === 'bili') runBiliHealthCheck()
+                runHealthCheck()
+              }}
+            >
+              体检
+            </Button>
+          </Tooltip>
+        </Col>
+      </Row>
     )
   }
 
@@ -1862,10 +2066,28 @@ export default function CrawlerPage() {
       <Card style={{ marginBottom: 20, background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 12 }}
         styles={{ body: { padding: 0 } }}>
 
-        {/* ① 平台 + 搜索框 + B站连接选择 */}
+        {/* =====================================================================
+            ① 主搜索行 —— **所有平台完全一致，宽度永不跳**（2026-10-01 重构）
+
+            原设计的问题：搜索框宽度按 `showSearchConnectionPicker`
+            动态算（`md={... ? 14 : 21}`），而这个变量取决于
+            **该平台有没有建过连接** —— 于是：
+
+              · 有连接（小红书/抖音）→ 搜索框窄 + 右侧塞连接下拉
+                → 「去官网搜」被挤到**第二行**
+              · 没连接（YouTube/Telegram 免登录）→ 搜索框宽
+                → 「去官网搜」留在**第一行**
+
+            用户切平台时看到按钮位置乱跳、搜索框忽宽忽窄，
+            会以为界面坏了（实测反馈："为啥几个平台搜索输入框长度不一样"）。
+
+            ⚠️ **布局宽度不该取决于业务状态**（有没有连接），
+            只该取决于屏幕宽度。所以这里固定 `md=12`，
+            把「连接选择」「体检」全部**下移到第二行**。
+            ===================================================================== */}
         <div style={{ padding: '16px 20px 12px' }}>
-          <Row gutter={[12, 12]} align="middle">
-            <Col xs={24} sm={4} md={3}>
+          <Row gutter={[12, 12]} align="middle" wrap={false}>
+            <Col flex="0 0 150px">
               <Select
                 value={platform}
                 onChange={setPlatform}
@@ -1873,7 +2095,8 @@ export default function CrawlerPage() {
                 options={PLATFORMS.map(p => ({ value: p.value, label: <Space size={6}>{p.icon}{p.label}</Space> }))}
               />
             </Col>
-            <Col xs={24} sm={platform === 'bili' || showSearchConnectionPicker ? 12 : 20} md={platform === 'bili' || showSearchConnectionPicker ? 14 : 21}>
+            {/* 搜索框：**固定 flex**，不随平台/连接状态变化 */}
+            <Col flex="1 1 auto" style={{ minWidth: 0 }}>
               <Input.Search
                 value={keyword}
                 onChange={e => setKeyword(e.target.value)}
@@ -1917,46 +2140,24 @@ export default function CrawlerPage() {
                 </Button>
               </Tooltip>
             </Col>
-            {platform === 'bili' && (
-              <Col xs={24} sm={8} md={7}>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <Select
-                    value={selectedBiliConn || undefined}
-                    onChange={setSelectedBiliConn}
-                    placeholder="选择 B站连接"
-                    style={{ flex: 1, minWidth: 0 }}
-                    options={biliConnections.map(c => ({
-                      value: c.id,
-                      label: `${c.name}${c.status === 'active' ? ' ✓' : ''}`,
-                    }))}
-                  />
-                  <Button
-                    icon={<CheckCircleOutlined />}
-                    loading={biliHealthLoading}
-                    disabled={!selectedBiliConn}
-                    onClick={() => runBiliHealthCheck()}
-                  >
-                    体检
-                  </Button>
-                </div>
-              </Col>
-            )}
-            {showSearchConnectionPicker && (
-              <Col xs={24} sm={8} md={7}>
-                <Select
-                  value={selectedSearchConn || undefined}
-                  onChange={setSelectedSearchConn}
-                  placeholder={`选择${getPlatformInfo(platform).label}连接`}
-                  style={{ width: '100%' }}
-                  options={searchConnections.map(connection => ({
-                    value: connection.id,
-                    label: `${connection.name}${connection.account_name ? ` · ${connection.account_name}` : ''}`,
-                  }))}
-                />
-              </Col>
-            )}
           </Row>
+
+          {/* =====================================================================
+              ② 次要行 —— 连接选择 + 体检（**所有平台都有**）
+
+              原来这块混在主搜索行的栅格里（B站一个分支、
+              其它平台一个分支），导致布局跳动。
+
+              现在统一下移：
+                · 有连接 → 显示连接下拉
+                · 免登录平台 → 显示"无需登录"
+                · 需要登录但没连接 → 显示警告 + 引导
+                · 体检按钮 → **永远显示**（所有平台一致）
+              ===================================================================== */}
+          {renderSecondaryRow()}
+
           {platform === 'bili' && renderBiliHealthPanel()}
+          {!biliHealth && platform !== 'bili' && renderHealthPanel()}
         </div>
 
         {/* ② 搜索类型 Tab（带下划线高亮，B站风格） */}
