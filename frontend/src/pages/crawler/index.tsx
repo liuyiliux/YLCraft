@@ -1413,7 +1413,7 @@ export default function CrawlerPage() {
         <Row gutter={[12, 8]} align="middle" style={{ marginTop: 10 }} wrap={false}>
           <Col flex="1 1 auto" style={{ minWidth: 0 }}>
             {conns.length > 0 ? (
-              <Space size={8} style={{ width: '100%' }} wrap>
+              <Space size={8} style={{ width: '100%' }}>
                 <Text style={{ fontSize: 12, color: textSec, whiteSpace: 'nowrap' }}>
                   {pf.label}账号：
                 </Text>
@@ -1433,32 +1433,6 @@ export default function CrawlerPage() {
                     })),
                   ]}
                 />
-                {/* 停用 / 启用（2026-10-01）*/}
-                {connValue && connValue !== NO_ACCOUNT && (
-                  isDisabled ? (
-                    <Button
-                      size="small"
-                      type="primary"
-                      icon={<PlayCircleOutlined />}
-                      loading={connToggleLoading}
-                      onClick={() => toggleConnection(connValue, true)}
-                    >
-                      启用
-                    </Button>
-                  ) : (
-                    <Tooltip title="停用后不再用它发请求（凭证保留，随时能启用）—— 平台被风控时可一键停掉">
-                      <Button
-                        size="small"
-                        danger
-                        icon={<PauseCircleOutlined />}
-                        loading={connToggleLoading}
-                        onClick={() => toggleConnection(connValue, false)}
-                      >
-                        停用
-                      </Button>
-                    </Tooltip>
-                  )
-                )}
               </Space>
             ) : isNoLogin ? (
               <Text style={{ fontSize: 12, color: BILI_COLORS.success }}>
@@ -1476,6 +1450,39 @@ export default function CrawlerPage() {
               </Text>
             )}
           </Col>
+          {/* ⚠️ **停用/启用按钮移到右侧**（2026-10-01 修）
+              原来它跟在账号下拉**右边** —— 下拉展开时弹层会盖住它，
+              用户根本看不见（实测反馈"没看到停用按钮"）。
+              移到这一行最右侧（紧挨体检），永远不会被弹层遮挡。 */}
+          {connValue && connValue !== NO_ACCOUNT && (
+            <Col flex="none">
+              {isDisabled ? (
+                <Tooltip title="恢复使用该账号（凭证还在，不需要重新登录）">
+                  <Button
+                    size="small"
+                    type="primary"
+                    icon={<PlayCircleOutlined />}
+                    loading={connToggleLoading}
+                    onClick={() => toggleConnection(connValue, true)}
+                  >
+                    启用
+                  </Button>
+                </Tooltip>
+              ) : (
+                <Tooltip title="停用后不再用它发请求（凭证保留，随时能启用）—— 平台被风控时可一键停掉">
+                  <Button
+                    size="small"
+                    danger
+                    icon={<PauseCircleOutlined />}
+                    loading={connToggleLoading}
+                    onClick={() => toggleConnection(connValue, false)}
+                  >
+                    停用
+                  </Button>
+                </Tooltip>
+              )}
+            </Col>
+          )}
           <Col flex="none">
             {/* ⚠️ 体检按钮**所有平台都有**（2026-10-01 统一）——
                 原来只有 B站分支渲染，而抖音/小红书的接口其实早就实现了
