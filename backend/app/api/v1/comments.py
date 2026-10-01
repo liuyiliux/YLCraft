@@ -75,6 +75,7 @@ COMMENTS_SUPPORTED = {
     "kuaishou", "ks",
     "weibo", "wb",
     "twitter", "x", "tw",
+    "youtube",
 }
 
 # 各平台「为什么还没做」的诚实说明（未实现时返回给用户）
@@ -318,7 +319,10 @@ async def get_comments(
 
         # 各平台的连接平台名 + cookie 域名（⚠️ 域名必须写对 —— 实测
         # netscape_to_header 认的是这些名字，写错会返回 0 字符）
-        conn_platform, cookie_domain = {
+        cookie_domain = ""        # 免登录平台不需要
+        conn_platform = ""        # 免登录平台不需要
+        # 需要登录的平台才有连接映射；YouTube 免登录 → 保持空
+        mapping = {
             "bili": ("BILIBILI", "bili"),
             "bilibili": ("BILIBILI", "bili"),
             "kuaishou": ("KUAISHOU", "kuaishou"),
@@ -332,8 +336,13 @@ async def get_comments(
             "twitter": ("TWITTER", "x.com"),
             "x": ("TWITTER", "x.com"),
             "tw": ("TWITTER", "x.com"),
-        }[p]
-        _cid, raw_cookie = resolve_connection(conn_id, conn_platform)
+        }.get(p)
+        # 免登录平台（YouTube 取评论不需要凭证 —— 实测未传 cookie 可取到）
+        if mapping is None:
+            raw_cookie = ""
+        else:
+            conn_platform, cookie_domain = mapping
+            _cid, raw_cookie = resolve_connection(conn_id, conn_platform)
         cookie = netscape_to_header(raw_cookie, cookie_domain) if raw_cookie else ""
 
         # B站有更完整的游标分页方法（含排序/总数），优先用它；
