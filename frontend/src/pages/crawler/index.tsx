@@ -1018,11 +1018,29 @@ export default function CrawlerPage() {
   //   · disabled  → 显示 ⏸ 标记 + 「启用」按钮
   // 其它状态（expired/failed/unknown）仍过滤掉 ——
   // 那些是"凭证坏了"，下去会搜索失败，应该去账号中心重新登录。
+  // ⚠️ **保留范围要按"凭证是否可用"来定，不是只留 active**（2026-10-01 修两次）
+  //
+  // 第 1 次修：原来只留 `status === 'active'` —— 用户停用某连接后，
+  //   它**从下拉里消失了**，再也找不到「启用」按钮
+  //   （停用变成不可逆的软删除，与设计意图相反）。
+  //
+  // 第 2 次修（漏了 `unknown`）：改成 `active || disabled` 后，
+  //   **状态是 `unknown` 的连接仍然不显示** —— 实测小红书正是
+  //   `unknown`（未测试过），于是界面显示"未找到小红书连接"，
+  //   下拉和停用按钮全都不渲染（用户反馈："没看到停用按钮"）。
+  //
+  // 正确的判据：**只要凭证还在就用得了**。
+  //   · active    → 正常
+  //   · unknown   → 未测试，但凭证在（搜索照样能用）
+  //   · disabled  → 用户停用了，要显示 ⏸ 才能「启用」
+  // 过滤掉的只有**凭证真的坏了**的：
+  //   · expired   → 已过期
+  //   · failed    → 连接失败
   const loadPlatformConnections = useCallback(async () => {
     try {
       const res: any = await listPlatformConnections()
       const keep = (c: PlatformConnectionResponse) =>
-        c.status === 'active' || c.status === 'disabled'
+        c.status === 'active' || c.status === 'unknown' || c.status === 'disabled'
       setPlatformConnections((res.connections || []).filter(keep))
       const conns = (res.connections || []).filter(
         (c: PlatformConnectionResponse) => c.platform === 'bilibili' && keep(c)
@@ -1030,7 +1048,7 @@ export default function CrawlerPage() {
       setBiliConnections(conns)
       setSelectedBiliConn(current => current || conns[0]?.id || '')
       const wechatConns = (res.connections || []).filter(
-        (c: PlatformConnectionResponse) => c.platform === 'wechat_mp' && c.status === 'active'
+        (c: PlatformConnectionResponse) => c.platform === 'wechat_mp' && keep(c)
       )
       if (wechatConns.length > 0) {
         setWechatConnId(wechatConns[0].id)
@@ -1448,7 +1466,13 @@ export default function CrawlerPage() {
               </Text>
             ) : (
               <Text style={{ fontSize: 12, color: '#f59e0b' }}>
-                未找到{pf.label}连接 —— 请先到「账号中心」获取并保存登录态，否则搜索会失败
+                {/* ⚠️ "未找到连接"这个说法在两种情况下是**误导**：
+                    ① 连接存在但状态是 expired/failed（被过滤了）
+                    ② 是免登录平台（本来就没有连接）
+                    所以这里说得更准确一点，并给出各自出路。 */}
+                没有任何可用的{pf.label}连接
+                （已过期/失效的不会显示）——
+                请到「账号中心」重新获取登录态
               </Text>
             )}
           </Col>

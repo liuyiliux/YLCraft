@@ -1,8 +1,0 @@
-﻿test(crawler): 修一条因布局重构而失效的断言
-
-`test_health_button_rendered_for_all_platforms` 原来按固定 3000 字符
-窗口找 `renderSecondaryRow` 里的体检按钮 —— 加了停用按钮和两条
-Alert 后窗口不够长，断言失效（**不是功能回归**）。
-
-改成按**函数体边界**定位（到下一个同级定义为止），
-比按字符数稳。
