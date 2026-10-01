@@ -70,7 +70,12 @@ router = APIRouter()
 
 # 已实现评论采集的平台（新增平台时**必须**同步改这里 —— 与 supported_platforms() 无关，
 # 因为那个表管的是"搜索"，评论是另一套能力）
-COMMENTS_SUPPORTED = {"bili", "bilibili", "kuaishou", "ks", "weibo", "wb"}
+COMMENTS_SUPPORTED = {
+    "bili", "bilibili",
+    "kuaishou", "ks",
+    "weibo", "wb",
+    "twitter", "x", "tw",
+}
 
 # 各平台「为什么还没做」的诚实说明（未实现时返回给用户）
 COMMENTS_TODO_REASON = {
@@ -225,9 +230,7 @@ def _normalize_generic_comment(raw: Dict[str, Any]) -> Dict[str, Any]:
 
     ct = raw.get("create_time")
     create_time = ""
-    if isinstance(ct, str) and ct:
-        create_time = ct          # 已经是字符串（如 RFC2822/ISO）
-    elif isinstance(ct, (int, float)) and ct > 0:
+    if isinstance(ct, (int, float)) and ct > 0:
         ts = int(ct)
         # ⚠️ 毫秒级时间戳（> 1e12）要先转秒 —— 快手实测就是毫秒
         if ts > 10 ** 12:
@@ -236,6 +239,28 @@ def _normalize_generic_comment(raw: Dict[str, Any]) -> Dict[str, Any]:
             create_time = _dt.datetime.fromtimestamp(ts).isoformat()
         except Exception:
             create_time = ""
+    elif isinstance(ct, str) and ct:
+        # ⚠️ X / 微博给的是 **RFC2822 字符串**
+        #    （如 "Mon Sep 28 02:33:36 +0000 2026"），不是时间戳
+        import calendar
+        import time as _time
+
+        parsed = None
+        for fmt in ("%a %b %d %H:%M:%S %z %Y", "%a %b %d %H:%M:%S %Y"):
+            try:
+                parsed = _time.strptime(ct, fmt)
+                break
+            except Exception:
+                continue
+        if parsed is not None:
+            try:
+                create_time = _dt.datetime.fromtimestamp(
+                    calendar.timegm(parsed)
+                ).isoformat()
+            except Exception:
+                create_time = ct      # 转不了就原样给，不丢信息
+        else:
+            create_time = ct
 
     return {
         "id": str(raw.get("id") or ""),
@@ -302,6 +327,11 @@ async def get_comments(
             # 的 cookie 在 m.weibo.cn 无效，api/config 返回 login=false）
             "weibo": ("WEIBO", "weibo"),
             "wb": ("WEIBO", "weibo"),
+            # ⚠️ X 的 cookie_domain 必须是 `x.com`（实测：netscape_to_header
+            # 认这个名字，用 "twitter" 会返回 0 字符）
+            "twitter": ("TWITTER", "x.com"),
+            "x": ("TWITTER", "x.com"),
+            "tw": ("TWITTER", "x.com"),
         }[p]
         _cid, raw_cookie = resolve_connection(conn_id, conn_platform)
         cookie = netscape_to_header(raw_cookie, cookie_domain) if raw_cookie else ""
@@ -311,8 +341,11 @@ async def get_comments(
         # `wb` 是 `weibo` 的别名（两者都注册了同一个客户端类），
         # create_client 认 `weibo`
         client_name = "bili" if p in ("bili", "bilibili") else p
+        # 别名 → 真实注册名（注册时用的是 `weibo` / `twitter`）
         if client_name == "wb":
             client_name = "weibo"
+        if client_name in ("x", "tw"):
+            client_name = "twitter"
         async with create_client(client_name, mode="api", cookie=cookie) as client:
             if p in ("bili", "bilibili"):
                 result = await client.get_comments_paged(

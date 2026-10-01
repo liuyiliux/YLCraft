@@ -1,0 +1,38 @@
+﻿feat(comments): X(Twitter) 评论（TweetDetail GraphQL，复用 search_http）
+
+## 接口（2026-10-01 实测 200）
+
+    GET {GQL_URL}/{TWEET_DETAIL_OP}
+        ?variables={"focalTweetId":...,"referrer":"tweet",...}
+        &features={GQL_FEATURES}
+
+来源：twscrape `api.py:41` OP_TweetDetail，注释明确
+"note: uses same op as tweet_details"（评论复用取推文详情的 op）。
+
+## ⚠️ 三个实测到的坑
+
+1. **必须带 `features`** —— 只发 variables 拿不到数据。
+   → 给 `_request_page_raw` 加了**可选** `features` 参数（默认不发，
+   保持 SearchTimeline 已实测通过的搜索行为不变）。
+2. **翻页用 `Bottom`，不是 twscrape 文档里的 `ShowMoreThreads`** ——
+   实测响应里**没有** ShowMoreThreads（只有 ShowMore×3 + Bottom×1）。
+   ShowMore 只多 1 条（展开单条 thread），Bottom 每页 40 条全新增。
+3. **字段是 `in_reply_to_status_id_str`，不是 twscrape 模型的 `inReplyToTweetId`**
+   —— 后者在原始 JSON 里全为 None（差点误判"没有回复"）。
+
+## 实现要点
+
+  · 复用现有 `_request_page_raw` + `_collect_tweets` + `_get_bottom_cursor`
+  · 只返回**直接回复主推**的（过滤二级回复与广告推文）
+  · 不回退浏览器路径（评论 HTTP 就够，响应 176KB，浏览器更慢）
+  · queryId 支持 `X_TWEET_DETAIL_QUERY_ID` 环境变量覆盖（会轮换）
+
+## 实测
+
+    get_comments("2104399091920978069") → 14 条
+      @caine35794 反正目标是解决问题 哈哈哈
+         赞=75 回复=0 时间=Mon Sep 28 02:45:13 +0000 2026
+
+## 顺带修
+统一归一函数支持 **RFC2822 字符串**时间（X 和微博都是这种格式），
+之前只处理了 int 时间戳。

@@ -57,6 +57,84 @@ SEARCH_OP = f"{SEARCH_QUERY_ID}/{SEARCH_OPERATION}"
 USER_BY_SCREEN_NAME_QUERY_ID = "Gb-d6r0vxPOADdG62OEBpQ"
 USER_BY_SCREEN_NAME_OP = f"{USER_BY_SCREEN_NAME_QUERY_ID}/UserByScreenName"
 
+# =============================================================================
+# 评论（TweetDetail）—— 2026-10-01 加
+# =============================================================================
+#
+# 来源：twscrape `api.py:41` →
+#   `OP_TweetDetail = "XMOz5h24KAZ86qKffKTLdQ/TweetDetail"`
+# 注释明确："note: uses same op as tweet_details"（评论复用取推文详情的 op）。
+# 实测：HTTP 200，body 176KB，39 条推文（含回复）。
+#
+# ⚠️ 与搜索一样可被环境变量覆盖（queryId 会轮换，失效症状是 404）。
+from typing import Any, Dict, Optional
+
+import os as _os
+
+TWEET_DETAIL_QUERY_ID = _os.environ.get(
+    "X_TWEET_DETAIL_QUERY_ID", "XMOz5h24KAZ86qKffKTLdQ"
+)
+TWEET_DETAIL_OP = f"{TWEET_DETAIL_QUERY_ID}/TweetDetail"
+
+# ⚠️ TweetDetail **必须**带 `features`（实测只发 variables 拿不到数据）。
+# 来源：twscrape `GQL_FEATURES`（`constants.py`）。这里只列关键项，
+# 缺了就退回不带 features 的请求（会失败，但错误信息明确）。
+GQL_FEATURES = {
+    "rweb_tipjar_consumption_enabled": True,
+    "responsive_web_graphql_exclude_directive_enabled": True,
+    "verified_phone_label_enabled": False,
+    "creator_subscriptions_tweet_preview_api_enabled": True,
+    "responsive_web_graphql_timeline_navigation_enabled": True,
+    "responsive_web_graphql_skip_user_profile_image_extensions_enabled": False,
+    "communities_web_enable_tweet_community_results_fetch": True,
+    "c9s_tweet_anatomy_moderator_badge_enabled": True,
+    "articles_preview_enabled": True,
+    "responsive_web_edit_tweet_api_enabled": True,
+    "graphql_is_translatable_rweb_tweet_is_translatable_enabled": True,
+    "view_counts_everywhere_api_enabled": True,
+    "longform_notetweets_consumption_enabled": True,
+    "responsive_web_twitter_article_tweet_consumption_enabled": True,
+    "tweet_awards_web_tipping_enabled": False,
+    "creator_subscriptions_quote_tweet_preview_enabled": False,
+    "freedom_of_speech_not_reach_fetch_enabled": True,
+    "standardized_nudges_misinfo": True,
+    "tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled": True,
+    "rweb_video_timestamps_enabled": True,
+    "longform_notetweets_rich_text_read_enabled": True,
+    "longform_notetweets_inline_media_enabled": True,
+    "responsive_web_enhance_cards_enabled": False,
+}
+
+
+def build_tweet_detail_variables(
+    tweet_id: str,
+    cursor: Optional[str] = None,
+) -> Dict[str, Any]:
+    """构造 TweetDetail（评论）的 variables。
+
+    出处：twscrape `api.py:377-395`，实测确认 200。
+
+    Args:
+        tweet_id: 推文 ID（数字字符串）
+        cursor: 翻页游标（用 `Bottom` 类型，见 `search_http._get_bottom_cursor`）
+
+    ⚠️ `referrer="tweet"` 表示取"回复"；取整条 thread 用 `"profile"`。
+    """
+    v: Dict[str, Any] = {
+        "focalTweetId": str(tweet_id),
+        "referrer": "tweet",
+        "with_rux_injections": True,
+        "includePromotedContent": True,
+        "withCommunity": True,
+        "withQuickPromoteEligibilityTweetFields": True,
+        "withBirdwatchNotes": True,
+        "withVoice": True,
+        "withV2Timeline": True,
+    }
+    if cursor:
+        v["cursor"] = cursor
+    return v
+
 # ⚠️ UserByScreenName **必须带 fieldToggles**（来源 twscrape `user_by_login_raw`）
 USER_BY_SCREEN_NAME_FIELD_TOGGLES: dict = {
     "highlights_tweets_tab_ui_enabled": True,
