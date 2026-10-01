@@ -28,8 +28,11 @@
 """
 from __future__ import annotations
 
+import asyncio
+import calendar
 import logging
 import re
+import time
 from typing import Any, Dict, List, Optional
 
 from ..base import BasePlatformClient, register_platform
@@ -231,6 +234,130 @@ class WeiboClient(BasePlatformClient):
             conn_key=self.config.conn_id or "",
             client=self,
         )
+
+    async def get_comments(
+        self,
+        item_id: str,
+        max_results: int = 20,
+        page: int = 1,
+        cursor: str = "",
+    ) -> List[Dict[str, Any]]:
+        """取微博评论（纯 HTTP，**不需要**浏览器/Service Worker）。
+
+        ## 接口（2026-10-01 实测确认可用）
+
+            GET https://m.weibo.cn/comments/hotflow
+                ?id={微博ID}&mid={同值}&max_id_type={0|1}&max_id={游标}
+            Headers: Referer: https://m.weibo.cn/detail/{微博ID}   ← 必需
+                     X-Requested-With: XMLHttpRequest
+
+        ⚠️ 实测对比：`buildComments`（PC 端）返回 `ok:-100` 未登录；
+        `hotflow`（移动端）`ok:1` 正常 —— **用 hotflow**。
+
+        ## ⚠️ 结构坑：评论在 `data.data[]`（**双层**）
+
+        响应是 `{"ok":1,"data":{"data":[...], "max_id":..., ...}}`。
+        我第一版按顶层 `data` 取 → 拿到空列表。游标也在 `data` 层。
+
+        ## 登录态（实测，要说清楚）
+
+          · **第 1 页：匿名可用**（无 cookie 也 `ok:1`，反复验证成立）
+          · **翻页（带 max_id）：需要登录**（匿名返回 `ok:-100`）
+
+        所以 max_results 大时会翻页 → 需要 cookie。没 cookie 时**只返回首页**，
+        如实返回（不报错、也不谎称"0 条评论"）。
+
+        ## 字段（实测）
+
+            id / text(**HTML，需去标签**) / like_count
+            created_at(**RFC2822 字符串**，非时间戳)
+            user.screen_name / user.id / user.profile_image_url
+            source("来自 湖南" → IP属地)
+
+        ⚠️ 评论项里的 `total_number` 实测恒为 0，别当回复数；
+        外层 `data.total_number` 才是该微博总评论数。
+        ⚠️ 限流非常敏感（实测连续探测约 10 次即被踢登录态）→ 每页 sleep ≥2s。
+        """
+        mid = str(item_id or "").strip()
+        if not mid:
+            return []
+
+        want = max(1, int(max_results or 20))
+        out: List[Dict[str, Any]] = []
+        seen: set[str] = set()
+        max_id = cursor or ""
+        max_id_type = 0
+
+        for _ in range(max(1, (want + 19) // 20) + 1):
+            if len(out) >= want:
+                break
+            params: Dict[str, Any] = {
+                "id": mid, "mid": mid, "max_id_type": max_id_type,
+            }
+            if max_id:
+                params["max_id"] = max_id
+
+            try:
+                resp = await self._call("/comments/hotflow", params)
+            except WeiboLoginRequiredError:
+                # 没登录态时翻页会走到这里 —— 首页数据拿到了就正常返回
+                if out:
+                    logger.info("[weibo] 翻页需登录态，返回已取到的 %s 条", len(out))
+                    break
+                raise
+
+            data = resp.get("data") or {}
+            if not isinstance(data, dict):
+                break
+            # ⚠️ 双层：评论列表和游标都在 data.data / data.max_id
+            for c in data.get("data") or []:
+                if not isinstance(c, dict):
+                    continue
+                cid = str(c.get("id") or "")
+                if not cid or cid in seen:
+                    continue
+                seen.add(cid)
+                u = c.get("user") or {}
+                # 图片：pic 单图 / pics 多图，取 large 原图
+                pic = c.get("pic") or {}
+                pics = c.get("pics") or []
+                images = []
+                if isinstance(pics, list):
+                    for p in pics:
+                        large = (p or {}).get("large") or {}
+                        if large.get("url"):
+                            images.append(large["url"])
+                elif pic.get("large", {}).get("url"):
+                    images.append(pic["large"]["url"])
+                out.append({
+                    "id": cid,
+                    # ⚠️ 正文是 HTML（含表情 img / @链接 a），要去标签
+                    "content": _strip_html(c.get("text") or ""),
+                    "author": u.get("screen_name") or "",
+                    "author_id": str(u.get("id") or ""),
+                    "avatar": u.get("profile_image_url") or "",
+                    "likes": int(c.get("like_count") or 0),
+                    "create_time": _rfc2822_to_ts(c.get("created_at") or ""),
+                    # ⚠️ 评论项的 total_number 恒为 0；V2 没有子评论计数
+                    "reply_count": 0,
+                    # IP 属地：source 形如 "来自 湖南"
+                    "location": (c.get("source") or "").replace("来自", "").strip(),
+                    "images": images,
+                    # 楼中楼字段存在但实测常为空 —— 兼容读取，不保证有
+                    "replies": c.get("comments") or [],
+                })
+                if len(out) >= want:
+                    break
+
+            nxt = data.get("max_id")
+            # ⚠️ 终值 0 表示没有下一页（实测确认）
+            if not nxt or nxt == 0 or str(nxt) == "0":
+                break
+            max_id = str(nxt)
+            max_id_type = int(data.get("max_id_type") or 0)
+            await asyncio.sleep(2)   # 实测限流敏感，保守 2s
+
+        return out[:want]
 
     # =========================================================================
     # 统一请求出口
@@ -630,3 +757,18 @@ def _strip_html(html: str) -> str:
                  ("&gt;", ">"), ("&quot;", '"'), ("&#39;", "'")):
         text = text.replace(a, b)
     return text.strip()
+
+
+def _rfc2822_to_ts(s: str) -> int:
+    """微博时间字符串 → Unix 秒。
+
+    实测格式：`"Tue Sep 29 18:18:23 +0800 2026"`（RFC2822，不是时间戳）。
+    解析失败返回 0（不猜 —— 让上层显示空时间，而不是编一个）。
+    """
+    if not s:
+        return 0
+    try:
+        t = time.strptime(s, "%a %b %d %H:%M:%S %z %Y")
+        return int(calendar.timegm(t))
+    except Exception:
+        return 0

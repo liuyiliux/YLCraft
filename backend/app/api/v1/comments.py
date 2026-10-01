@@ -70,7 +70,7 @@ router = APIRouter()
 
 # 已实现评论采集的平台（新增平台时**必须**同步改这里 —— 与 supported_platforms() 无关，
 # 因为那个表管的是"搜索"，评论是另一套能力）
-COMMENTS_SUPPORTED = {"bili", "bilibili", "kuaishou", "ks"}
+COMMENTS_SUPPORTED = {"bili", "bilibili", "kuaishou", "ks", "weibo", "wb"}
 
 # 各平台「为什么还没做」的诚实说明（未实现时返回给用户）
 COMMENTS_TODO_REASON = {
@@ -298,13 +298,21 @@ async def get_comments(
             "bilibili": ("BILIBILI", "bili"),
             "kuaishou": ("KUAISHOU", "kuaishou"),
             "ks": ("KUAISHOU", "kuaishou"),
+            # ⚠️ 微博必须用**移动端**域名 `.weibo.cn`（实测：主站 weibo.com
+            # 的 cookie 在 m.weibo.cn 无效，api/config 返回 login=false）
+            "weibo": ("WEIBO", "weibo"),
+            "wb": ("WEIBO", "weibo"),
         }[p]
         _cid, raw_cookie = resolve_connection(conn_id, conn_platform)
         cookie = netscape_to_header(raw_cookie, cookie_domain) if raw_cookie else ""
 
         # B站有更完整的游标分页方法（含排序/总数），优先用它；
         # 其它平台走基类 `get_comments`（各平台自己实现）
+        # `wb` 是 `weibo` 的别名（两者都注册了同一个客户端类），
+        # create_client 认 `weibo`
         client_name = "bili" if p in ("bili", "bilibili") else p
+        if client_name == "wb":
+            client_name = "weibo"
         async with create_client(client_name, mode="api", cookie=cookie) as client:
             if p in ("bili", "bilibili"):
                 result = await client.get_comments_paged(
