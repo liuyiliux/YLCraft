@@ -527,6 +527,19 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load telegram router: {e}")
 
+    # **统一**平台体检（所有平台一个入口）
+    #
+    # 原来体检是各平台各写一份（B站/抖音/小红书），结果**前端只接了 B站那个**
+    # —— 用户看到"为什么只有 B站有体检按钮"（2026-10-01）。
+    # 统一入口用"最小搜索探针"，覆盖所有平台（含免登录的 YouTube/Telegram）。
+    try:
+        from app.services.platforms import health_routes
+        app.include_router(
+            health_routes.router, prefix="/api/v1/platforms", tags=["Platform Health"]
+        )
+    except Exception as e:
+        logger.warning(f"Could not load platform health router: {e}")
+
     # AI 连接器路由
     try:
         from app.api.v1 import ai_connectors
