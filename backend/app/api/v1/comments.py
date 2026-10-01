@@ -70,7 +70,7 @@ router = APIRouter()
 
 # 已实现评论采集的平台（新增平台时**必须**同步改这里 —— 与 supported_platforms() 无关，
 # 因为那个表管的是"搜索"，评论是另一套能力）
-COMMENTS_SUPPORTED = {"bili", "bilibili"}
+COMMENTS_SUPPORTED = {"bili", "bilibili", "kuaishou", "ks"}
 
 # 各平台「为什么还没做」的诚实说明（未实现时返回给用户）
 COMMENTS_TODO_REASON = {
@@ -85,7 +85,17 @@ COMMENTS_TODO_REASON = {
     "twitter": "X 的评论走 GraphQL，需要 transaction-id —— 尚未实现",
     "x": "X 的评论走 GraphQL，需要 transaction-id —— 尚未实现",
     "tw": "X 的评论走 GraphQL，需要 transaction-id —— 尚未实现",
-    "youtube": "YouTube 评论可用 yt-dlp 取，但很慢（额外请求）—— 尚未接入",
+    "youtube": (
+        "YouTube 评论走 innertube `/youtubei/v1/next`（continuation 翻页）；\n"
+        "⚠️ 2026-10-01 实测修正：我们**自己造 continuation token 拿不到**评论"
+        "（HTTP 200 但响应 14KB、无评论字段）—— 那只是 yt-dlp 的**兜底路径**"
+        "（`_video.py:2598-2604`），主路径是从 watch 页 `ytInitialData` 取。\n"
+        "所以当初『不打算用 yt-dlp』的结论**也需修正**：yt-dlp 实测能取到评论"
+        "（顶层 100 条约 4.5 秒），**不需要 API key、不需要登录**；且项目本来"
+        "就已在用 yt-dlp（YouTube 搜索/详情/频道都走它）。\n"
+        "⚠️ 但用 yt-dlp 取评论**必须设 `max_comments` 上限** —— 不设会无上限翻页"
+        "（实测某视频报 ~1063 万条评论，跑了 10 分钟没停）。"
+    ),
     "telegram": (
         "Telegram 的 `t.me/s` 预览页**不含评论**；"
         "取评论要走 MTProto，且公开频道的评论通常在关联群组 —— 语义不同"
@@ -200,6 +210,47 @@ def _normalize_bili_comment(raw: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _normalize_generic_comment(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """归一**非 B站**平台的评论。
+
+    各平台 `get_comments()` 按约定返回这套键（见 base.py 的 docstring）：
+
+        id / content / author / author_id / avatar
+        likes / create_time / reply_count
+
+    这里做**防御性**归一：缺字段用默认值，时间戳统一转成 ISO 字符串
+    （各平台可能给秒级 int、毫秒 int、或已经是字符串）。
+    """
+    import datetime as _dt
+
+    ct = raw.get("create_time")
+    create_time = ""
+    if isinstance(ct, str) and ct:
+        create_time = ct          # 已经是字符串（如 RFC2822/ISO）
+    elif isinstance(ct, (int, float)) and ct > 0:
+        ts = int(ct)
+        # ⚠️ 毫秒级时间戳（> 1e12）要先转秒 —— 快手实测就是毫秒
+        if ts > 10 ** 12:
+            ts //= 1000
+        try:
+            create_time = _dt.datetime.fromtimestamp(ts).isoformat()
+        except Exception:
+            create_time = ""
+
+    return {
+        "id": str(raw.get("id") or ""),
+        "author": raw.get("author") or "",
+        "author_id": str(raw.get("author_id") or ""),
+        "avatar": raw.get("avatar") or "",
+        "content": raw.get("content") or "",
+        "likes": int(raw.get("likes") or 0),
+        "create_time": create_time,
+        "reply_count": int(raw.get("reply_count") or 0),
+        "location": raw.get("location") or "",
+        "replies": raw.get("replies") or [],
+    }
+
+
 @router.get("", summary="获取评论（统一入口）", response_model=CommentsResponse)
 async def get_comments(
     platform: str = Query(..., description="平台：bili/douyin/xhs/..."),
@@ -240,26 +291,54 @@ async def get_comments(
             resolve_connection,
         )
 
-        # B站的 conn_id 用 BILIBILI；cookie_domain 必须是 bili（实测
-        # netscape_to_header 认这个名字，用 bilibili 会返回 0 字符）
-        _cid, raw_cookie = resolve_connection(conn_id, "BILIBILI")
-        cookie = netscape_to_header(raw_cookie, "bili") if raw_cookie else ""
-        async with create_client("bili", mode="api", cookie=cookie) as client:
-            result = await client.get_comments_paged(item, page, page_size, sort, offset)
+        # 各平台的连接平台名 + cookie 域名（⚠️ 域名必须写对 —— 实测
+        # netscape_to_header 认的是这些名字，写错会返回 0 字符）
+        conn_platform, cookie_domain = {
+            "bili": ("BILIBILI", "bili"),
+            "bilibili": ("BILIBILI", "bili"),
+            "kuaishou": ("KUAISHOU", "kuaishou"),
+            "ks": ("KUAISHOU", "kuaishou"),
+        }[p]
+        _cid, raw_cookie = resolve_connection(conn_id, conn_platform)
+        cookie = netscape_to_header(raw_cookie, cookie_domain) if raw_cookie else ""
 
-        raw_comments = result.get("comments") or []
-        comments = [_normalize_bili_comment(c) for c in raw_comments]
+        # B站有更完整的游标分页方法（含排序/总数），优先用它；
+        # 其它平台走基类 `get_comments`（各平台自己实现）
+        client_name = "bili" if p in ("bili", "bilibili") else p
+        async with create_client(client_name, mode="api", cookie=cookie) as client:
+            if p in ("bili", "bilibili"):
+                result = await client.get_comments_paged(
+                    item, page, page_size, sort, offset
+                )
+                raw_comments = result.get("comments") or []
+                comments = [_normalize_bili_comment(c) for c in raw_comments]
+                total = int(result.get("total") or 0)
+                has_more = bool(result.get("has_more"))
+                next_offset = str(result.get("next_offset") or "")
+                message = f"共 {total} 条评论"
+            else:
+                raw_comments = await client.get_comments(
+                    item, max_results=page_size, page=page, cursor=offset
+                )
+                comments = [_normalize_generic_comment(c) for c in raw_comments]
+                total = len(comments)
+                # 基类签名不带总数/游标 —— 用"是否取满"推断还有没有更多
+                # （不精确，但比谎报"没有更多"好；B站那种精确游标另走上面分支）
+                has_more = len(raw_comments) >= page_size
+                next_offset = ""
+                message = f"返回 {len(comments)} 条评论"
+
         return CommentsResponse(
             success=True,
             data=CommentsData(
                 platform=p,
                 item_id=item,
-                total=int(result.get("total") or 0),
+                total=total,
                 comments=comments,
-                has_more=bool(result.get("has_more")),
-                next_offset=str(result.get("next_offset") or ""),
+                has_more=has_more,
+                next_offset=next_offset,
             ),
-            message=f"共 {result.get('total', 0)} 条评论",
+            message=message,
         )
     except HTTPException:
         raise

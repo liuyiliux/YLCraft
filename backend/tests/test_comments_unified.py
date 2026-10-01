@@ -38,13 +38,33 @@ def test_comments_route_exists():
     assert "COMMENTS_SUPPORTED" in src
 
 
-def test_only_bili_supported_for_now():
-    """当前只有 B站实现（诚实声明，不要假装支持更多）。"""
+def test_supported_platforms_match_implementation():
+    """**关键**：`COMMENTS_SUPPORTED` 必须与实际实现**一致**。
+
+    ⚠️ 这是防"登记了但没实现"的假支持 —— 如果某个平台被列进
+    `COMMENTS_SUPPORTED` 却没有 `get_comments` 实现，用户点评论会
+    拿到 500（而不是明确的 501「未实现」）。
+
+    反过来，实现了却没登记 → 用户看到"暂不支持"（功能白做）。
+    两边都要对上。
+    """
     from app.api.v1.comments import COMMENTS_SUPPORTED
 
+    # B站：走自己的 get_comments_paged
+    from app.services.platforms.bilibili.client import BilibiliClient
+
+    assert hasattr(BilibiliClient, "get_comments_paged")
     assert "bili" in COMMENTS_SUPPORTED
-    # ⚠️ 如果以后实现了别的平台，改这里**同时**要改文档说明
-    assert COMMENTS_SUPPORTED <= {"bili", "bilibili"}
+
+    # 快手：实现了 get_comments（免签名，纯 HTTP）
+    from app.services.platforms.kuaishou.client import KuaishouClient
+    import inspect
+
+    ks_src = inspect.getsource(KuaishouClient.get_comments)
+    # 必须是真实现（不是 raise NotImplementedError）
+    assert "NotImplementedError" not in ks_src, "快手 get_comments 还没实现"
+    assert "kuaishou" in COMMENTS_SUPPORTED
+    assert "ks" in COMMENTS_SUPPORTED
 
 
 def test_unimplemented_platforms_have_reasons():

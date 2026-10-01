@@ -432,9 +432,37 @@ class BasePlatformClient(abc.ABC):
         """获取合集信息（可选，B站等）"""
         raise NotImplementedError(f"[{self.config.platform}] get_series not implemented")
     
-    async def get_comments(self, item_id: str, max_results: int = 20) -> List[Dict[str, Any]]:
-        """获取评论（可选）"""
-        raise NotImplementedError(f"[{self.config.platform}] get_comments not implemented")
+    async def get_comments(
+        self,
+        item_id: str,
+        max_results: int = 20,
+        page: int = 1,
+        cursor: str = "",
+    ) -> List[Dict[str, Any]]:
+        """获取评论（可选）。
+
+        ## ⚠️ 2026-10-01 加了 `page` / `cursor` 两个**可选**参数
+
+        原来只有 `(item_id, max_results)` —— 但评论必须能**翻页**
+        （一条热门内容几千条评论，只取前 20 条没意义）。
+
+        加可选参数而不是改必填，是为了**不破坏**已有实现：
+          · B站有自己的 `get_comments_paged`（游标分页，更完整）
+          · 新平台可以按自己平台的分页方式选 `page` 或 `cursor`
+
+        Args:
+            item_id: 内容 ID
+            max_results: 每页条数
+            page: 页码（offset 分页的平台用）
+            cursor: 游标（cursor 分页的平台用，如 YouTube/微博）
+
+        Returns:
+            评论字典列表。**不强制结构** —— 各平台字段不同，
+            由上层（`/api/v1/comments`）归一化。
+        """
+        raise NotImplementedError(
+            f"[{self.config.platform}] get_comments not implemented"
+        )
     
     # =========================================================================
     # 工具方法

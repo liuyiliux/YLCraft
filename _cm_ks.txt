@@ -1,0 +1,46 @@
+﻿feat(comments): 快手评论（**免签名**纯 HTTP）+ 统一接口改为通用分发
+
+## ⚠️ 重大发现：快手评论不需要 `__NS_hxfalcon`（2026-10-01 实测）
+
+本客户端其它能力都建立在"签名必须浏览器抓"的前提上，但**评论是例外**。
+决定性对照（同一 cookie、同一时刻）：
+
+    /rest/v/search/feed        无签名 → {"result":50,"签名验证失败"}
+    /rest/v/photo/comment/list  无签名 → {"result":1,...} ✅ 正常
+
+所以 `get_comments` **不走** `_post`（那条路要签名），直接用基类的
+纯 HTTP `request()`。这是调研 + 实测共同确认的。
+
+### 接口
+    POST /rest/v/photo/comment/list
+    Body: {"photoId": "...", "pcursor": ""}
+    子评论：加 rootCommentId + 端点换 /rest/v/photo/comment/sublist
+
+### 实测
+    get_comments("3xm9szejkt9v354") → 1 条真实评论
+      [姩姩...张晋宜] [爱心]  赞=0 时间=1787974574
+
+### 两个实测到的坑（写进代码）
+  · `result=1` 才是成功判据（实测某作品 commentCountV2=1389 但列表为空，正常）
+  · `commentCount` 恒为 0，别当回复数（V2 无子评论计数字段）
+  · pcursor 终值是字符串 `"no_more"`（不是空串）
+  · timestamp 是**毫秒**，需 //1000
+
+## 统一接口改为**通用分发**（不再只给 B站特判）
+
+原来 `comments.py` 里硬编码 B站逻辑。现在按平台分发：
+  · bili  → `get_comments_paged`（游标分页，含排序/总数）
+  · 其它  → 基类 `get_comments`（各平台自己实现）
+
+新增平台只需：① 在 `COMMENTS_SUPPORTED` 加名字
+② 在 conn_platform/cookie_domain 映射表加一行
+③ 平台实现 `get_comments`。
+
+加了 `_normalize_generic_comment()` 做防御性归一
+（含**毫秒时间戳自动转秒**，防各平台单位不一致）。
+
+## 测试
+`test_comments_unified.py` 更新：
+`test_supported_platforms_match_implementation` ——
+断言**登记的平台必须真有实现**（防止"登记了但没实现"的假支持），
+反之也防"实现了却没登记"。12 条全绿。
