@@ -76,14 +76,15 @@ COMMENTS_SUPPORTED = {
     "weibo", "wb",
     "twitter", "x", "tw",
     "youtube",
+    "douyin", "dy",
 }
 
 # 各平台「为什么还没做」的诚实说明（未实现时返回给用户）
 COMMENTS_TODO_REASON = {
     "xhs": "小红书评论接口需要 xsec_token + X-s 签名，且风控期极易失败 —— 尚未实现",
     "xiaohongshu": "小红书评论接口需要 xsec_token + X-s 签名，且风控期极易失败 —— 尚未实现",
-    "douyin": "抖音评论接口需要 a_bogus 签名 —— 尚未实现",
-    "dy": "抖音评论接口需要 a_bogus 签名 —— 尚未实现",
+    "douyin": "抖音评论接口需要 a_bogus 签名（已实现，见 douyin/sign.py）",
+    "dy": "抖音评论接口需要 a_bogus 签名（已实现，见 douyin/sign.py）",
     "weibo": "微博评论接口需要登录 cookie —— 尚未实现",
     "wb": "微博评论接口需要登录 cookie —— 尚未实现",
     "kuaishou": "快手评论接口需要 hxfalcon 签名（只能浏览器抓）—— 尚未实现",
@@ -336,6 +337,8 @@ async def get_comments(
             "twitter": ("TWITTER", "x.com"),
             "x": ("TWITTER", "x.com"),
             "tw": ("TWITTER", "x.com"),
+            "douyin": ("DOUYIN", "douyin"),
+            "dy": ("DOUYIN", "douyin"),
         }.get(p)
         # 免登录平台（YouTube 取评论不需要凭证 —— 实测未传 cookie 可取到）
         if mapping is None:
@@ -355,6 +358,8 @@ async def get_comments(
             client_name = "weibo"
         if client_name in ("x", "tw"):
             client_name = "twitter"
+        if client_name == "dy":
+            client_name = "douyin"
         async with create_client(client_name, mode="api", cookie=cookie) as client:
             if p in ("bili", "bilibili"):
                 result = await client.get_comments_paged(
