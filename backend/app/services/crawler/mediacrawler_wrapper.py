@@ -32,7 +32,7 @@ async def search_platform(
     统一搜索入口
     
     Args:
-        platform: 平台标识 (xhs, bili, dy, ks, wb, zhihu)
+        platform: 平台标识 (xhs, bili, dy, ks, wb)
         keyword: 搜索关键词
         cookie: Cookie 字符串
         mode: "api" 或 "patchright"

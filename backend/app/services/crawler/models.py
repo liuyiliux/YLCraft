@@ -63,7 +63,7 @@ class SearchRequest(BaseModel):
     所以这里保持**独立定义**（不 import service），但字段要与 service 那份
     **保持一致**（platform / keyword / max_results / conn_id）。
     """
-    platform: str = Field(..., description="平台: xhs/dy/ks/bili/wb/zhihu")
+    platform: str = Field(..., description="平台: xhs/dy/ks/bili/wb")
     keyword: str = Field(..., description="搜索关键词")
     max_results: int = Field(20, description="最大结果数", ge=1, le=100)
     crawl_type: str = Field("search", description="采集类型")

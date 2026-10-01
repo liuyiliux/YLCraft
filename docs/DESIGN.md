@@ -131,7 +131,7 @@ graph TD
   LLM --> EXT[外部 Provider API]
   SVC --> DB[(PostgreSQL 16 + pgvector)]
   SVC --> CACHE[(Redis 任务队列)]
-  CRAWL --> BILI[B站 / 抖音 / 小红书 / 微博 / 知乎 / 快手]
+  CRAWL --> BILI[B站 / 抖音 / 小红书 / 微博 / 快手]
 ```
 
 分层职责：

@@ -29,7 +29,6 @@ _detector_registry: dict[str, str] = {
     "twitter": "app.services.cookies.platforms.x:XDetector",
     "x": "app.services.cookies.platforms.x:XDetector",
     "tw": "app.services.cookies.platforms.x:XDetector",
-    "zhihu": "app.services.cookies.platforms.zhihu:ZhihuDetector",
     "wechat_mp": "app.services.cookies.platforms.wechat_mp:WechatMPDetector",
     "fanqie": "app.services.cookies.platforms.fanqie:FanqieDetector",
 }

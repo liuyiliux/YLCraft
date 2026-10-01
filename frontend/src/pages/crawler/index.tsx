@@ -89,7 +89,7 @@ const PLATFORMS: PlatformInfo[] = [
   { value: 'ks', label: '快手', icon: <PlayCircleOutlined />, color: '#ff5000' },
   { value: 'bili', label: 'B站', icon: <PlayCircleOutlined />, color: '#00aeec' },
   { value: 'wb', label: '微博', icon: <MessageOutlined />, color: '#ff8200' },
-  { value: 'zhihu', label: '知乎', icon: <QuestionCircleOutlined />, color: '#0066ff' },
+  // ⚠️ 知乎（zhihu）已移除（2026-10-01 用户要求）。
   // 平台已改名 X（原 Twitter）。标签用官方现名，标识符仍是 `twitter`。
   { value: 'twitter', label: 'X', icon: <TwitterOutlined />, color: '#1DA1F2' },
   { value: 'youtube', label: 'YouTube', icon: <YoutubeOutlined />, color: '#FF0000' },
@@ -204,17 +204,22 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
     defaultSearchType: 'video',
   },
   xhs: {
-    // 排序/筛选暂不列：后端 search_patchright 目前只按关键词搜索页读结果，
-    // 没有实现排序（小红书搜索页的 sort 参数值未经抓包确认，不猜）。
-    // 之前列过「综合/最新/最热」，选了不生效——那属于"假选项"，比没有更糟。
-    // 等后端实现并实测确认后再加回来。
+    // 排序：后端 `search_api.resolve_sort()` 支持 3 档（实测），列出来。
+    //     general 综合 / time_descending 最新 / popularity_descending 最热
     //
-    // 注：搜索本身已修好（实测能返回结果），这里只是还没有排序维度。
+    // ⚠️ 但**端到端未实测**"三档返回真的不同"：
+    //    验证时小红书正被风控（461, Verifytype=217），三档都拿不到结果。
+    //    后端逻辑是真的消费 sort_by（body 里带 `sort` 字段）。
+    //    等风控恢复后补测"三档首条 id 不同"。
     searchTypes: [
       {
         value: 'note', label: '笔记', icon: <BookOutlined />,
-        sortOptions: [],
-        defaultSort: '',
+        sortOptions: [
+          { value: 'general', label: '综合' },
+          { value: 'time_descending', label: '最新' },
+          { value: 'popularity_descending', label: '最热' },
+        ],
+        defaultSort: 'general',
       },
     ],
     defaultSearchType: 'note',
@@ -249,69 +254,78 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
     defaultSearchType: 'note',
   },
   ks: {
+    // ⚠️ 排序**不列**：实测快手搜索页**没有**「综合/最新/最热」的排序 UI，
+    // 拦截到的真实请求体也只有 4 个固定字段、无排序参数：
+    //
+    //     {"keyword":"…","page":"search","webPageArea":"","pcursor":""}
+    //
+    // 之前列了「综合/最新/最热」，选了不生效——属于"假选项"，比没有更糟
+    // （和 xhs 那次一模一样的错）。等抓到真实排序参数再加回来。
+    //
+    // 注：搜索本身是通的（实测 result=1、可翻多页），这里只是没有排序维度。
     searchTypes: [
       {
         value: 'note', label: '视频', icon: <VideoCameraOutlined />,
-        sortOptions: [
-          { value: 'default', label: '综合' },
-          { value: 'latest', label: '最新' },
-          { value: 'popular', label: '最热' },
-        ],
-        defaultSort: 'default',
+        sortOptions: [],
+        defaultSort: '',
       },
       {
         value: 'user', label: '用户', icon: <UserOutlined />,
-        sortOptions: [
-          { value: 'default', label: '综合' },
-          { value: 'fans', label: '粉丝数' },
-        ],
-        defaultSort: 'default',
+        sortOptions: [],
+        defaultSort: '',
       },
     ],
     defaultSearchType: 'note',
   },
   wb: {
+    // ⚠️ 排序用 **tab（search_type）**，不用 sortBy —— 实测依据：
+    // 微博搜索的排序档位就在 containerid 的 `type=` 里（后端 `apis.SEARCH_TYPE_ALIASES`）：
+    //     note=1 综合 / realtime=61 实时 / popular=60 热门
+    // 而 `sort_by` 微博后端**不消费**（search_via_patchright 只看 params.search_type）。
+    // 之前把「最新/热门」放进 sortOptions → 选了没反应（假选项）。
     searchTypes: [
       {
-        value: 'note', label: '微博', icon: <MessageOutlined />,
-        sortOptions: [
-          { value: 'default', label: '综合' },
-          { value: 'time', label: '最新' },
-          { value: 'hot', label: '热门' },
-        ],
-        defaultSort: 'default',
+        value: 'note', label: '综合', icon: <MessageOutlined />,
+        sortOptions: [],
+        defaultSort: '',
+      },
+      {
+        value: 'realtime', label: '实时', icon: <MessageOutlined />,
+        sortOptions: [],
+        defaultSort: '',
+      },
+      {
+        value: 'popular', label: '热门', icon: <MessageOutlined />,
+        sortOptions: [],
+        defaultSort: '',
       },
       {
         value: 'user', label: '用户', icon: <UserOutlined />,
-        sortOptions: [
-          { value: 'default', label: '综合' },
-          { value: 'fans', label: '粉丝数' },
-        ],
-        defaultSort: 'default',
+        sortOptions: [],
+        defaultSort: '',
       },
     ],
     defaultSearchType: 'note',
   },
-  zhihu: {
-    searchTypes: [
-      {
-        value: 'note', label: '内容', icon: <ReadOutlined />,
-        sortOptions: [
-          { value: 'default', label: '综合' },
-          { value: 'latest', label: '最新' },
-        ],
-        defaultSort: 'default',
-      },
-      {
-        value: 'user', label: '用户', icon: <UserOutlined />,
-        sortOptions: [
-          { value: 'default', label: '综合' },
-        ],
-        defaultSort: 'default',
-      },
-    ],
-    defaultSearchType: 'note',
-  },
+  // ⚠️ 知乎（zhihu）已移除（2026-10-01 用户要求）：它只有"登记"，
+  // 没有真实采集客户端 —— 选了只能走 yt-dlp 兜底，结果不可靠，属于假支持。
+  //
+  // ⚠️⚠️ **YouTube 目前是"未实现"，不是"能搜但结果少"**（2026-10-01 实测）
+  //
+  // 后端注册表 `supported_platforms()` 里**没有 youtube** —— 没有采集客户端。
+  // 现在两个搜索端点都会显式报 **501**「平台 'youtube' 尚未实现采集（不是「没搜到」）」，
+  // 不会再假装"找到 0 条结果"。
+  //
+  // 为什么没实现：**本机网络到 YouTube 根本不通**（实测 firsthand）：
+  //     DNS www.youtube.com → 157.240.7.20  ← **Facebook 的 IP（DNS 被污染）**
+  //     https://www.youtube.com/robots.txt   → 超时
+  //     yt-dlp ytsearch3:"python tutorial"   → 超时
+  //     本机代理配置存在（127.0.0.1:10090）但 **ProxyEnable=0 且端口没在监听**
+  // 所以下面的 sortOptions / filters 是**按 YouTube 公开语义写的、但从未跑通验证**。
+  // 用户开 VPN 后如果能连通，再按 `ADDING_A_PLATFORM.md` 做真实客户端 + 实测排序。
+  //
+  // 排序依据（YouTube 搜索页的 `sp` 参数语义，**未实测**）：
+  //     relevance / date(上传日期) / viewCount(播放量) / rating(评分)
   youtube: {
     searchTypes: [
       {
@@ -347,23 +361,31 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
     defaultSearchType: 'note',
   },
   twitter: {
+    // ⚠️ 排序用 **tab（search_type → X 的 product）**，不用 sortBy —— 实测依据：
+    // X 的 SearchTimeline 排序档位是 `product`（后端 `apis.PRODUCT_ALIASES`）：
+    //     note→Top 综合 / latest→Latest 最新 / media→Media 媒体 / user→People 用户
+    // 而 `sort_by` X 后端**不消费**（search_via_http 只看 params.search_type）。
+    // 之前把「综合/最新/热门」放进 sortOptions → 选了没反应（假选项）。
     searchTypes: [
       {
-        value: 'note', label: '推文', icon: <MessageOutlined />,
-        sortOptions: [
-          { value: 'default', label: '综合' },
-          { value: 'latest', label: '最新' },
-          { value: 'popular', label: '热门' },
-        ],
-        defaultSort: 'default',
+        value: 'note', label: '综合', icon: <MessageOutlined />,
+        sortOptions: [],
+        defaultSort: '',
+      },
+      {
+        value: 'latest', label: '最新', icon: <MessageOutlined />,
+        sortOptions: [],
+        defaultSort: '',
+      },
+      {
+        value: 'media', label: '媒体', icon: <MessageOutlined />,
+        sortOptions: [],
+        defaultSort: '',
       },
       {
         value: 'user', label: '用户', icon: <UserOutlined />,
-        sortOptions: [
-          { value: 'default', label: '综合' },
-          { value: 'followers', label: '粉丝数' },
-        ],
-        defaultSort: 'default',
+        sortOptions: [],
+        defaultSort: '',
       },
     ],
     defaultSearchType: 'note',
@@ -449,7 +471,6 @@ function getPlatformInfo(pf: string): PlatformInfo {
  *   抖音    HTTP 200                            ✅
  *   快手    HTTP 200  '快手'                    ✅
  *   微博    需登录（浏览器里已登录，所以可用）
- *   知乎    需登录
  *   X       格式正确（我方网络访问不了，但浏览器可用）
  */
 const MANUAL_SEARCH_URLS: Record<string, string> = {
@@ -464,7 +485,7 @@ const MANUAL_SEARCH_URLS: Record<string, string> = {
   kuaishou: 'https://www.kuaishou.com/search/video?searchKey={kw}',
   wb: 'https://s.weibo.com/weibo?q={kw}',
   weibo: 'https://s.weibo.com/weibo?q={kw}',
-  zhihu: 'https://www.zhihu.com/search?q={kw}',
+  // ⚠️ 知乎（zhihu）已移除（2026-10-01 用户要求），且它本来就需登录、无真实采集客户端。
   tw: 'https://x.com/search?q={kw}',
   twitter: 'https://x.com/search?q={kw}',
   x: 'https://x.com/search?q={kw}',

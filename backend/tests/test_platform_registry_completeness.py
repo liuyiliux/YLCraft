@@ -5,7 +5,7 @@
 用户在账号中心点 X 绑定账号，界面上报：
 
     平台 twitter 暂不支持 Patchright 获取，
-    支持: xhs, douyin, kuaishou, bilibili, weibo, zhihu, wechat_mp, fanqie
+    支持: xhs, douyin, kuaishou, bilibili, weibo, wechat_mp, fanqie（zhihu 已于 2026-10-01 移除）
 
 **根因**：`_detector_registry` 里没有 `twitter` ——
 这正是 `docs/platform/ADDING_A_PLATFORM.md` 第 7 项，而我上一轮**漏了**。

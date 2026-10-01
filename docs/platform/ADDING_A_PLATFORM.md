@@ -86,6 +86,51 @@ python scripts/check_platform_registry.py --allow-known  # 全量但放行已知
 已知历史缺口（`telegram`/`tiktok`/`youtube` 缺 Detector 与前端入口，
 本就未支持浏览器取 Cookie）在脚本的 `KNOWN_GAPS` 里单列，**新平台不得加入**。
 
+## ⚠️ `youtube` / `telegram`：**本机网络不通**，不是"没时间做"（2026-10-01 实测）
+
+用户要求"最后吧 YouTube 和 telegram"。**先探网络，再动手** —— 结果探到的是
+一个环境事实，而不是一个编码问题。实测（`urllib` / `yt-dlp`，统一 15s 超时）：
+
+```
+DNS  www.youtube.com          → 157.240.7.20      ← ⚠️ 这是 **Facebook 的 IP**
+DNS  youtubei.googleapis.com  → 31.13.90.19       ← ⚠️ 同样是 Facebook 段
+HTTP https://www.youtube.com/robots.txt            → 超时
+HTTP https://t.me/telegram                         → 超时
+HTTP https://t.me/s/telegram   （公开频道预览页）    → 超时
+yt-dlp  ytsearch3:"python tutorial"                → 超时
+yt-dlp  https://www.youtube.com/watch?v=dQw4w9WgXcQ → 超时
+```
+
+`t.me` / `telegram.org` 的 DNS 倒是正常的（`149.154.167.99` / `104.244.43.231`），
+但 **TCP 443 连不出去**。
+
+**根因**：本机有代理配置但**没启用、也没进程**监听：
+
+```
+HKCU:\...\Internet Settings\ProxyServer = 127.0.0.1:10090
+                                     ProxyEnable = 0        ← 关着
+Test-NetConnection 127.0.0.1:10090                     → False（没人监听）
+常见端口 7890/7897/10809/10808/1080/20171              → 全 False
+代理进程（clash/v2ray/xray/sing-box/mihomo/hiddify…）  → 一个都没有
+```
+
+**结论与纪律**：
+
+1. **不要在不通的网络上去"实现"这两个平台** —— 写完也无法验证，
+   只会再造一个"假支持"（列出来、点了没结果），正是本文档铁律禁止的。
+2. 因此 `youtube` 目前**不在** `supported_platforms()` 里；两个搜索端点
+   （`/crawler/search` 与 `/crawler/search-enhanced`）都会显式报 **501**
+   「尚未实现采集（不是「没搜到」）」。
+3. 前端 `PLATFORM_SEARCH_CONFIG.youtube` 里的 `sortOptions`/`filters`
+   是**按 YouTube 公开语义写的、从未跑通**，已在代码注释里标明"未实测"。
+4. 用户开 VPN 后要做的事：先重跑上面的探针确认连通 → 再按本文档走
+   客户端 + 抓包 + 实测排序 → 最后把 `youtube` 加进自动发现列表。
+
+Telegram 另有一条**与网络无关**的硬约束：`https://t.me/s/<channel>` 只能看
+**公开频道的消息列表**，**关键词搜索需要 MTProto 登录**
+（`telethon` + `api_id`/`api_hash` + 手机号验证码），
+不是"给个 cookie 就能搜"。接入前要先和用户确认走哪条路。
+
 ## 搜索类平台的三个额外约束
 
 1. **登录检测必须问站点自己的接口，不能看 URL、也不能只看 CSS 类名。**
