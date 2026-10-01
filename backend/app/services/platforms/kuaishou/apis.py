@@ -51,6 +51,17 @@ PROFILE_FEED = "/rest/v/profile/feed"
 NEW_RECO = "/new-reco"
 SEARCH_PAGE = "/search/video"
 
+# 评论（**免签名**，2026-10-01 实测发现）
+#
+# ⚠️ 与其它端点不同：这两个**不需要** `__NS_hxfalcon`。
+# 实测对照（同一 cookie、同一时刻）：
+#   /rest/v/search/feed        无签名 → {"result":50,"签名验证失败"}
+#   /rest/v/photo/comment/list 无签名 → {"result":1,...} ✅
+#
+# 所以它们走纯 HTTP，不走浏览器签名路径。
+COMMENT_LIST = "/rest/v/photo/comment/list"
+COMMENT_SUB_LIST = "/rest/v/photo/comment/sublist"
+
 # 每个 feed 的 `type` 值（实测：1 = 视频）
 FEED_TYPE_VIDEO = 1
 

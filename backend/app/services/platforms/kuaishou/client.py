@@ -36,6 +36,8 @@ from ..session_pool import PooledSession, get_session_pool
 from ..types import LoginExpiredError, SearchParams, SearchResult, UserProfile
 from .apis import (
     BASE,
+    COMMENT_LIST,
+    COMMENT_SUB_LIST,
     PROFILE_GET,
     _to_int,
     SEARCH_FEED,
@@ -730,6 +732,114 @@ class KuaishouClient(BasePlatformClient):
             "所以请直接使用**搜索结果里的用户信息**（昵称/头像/简介都有）。\n"
             "粉丝数需要快手后续开放接口，或登录态下另找路径。"
         )
+
+    async def get_comments(
+        self,
+        item_id: str,
+        max_results: int = 20,
+        page: int = 1,
+        cursor: str = "",
+    ) -> List[Dict[str, Any]]:
+        """取作品评论（**免签名**，纯 HTTP）。
+
+        ## ⚠️ 重大发现：评论不需要 `__NS_hxfalcon`（2026-10-01 实测）
+
+        本客户端其它能力都建立在"签名必须浏览器抓"的前提上，
+        但**评论是例外**。决定性对照（同一 cookie、同一时刻）：
+
+            /rest/v/search/feed          无签名 → {"result":50,"签名验证失败"}
+            /rest/v/photo/comment/list    无签名 → {"result":1,...} ✅ 正常
+
+        所以这里**不走** `_post`（那条路要签名），直接用基类的纯 HTTP `request()`。
+
+        ## 接口
+
+            POST https://www.kuaishou.com/rest/v/photo/comment/list
+            Content-Type: application/json
+            Body: {"photoId": "<作品id>", "pcursor": ""}
+
+        子评论：加 `rootCommentId`，端点换 `/rest/v/photo/comment/sublist`。
+
+        ## 字段（**下划线命名**，与 GraphQL 版的驼峰 `commentId` 不同）
+
+            comment_id / content / author_name / author_id / headurl
+            likeCount / timestamp(**毫秒**) / hasSubComments
+
+        ⚠️ `commentCount` 恒为 0，别用它当回复数（V2 没有子评论计数字段）。
+        ⚠️ `result=1` 才是成功判据 —— 实测有作品 `commentCountV2=1389` 但
+        `rootCommentsV2` 返回空列表，那是**正常的**，不是失败。
+        """
+        photo_id = str(item_id or "").strip()
+        if not photo_id:
+            return []
+
+        want = max(1, int(max_results or 20))
+        out: List[Dict[str, Any]] = []
+        seen: set[str] = set()
+        pcursor = cursor or ""
+        headers = {
+            "User-Agent": self._get_default_user_agent(),
+            "Content-Type": "application/json",
+            "Referer": f"{BASE}/short-video/{photo_id}",
+        }
+        # 带 cookie（实测不带 → {"result":2}，是登录态问题不是签名问题）
+        cookie = self.header_cookie()
+        if cookie:
+            headers["Cookie"] = cookie
+
+        # 实测：快手限流敏感 —— 每页之间 sleep（参照 MediaCrawler 的 random.uniform(1,3)）
+        import asyncio
+        import random
+
+        for _ in range(max(1, (want + 19) // 20) + 1):
+            if len(out) >= want:
+                break
+            body: Dict[str, Any] = {"photoId": photo_id, "pcursor": pcursor}
+            try:
+                payload = await self.request(
+                    "POST", f"{BASE}{COMMENT_LIST}", json=body, headers=headers
+                )
+            except Exception as exc:
+                logger.warning("[kuaishou] 评论请求失败：%s", type(exc).__name__)
+                break
+
+            if not isinstance(payload, dict) or payload.get("result") != 1:
+                # result=2 → 登录态失效；其它 → 如实停（不抛，评论是次要能力）
+                logger.info(
+                    "[kuaishou] 评论返回 result=%s，停止", payload.get("result") if isinstance(payload, dict) else "?"
+                )
+                break
+
+            for c in payload.get("rootCommentsV2") or []:
+                if not isinstance(c, dict):
+                    continue
+                cid = str(c.get("comment_id") or "")
+                if not cid or cid in seen:
+                    continue
+                seen.add(cid)
+                out.append({
+                    "id": cid,
+                    "content": c.get("content") or "",
+                    "author": c.get("author_name") or "",
+                    "author_id": str(c.get("author_id") or ""),
+                    "avatar": c.get("headurl") or "",
+                    "likes": int(c.get("likeCount") or 0),
+                    # ⚠️ 毫秒 → 秒（实测 timestamp=1790774972457）
+                    "create_time": int(c.get("timestamp") or 0) // 1000,
+                    "reply_count": 0,   # V2 无子评论计数字段，别用 commentCount
+                    "has_sub": bool(c.get("hasSubComments")),
+                })
+                if len(out) >= want:
+                    break
+
+            nxt = payload.get("pcursorV2")
+            # ⚠️ 终值是字符串 "no_more"（不是空串），实测确认
+            if not nxt or nxt == "no_more" or nxt == pcursor:
+                break
+            pcursor = str(nxt)
+            await asyncio.sleep(random.uniform(1, 2))
+
+        return out[:want]
 
     async def get_self_profile(self) -> Optional[UserProfile]:
         """查**自己**的资料（「我的数据」）。
