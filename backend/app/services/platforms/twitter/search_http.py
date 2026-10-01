@@ -129,6 +129,7 @@ async def _request_page_raw(
     variables: Dict[str, Any],
     *,
     field_toggles: Optional[Dict[str, Any]] = None,
+    features: Optional[Dict[str, Any]] = None,
     retry_on_404: bool = True,
 ) -> Dict[str, Any]:
     """请求任意 GraphQL 操作，返回解析后的 JSON。
@@ -137,6 +138,14 @@ async def _request_page_raw(
     （twscrape `queue_client.py` 同款策略）。
 
     `field_toggles` 只有部分操作需要（如 UserByScreenName）。
+
+    ## ⚠️ `features` 参数（2026-10-01 加）
+
+    TweetDetail（取评论）**必须**带 `features`，实测只发 `variables` 时
+    拿不到数据。但 SearchTimeline **不需要** —— 所以这里做成**可选**参数
+    默认不发，保持搜索现有行为不变（不破坏已实测通过的搜索）。
+
+    出处：twscrape `api.py` TweetDetail 用 `params = {"variables": kv, "features": GQL_FEATURES}`。
     """
     ck = cookie_map(cookie_header)
     missing = [n for n in REQUIRED_COOKIES if not ck.get(n)]
@@ -159,6 +168,9 @@ async def _request_page_raw(
         }
         if field_toggles:
             params["fieldToggles"] = json.dumps(field_toggles, ensure_ascii=False)
+        # ⚠️ TweetDetail（评论）需要 features；SearchTimeline 不需要（默认不发）
+        if features:
+            params["features"] = json.dumps(features, ensure_ascii=False)
 
         async with httpx.AsyncClient(timeout=60, follow_redirects=True) as c:
             resp = await c.get(f"{GQL_URL}/{op}", params=params, headers=headers)
@@ -330,6 +342,101 @@ def parse_tweet_http(t: Dict[str, Any]) -> Optional[SearchResult]:
 # =============================================================================
 # 入口
 # =============================================================================
+
+async def get_replies_via_http(
+    tweet_id: str,
+    *,
+    cookie_header: str,
+    max_results: int = 20,
+    max_pages: int = 3,
+    direct_only: bool = True,
+) -> List[Dict[str, Any]]:
+    """取一条推文的评论（回复）—— 复用 TweetDetail，纯 HTTP。
+
+    ## 接口（2026-10-01 实测 200）
+
+        GET {GQL_URL}/{TWEET_DETAIL_OP}
+            ?variables={"focalTweetId":...,"referrer":"tweet",...}
+            &features={GQL_FEATURES}
+
+    ⚠️ 必须带 `features`（实测只发 variables 拿不到数据）——
+    这就是 `_request_page_raw` 加 `features` 可选参数的原因。
+
+    ## 翻页（实测选型）
+
+    调研实测了两种游标：
+        `ShowMore`  → 只多 1 条（展开单条 thread 的更多回复），不适合主翻页
+        `Bottom`    → 每页 40 条全新增 ✅ ← 用它（与 `_get_bottom_cursor` 一致）
+
+    ⚠️ 注意：twscrape 文档说用 `ShowMoreThreads`，但**实测响应里没有**
+    这个 cursorType（只有 `ShowMore`×3 + `Bottom`×1）。
+
+    Args:
+        tweet_id: 推文 ID
+        cookie_header: cookie（需 auth_token + ct0）
+        max_results: 最多取多少条
+        max_pages: 最多翻几页（每页约 40 条，响应 176KB 很大，别翻太多）
+        direct_only: 只返回**直接回复主推**的（过滤二级回复和广告）
+
+    Returns:
+        归一后的评论字典列表。
+    """
+    want = max(1, int(max_results or 20))
+    from .apis import GQL_FEATURES, TWEET_DETAIL_OP, build_tweet_detail_variables
+
+    collected: Dict[str, Dict] = {}
+    cursor: Optional[str] = None
+
+    for _ in range(max(1, max_pages)):
+        variables = build_tweet_detail_variables(tweet_id, cursor)
+        payload = await _request_page_raw(
+            cookie_header, TWEET_DETAIL_OP, variables, features=GQL_FEATURES
+        )
+        page: Dict[str, Dict] = {}
+        _collect_tweets(payload, page)
+        for rid, t in page.items():
+            if rid == str(tweet_id):
+                continue  # 跳过焦点推文本身
+            if rid not in collected:
+                collected[rid] = t
+
+        if len(collected) >= want:
+            break
+        cursor = _get_bottom_cursor(payload)
+        if not cursor:
+            break
+
+    out: List[Dict[str, Any]] = []
+    for rid, t in list(collected.items())[:want]:
+        legacy = t.get("legacy") or {}
+        if not isinstance(legacy, dict):
+            continue
+        # ⚠️ 只要"直接回复主推"的：
+        #    原始 JSON 字段是 `in_reply_to_status_id_str`
+        #    （不是 twscrape 模型属性 `inReplyToTweetId` —— 那个在原始
+        #     JSON 里是全 None，我差点误判"没有回复"）
+        parent = str(legacy.get("in_reply_to_status_id_str") or "")
+        if direct_only and parent != str(tweet_id):
+            continue
+        core = (t.get("core") or {}).get("user_results") or {}
+        u = (core.get("result") or {}) if isinstance(core, dict) else {}
+        out.append({
+            "id": rid,
+            "content": legacy.get("full_text") or "",
+            "author": (u.get("name") or "") or "",
+            "author_id": str(u.get("rest_id") or legacy.get("user_id_str") or ""),
+            # ⚠️ 作者 handle 在 screen_name，昵称在 name
+            # ⚠️ 别自己加 "@" —— 实测 screen_name 有时已含（会出现 "@@xxx"）
+            "author_handle": (u.get("screen_name") or "").lstrip("@"),
+            "avatar": (u.get("avatar") or {}).get("image_url") if isinstance(u.get("avatar"), dict) else (u.get("profile_image_url_https") or ""),
+            "likes": int(legacy.get("favorite_count") or 0),
+            # ⚠️ created_at 是 RFC2822 字符串（与微博一样），先原样返回
+            "create_time": legacy.get("created_at") or "",
+            "reply_count": int(legacy.get("reply_count") or 0),
+            "parent": parent,
+        })
+    return out
+
 
 async def search_via_http(
     params: SearchParams,

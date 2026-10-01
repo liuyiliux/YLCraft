@@ -139,6 +139,53 @@ class TwitterClient(BasePlatformClient):
     # 用户（可选能力）
     # =========================================================================
 
+    async def get_comments(
+        self,
+        item_id: str,
+        max_results: int = 20,
+        page: int = 1,
+        cursor: str = "",
+    ) -> List[Dict[str, Any]]:
+        """取推文评论（纯 HTTP，复用 TweetDetail GraphQL）。
+
+        ⚠️ **必须登录**（auth_token + ct0）—— 与 X 搜索一致。
+
+        ## 为什么不用浏览器路径回退
+
+        搜索有 `search_dom` 作回退（因为搜索页结构复杂），但**评论走 HTTP 就够**：
+        实测 TweetDetail 直接 200，且响应很大（单页 176KB）——
+        用浏览器反而更慢。所以失败时**直接抛可操作错误**，不回退。
+
+        ## 字段说明
+
+        返回的 `create_time` 是 **RFC2822 字符串**（如
+        `"Mon Sep 28 02:33:36 +0000 2026"`）—— 与微博一致，
+        由上层统一转（`/api/v1/comments` 的归一函数处理）。
+
+        ⚠️ 只返回**直接回复主推**的（过滤二级回复与广告推文）。
+        实测 40 条里只有部分是一级评论。
+        """
+        tweet_id = str(item_id or "").strip()
+        if not tweet_id:
+            return []
+
+        cookie = self.header_cookie()
+        if not cookie:
+            raise RuntimeError(
+                "[twitter] 取评论需要登录态（auth_token + ct0）—— "
+                "请在「账号中心」用浏览器方式登录一次 x.com。"
+            )
+
+        from .search_http import get_replies_via_http
+
+        return await get_replies_via_http(
+            tweet_id,
+            cookie_header=cookie,
+            max_results=max_results,
+            # 单页 176KB，别翻太多页
+            max_pages=3,
+        )
+
     async def search_users(
         self,
         keyword: str,
