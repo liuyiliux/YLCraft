@@ -92,14 +92,29 @@ def test_health_button_rendered_for_all_platforms():
     而抖音/小红书**早就有**后端接口 —— 是前端没接。
     """
     src = _crawler()
-    # 找"体检"按钮那一处（在次要行里）
-    i = src.find("renderSecondaryRow")
-    assert i != -1
-    seg = src[i:i + 3000]
-    assert "体检" in seg, "次要行里要有体检按钮"
-    # ⚠️ 不能有 `platform === 'bili' &&` 把按钮包起来
-    j = seg.find("体检")
-    window = seg[max(0, j - 600):j]
+    # 找 renderSecondaryRow 的**完整函数体**（到下一个顶层 const/函数为止）
+    i = src.find("const renderSecondaryRow = ")
+    assert i != -1, "要有次要行渲染函数"
+    # 取到下一个同级定义（`\n  const ` 或 `\n  // =====`）
+    rest = src[i:]
+    end = len(rest)
+    for marker in ("\n  // ===== 搜索", "\n  const handleSearch"):
+        j = rest.find(marker)
+        if j != -1:
+            end = min(end, j)
+    body = rest[:end]
+    assert "体检" in body, "次要行里要有体检按钮"
+
+    # ⚠️ 不能有 `platform === 'bili' &&` 把**体检按钮本身**包起来。
+    # 注意：B站**额外调用**详细体检是允许的（runBiliHealthCheck），
+    # 要检查的是"按钮是否被条件渲染包住"。
+    j = body.find("体检\n")
+    if j == -1:
+        j = body.find("体检<")
+    if j == -1:
+        j = body.find("体检")
+    assert j != -1
+    window = body[max(0, j - 800):j]
     assert "platform === 'bili' && (" not in window, (
         "体检按钮被 B站条件包住了 —— 所有平台都该有"
     )
