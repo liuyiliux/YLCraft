@@ -90,6 +90,12 @@ backend/data/cookies/
 # backend/data/browser_profiles/<platform>/Default/Network/Cookies 列进提交，
 # 那等于把用户登录凭证推到远端。
 backend/data/browser_profiles/
+
+# ⚠️ Telegram MTProto 会话与凭证（**等同账号登录凭证，绝不能入库**）
+#   account.session     — telethon 的登录会话，拿到它就能操作你的账号
+#   credentials.json    — api_id / api_hash（含 api_hash 敏感信息）
+# 与 browser_profiles 同一性质：进了 git 就等于把账号交出去。
+backend/data/telegram/
 .trae/
 backend/.env
 backend/app/storage/images/

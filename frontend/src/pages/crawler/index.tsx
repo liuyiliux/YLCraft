@@ -23,7 +23,7 @@ import {
   UserOutlined, TeamOutlined, ReadOutlined, ProfileOutlined, PayCircleOutlined,
   FileTextOutlined, DownOutlined, BarChartOutlined, LikeOutlined, ShareAltOutlined,
   SendOutlined, VideoCameraAddOutlined, CopyOutlined, ArrowUpOutlined,
-  CalendarOutlined, FolderOpenOutlined, SyncOutlined,
+  CalendarOutlined, FolderOpenOutlined, SyncOutlined, AppstoreOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
 import { useResizableColumns } from '../../hooks/useResizableColumns'
@@ -93,6 +93,8 @@ const PLATFORMS: PlatformInfo[] = [
   // 平台已改名 X（原 Twitter）。标签用官方现名，标识符仍是 `twitter`。
   { value: 'twitter', label: 'X', icon: <TwitterOutlined />, color: '#1DA1F2' },
   { value: 'youtube', label: 'YouTube', icon: <YoutubeOutlined />, color: '#FF0000' },
+  // 平台已改名 X（原 Twitter）
+  { value: 'telegram', label: 'Telegram', icon: <SendOutlined />, color: '#0088cc' },
   { value: 'wechat_mp', label: '微信公众号', icon: <MessageOutlined />, color: '#07C160' },
 ]
 
@@ -106,6 +108,10 @@ interface SearchTypeConfig {
   sortOptions: { value: string; label: string }[]
   defaultSort: string
   filters?: FilterConfig[]
+  /** 搜索框的输入提示。**各平台/各 tab 的输入语义可能完全不同**
+   *（如 Telegram 的"频道消息"tab 填的是频道名而非关键词），
+   * 用这个字段覆盖默认提示，免得用户不知道该填什么。 */
+  placeholder?: string
 }
 
 interface FilterConfig {
@@ -352,6 +358,43 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
     ],
     defaultSearchType: 'note',
   },
+  // ⚠️⚠️ Telegram 的 searchTypes **不是"内容类型"，而是三个数据源** ——
+  // 因为它的输入语义完全不同（频道名 vs 关键词 vs 无需输入），
+  // 硬塞进一个搜索框会让用户困惑"我该填什么"。
+  //
+  // 实测能力边界（2026-10-01，含调研修正）：
+  //   · 频道消息   → t.me/s/<频道>，**免登录**；
+  //                  填「频道名 关键词」可做**频道内搜索**（`?q=`）
+  //   · 已加入搜索 → MTProto messages.SearchGlobal，**需登录**；
+  //                  ⚠️ 只覆盖**你已加入的会话**，不是全网！
+  //   · 我的频道   → MTProto messages.GetDialogs，**需登录**
+  //
+  // ⚠️ **不要写"全网搜索"** —— 真正搜所有公开频道要 channels.SearchPosts，
+  // 需要 Premium 且按 Stars 计费，本项目不做（属于过度承诺）。
+  telegram: {
+    searchTypes: [
+      {
+        value: 'channel', label: '频道消息', icon: <SendOutlined />,
+        sortOptions: [],
+        defaultSort: '',
+        // 输入提示：这个 tab 的输入是"频道名（可加关键词）"，与其它平台不同
+        placeholder: '频道名，如 durov；也可「durov AI」在频道内搜 AI',
+      },
+      {
+        value: 'joined', label: '已加入搜索', icon: <SearchOutlined />,
+        sortOptions: [],
+        defaultSort: '',
+        placeholder: '关键词（搜你已加入的频道/群组）',
+      },
+      {
+        value: 'dialogs', label: '我的频道', icon: <AppstoreOutlined />,
+        sortOptions: [],
+        defaultSort: '',
+        placeholder: '无需输入 —— 直接点搜索列出你加入的频道',
+      },
+    ],
+    defaultSearchType: 'channel',
+  },
   twitter: {
     // ⚠️ 排序用 **tab（search_type → X 的 product）**，不用 sortBy —— 实测依据：
     // X 的 SearchTimeline 排序档位是 `product`（后端 `apis.PRODUCT_ALIASES`）：
@@ -482,6 +525,9 @@ const MANUAL_SEARCH_URLS: Record<string, string> = {
   twitter: 'https://x.com/search?q={kw}',
   x: 'https://x.com/search?q={kw}',
   youtube: 'https://www.youtube.com/results?search_query={kw}',
+  // Telegram 没有"网页搜索页"（`t.me/search` 会被当成用户名），
+  // 所以手动跳转只能给到"频道页"——用频道名当路径。
+  telegram: 'https://t.me/s/{kw}',
   tiktok: 'https://www.tiktok.com/search?q={kw}',
 }
 
@@ -1046,8 +1092,15 @@ export default function CrawlerPage() {
 
   // ===== 搜索 =====
   const handleSearch = async (page: number = currentPage) => {
-    if (!keyword.trim()) {
-      message.warning('请输入关键词')
+    // ⚠️ Telegram 的「我的频道」tab **不需要关键词**（它列的是你加入的频道），
+    // 所以不能走"必须先输关键词"的通用校验（否则用户点搜索会被拦住）。
+    const telegramDialogs = platform === 'telegram' && searchType === 'dialogs'
+    if (!telegramDialogs && !keyword.trim()) {
+      message.warning(
+        platform === 'telegram' && searchType === 'channel'
+          ? '请输入频道名（如 durov），或「频道名 关键词」'
+          : '请输入关键词',
+      )
       return
     }
     if (platform === 'wechat_mp' && searchType === 'article' && !filters.fake_id) {
@@ -1756,9 +1809,13 @@ export default function CrawlerPage() {
                 value={keyword}
                 onChange={e => setKeyword(e.target.value)}
                 placeholder={
-                  platform === 'wechat_mp' && searchType === 'global_article'
+                  // 优先用该平台/该 tab 自己的提示（输入语义可能完全不同，
+                  // 如 Telegram「频道消息」填的是**频道名**而不是关键词）
+                  PLATFORM_SEARCH_CONFIG[platform]?.searchTypes
+                    ?.find(t => t.value === searchType)?.placeholder
+                  || (platform === 'wechat_mp' && searchType === 'global_article'
                     ? '搜索公众号文章标题/正文关键词...'
-                    : `在${getPlatformInfo(platform).label}搜索...`
+                    : `在${getPlatformInfo(platform).label}搜索...`)
                 }
                 enterButton={<><SearchOutlined /> 搜索</>}
                 loading={loading}

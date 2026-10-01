@@ -25,6 +25,7 @@ import SubtitlePage from './pages/subtitle'
 import BGMPage from './pages/bgm'
 import AgentPage from './pages/agent'
 import AccountsPage from './pages/accounts'
+import TelegramLoginPage from './pages/telegram-login'
 import PublishPage from './pages/publish'
 import CrawlerPage from './pages/crawler'
 import PlatformUsersPage from './pages/platform-users'
@@ -101,6 +102,10 @@ export default function App() {
               <Route path="tasks" element={<TasksPage />} />
               <Route path="agent" element={<AgentPage />} />
               <Route path="accounts" element={<AccountsPage />} />
+              {/* Telegram MTProto 登录是多步状态机（api_id/api_hash →
+                  手机号 → 验证码 → 可选两步验证），与"抓一次 cookie"
+                  差别太大，单独一页（2026-10-01） */}
+              <Route path="telegram-login" element={<TelegramLoginPage />} />
               <Route path="publish" element={<PublishPage />} />
               <Route path="crawler" element={<CrawlerPage />} />
               <Route path="platform-users" element={<PlatformUsersPage />} />

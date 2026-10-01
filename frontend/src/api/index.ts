@@ -1391,6 +1391,75 @@ export const getSupportedPlatforms = () => request('/platforms/supported')
 /** 列出所有平台连接 */
 export const listPlatformConnections = () => request('/platforms')
 
+// ===== Telegram（MTProto 登录 + 频道能力）=====
+//
+// ⚠️ Telegram 的登录**不是 cookie/扫码**，是多步状态机：
+//     api_id/api_hash → 手机号 → 验证码 →（可选）两步验证密码
+// 所以单独一组接口，不并进 /platforms 的通用连接流程。
+//
+// ⚠️ 但**公开频道不需要登录**（t.me/s，含频道内 `?q=` 搜索）——
+// 这组接口只为「已加入搜索 / 我的频道 / 私有频道」。
+
+export interface TelegramStatusResponse {
+  has_credentials: boolean
+  has_session: boolean
+  logged_in: boolean
+  username: string
+  display_name: string
+  user_id: number
+  api_id: string
+  needs_password: boolean
+  error?: string
+}
+
+/** 查询 Telegram 登录状态（未登录是正常状态，不会报错） */
+export const getTelegramStatus = () =>
+  request('/telegram/status') as Promise<TelegramStatusResponse>
+
+/** 第一步：发送验证码（需要 api_id / api_hash / phone） */
+export const telegramSendCode = (data: { api_id: string; api_hash: string; phone: string }) =>
+  request('/telegram/auth/send-code', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }) as Promise<{ ok: boolean; phone_code_hash: string }>
+
+/** 第二步：提交验证码（账号开了两步验证时再带 password） */
+export const telegramSignIn = (data: { code: string; password?: string }) =>
+  request('/telegram/auth/sign-in', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }) as Promise<{ ok: boolean; username?: string; needs_password?: boolean; message?: string }>
+
+/** 退出 Telegram 登录 */
+export const telegramLogout = () =>
+  request('/telegram/auth/logout', { method: 'POST' }) as Promise<{ ok: boolean; deleted: boolean }>
+
+/** 我加入的频道（需登录；未登录返回 401） */
+export const getTelegramChannels = (limit = 100) =>
+  request(`/telegram/channels?limit=${limit}`) as Promise<{
+    success: boolean
+    total: number
+    channels: Array<{
+      id: string; username: string; title: string; subscribers: number
+      is_channel: boolean; is_group: boolean; url: string
+    }>
+  }>
+
+/** 公开频道信息 + 消息（免登录） */
+export const getTelegramChannel = (channel: string, limit = 20, keyword = '') =>
+  request(
+    `/telegram/channel?channel=${encodeURIComponent(channel)}&limit=${limit}&keyword=${encodeURIComponent(keyword)}`,
+  ) as Promise<{
+    success: boolean
+    channel: { title: string; username: string; subscribers: number; description: string; avatar: string }
+    total: number
+    messages: Array<{
+      id: string; channel: string; text: string; html: string; date: string
+      views: number; images: string[]; video: string; video_cover: string
+      duration: number; forward_from: string; type: string; url: string
+    }>
+  }>
+
 // ===== 用户查询（抖音 / 小红书 的用户搜索、资料、作品列表）=====
 //
 // 后端统一成 /users/*?platform=xxx（B站仍用 /bilibili/up/* 那一套）

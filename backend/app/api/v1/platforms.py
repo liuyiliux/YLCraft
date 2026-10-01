@@ -51,13 +51,21 @@ SUPPORTED_PLATFORMS = [
     # ⚠️ zhihu 已移除（2026-10-01 用户要求）
     {"value": "wechat_mp",  "label": "微信公众号", "icon": "wechat",     "color": "#07C160",  "auth_types": ["qrcode"]},
     {"value": "fanqie",     "label": "番茄小说",   "icon": "book",       "color": "#ff5a5f",  "auth_types": ["cookie"], "view": True, "publish": True, "credential": "cookie"},
-    {"value": "youtube",    "label": "YouTube",   "icon": "youtube",     "color": "#ff0000",  "auth_types": ["cookie"]},
+    # YouTube 免登录（yt-dlp 取公开数据），没有"凭证"这回事，
+    # 标 `none` 让账号中心不再要求抓 cookie（2026-10-01）
+    {"value": "youtube",    "label": "YouTube",   "icon": "youtube",     "color": "#ff0000",  "auth_types": ["none"]},
     {"value": "tiktok",     "label": "TikTok",    "icon": "tiktok",      "color": "#000000",  "auth_types": ["cookie"]},
     # 平台已改名 X（原 Twitter）。label 用现名，**value 保持 `twitter`**
     # —— PlatformType.TWITTER、连接表 platform 字段、既有数据都是
     # `twitter`，改 value 会破坏既有数据。
     {"value": "twitter",    "label": "X",          "icon": "twitter",    "color": "#1da1f2",  "auth_types": ["cookie"]},
-    {"value": "telegram",   "label": "Telegram",  "icon": "send",        "color": "#0088cc",  "auth_types": ["cookie"]},
+    # ⚠️ Telegram 的认证方式**不是 cookie**，是 MTProto 登录
+    # （api_id/api_hash + 手机号验证码，可能还有两步验证密码）。
+    # 标成 `cookie` 会让账号中心走错流程（去抓浏览器 cookie，永远失败）。
+    # 用 `telegram` 认证类型，前端据此跳到专用登录页（2026-10-01）。
+    # ⚠️ 但**公开频道不需要登录**（`t.me/s`，含频道内 `?q=` 搜索），
+    # 所以这个凭证是"可选"的 —— 只为全局搜索/我的频道/私有频道。
+    {"value": "telegram",   "label": "Telegram",  "icon": "send",        "color": "#0088cc",  "auth_types": ["telegram"]},
     {"value": "openai",     "label": "OpenAI",    "icon": "api",         "color": "#10a37f",  "auth_types": ["api_key"]},
     {"value": "anthropic",  "label": "Anthropic", "icon": "api",         "color": "#d4a0e7",  "auth_types": ["api_key"]},
     {"value": "minimax",    "label": "MiniMax",   "icon": "api",         "color": "#00d4ff",  "auth_types": ["api_key"]},
@@ -70,6 +78,8 @@ AUTH_TYPES = [
     {"value": "password", "label": "账号密码"},
     {"value": "qrcode",   "label": "扫码登录"},
     {"value": "none",     "label": "无需认证"},
+    # Telegram MTProto：api_id/api_hash + 手机号验证码（+可选两步验证）
+    {"value": "telegram", "label": "Telegram 账号登录"},
 ]
 
 ACQUISITION_METHODS = [
