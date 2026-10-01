@@ -471,13 +471,35 @@ class KuaishouClient(BasePlatformClient):
         """
         signed = await self._ensure_signed_url(uri)
         if not signed:
-            raise RuntimeError(
+            # ⚠️ **这里必须是 `LoginExpiredError`，不能是裸 `RuntimeError`**（2026-10-01 修）
+            #
+            # 实测（快手 cookie 过期后搜索）：
+            #
+            #     [kuaishou] 未能获取 /rest/v/search/feed 的接口签名
+            #     → HTTP 500 "搜索失败: ..."
+            #
+            # **两处都错**：
+            #   ① 异常类型不对 —— 是 `RuntimeError`，API 层的
+            #      `except LoginExpiredError` 抓不到，落到最后的 `except Exception`
+            #   ② 于是映射成 **500**（服务端故障），而真相是**登录态过期**，
+            #      该让用户去「账号中心」重新登录（应该是 **401**）
+            #
+            # 而本函数自己的文档就写着"可能原因 1：浏览器会话没有登录态" ——
+            # 也就是说**首选原因就是登录失效**，异常类型却表达不出来。
+            # 同理 `CrawlerService._search_via_platforms` 里那组
+            # 关键词匹配（461/403/风控…）也**不含**这条报错文本，
+            # 会把它吞成 `return []` → 用户看到"找到 0 条结果"。
+            #
+            # 用**类型**表达语义，不靠上层猜关键词。
+            raise LoginExpiredError(
                 f"[kuaishou] 未能获取 {uri} 的接口签名。\n"
                 "可能原因：\n"
                 "  1. 浏览器会话**没有登录态** —— 请在「账号中心」"
                 "重新获取快手登录态（未登录时页面不发带签名的请求）\n"
                 "  2. 该路径当前页面不会主动请求（快手前端可能改了调用方式）\n"
-                "  3. 页面结构变化，签名机制升级"
+                "  3. 页面结构变化，签名机制升级\n\n"
+                "⚠️ 实测：快手登录态**约 20 分钟**就失效（服务端控制，无法延长），"
+                "所以搜索前建议重新读一次 cookie。"
             )
 
         session = await self._get_session()

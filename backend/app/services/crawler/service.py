@@ -18,6 +18,7 @@ from app.services.crawler.models import NoteDetail, SearchFilter, SearchEnhanced
 # 平台"当前环境不可用"（如抖音对自动化降级）——要原样抛给上层，
 # 不能被当成"搜索失败"降级重试（那样会把风控伪装成"0 条结果"）。
 from app.services.platforms.douyin.client import PlatformUnavailableError
+from app.services.platforms.types import LoginExpiredError
 
 logger = logging.getLogger("ylcraft.crawler")
 
@@ -155,6 +156,11 @@ class CrawlerService:
             # 平台明确"不可用"（如抖音对本环境降级）时**不要**降级到 yt-dlp：
             # yt-dlp 只会再返回一次空，最终让用户看到"找到 0 条结果"，
             # 把"环境被风控"误报成"关键词没结果"。直接抛给上层显示可读原因。
+            raise
+        except LoginExpiredError:
+            # ⚠️ **登录态失效同样不能降级到 yt-dlp**（2026-10-01 加）
+            # 降级只会再空一次，把"该重新登录"伪装成"没搜到"。
+            # 用类型判断，不靠关键词猜（快手那条报错就不含关键词）。
             raise
         except Exception as e:
             # ⚠️ **登录态/风控类错误也不能降级到 yt-dlp**（2026-09-29）
@@ -460,6 +466,19 @@ class CrawlerService:
             # 平台明确"当前环境不可用"（如抖音限制自动化环境的搜索接口）。
             # 必须穿透出去——吞成 return [] 会让用户看到"找到 0 条结果"，
             # 把"环境被限制"误报成"关键词没结果"。
+            raise
+        except LoginExpiredError:
+            # ⚠️ **登录态失效要原样穿透**（2026-10-01 加）
+            #
+            # 实测：快手 cookie 过期后搜索抛
+            #     [kuaishou] 未能获取 /rest/v/search/feed 的接口签名 ...
+            # 它**不含**下面那组关键词（461/403/风控/…），
+            # 所以原来会走到 `return []` → 用户看到"找到 0 条结果"，
+            # 完全不知道是登录过期了。
+            #
+            # 这里用**类型判断**（不是字符串匹配）—— 平台自己最清楚
+            # 哪个信号代表"要重新登录"，不该让上层靠猜关键词。
+            # API 层据此映射成 **401**，前端提示"请重新登录"。
             raise
         except Exception as e:
             # ⚠️ **登录态/风控类错误也要穿透**（2026-09-29 修）
