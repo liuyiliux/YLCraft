@@ -1,0 +1,80 @@
+﻿refactor(platforms): 错误分类从「字符串匹配」改成「类型化异常」（P0）
+
+## 为什么做这个（这是全项目最脆弱的一处）
+
+原来判断"错误该不该降级到 yt-dlp / 该不该重试"靠**关键词匹配**：
+
+    if any(k in msg for k in ("HTTP 461", "未登录", "风控", "antispam", ...)):
+        raise          # 不降级
+    return []          # 否则降级（可能吞成空）
+
+**改一次错误文案就让判断静默失效** —— 异常被吞成 `return []`，
+用户看到"找到 0 条结果"，而真相是被风控/登录失效。
+
+本仓库为此**反复踩坑 4 次**，每次都是"又发现一个不含关键词的报错文本"：
+
+  1. 快手签名失败文本（`未能获取 /rest/v/search/feed 的接口签名`）→ 吞成空
+  2. 小红书 `code=-100 登录已过期` → 吞成空
+  3. 抖音空 body → 变成 404"笔记不存在"
+  4. 快手 `result=2` → 500 而非 401
+
+**说明匹配文案这条路本身走不通**（我前 3 轮都在往关键词表里加词，
+这轮换成结构性修复）。
+
+## 类型体系
+
+新增 `PlatformError` 基类 + 两个语义属性（**上层唯一判据**）：
+
+| 异常 | retryable | should_fallback | 场景 |
+|------|:---:|:---:|------|
+| `LoginExpiredError` | ✗ | ✗ | 登录失效（要重新登录，重试无用） |
+| `RiskControlError` | ✗ | ✗ | 风控/人机验证（**重试会升级为封号**） |
+| `NetworkError` | ✓ | ✓ | 超时/连不上（yt-dlp 可能走通） |
+| `ContentNotFoundError` | ✗ | ✗ | 内容已删（重试无意义） |
+
+`PlatformUnavailableError`（抖音）改为继承 `RiskControlError` ——
+它本质就是风控。`DouyinSearchRateLimited` 覆写 `retryable=True`
+（限流等一会儿就好，与"账号异常"不同）。
+
+**判据由平台自己给出**（它最清楚抛的是什么），不再让上层猜文案。
+
+## 改造点
+
+- `crawler/service.py`：两处 `any(k in msg ...)` → `except PlatformError`
+  · `_search_via_platforms`：**任何 PlatformError 都不吞**（原来吞成 `[]`）
+  · `search_videos`：按 `should_fallback` 决定要不要降级 yt-dlp
+  · **非 PlatformError 的意外异常也改为不降级**（旧行为会降级）——
+    未知异常往往意味着代码 bug/平台改版，降级只会用一个"可能成功的
+    空结果"掩盖真实故障
+- `api/v1/crawler.py`：状态码按**类型**映射
+  401（登录）/ 429（风控）/ 404（不存在）/ 503（网络）
+- 各平台抛对类型：小红书风控 → `RiskControlError`；
+  YouTube/Telegram 的"连不上" → `NetworkError`
+  （**关键**：Telegram 原来把"VPN 断了"和"频道名拼错"混为一谈，
+  用户会去反复检查一个没拼错的名字）
+
+## ⚠️ 重构中我自己犯了一个同类错误
+
+在 `service.py` 写了 `except PlatformError:` 但**忘了 import** ——
+结果**所有平台的错误路径**都变成
+`HTTP 500 "搜索失败: name 'PlatformError' is not defined"`，
+把本来能说清楚的 401/429 全吞成 500。
+
+这类错误**只在异常路径暴露**（正常路径完全正常），非常隐蔽 ——
+与仓库里 `users.py` 犯过的 `LoginExpiredError` NameError 是同一类。
+
+已加测试 `test_exception_types_are_imported_where_used`（扫全项目
+AST，检查"用了但没导入"）守住它。
+
+## 测试与验证
+
+- 新增 `tests/test_error_taxonomy.py`（15 条）：语义表、不得再用字符串
+  匹配（**只看可执行代码，跳过注释**——注释里特意留了历史教训）、
+  状态码映射、各平台抛对类型、import 完整性
+- 更新 `test_login_expired_error.py` 2 条（它们断言的是旧实现细节，
+  重构正是要改掉那些；新断言更强）
+- **端到端实测**：
+      快手登录过期  → 401 ✅（提示重新登录）
+      小红书过期    → 401 ✅
+      B站/YouTube/Telegram → 200 ✅（正常路径未受影响）
+- 全量：**2082 passed** / 8 failed（6 条既有 + 2 条本次修正的过时断言）

@@ -31,7 +31,9 @@ from typing import Any, Dict, List, Optional
 from ..base import BasePlatformClient, register_platform
 from ..types import (
     ClientConfig,
+    ContentNotFoundError,
     LoginExpiredError,
+    NetworkError,
     NoteDetail,
     SearchParams,
     SearchResult,
@@ -207,7 +209,10 @@ class YoutubeClient(BasePlatformClient):
             msg = str(exc)
             # 网络断 / VPN 关了是最常见的失败，给可操作提示
             if "timed out" in msg.lower() or "connect" in msg.lower() or "resolve" in msg.lower():
-                raise RuntimeError(
+                # ⚠️ `NetworkError`（不是裸 RuntimeError）——
+                # 它声明 retryable=True / should_fallback=True，
+                # 上层据此知道"这是网络问题，可以重试/降级"（2026-10-01）
+                raise NetworkError(
                     f"[youtube] 无法连接 YouTube（{type(exc).__name__}）。"
                     "请确认 VPN 已开启且模式为全局/TUN（PAC 模式下 python 进程"
                     "可能不走代理）。"
@@ -244,11 +249,14 @@ class YoutubeClient(BasePlatformClient):
         except Exception as exc:
             msg = str(exc)
             if "timed out" in msg.lower() or "connect" in msg.lower():
-                raise RuntimeError(
+                raise NetworkError(
                     f"[youtube] 无法连接 YouTube（{type(exc).__name__}）。请确认 VPN 已开启。"
                 ) from exc
             if "unavailable" in msg.lower() or "private" in msg.lower():
-                raise RuntimeError(f"[youtube] 视频不可用或已删除（id={vid}）") from exc
+                # 内容确实没了 → 重试无意义（也不该降级到 yt-dlp）
+                raise ContentNotFoundError(
+                    f"[youtube] 视频不可用或已删除（id={vid}）"
+                ) from exc
             raise RuntimeError(f"[youtube] 详情获取失败: {msg[:200]}") from exc
 
         if not info:

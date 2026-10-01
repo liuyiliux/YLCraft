@@ -197,7 +197,14 @@ async def search_via_api(client, params: SearchParams) -> List[SearchResult]:
         body=body_json,
     )
     if signal is not None:
-        raise RuntimeError(f"[xhs] {signal.message()}")
+        # ⚠️ **风控要抛 `RiskControlError`**（2026-10-01 类型化重构）
+        #
+        # 原来抛裸 `RuntimeError` —— 上层只能靠关键词匹配判断
+        # （"461"/"风控"/"antispam"…），改文案就静默失效。
+        # 类型化后：API 层自动映射成 **429**（风控，可稍后重试）。
+        from app.services.platforms.types import RiskControlError
+
+        raise RiskControlError(f"[xhs] {signal.message()}")
 
     if resp.status_code != 200:
         raise RuntimeError(

@@ -21,8 +21,49 @@ class ClientMode(str, Enum):
 # =============================================================================
 # 异常
 # =============================================================================
+#
+# ## 为什么要做「类型化异常体系」（2026-10-01 重构）
+#
+# 原来判断"这个错误该不该降级到 yt-dlp / 该不该重试"靠**字符串匹配**：
+#
+#     if any(k in msg for k in ("HTTP 461", "未登录", "风控", "antispam", ...)):
+#         raise          # 不降级
+#     return []          # 否则降级（可能吞成空）
+#
+# **这是全项目最脆弱的一处**：任何一次改错误文案（比如把"未登录"
+# 改成"登录已过期"）都会让判断**静默失效** —— 异常被吞成 `return []`，
+# 用户看到"找到 0 条结果"，而真相是被风控/登录失效。
+# 本仓库为此反复踩坑（文档里记录了 4 次）。
+#
+# 改成**类型化异常 + 分类属性**后：
+#   · 判断走 `except`，不依赖文案
+#   · 每个异常自己声明 `retryable` / `should_fallback`，
+#     调用方不用猜（平台最清楚自己抛的是什么）
+#
+# ⚠️ 新增异常时**必须**声明这两个语义，否则调用方的策略会不明确。
 
-class LoginExpiredError(RuntimeError):
+
+class PlatformError(RuntimeError):
+    """所有平台侧错误的基类。
+
+    ## 两个分类属性（调用方据此决策，不靠文案猜）
+
+        retryable        该不该重试？
+        should_fallback  该不该降级到 yt-dlp 兜底？
+
+    语义边界：
+      · 风控/登录失效 → **不重试**（重试只会更糟：可能升级为封号），
+        **不降级**（yt-dlp 只会再空一次，把"被拦"伪装成"没结果"）
+      · 网络抖动/超时 → **可重试**，也可降级
+    """
+
+    #: 该不该重试（默认不安全：宁可少重试）
+    retryable: bool = False
+    #: 该不该降级到 yt-dlp 兜底（默认**不降级** —— 降级会伪装成"没搜到"）
+    should_fallback: bool = False
+
+
+class LoginExpiredError(PlatformError):
     """**登录态失效 / 未登录**（2026-09-30 加）。
 
     ## 为什么需要这个独立异常
@@ -42,9 +83,56 @@ class LoginExpiredError(RuntimeError):
       · API 层可以把它映射成 **401**（而不是 500）
       · 前端可以据此提示"请重新登录"，而不是"加载失败"
 
-    ⚠️ **不要用它表示"风控"** —— 风控是 `PlatformUnavailableError`
-    （抖音那个类），语义不同：风控要等，登录失效要重新登录。
+    ⚠️ **不要用它表示"风控"** —— 风控要等，登录失效要重新登录。
     """
+    retryable = False
+    should_fallback = False
+
+
+class RiskControlError(PlatformError):
+    """**风控 / 人机验证 / 账号异常**（2026-10-01 加）。
+
+    实测各平台的风控信号：
+
+        小红书   HTTP 461（Verifytype=217，人机验证）
+                 code=300011（账号异常）/ 300012（IP 被封）
+        抖音     HTTP 200 + **空 body**（"用空响应表示拒绝"）
+                 status_code=0 但 user=null（风控降级）
+        微博     ok=-100（缺 session cookie）
+        快手     result=2001 + "antispam need captcha"
+
+    ## 为什么**不重试**也不**降级**
+
+      · 重试：风控期越试越糟，可能升级为**封号**。
+        正确做法是**等待**或**换 IP/换账号**。
+      · 降级到 yt-dlp：yt-dlp 只会再返回一次空 ——
+        把"被风控拦了"伪装成"关键词没结果"（本仓库的老毛病）。
+    """
+    retryable = False
+    should_fallback = False
+
+
+class NetworkError(PlatformError):
+    """**网络问题**（超时 / 连不上 / DNS）。
+
+    与风控的**关键区别**：这类**可以重试**，也**可以降级**
+    （yt-dlp 可能走另一条路成功）。
+
+    ⚠️ 实测教训：VPN 断开时 t.me / youtube 会超时，
+    这**不是**"平台封了我们"，重试/稍后再试是合理的。
+    """
+    retryable = True
+    should_fallback = True
+
+
+class ContentNotFoundError(PlatformError):
+    """内容不存在 / 已删除（笔记、视频、频道）。
+
+    · 重试无意义（它就是不在了）
+    · **不降级** —— 降级到 yt-dlp 也找不到，只会浪费一次请求
+    """
+    retryable = False
+    should_fallback = False
 
 
 class SearchType(str, Enum):

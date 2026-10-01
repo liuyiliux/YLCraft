@@ -41,7 +41,13 @@ from app.services.crawler.models import NoteDetail, SearchFilter, SearchEnhanced
 # ⚠️ 模块级导入（不要放进函数里）——
 # 之前 `users.py` 就因为只在 `_client_for` 作用域里 import，
 # 运行时抛 NameError。这里统一放模块顶部。
-from app.services.platforms.types import LoginExpiredError
+from app.services.platforms.types import (
+    ContentNotFoundError,
+    LoginExpiredError,
+    NetworkError,
+    PlatformError,
+    RiskControlError,
+)
 # 平台侧拒绝（风控/UA/空 body）—— 详情路由要把它映射成 429（可重试），
 # 而不是被 service 层吞成 {} → 404"笔记不存在"（2026-10-01）
 from app.services.platforms.douyin.client import PlatformUnavailableError
@@ -524,6 +530,17 @@ async def search_enhanced(req: SearchEnhancedRequest):
         # 注意顺序：必须放在下面的 429 判断**之前**
         # （快手的报错文本里带 `/rest/v/...`，但 429 那组关键词
         #   是 461/403/401/风控/antispam，不会误命中；不过显式优先更安全）。
+        # ⚠️ **按异常类型映射状态码**（2026-10-01 重构，替代字符串匹配）
+        #
+        # 原来这里也是关键词匹配（`any(k in msg for k in ("461", "风控", ...))`）
+        # —— 与 service 层同样的问题：改文案就静默失效。
+        # 现在看异常类型 + 它自己声明的 `retryable` 语义。
+        #
+        # 映射表：
+        #   LoginExpiredError      → 401（重新登录，用户能自己解决）
+        #   RiskControlError       → 429（风控，等一会儿 / 换 IP）
+        #   ContentNotFoundError   → 404（内容不存在）
+        #   NetworkError           → 503（网络问题，稍后重试）
         if isinstance(e, LoginExpiredError):
             logger.warning(
                 "[search_enhanced] %s 登录态失效：%s", req.platform, msg[:140]
@@ -536,17 +553,30 @@ async def search_enhanced(req: SearchEnhancedRequest):
                     "请到「账号中心」重新获取该平台登录态后重试。"
                 ),
             )
-        if any(k in msg for k in ("461", "403", "401", "风控", "antispam")):
+        if isinstance(e, ContentNotFoundError):
+            raise HTTPException(
+                status_code=404,
+                detail=f"{msg}\n\n（内容不存在或已被删除，不是「没搜到」。）",
+            )
+        if isinstance(e, RiskControlError):
             logger.warning("[search_enhanced] %s 平台侧拒绝：%s", req.platform, msg[:140])
             raise HTTPException(
                 status_code=429,
                 detail=(
                     f"{msg}\n\n"
-                    "这是**平台侧拒绝**（通常是登录态失效或触发风控），"
-                    "不是「没搜到」。可尝试：\n"
-                    "  1. 到「账号中心」重新获取该平台登录态\n"
-                    "  2. 稍等一会儿再试（风控常是临时性的）\n"
+                    "这是**平台侧拒绝**（触发风控或人机验证），不是「没搜到」。可尝试：\n"
+                    "  1. 稍等一会儿再试（风控常是临时性的）\n"
+                    "  2. 到「账号中心」重新获取该平台登录态\n"
                     "  3. 用搜索框旁的「去官网搜」在浏览器里手动搜索"
+                ),
+            )
+        if isinstance(e, NetworkError):
+            logger.warning("[search_enhanced] %s 网络问题：%s", req.platform, msg[:140])
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    f"{msg}\n\n"
+                    "这是**网络问题**（不是「没搜到」）。请检查网络/代理后重试。"
                 ),
             )
         logger.error(f"[search_enhanced] Error: {e}")
