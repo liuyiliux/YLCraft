@@ -163,26 +163,75 @@ async def platform_health(
             actual_id, raw = "", ""
             logger.warning("[health] %s 取连接失败：%s", p, exc)
 
+        # ⚠️ 区分"没有连接"和"连接被用户停用"（2026-10-01）
+        #
+        # 两者都返回空 cookie，但**原因和出路完全不同**：
+        #   · 没有连接     → 去账号中心获取登录态
+        #   · 被用户停用   → **去启用它**（凭证还在，不用重新登录！）
+        # 混成一句"请先获取登录态"会让用户白跑一趟账号中心。
+        disabled_ids: list[str] = []
+        try:
+            from sqlmodel import select as _select
+
+            from app.db.database import SessionLocal
+            from app.db.models.platform_connection import (
+                ConnectionStatus,
+                PlatformConnection,
+                PlatformType,
+            )
+
+            plat_enum = None
+            for cand in (conn_platform, conn_platform.lower(), conn_platform.upper()):
+                try:
+                    plat_enum = PlatformType(cand)
+                    break
+                except ValueError:
+                    continue
+            if plat_enum is not None:
+                with SessionLocal() as _s:
+                    rows = _s.exec(
+                        _select(PlatformConnection)
+                        .where(PlatformConnection.platform == plat_enum)
+                        .where(PlatformConnection.status == ConnectionStatus.DISABLED)
+                    ).all()
+                    disabled_ids = [r.id for r in rows]
+        except Exception as exc:
+            logger.debug("[health] 查停用连接失败：%s", exc)
+
         has_conn = bool(raw)
+        if has_conn:
+            cred_msg = f"已找到连接（{str(actual_id)[:8]}…，凭证长度 {len(raw)}）"
+        elif disabled_ids:
+            cred_msg = (
+                f"该平台的连接**已被停用**（共 {len(disabled_ids)} 条）。\n"
+                "停用是**你主动关的**（常见于风控冷却期）—— 凭证仍然保留，\n"
+                "**不需要重新登录**，在下方点「启用」即可恢复。"
+            )
+        else:
+            cred_msg = "**没有可用的连接** —— 请先到「账号中心」获取并保存登录态"
+
         checks["credential"] = _item(
-            "credential", "登录态", has_conn,
-            (
-                f"已找到连接（{str(actual_id)[:8]}…，凭证长度 {len(raw)}）"
-                if has_conn else
-                "**没有可用的连接** —— 请先到「账号中心」获取并保存登录态"
-            ),
-            {"conn_id": str(actual_id)[:20], "length": len(raw)},
+            "credential", "登录态", has_conn, cred_msg,
+            {"conn_id": str(actual_id)[:20], "length": len(raw),
+             "disabled_count": len(disabled_ids)},
         )
         if not has_conn:
             # 没凭证就不用探针了（探针必然失败，白等 30 秒）
+            # ⚠️ 尤其**不要**在"已停用"时去搜 —— 那正是用户想避免的
             checks["search"] = _item(
                 "search", "搜索", False,
-                "没有登录态，无法搜索；请先获取该平台的登录态",
+                (
+                    "连接已停用，**不会发起搜索**（这正是停用的目的）"
+                    if disabled_ids else
+                    "没有登录态，无法搜索；请先获取该平台的登录态"
+                ),
             )
             return {
                 "success": True,
                 "data": {
-                    "platform": p, "ready": False, "needs_login": True,
+                    "platform": p, "ready": False,
+                    "needs_login": not disabled_ids,
+                    "disabled": bool(disabled_ids),
                     "checks": checks,
                 },
             }

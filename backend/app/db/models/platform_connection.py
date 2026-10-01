@@ -65,6 +65,17 @@ class ConnectionStatus(str, enum.Enum):
     EXPIRED = "expired"      # 已过期
     FAILED = "failed"        # 连接失败
     UNKNOWN = "unknown"      # 未测试
+    # ⚠️ `disabled` = **用户主动停用**（2026-10-01 加）
+    #
+    # 与其它状态**语义不同**，别混：
+    #   · expired/failed → 系统判定"凭证坏了"（用户没做错什么）
+    #   · disabled       → **用户主动关掉**（通常是风控期想停一阵）
+    #
+    # 为什么要独立一个状态而不是复用 expired：
+    #   用户禁用的连接**凭证可能是好的**（小红书被风控时 cookie 往往仍有效），
+    #   系统不该在"体检/自动恢复"时把它当成"需要重新登录"去骚扰用户 ——
+    #   那样会让人以为禁用没生效。
+    DISABLED = "disabled"    # 用户主动停用（风控冷却等）
 
 
 class AcquisitionMethod(str, enum.Enum):
