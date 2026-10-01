@@ -42,6 +42,9 @@ from app.services.crawler.models import NoteDetail, SearchFilter, SearchEnhanced
 # 之前 `users.py` 就因为只在 `_client_for` 作用域里 import，
 # 运行时抛 NameError。这里统一放模块顶部。
 from app.services.platforms.types import LoginExpiredError
+# 平台侧拒绝（风控/UA/空 body）—— 详情路由要把它映射成 429（可重试），
+# 而不是被 service 层吞成 {} → 404"笔记不存在"（2026-10-01）
+from app.services.platforms.douyin.client import PlatformUnavailableError
 
 router = APIRouter()
 logger = logging.getLogger("ylcraft.api.crawler")
@@ -627,6 +630,33 @@ async def get_note_detail(platform: str, note_id: str, conn_id: str = "",
         )
     except HTTPException:
         raise
+    except LoginExpiredError as e:
+        # ⚠️ 登录态失效 → **401**（与搜索端点一致，2026-10-01）
+        # 原来落到底下 `except Exception` → 500，
+        # 或被 service 层吞成 {} → **404 "笔记不存在"**（更糟）。
+        logger.warning("[get_note_detail] %s 登录态失效：%s", platform, str(e)[:140])
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                f"{e}\n\n"
+                "这是**登录态失效**（不是「笔记不存在」）。"
+                "请到「账号中心」重新获取该平台登录态后重试。"
+            ),
+        )
+    except PlatformUnavailableError as e:
+        # ⚠️ 平台侧拒绝（风控/UA/空 body）→ **429**（可重试），
+        # 不是 404"不存在"也不是 500"服务端故障"。
+        logger.warning("[get_note_detail] %s 平台侧拒绝：%s", platform, str(e)[:140])
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"{e}\n\n"
+                "这是**平台侧拒绝**（通常可稍后重试解决），"
+                "不是「笔记不存在」。可尝试：\n"
+                "  1. 稍等一会儿再试\n"
+                "  2. 到「账号中心」重新获取该平台登录态"
+            ),
+        )
     except Exception as e:
         logger.error(f"[get_note_detail] Error: {e}")
         raise HTTPException(status_code=500, detail=f"获取笔记详情失败: {str(e)}")

@@ -207,6 +207,33 @@ async def search_via_api(client, params: SearchParams) -> List[SearchResult]:
 
     payload = body_json if isinstance(body_json, dict) else {}
     if not payload.get("success"):
+        # ⚠️ **code=-100（登录已过期）必须是 `LoginExpiredError`**（2026-10-01 修）
+        #
+        # 实测（2026-10-01）：小红书连接过期后搜索返回
+        #
+        #     HTTP 200 {"success": false, "code": -100, "msg": "登录已过期"}
+        #
+        # 原来这里抛**普通 RuntimeError** —— 错误文本不含
+        # `CrawlerService._search_via_platforms` 那组关键词
+        # （461/403/风控/antispam…），于是被**吞成 `return []`**：
+        #
+        #     HTTP 200 {"success": true, "results": [],
+        #               "message": "找到 0 条结果"}
+        #
+        # **用户完全不知道是登录过期了**（假阴性，排查极费时间）——
+        # 而正确行为是 401 + "请到账号中心重新登录"。
+        #
+        # -100 是小红书明确的"登录态失效"信号；
+        # 300011（账号异常）保持风控语义（detect_risk 已在上游处理）。
+        code = payload.get("code")
+        if code == -100:
+            from app.services.platforms.types import LoginExpiredError
+
+            raise LoginExpiredError(
+                f"[xhs] 搜索失败：登录已过期（code=-100）。"
+                "请到「账号中心」重新获取小红书登录态后重试。"
+                "（注意：这是连接里存的登录态过期，不是账号被封。）"
+            )
         raise RuntimeError(
             f"[xhs] 搜索失败：code={payload.get('code')} "
             f"msg={payload.get('msg')!r}"

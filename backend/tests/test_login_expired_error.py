@@ -278,3 +278,57 @@ def test_kuaishou_signature_failure_is_login_expired():
     assert "LoginExpiredError" in src, "拿不到签名要抛 LoginExpiredError"
     assert "未能获取" in src, "要保留原始症状描述"
     assert "账号中心" in src, "提示要可操作"
+
+
+def test_xhs_login_expired_code_is_login_expired_error():
+    """**回归（关键）**：小红书 code=-100（登录已过期）要抛 `LoginExpiredError`。
+
+    ## 实测症状（2026-10-01 全平台矩阵）
+
+    小红书连接过期后搜索：
+
+        HTTP 200 {"success": false, "code": -100, "msg": "登录已过期"}
+
+    原来 `search_api.py` 抛**普通 RuntimeError** —— 错误文本不含
+    service 层那组关键词（461/403/风控…），被**吞成 return []**：
+
+        HTTP 200 {"results": [], "message": "找到 0 条结果"}
+
+    **用户完全不知道是登录过期了**（假阴性）——
+    正确行为是 401 + "请到账号中心重新登录"。
+    """
+    from app.services.platforms.xiaohongshu import search_api, user
+
+    for mod, marker in ((search_api, "code == -100"), (user, "code == -100")):
+        src = inspect.getsource(mod)
+        assert marker in src, f"{mod.__name__} 要识别 code=-100"
+        assert "LoginExpiredError" in src, (
+            f"{mod.__name__} 的 -100 必须抛 LoginExpiredError（否则被吞成空）"
+        )
+
+
+def test_douyin_detail_empty_body_is_not_notfound():
+    """**回归（关键）**：抖音详情"空 body"不能伪装成 404"笔记不存在"。
+
+    ## 实测症状（2026-10-01 全平台矩阵）
+
+    搜索正常（3 条），但点详情：
+
+        GET www-hj.douyin.com/aweme/v1/web/aweme/detail/ → HTTP 200
+        body 长度 0 → resp.json() 抛
+        Expecting value: line 1 column 1 (char 0)
+        → API 层 404 "笔记不存在或获取失败"
+
+    **404 是错的** —— 作品存在，是请求被拒（风控/UA/登录态）。
+    `_call`（搜索路径）早就识别了空 body，但 `_call_absolute`
+    （详情路径）漏了 —— 又是"守卫只加在一个入口"。
+
+    修后抛 `PlatformUnavailableError`（可读原因）。
+    """
+    from app.services.platforms.douyin import client as dy
+
+    src = inspect.getsource(dy.DouyinClient._call_absolute)
+    assert "空响应体" in src, "_call_absolute 要识别空 body（不能 json() 直接炸）"
+    assert "PlatformUnavailableError" in src, "空 body 抛 PlatformUnavailableError"
+    # 提示要点明"不是作品不存在"
+    assert "不是「作品不存在」" in src or "不是「作品不存在」" in src

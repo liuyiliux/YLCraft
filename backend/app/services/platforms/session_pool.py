@@ -149,6 +149,39 @@ class SessionPool:
         self._sessions[key] = session
         self.created += 1
 
+    def drop(self, key: str) -> None:
+        """**同步**摘除会话（不关闭浏览器上下文）。
+
+        ## 为什么必须有这个方法（2026-10-01 实测抓到的 bug）
+
+        twitter / weibo 的降级路径里调用了 `_pool.drop(key)` ——
+        但池上**根本没有这个方法**（只有异步的 `close`）。
+        结果是：真实错误（网络超时 / 打不开页面）先发生，
+        降级代码试图清理时又抛 `AttributeError:
+        'SessionPool' object has no attribute 'drop'`，
+        **把原始错误吞掉**，上层只看到 AttributeError，
+        完全丢失了"网络连不上 x.com"这个真正该告诉用户的信息。
+
+        实测日志（twitter 搜索，网络不可达）：
+
+            [twitter] transaction-id 获取失败（ConnectTimeout）
+            → 降级走浏览器
+            → 打开 x.com 也失败（网络）
+            → 清理时 _pool.drop(key) → AttributeError
+            → 最终用户看到："搜索失败: 'SessionPool' object has no
+              attribute 'drop'"   ← 完全不是根因
+
+        与 `close()` 的区别：
+          · `drop()` 是同步的，只把会话从池里摘掉，不碰浏览器
+            （上下文由 Patchright runtime 统一管理）。
+          · `close()` 是异步的，会真的关闭 context。
+        失败清理路径往往在 except 块里，不宜再做任何可能失败的
+        异步操作 —— 所以提供一个"只摘不关"的同步版本。
+        """
+        if key in self._sessions:
+            del self._sessions[key]
+            logger.info("[session-pool] 摘除会话 key=%s（drop，不关闭浏览器）", key)
+
     async def close(self, key: str) -> None:
         session = self._sessions.pop(key, None)
         if session is None:

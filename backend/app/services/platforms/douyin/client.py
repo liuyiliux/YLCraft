@@ -662,12 +662,50 @@ class DouyinClient(BasePlatformClient):
 
         与 `_call` 的区别：不校验 status_code（详情接口有场景返回非 0
         但仍有可用数据；由调用方判断 aweme_detail 是否存在）。
+
+        ## ⚠️ 空 body 检测不能省（2026-10-01 实测抓到的 bug）
+
+        抖音会用「HTTP 200 + **空响应体**」表示拒绝（`_call` 里早就
+        识别了，见那里的说明），但这里原来直接 `resp.json()` ——
+        于是详情路径炸成：
+
+            Expecting value: line 1 column 1 (char 0)
+            → API 层 404 "笔记不存在或获取失败"
+
+        **404 是错的** —— 作品存在，是请求特征被拒（UA 过旧 /
+        风控 / 登录态问题）。用户会以为"这条笔记没了"。
+        实测（2026-10-01，搜索正常但详情 404）：
+
+            GET www-hj.douyin.com/aweme/v1/web/aweme/detail/ → 200
+            body 长度 0 → json() 炸 → 404
+
+        和 `_call` 保持同一判据：空 body 抛
+        `PlatformUnavailableError`（可读原因，不伪装成"不存在"）。
         """
         if self._http_client is None:
             await self._init_http_client()
         resp = await self._http_client.get(url, params=params or {})
         resp.raise_for_status()
-        return resp.json()
+
+        # 空 body = 抖音拒绝了这次请求（不是"作品不存在"）
+        if not (resp.text or "").strip():
+            raise PlatformUnavailableError(
+                f"[douyin] 请求 {url.split('?')[0]} 返回了空响应体（HTTP 200）。"
+                "抖音用这种形式表示拒绝——常见原因是 User-Agent 版本过旧"
+                "（实测 Chrome/120 被拒、Chrome/154 正常）、风控，"
+                "或登录态失效。**不是「作品不存在」**——请稍后重试或"
+                "到「账号中心」重新获取登录态。"
+            )
+
+        try:
+            return resp.json()
+        except ValueError as exc:
+            # 非 JSON（比如被甩到验证码页）：与空 body 同样处理
+            raise PlatformUnavailableError(
+                f"[douyin] 详情接口返回了非 JSON 内容"
+                f"（前 60 字符: {(resp.text or '')[:60]!r}）。"
+                f"通常是被风控/验证码拦截。{exc}"
+            ) from exc
 
 
 # =============================================================================
