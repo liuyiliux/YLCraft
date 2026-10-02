@@ -410,14 +410,20 @@ async def get_comments(
                         item, parent_id,
                         max_results=page_size, cursor=offset,
                     )
-                except NotImplementedError:
-                    raise HTTPException(
-                        status_code=501,
-                        detail=(
+                except NotImplementedError as exc:
+                    # ⚠️ **保留平台自己给的说明**（2026-10-01 改）
+                    #
+                    # 各平台"为什么取不到子回复"的**原因不同**，且都是实测结论：
+                    #   · 微博：`comments` 字段实测为空、hotFlowChild 返回 ok=0
+                    #   · 这类信息比笼统的"暂不支持"有用得多
+                    # 原来是硬编码一句"暂不支持"，把平台的具体说明**丢掉了**。
+                    detail = str(exc).strip()
+                    if not detail or "not implemented" in detail.lower():
+                        detail = (
                             f"平台 {p!r} 暂不支持单独取子回复。\n"
                             "（顶层评论仍可用 —— 去掉 parent_id 参数即可。）"
-                        ),
-                    )
+                        )
+                    raise HTTPException(status_code=501, detail=detail)
                 raw_comments = reply_data.get("comments") or []
                 comments = [_normalize_generic_comment(c) for c in raw_comments]
                 total = int(reply_data.get("total") or len(comments))

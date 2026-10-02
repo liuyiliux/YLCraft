@@ -210,6 +210,94 @@ def test_crawler_records_platform_events():
 # 前端
 # =============================================================================
 
+def test_weibo_replies_gives_real_reason():
+    """**关键**：微博子回复要给出**实测原因**，不是笼统"不支持"。
+
+    实测（2026-10-01）两条路都不行：
+      · 顶层评论的 `comments` 字段：20 条里 0 条带
+      · `/comments/hotFlowChild`：返回 ok=0（需额外参数）
+    交叉验证 MediaCrawler（★66k）同样只读 `comments`，
+    且其 `ENABLE_GET_SUB_COMMENTS` 默认关着。
+
+    → 要如实抛错并**保留这段说明**，不能返回空列表
+      （后者会让用户以为"这条评论没人回复"）。
+    """
+    from app.services.platforms.weibo.client import WeiboClient
+
+    src = inspect.getsource(WeiboClient.get_replies)
+    assert "NotImplementedError" in src
+    assert "hotFlowChild" in src or "hotFlow" in src, "要写清试过哪个端点"
+    assert "不是" in src, "要区分「平台没开放」和「没有回复」"
+
+
+def test_api_preserves_platform_reply_reason():
+    """**回归**：统一接口要**保留平台自己给的原因**。
+
+    ⚠️ 原来是硬编码一句"暂不支持"，把平台的具体说明**丢掉了** ——
+    而各平台原因不同（微博是接口限制），这些信息对用户更有用。
+    """
+    from app.api.v1 import comments
+
+    src = inspect.getsource(comments.get_comments)
+    assert "except NotImplementedError as exc" in src, "要捕获异常内容"
+    assert "str(exc)" in src, "要保留平台的原始说明"
+
+
+def test_gap_doc_is_not_stale():
+    """**关键回归**：GAP 文档不能**还在主张**已过时的结论。
+
+    ⚠️ 2026-10-01 踩过：原稿写「评论采集完全没做」，
+    但评论其实**已经做完了** —— 这类盘点文档如果不随代码同步，
+    下一个 AI/协作者会照着过时结论去**重复实现**已有功能。
+
+    ## ⚠️ 断言要排除"修正记录"本身
+
+    文档里**故意**保留了 `~~原结论~~ → 已做` 这种划掉记录
+    （让读者知道改过什么）。所以不能简单 grep 关键词 ——
+    那会把"修正记录"误判成"过时内容"。
+    这里只检查**没有被划掉的**行。
+    """
+    from pathlib import Path
+
+    doc = Path(__file__).resolve().parents[2] / "docs" / "platform" / "GAP_ANALYSIS_2026-10-01.md"
+    if not doc.exists():
+        pytest.skip("盘点文档不存在")
+
+    # 只留"没有删除线"的行 —— 划掉的是**历史记录**，不是当前主张
+    live_lines = [
+        ln for ln in doc.read_text(encoding="utf-8", errors="ignore").splitlines()
+        if "~~" not in ln
+    ]
+    live = "\n".join(live_lines)
+
+    # 不能还在主张"评论没做"
+    assert "**评论采集** 完全没做" not in live
+    # 不能还在主张"博主中心没有入口"
+    assert "在「博主中心」没有入口" not in live
+    # 应当记录了已完成的事实
+    assert "评论" in live
+
+
+def test_gap_doc_records_platform_limits():
+    """盘点文档要记录**平台限制**（不是所有 ❌ 都是"漏做"）。
+
+    ⚠️ 这类区分很重要：把"平台没这个接口"当成"待办"，
+    会导致后来者反复尝试实现一个**不可能实现**的功能。
+    """
+    from pathlib import Path
+
+    doc = Path(__file__).resolve().parents[2] / "docs" / "platform" / "GAP_ANALYSIS_2026-10-01.md"
+    if not doc.exists():
+        pytest.skip("盘点文档不存在")
+    text = doc.read_text(encoding="utf-8", errors="ignore")
+
+    # 快手的"缺口"要说明是平台限制
+    assert "快手" in text
+    assert "平台" in text and ("限制" in text or "没有" in text)
+    # Telegram 评论无解要写清原因
+    assert "MTProto" in text or "t.me/s" in text
+
+
 def _crawler() -> str:
     p = FRONTEND / "pages" / "crawler" / "index.tsx"
     if not p.exists():
