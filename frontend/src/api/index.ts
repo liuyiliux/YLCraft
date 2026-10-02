@@ -1696,6 +1696,14 @@ export interface PlatformUserItem {
   sec_uid?: string
   /** 小红书：部分接口需要 */
   xsec_token?: string
+  /**
+   * X 专用：**handle**（用户名，不带 @）。
+   *
+   * ⚠️ X 查资料/作品只能用 handle（`UserByScreenName`），
+   * 而 `id` 是**数字 rest_id** —— 直接传 id 必然查不到
+   * （实测：接口返回"未能获取该用户资料"）。
+   */
+  username?: string
   raw_data?: Record<string, any>
 }
 

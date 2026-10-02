@@ -33,7 +33,14 @@ from typing import Any, Dict, List, Optional
 
 from ..base import BasePlatformClient, register_platform
 from ..session_pool import PooledSession, get_session_pool
-from ..types import LoginExpiredError, SearchParams, SearchResult, UserProfile
+from ..types import (
+    LoginExpiredError,
+    NetworkError,
+    RiskControlError,
+    SearchParams,
+    SearchResult,
+    UserProfile,
+)
 from .apis import (
     BASE,
     COMMENT_LIST,
@@ -767,15 +774,37 @@ class KuaishouClient(BasePlatformClient):
                 headers=headers,
             )
         except Exception as exc:
-            logger.warning("[kuaishou] 评论请求失败：%s", type(exc).__name__)
-            return {"comments": [], "has_more": False, "next_cursor": "", "total": 0}
+            # ⚠️ **不能吞成空列表**（2026-10-02 修）
+            #
+            # 原来这里是 `except Exception: return {"comments": []}` ——
+            # 于是"网络抖动 / 登录过期 / 风控"三种完全不同的情况，
+            # 全都变成 `success:true, "返回 0 条评论"`。
+            # 用户读到的是"这条视频没有评论"，真相是请求失败了。
+            #
+            # 违反仓库铁律：**未实现/未取到 ≠ 没有**。
+            # 同文件的 `search` 路径（`get_self_profile` 等）早就
+            # 正确抛 `LoginExpiredError` 了 —— 这正是
+            # "守卫只加在一个入口"的老坑，这次轮到评论路径。
+            logger.warning("[kuaishou] 评论请求失败：%s", exc)
+            if isinstance(exc, (LoginExpiredError, RiskControlError)):
+                raise
+            # 网络类异常可重试 → 用统一的 NetworkError 表达
+            raise NetworkError(
+                f"[kuaishou] 评论请求失败：{type(exc).__name__}: {str(exc)[:120]}"
+            ) from exc
 
         if not isinstance(payload, dict) or payload.get("result") != 1:
-            logger.info(
-                "[kuaishou] 评论 result=%s",
-                payload.get("result") if isinstance(payload, dict) else "?",
+            # ⚠️ `result != 1` 是**快手的服务端拒绝**，不是"没有评论"
+            # （实测：登录态失效时返回 `{"result": 2}`）。
+            # 原来也返回空列表，同样会让用户误以为"没评论"。
+            result_code = payload.get("result") if isinstance(payload, dict) else "?"
+            logger.info("[kuaishou] 评论被拒：result=%s", result_code)
+            raise LoginExpiredError(
+                f"[kuaishou] 评论接口返回 result={result_code}（请求被拒）。\n"
+                "⚠️ 这不是「这条视频没有评论」—— 是**登录态失效或被风控**。\n"
+                "快手的登录态**约 20 分钟**就失效（服务端控制，无法延长），"
+                "请在「账号中心」重新获取快手登录态后重试。"
             )
-            return {"comments": [], "has_more": False, "next_cursor": "", "total": 0}
 
         out: List[Dict[str, Any]] = []
         for c in payload.get("rootCommentsV2") or []:
@@ -871,11 +900,21 @@ class KuaishouClient(BasePlatformClient):
                 headers=headers,
             )
         except Exception as exc:
-            logger.warning("[kuaishou] 子评论请求失败：%s", type(exc).__name__)
-            return {"comments": [], "has_more": False, "next_cursor": "", "total": 0}
+            # ⚠️ 同样**不能吞成空列表**（2026-10-02，与 `get_comments_page` 同因）
+            logger.warning("[kuaishou] 子评论请求失败：%s", exc)
+            if isinstance(exc, (LoginExpiredError, RiskControlError)):
+                raise
+            raise NetworkError(
+                f"[kuaishou] 子评论请求失败：{type(exc).__name__}: {str(exc)[:120]}"
+            ) from exc
 
         if not isinstance(payload, dict) or payload.get("result") != 1:
-            return {"comments": [], "has_more": False, "next_cursor": "", "total": 0}
+            result_code = payload.get("result") if isinstance(payload, dict) else "?"
+            raise LoginExpiredError(
+                f"[kuaishou] 子评论接口返回 result={result_code}（请求被拒）。\n"
+                "⚠️ 这不是「这条评论没有回复」—— 是**登录态失效或被风控**。\n"
+                "请在「账号中心」重新获取快手登录态后重试。"
+            )
 
         # 子评论字段与顶层一致（实测）：content / author_name / likeCount …
         # 额外有 `replyToUserName`（回复给谁）

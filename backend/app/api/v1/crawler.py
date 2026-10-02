@@ -572,10 +572,34 @@ async def search_enhanced(req: SearchEnhancedRequest):
         # 现在看异常类型 + 它自己声明的 `retryable` 语义。
         #
         # 映射表：
-        #   LoginExpiredError      → 401（重新登录，用户能自己解决）
-        #   RiskControlError       → 429（风控，等一会儿 / 换 IP）
-        #   ContentNotFoundError   → 404（内容不存在）
-        #   NetworkError           → 503（网络问题，稍后重试）
+        #   NotImplementedError  → 501（功能没做，不是服务端故障）
+        #   LoginExpiredError    → 401（重新登录，用户能自己解决）
+        #   RiskControlError     → 429（风控，等一会儿 / 换 IP）
+        #   ContentNotFoundError → 404（内容不存在）
+        #   NetworkError         → 503（网络问题，稍后重试）
+
+        # ⚠️ **`NotImplementedError` → 501**（2026-10-02 补）
+        #
+        # ⚠️⚠️ 又一次「守卫只加在一个入口」：
+        # `search_materials`（本文件 L335）**早就有**这个映射，
+        # 但 `search_enhanced` **漏了** —— 于是番茄这种
+        # "client 里 raise NotImplementedError"的平台会穿透到
+        # 最后的 `except Exception` → **HTTP 500**「搜索失败: 番茄搜索暂未实现」。
+        #
+        # 500 在语义上是"服务端故障"，用户会以为要重试/报 bug，
+        # 而真相是"这个平台没做搜索"（应该是 501）。
+        if isinstance(e, NotImplementedError):
+            logger.info(
+                "[search_enhanced] %s 未实现该能力：%s", req.platform, msg[:140]
+            )
+            raise HTTPException(
+                status_code=501,
+                detail=(
+                    f"{msg}\n\n"
+                    "这是**该平台没有这个能力**（不是「没搜到」，也不是服务端故障）。"
+                ),
+            )
+
         if isinstance(e, LoginExpiredError):
             logger.warning(
                 "[search_enhanced] %s 登录态失效：%s", req.platform, msg[:140]

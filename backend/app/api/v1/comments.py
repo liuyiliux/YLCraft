@@ -83,6 +83,14 @@ from app.services.platforms.meta import (
     resolve_name as _resolve_name,
     supports as _supports,
 )
+# ⚠️ 异常类型也要 import —— 漏了会让 `except LoginExpiredError` 变成
+# NameError，所有错误路径都会变成 500（这坑我们踩过一次）
+from app.services.platforms.types import (
+    ContentNotFoundError,
+    LoginExpiredError,
+    NetworkError,
+    RiskControlError,
+)
 
 
 def _comment_platforms() -> set:
@@ -532,5 +540,37 @@ async def get_comments(
     except HTTPException:
         raise
     except Exception as exc:
+        # ⚠️ **按类型映射**（2026-10-02 补）
+        #
+        # 原来是无差别 500 —— 于是"登录态失效"和"网络断了"对用户
+        # 长得一模一样，500 在语义上还是"服务端故障"。
+        #
+        # 现在与 `crawler.py` 的映射表保持一致：
+        #   LoginExpiredError    → 401（去账号中心重新登录）
+        #   RiskControlError     → 429（风控，等一会/换 IP）
+        #   ContentNotFoundError → 404（内容不存在）
+        #   NetworkError         → 503（网络问题，稍后重试）
+        #
+        # ⚠️ 这正是"守卫只加在一个入口"的补齐（crawler.py 早就有）
+        if isinstance(exc, LoginExpiredError):
+            raise HTTPException(
+                status_code=401,
+                detail=f"{str(exc)[:300]}\n\n请到「账号中心」重新获取该平台登录态。",
+            )
+        if isinstance(exc, RiskControlError):
+            raise HTTPException(
+                status_code=429,
+                detail=f"{str(exc)[:300]}\n\n这是**平台侧拒绝**（风控/人机验证），"
+                       "可尝试稍等一会儿、换 IP，或重新获取登录态。",
+            )
+        if isinstance(exc, ContentNotFoundError):
+            raise HTTPException(
+                status_code=404, detail=f"{str(exc)[:200]}"
+            )
+        if isinstance(exc, NetworkError):
+            raise HTTPException(
+                status_code=503,
+                detail=f"{str(exc)[:200]}\n\n这是**网络问题**（不是平台故障），稍后重试。",
+            )
         logger.error("[comments] %s/%s 失败：%s", p, item, exc)
         raise HTTPException(status_code=500, detail=f"获取评论失败: {str(exc)[:200]}")

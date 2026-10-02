@@ -159,6 +159,13 @@ class UserItem(BaseModel):
     # 各平台特有：抖音的 sec_uid（查作品列表要用）、小红书的 xsec_token
     sec_uid: str = ""
     xsec_token: str = ""
+    # ⚠️ **X 的 handle**（2026-10-02 加）——
+    #
+    # X 的 `get_user_profile` 用 `UserByScreenName`，**只能按 handle 查**
+    # （数字 rest_id 要另一个 operation，未实现）。
+    # 而搜索结果里的 `id` 是**数字** —— 前端拿 `user.id` 去查资料必然失败。
+    # 所以这里把 handle 提升成顶层字段，供前端传下去。
+    username: str = ""
     raw_data: Dict[str, Any] = {}
 
 
@@ -220,6 +227,8 @@ def _to_item(p) -> UserItem:
         sec_uid=raw.get("sec_uid") or "",
         # 小红书：部分接口需要 xsec_token
         xsec_token=raw.get("xsec_token") or "",
+        # ⚠️ X：查资料/作品要用 **handle**（不是数字 rest_id）
+        username=raw.get("handle") or raw.get("screen_name") or "",
         raw_data=raw,
     )
 
