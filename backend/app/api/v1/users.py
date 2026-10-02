@@ -40,57 +40,108 @@ router = APIRouter()
 
 # 支持"用户搜索/资料/作品列表"的平台及其连接平台名
 #
-# 抖音/小红书已实测；B站用既有 /bilibili/up/* 路由，不在这里重复。
-SUPPORTED = {
-    "douyin": {"conn_platform": "DOUYIN", "cookie_domain": "douyin"},
-    "xiaohongshu": {"conn_platform": "XHS", "cookie_domain": "xiaohongshu"},
-    # 别名，容忍前端传 xhs
-    "xhs": {"conn_platform": "XHS", "cookie_domain": "xiaohongshu"},
-    # 微博：用户搜索**免登录可用**（实测）；「我的数据」需登录
-    "weibo": {"conn_platform": "WEIBO", "cookie_domain": "weibo"},
-    "wb": {"conn_platform": "WEIBO", "cookie_domain": "weibo"},
-    # X（原 Twitter）：纯 HTTP，需 auth_token + ct0
-    "twitter": {"conn_platform": "TWITTER", "cookie_domain": "x.com"},
-    "x": {"conn_platform": "TWITTER", "cookie_domain": "x.com"},
-    "tw": {"conn_platform": "TWITTER", "cookie_domain": "x.com"},
-    # 快手：搜索/搜博主/「我的数据」都已打通（2026-09-30）
-    # ⚠️ 签名要从浏览器抓（`__NS_hxfalcon` 是混淆 JS，纯 HTTP 拿不到）
-    "kuaishou": {"conn_platform": "KUAISHOU", "cookie_domain": "kuaishou"},
-    "ks": {"conn_platform": "KUAISHOU", "cookie_domain": "kuaishou"},
-    # YouTube（2026-10-01 VPN 打通后实现）：**免登录** ——
-    # 公开频道数据用 yt-dlp 直接取，不需要 Cookie，
-    # 所以 `no_login=True`（见 `_client_for` 的说明）。
-    "youtube": {
-        "conn_platform": "YOUTUBE",
-        "cookie_domain": "youtube",
-        "no_login": "1",
-    },
-    # Telegram（2026-10-01 补）：公开频道**免登录**（`t.me/s`）——
-    # 频道搜索/资料/消息列表都不需要凭证，所以同样 `no_login`。
-    #
-    # ⚠️ 但它的 `search_users` 只能搜**你已加入的**频道
-    # （MTProto 的限制，见 platforms/telegram/client.py 的说明）——
-    # 未登录时会抛出可操作的错误，不会假装"搜到 0 个"。
-    "telegram": {
-        "conn_platform": "TELEGRAM",
-        "cookie_domain": "t.me",
-        "no_login": "1",
-    },
-}
+# ⚠️ 2026-10-01 收敛：原来是**手写字典**（每个平台写 conn_platform /
+# cookie_domain / no_login）+ 一个 5 项 `_CLIENT_ALIAS` ——
+# 与 `comments.py` / `health_routes.py` / `platform_stats.py` 里的表
+# **各写一遍**，新增平台要改 4 个文件，漏一个就静默出错。
+#
+# 现在改由**平台自己声明**（`platforms/<平台>/meta.py`），
+# 这里只做"用户维度能力"的筛选。保留 `SUPPORTED` 名字兼容调用方。
+def _build_supported() -> Dict[str, Dict[str, Any]]:
+    """从 meta 生成"用户维度可用"的平台表（含别名）。
+
+    ⚠️ `no_login` 用字符串 `"1"`（不是 bool）—— 兼容已有调用方
+    `cfg.get("no_login")` 的写法（字符串 "1" 为真）。
+    """
+    from app.services.platforms.meta import all_metas
+
+    out: Dict[str, Dict[str, Any]] = {}
+    for m in all_metas():
+        # 没有用户维度的平台（番茄是作家后台）不进
+        if not m.user_dimension:
+            continue
+        # 必须有用户相关能力才进（否则前端选了也是空）
+        if not (m.capabilities & {"search_users", "user_profile", "user_videos"}):
+            continue
+        cfg: Dict[str, Any] = {
+            "conn_platform": m.conn_platform,
+            "cookie_domain": m.cookie_domain,
+        }
+        if m.no_login:
+            cfg["no_login"] = "1"
+        for n in m.all_names:
+            out[n] = cfg
+    return out
+
+
+class _SupportedTable:
+    """惰性平台表 —— 让 `SUPPORTED` 用起来像普通 dict。
+
+    ⚠️ 元数据是**懒加载**的（首次访问才扫目录），
+    所以不能用模块级字典常量（导入时还没扫）。
+    """
+
+    @staticmethod
+    def _table() -> Dict[str, Dict[str, Any]]:
+        return _build_supported()
+
+    def get(self, key, default=None):
+        return self._table().get(key, default)
+
+    def __contains__(self, key) -> bool:
+        return key in self._table()
+
+    def __iter__(self):
+        return iter(self._table())
+
+    def __len__(self) -> int:
+        return len(self._table())
+
+    def keys(self):
+        return self._table().keys()
+
+    def items(self):
+        return self._table().items()
+
+    def __repr__(self) -> str:
+        return repr(self._table())
+
+
+SUPPORTED = _SupportedTable()
 
 
 # 平台别名 → 平台客户端的注册名。
 #
-# ⚠️ 提到模块级（原来是散在 `_client_for` 里的 if-else）——
-# 因为现在**两处**要用：`_client_for` 的免登录分支和普通分支。
-# 散着写迟早漏一处（本仓库"同一个映射写两遍必然漂移"的教训）。
-_CLIENT_ALIAS = {
-    "xhs": "xiaohongshu",
-    "wb": "weibo",
-    "x": "twitter",
-    "tw": "twitter",
-    "ks": "kuaishou",
-}
+# ⚠️ 2026-10-01 收敛：原来这里是**手写 5 项字典**。
+# 现在从 meta 取（平台自己声明 aliases），
+# 保留这个对象名是为了兼容已有调用方。
+class _ClientAlias:
+    """惰性别名表（`alias → 正式注册名`）。"""
+
+    @staticmethod
+    def _table() -> Dict[str, str]:
+        from app.services.platforms.meta import all_metas
+
+        out: Dict[str, str] = {}
+        for m in all_metas():
+            for a in m.aliases:
+                out[a] = m.name
+        return out
+
+    def get(self, key, default=None):
+        return self._table().get(key, default)
+
+    def __contains__(self, key) -> bool:
+        return key in self._table()
+
+    def __getitem__(self, key):
+        return self._table()[key]
+
+    def __repr__(self) -> str:
+        return repr(self._table())
+
+
+_CLIENT_ALIAS = _ClientAlias()
 
 
 class UserItem(BaseModel):

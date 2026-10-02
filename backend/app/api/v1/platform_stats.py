@@ -37,20 +37,43 @@ logger = logging.getLogger("ylcraft.api.platform_stats")
 router = APIRouter()
 
 # 平台别名 → 统一名（统计时归并，避免 `x`/`twitter` 分成两组）
-_ALIAS = {
-    "bilibili": "bili",
-    "ks": "kuaishou",
-    "wb": "weibo",
-    "x": "twitter",
-    "tw": "twitter",
-    "dy": "douyin",
-    "xiaohongshu": "xhs",
-}
-
-
+#
+# ⚠️ 2026-10-01 收敛：原来是**手写 7 项字典**，
+# 与 users.py / comments.py / health_routes.py 里的别名表重复。
+# 现在从**平台元数据**取（平台在自己 meta.py 里声明 aliases）。
 def normalize_platform(p: str) -> str:
-    p = (p or "").strip().lower()
-    return _ALIAS.get(p, p)
+    """别名 → 正式名（统计归并用）。
+
+        normalize_platform("x")        → "twitter"
+        normalize_platform("wb")       → "weibo"
+        normalize_platform("bilibili") → "bili"
+        normalize_platform("wechat_mp")→ "wechat_mp"（未声明 meta，原样返回）
+
+    ⚠️ 注意：小红书的正式名是 `xiaohongshu`（客户端注册名），
+    但**旧统计记录里写的是 `xhs`** —— 所以查询时要**两种都算**，
+    见 `platform_stats()` 里的 `aliases_for_query()`。
+    否则重命名会让历史数据"凭空消失"。
+    """
+    from app.services.platforms.meta import resolve_name
+
+    return resolve_name(p)
+
+
+def aliases_for_query(p: str) -> List[str]:
+    """查询统计时要匹配的**所有**写法。
+
+    ⚠️ 为什么需要这个：统计记录里的 `provider` 是**写入时**的平台名。
+    如果平台名改过（如 `xhs` → `xiaohongshu`），只用新名查会
+    查不到旧记录 —— 统计"凭空变少"，看起来像数据丢失。
+
+    所以查询时把正式名 + 所有别名都带上。
+    """
+    from app.services.platforms.meta import get_meta
+
+    meta = get_meta(p)
+    if meta:
+        return sorted(meta.all_names)
+    return [p]
 
 
 class PlatformStats(BaseModel):
@@ -97,7 +120,7 @@ async def platform_stats(
     所以刚上线时这里会显示"无数据"。采集/体检开始记录后才有统计。
     **不编造数据**：没记录就如实说"无数据"。
     """
-    from sqlalchemy import text
+    from sqlalchemy import bindparam, text
 
     # ⚠️ 正确路径是 `app.db.database`（不是 `app.core.database` ——
     # 我第一版写错了，结果是运行时 500：ImportError 被外层吞成 500）
@@ -114,10 +137,13 @@ async def platform_stats(
                 text(
                     "SELECT status, duration_ms, task_type, error, created_at "
                     "FROM platform_event_logs "
-                    "WHERE scene = 'platform' AND provider = :p AND created_at >= :since "
+                    # ⚠️ 用 `IN` 而不是 `=` —— 要匹配正式名**和所有别名**，
+                    # 否则平台改名后旧记录查不到（统计"凭空变少"）。
+                    "WHERE scene = 'platform' AND provider IN :names "
+                    "AND created_at >= :since "
                     "ORDER BY created_at DESC"
-                ),
-                {"p": p, "since": since},
+                ).bindparams(bindparam("names", expanding=True)),
+                {"names": aliases_for_query(p), "since": since},
             )).fetchall()
     except HTTPException:
         raise
