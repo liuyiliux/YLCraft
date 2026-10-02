@@ -235,6 +235,76 @@ class WeiboClient(BasePlatformClient):
             client=self,
         )
 
+    async def get_comments_page(
+        self,
+        item_id: str,
+        max_results: int = 20,
+        page: int = 1,
+        cursor: str = "",
+    ) -> Dict[str, Any]:
+        """取**一页**微博评论，带回游标（支持"加载更多"）。
+
+        ⚠️ 微博分页是 **`max_id` 游标不是页码** ——
+        上层只传 `page` 的话第二次会拿到相同数据（前端点"加载更多"没反应）。
+        所以这里必须把 `max_id` 透出去。
+        """
+        mid = str(item_id or "").strip()
+        if not mid:
+            return {"comments": [], "has_more": False, "next_cursor": "", "total": 0}
+
+        want = max(1, int(max_results or 20))
+        params: Dict[str, Any] = {"id": mid, "mid": mid, "max_id_type": 0}
+        if cursor:
+            params["max_id"] = cursor
+
+        resp = await self._call("/comments/hotflow", params)
+        data = resp.get("data") or {}
+        if not isinstance(data, dict):
+            return {"comments": [], "has_more": False, "next_cursor": "", "total": 0}
+
+        out: List[Dict[str, Any]] = []
+        for c in data.get("data") or []:
+            if not isinstance(c, dict):
+                continue
+            cid = str(c.get("id") or "")
+            if not cid:
+                continue
+            u = c.get("user") or {}
+            pic = c.get("pic") or {}
+            pics = c.get("pics") or []
+            images = []
+            if isinstance(pics, list):
+                for p in pics:
+                    large = (p or {}).get("large") or {}
+                    if large.get("url"):
+                        images.append(large["url"])
+            elif pic.get("large", {}).get("url"):
+                images.append(pic["large"]["url"])
+            out.append({
+                "id": cid,
+                "content": _strip_html(c.get("text") or ""),
+                "author": u.get("screen_name") or "",
+                "author_id": str(u.get("id") or ""),
+                "avatar": u.get("profile_image_url") or "",
+                "likes": int(c.get("like_count") or 0),
+                "create_time": _rfc2822_to_ts(c.get("created_at") or ""),
+                "reply_count": 0,
+                "location": (c.get("source") or "").replace("来自", "").strip(),
+                "images": images,
+                "replies": c.get("comments") or [],
+            })
+
+        nxt = data.get("max_id")
+        has_more = bool(nxt) and str(nxt) != "0"
+        return {
+            "comments": out[:want],
+            # ⚠️ 游标要透出去（`max_id`），否则前端翻不了页
+            "next_cursor": str(nxt) if has_more else "",
+            "has_more": has_more,
+            # 外层 total_number 才是该微博总评论数（评论项里的恒为 0）
+            "total": int(data.get("total_number") or 0),
+        }
+
     async def get_comments(
         self,
         item_id: str,
@@ -285,20 +355,17 @@ class WeiboClient(BasePlatformClient):
         want = max(1, int(max_results or 20))
         out: List[Dict[str, Any]] = []
         seen: set[str] = set()
-        max_id = cursor or ""
-        max_id_type = 0
+        cur = cursor or ""
 
+        # ⚠️ 循环调 `get_comments_page`（归一逻辑只写一处 —— 那里有完整的
+        # 字段映射与游标处理）。翻页靠它返回的 `next_cursor`。
         for _ in range(max(1, (want + 19) // 20) + 1):
             if len(out) >= want:
                 break
-            params: Dict[str, Any] = {
-                "id": mid, "mid": mid, "max_id_type": max_id_type,
-            }
-            if max_id:
-                params["max_id"] = max_id
-
             try:
-                resp = await self._call("/comments/hotflow", params)
+                page_data = await self.get_comments_page(
+                    mid, max_results=20, cursor=cur
+                )
             except WeiboLoginRequiredError:
                 # 没登录态时翻页会走到这里 —— 首页数据拿到了就正常返回
                 if out:
@@ -306,55 +373,21 @@ class WeiboClient(BasePlatformClient):
                     break
                 raise
 
-            data = resp.get("data") or {}
-            if not isinstance(data, dict):
-                break
-            # ⚠️ 双层：评论列表和游标都在 data.data / data.max_id
-            for c in data.get("data") or []:
-                if not isinstance(c, dict):
-                    continue
+            for c in page_data.get("comments") or []:
                 cid = str(c.get("id") or "")
                 if not cid or cid in seen:
                     continue
                 seen.add(cid)
-                u = c.get("user") or {}
-                # 图片：pic 单图 / pics 多图，取 large 原图
-                pic = c.get("pic") or {}
-                pics = c.get("pics") or []
-                images = []
-                if isinstance(pics, list):
-                    for p in pics:
-                        large = (p or {}).get("large") or {}
-                        if large.get("url"):
-                            images.append(large["url"])
-                elif pic.get("large", {}).get("url"):
-                    images.append(pic["large"]["url"])
-                out.append({
-                    "id": cid,
-                    # ⚠️ 正文是 HTML（含表情 img / @链接 a），要去标签
-                    "content": _strip_html(c.get("text") or ""),
-                    "author": u.get("screen_name") or "",
-                    "author_id": str(u.get("id") or ""),
-                    "avatar": u.get("profile_image_url") or "",
-                    "likes": int(c.get("like_count") or 0),
-                    "create_time": _rfc2822_to_ts(c.get("created_at") or ""),
-                    # ⚠️ 评论项的 total_number 恒为 0；V2 没有子评论计数
-                    "reply_count": 0,
-                    # IP 属地：source 形如 "来自 湖南"
-                    "location": (c.get("source") or "").replace("来自", "").strip(),
-                    "images": images,
-                    # 楼中楼字段存在但实测常为空 —— 兼容读取，不保证有
-                    "replies": c.get("comments") or [],
-                })
+                out.append(c)
                 if len(out) >= want:
                     break
 
-            nxt = data.get("max_id")
-            # ⚠️ 终值 0 表示没有下一页（实测确认）
-            if not nxt or nxt == 0 or str(nxt) == "0":
+            if not page_data.get("has_more"):
                 break
-            max_id = str(nxt)
-            max_id_type = int(data.get("max_id_type") or 0)
+            nxt = str(page_data.get("next_cursor") or "")
+            if not nxt or nxt == cur:
+                break
+            cur = nxt
             await asyncio.sleep(2)   # 实测限流敏感，保守 2s
 
         return out[:want]

@@ -79,36 +79,33 @@ COMMENTS_SUPPORTED = {
     "douyin", "dy",
 }
 
-# 各平台「为什么还没做」的诚实说明（未实现时返回给用户）
+# 各平台「为什么还没做」的诚实说明（**仅未实现平台**）。
+#
+# ⚠️ **已实现的平台不要写在这里**（2026-10-01 清理过一轮）：
+# 它们走 `COMMENTS_SUPPORTED` 分支，永远不会读到这里的文案 ——
+# 但留着"尚未实现"的说明会造成**文案与实际矛盾**，
+# 一旦有人改动判断逻辑就会暴露出错误信息。
+# 测试 `test_todo_reason_only_for_unimplemented` 守住这条。
 COMMENTS_TODO_REASON = {
-    "xhs": "小红书评论接口需要 xsec_token + X-s 签名，且风控期极易失败 —— 尚未实现",
-    "xiaohongshu": "小红书评论接口需要 xsec_token + X-s 签名，且风控期极易失败 —— 尚未实现",
-    "douyin": "抖音评论接口需要 a_bogus 签名（已实现，见 douyin/sign.py）",
-    "dy": "抖音评论接口需要 a_bogus 签名（已实现，见 douyin/sign.py）",
-    "weibo": "微博评论接口需要登录 cookie —— 尚未实现",
-    "wb": "微博评论接口需要登录 cookie —— 尚未实现",
-    "kuaishou": "快手评论接口需要 hxfalcon 签名（只能浏览器抓）—— 尚未实现",
-    "ks": "快手评论接口需要 hxfalcon 签名（只能浏览器抓）—— 尚未实现",
-    "twitter": "X 的评论走 GraphQL，需要 transaction-id —— 尚未实现",
-    "x": "X 的评论走 GraphQL，需要 transaction-id —— 尚未实现",
-    "tw": "X 的评论走 GraphQL，需要 transaction-id —— 尚未实现",
-    "youtube": (
-        "YouTube 评论走 innertube `/youtubei/v1/next`（continuation 翻页）；\n"
-        "⚠️ 2026-10-01 实测修正：我们**自己造 continuation token 拿不到**评论"
-        "（HTTP 200 但响应 14KB、无评论字段）—— 那只是 yt-dlp 的**兜底路径**"
-        "（`_video.py:2598-2604`），主路径是从 watch 页 `ytInitialData` 取。\n"
-        "所以当初『不打算用 yt-dlp』的结论**也需修正**：yt-dlp 实测能取到评论"
-        "（顶层 100 条约 4.5 秒），**不需要 API key、不需要登录**；且项目本来"
-        "就已在用 yt-dlp（YouTube 搜索/详情/频道都走它）。\n"
-        "⚠️ 但用 yt-dlp 取评论**必须设 `max_comments` 上限** —— 不设会无上限翻页"
-        "（实测某视频报 ~1063 万条评论，跑了 10 分钟没停）。"
+    "xhs": (
+        "小红书评论接口需要 xsec_token + X-s 签名，且风控期极易失败。\n"
+        "（评论要按笔记的 xsec_token 走 edith 接口，签名链路比搜索更脆弱；"
+        "且当前小红书连接正处风控期，做了也无法验证。）"
+    ),
+    "xiaohongshu": (
+        "小红书评论接口需要 xsec_token + X-s 签名，且风控期极易失败。\n"
+        "（评论要按笔记的 xsec_token 走 edith 接口，签名链路比搜索更脆弱；"
+        "且当前小红书连接正处风控期，做了也无法验证。）"
     ),
     "telegram": (
-        "Telegram 的 `t.me/s` 预览页**不含评论**；"
-        "取评论要走 MTProto，且公开频道的评论通常在关联群组 —— 语义不同"
+        "Telegram 的 `t.me/s` 预览页**不含评论**。\n"
+        "取评论要走 MTProto，且公开频道的评论通常在**关联群组**里 —— "
+        "语义与其它平台不同（不是「这条消息的回复」，而是「群的讨论」）。"
     ),
-    "fanqie": "番茄是章节式发布，没有评论",
-    "wechat_mp": "公众号文章评论需要登录态且接口受限 —— 尚未实现",
+    "fanqie": "番茄是章节式发布，没有「评论」这个概念。",
+    "wechat_mp": (
+        "公众号文章评论需要登录态，且微信只开放部分接口（精选评论/留言）。"
+    ),
 }
 
 
@@ -372,16 +369,25 @@ async def get_comments(
                 next_offset = str(result.get("next_offset") or "")
                 message = f"共 {total} 条评论"
             else:
-                raw_comments = await client.get_comments(
+                # ⚠️ 用 `get_comments_page`（而不是 `get_comments`）——
+                # 它会**带回游标**。实测各平台分页大都是 cursor 不是页码
+                # （微博 max_id / 快手 pcursor / X Bottom / YouTube continuation），
+                # 只用 page 翻页会**拿到重复数据**（前端点"加载更多"没反应）。
+                #
+                # 未实现 `get_comments_page` 的平台，基类有默认实现
+                # （退化成调 get_comments，游标为空）。
+                page_data = await client.get_comments_page(
                     item, max_results=page_size, page=page, cursor=offset
                 )
+                raw_comments = page_data.get("comments") or []
                 comments = [_normalize_generic_comment(c) for c in raw_comments]
-                total = len(comments)
-                # 基类签名不带总数/游标 —— 用"是否取满"推断还有没有更多
-                # （不精确，但比谎报"没有更多"好；B站那种精确游标另走上面分支）
-                has_more = len(raw_comments) >= page_size
-                next_offset = ""
-                message = f"返回 {len(comments)} 条评论"
+                total = int(page_data.get("total") or len(comments))
+                has_more = bool(page_data.get("has_more"))
+                next_offset = str(page_data.get("next_cursor") or "")
+                message = (
+                    f"共 {total} 条评论" if total > len(comments)
+                    else f"返回 {len(comments)} 条评论"
+                )
 
         return CommentsResponse(
             success=True,

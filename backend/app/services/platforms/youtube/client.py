@@ -307,6 +307,49 @@ class YoutubeClient(BasePlatformClient):
             })
         return out[:want]
 
+    async def get_comments_page(
+        self,
+        item_id: str,
+        max_results: int = 20,
+        page: int = 1,
+        cursor: str = "",
+    ) -> Dict[str, Any]:
+        """取**一页** YouTube 评论。
+
+        ⚠️ **没有真游标**：yt-dlp 一次把评论都取回来了（`max_comments` 控制），
+        我们只能在本地切片。所以这里的 `next_cursor` 用**偏移量**表示
+        （`"offset=20"` 这种形式），上层原样传回来即可继续。
+
+        这样前端"加载更多"能正常工作，且**不会重复请求** yt-dlp
+        （真游标要重新跑 yt-dlp，很慢）。
+        """
+        vid = str(item_id or "").strip()
+        if not vid:
+            return {"comments": [], "has_more": False, "next_cursor": "", "total": 0}
+
+        # 解析偏移量（我们自己约定的格式）
+        start = 0
+        if cursor and cursor.startswith("offset="):
+            try:
+                start = int(cursor.split("=", 1)[1])
+            except ValueError:
+                start = 0
+
+        want = max(1, int(max_results or 20))
+        # 一次取到 start+want（yt-dlp 的调用成本高，别为 20 条跑两遍）
+        fetch_n = min(start + want, 200)
+        all_comments = await self.get_comments(vid, max_results=fetch_n)
+
+        page_items = all_comments[start:start + want]
+        nxt = start + len(page_items)
+        has_more = nxt < len(all_comments)
+        return {
+            "comments": page_items,
+            "has_more": has_more,
+            "next_cursor": f"offset={nxt}" if has_more else "",
+            "total": len(all_comments),
+        }
+
     async def _extract_entries(self, url: str, n: int = 20) -> List[Dict[str, Any]]:
         """跑 yt-dlp（在线程池里，避免阻塞事件循环）。"""
         import asyncio
