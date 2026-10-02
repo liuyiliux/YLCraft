@@ -18,6 +18,9 @@ from typing import Dict, List
 from ..base import BasePlatformClient, register_platform
 from ..types import (
     ClientMode,
+    # ⚠️ 必须导入 —— `TwitterAuthError` 要继承它才能被 API 层
+    # 的 `except LoginExpiredError` 映射成 401（见该类的 docstring）
+    LoginExpiredError,
     NoteDetail,
     SearchParams,
     SearchResult,
@@ -27,10 +30,28 @@ from ..types import (
 logger = logging.getLogger("ylcraft.platforms.twitter")
 
 
-class TwitterAuthError(RuntimeError):
+class TwitterAuthError(LoginExpiredError):
     """X 凭证缺失或失效（需要用户重新登录）。
 
     与"没有搜索结果"必须区分 —— 前者要用户去登录，后者才是关键词没内容。
+
+    ## ⚠️ 必须继承 `LoginExpiredError`（2026-10-02 修）
+
+    原来这里是 `TwitterAuthError(RuntimeError)` —— 于是：
+
+      · `client.py` 抛出的这个错（用户搜索/资料/作品的路径）
+        **映射不到** `crawler.py` / `users.py` 里的
+        `except LoginExpiredError` 分支
+      · 最终落到笼统的 `except Exception` → **HTTP 500**
+        「获取我的资料失败」
+
+    而文案本身写对了（"需要用户重新登录"），**只有状态码是错的** ——
+    用户看到"服务器错误"不会想到要去账号中心重新登录。
+
+    ⚠️ 注意 `search_http.py` 里还有一个**同名**类，它早就是
+    `LoginExpiredError` 的子类（2026-09-30 改的）—— 本仓库的
+    "同一个东西两处定义、只改一处"老坑，这次轮到 client.py。
+    审计见 `tests/test_error_class_hierarchy.py`。
     """
 
 

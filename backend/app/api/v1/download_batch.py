@@ -80,6 +80,12 @@ ITEM_SKIPPED = "skipped"
 
 _TERMINAL = {ITEM_DONE, ITEM_SKIPPED}
 
+# 已完成批次保留几个（2026-10-02 加，防 batches.json 无限增长）
+#
+# 只清理**全部完成**的；未完成的**永不自动删** ——
+# 那是用户的断点续传依据，删了等于毁掉功能。
+KEEP_FINISHED_BATCHES = 20
+
 
 def _batches_path() -> Path:
     """批次状态文件位置（放下载目录，与 resume_state.json 同处）。"""
@@ -125,14 +131,30 @@ def create_batch(
 ) -> str:
     """建一个批次，返回 `batch_id`。
 
-    Args:
-        items: `[{"url": ..., "title": ...}, ...]`
-        title: 批次名称（便于用户识别）
-        quality: 统一清晰度
+    ## ⚠️ 会顺带清理旧的**已完成**批次（2026-10-02 加）
+
+    原来只追加、从不清理 —— 用得越久 `batches.json` 越大，而
+    `update_item` 每次都要 `_load()` 全量解析 + `_save()` 全量序列化。
+    500 条的批次会调 1500 次 `update_item`，复杂度
+    O(批次总数 × 总条目) × 1500 —— 前端每 4 秒轮询一次还会持续放大。
+
+    保留策略：**已完成**的批次只留最近 `KEEP_FINISHED_BATCHES` 个
+    （未完成的**永不自动删** —— 那是用户的断点续传依据）。
     """
     batch_id = f"batch_{uuid.uuid4().hex[:12]}"
     now = time.time()
     data = _load()
+
+    # 清理：只删"全部完成"的旧批次，保留最近 N 个
+    finished = [
+        (bid, b) for bid, b in data.items()
+        if _is_all_done(b) and bid != batch_id
+    ]
+    finished.sort(key=lambda kv: -(kv[1].get("updated_at") or 0))
+    # ⚠️ 从最旧的开始删，保留最近 KEEP_FINISHED_BATCHES 个
+    for bid, _b in finished[KEEP_FINISHED_BATCHES:]:
+        data.pop(bid, None)
+
     data[batch_id] = {
         "batch_id": batch_id,
         "title": title or f"批量下载 {time.strftime('%m-%d %H:%M')}",
@@ -158,6 +180,17 @@ def create_batch(
     _save(data)
     logger.info("[batch] 创建 %s（%d 条）", batch_id, len(data[batch_id]["items"]))
     return batch_id
+
+
+def _is_all_done(batch: Dict[str, Any]) -> bool:
+    """该批次是否**全部完成**（没有 pending/running/failed）。"""
+    items = batch.get("items") or []
+    if not items:
+        return False
+    return all(
+        (it.get("status") or ITEM_PENDING) in (ITEM_DONE, ITEM_SKIPPED)
+        for it in items
+    )
 
 
 def get_batch(batch_id: str) -> Optional[Dict[str, Any]]:

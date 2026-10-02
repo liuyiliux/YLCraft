@@ -181,6 +181,9 @@ export function PipelinePanel({
             rowKey={(record, index) => `${record.stage}-${record.chapter_number || 'global'}-${index}`}
             columns={pipelineColumns}
             dataSource={rows}
+            // ⚠️ 加横向滚动（2026-10-02 审计）：
+            // 窄容器下不加，antd 会把定宽列**压扁**（表头变竖排单字）
+            scroll={{ x: 560 }}
           />
         ) : null}
       </Space>
@@ -636,6 +639,8 @@ export function OutlineTab({
           columns={characterColumns}
           dataSource={draft.characters || []}
           pagination={false}
+          // ⚠️ 同上：窄容器下加横向滚动，避免列被压扁
+          scroll={{ x: 480 }}
         />
       </div>
     </Space>

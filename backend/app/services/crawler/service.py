@@ -18,7 +18,22 @@ from app.services.crawler.models import NoteDetail, SearchFilter, SearchEnhanced
 # 平台"当前环境不可用"（如抖音对自动化降级）——要原样抛给上层，
 # 不能被当成"搜索失败"降级重试（那样会把风控伪装成"0 条结果"）。
 from app.services.platforms.douyin.client import PlatformUnavailableError
-from app.services.platforms.types import LoginExpiredError, PlatformError
+# ⚠️ **必须列全所有要"穿透"的异常类型**（2026-10-02 补）
+#
+# `get_note_detail` 里凡是不在穿透列表里的异常，都会被
+# `except Exception: return {}` 吞成空 dict → 路由层变成
+# **404「笔记不存在」** —— 对风控/网络问题来说这是**谎报**。
+#
+# ⚠️ 之前只列了 `PlatformUnavailableError` + `LoginExpiredError`，
+# 而小红书的 461（风控）抛的是 `RiskControlError` —— 不在列表里，
+# 于是被吞成 404，用户以为笔记被删了（实际好好躺着）。
+from app.services.platforms.types import (
+    ContentNotFoundError,
+    LoginExpiredError,
+    NetworkError,
+    PlatformError,
+    RiskControlError,
+)
 
 logger = logging.getLogger("ylcraft.crawler")
 
@@ -713,7 +728,23 @@ class CrawlerService:
         except LoginExpiredError:
             # 登录态失效同理 —— 提示"重新登录"，而不是"笔记不存在"
             raise
+        except (RiskControlError, NetworkError):
+            # ⚠️ 同理（2026-10-02 补）——
+            #
+            # 这两类原来**没有**穿透，会被下面的
+            # `except Exception: return {}` 吞掉 → 404「笔记不存在」。
+            #
+            # 小红书详情实测：HTTP 461（风控）原本就落在这里 ——
+            # 用户刚从搜索结果点进来看详情，却被告知"笔记不存在"，
+            # 实际是**风控**（笔记好好躺着）。
+            raise
+        except ContentNotFoundError:
+            # 真正的不存在 —— 这个本来就该穿透（映射成 404 语义正确）
+            raise
         except Exception as e:
+            # ⚠️ 这里的兜底**仍然会**把未知异常变成 404。
+            #    这是保守选择（不泄露内部错误），但也意味着
+            #    **新引入的异常类型必须显式加到上面的穿透列表**。
             logger.error(f"[get_note_detail] Error: {e}")
             return {}
 

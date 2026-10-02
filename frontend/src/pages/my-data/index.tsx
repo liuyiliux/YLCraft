@@ -911,8 +911,18 @@ export default function MyDataPage({
                       border: 'none',
                     }}
                   >
+                    {/* ⚠️ 原来这里写的是「总播放量」，但读的是 `profile.likes`
+                        ——而后端 `/bilibili/up/profile` **根本没有播放量字段**
+                        （只有 `fans` / `likes` / `following`）。
+                        也就是说"总播放量"和右边「总点赞数」**显示的是同一个数字**，
+                        而且**与真实的播放量量级完全不同**（B站的"获赞"是账号
+                        累计获赞，播放量是另一个维度）—— 属于**凭空捏造的指标**。
+
+                        诚实做法：改成后端**真的提供**的「总获赞」，
+                        并把原本重复的「总点赞数」换成「总关注」，
+                        四张卡各显示不同的真实指标。 */}
                     <Statistic
-                      title={<Text style={{ color: 'rgba(255,255,255,0.8)' }}>总播放量</Text>}
+                      title={<Text style={{ color: 'rgba(255,255,255,0.8)' }}>总获赞</Text>}
                       value={profile?.likes || 0}
                       formatter={(v) => formatNum(v as number)}
                       prefix={<PlayCircleOutlined />}
@@ -928,9 +938,11 @@ export default function MyDataPage({
                       border: 'none',
                     }}
                   >
+                    {/* ⚠️ 原来也是 `profile.likes` —— 与左边「总获赞」完全重复。
+                        改成「总关注」（后端 `following` 字段，真的有值）。 */}
                     <Statistic
-                      title={<Text style={{ color: 'rgba(255,255,255,0.8)' }}>总点赞数</Text>}
-                      value={profile?.likes || 0}
+                      title={<Text style={{ color: 'rgba(255,255,255,0.8)' }}>总关注</Text>}
+                      value={(profile as any)?.following || 0}
                       formatter={(v) => formatNum(v as number)}
                       prefix={<LikeOutlined />}
                       valueStyle={{ color: 'white', fontSize: 28 }}

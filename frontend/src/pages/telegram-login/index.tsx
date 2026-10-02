@@ -30,6 +30,8 @@ import { useEffect, useState } from 'react'
 import {
   Card, Form, Input, Button, Steps, Alert, Space, Typography, Tag,
   Descriptions, Result, message, Divider,
+  // ⚠️ List/Empty 用于"我的频道"列表（2026-10-02 审计补的入口）
+  List, Empty,
 } from 'antd'
 import {
   SendOutlined, CheckCircleOutlined, SafetyCertificateOutlined,
@@ -38,6 +40,9 @@ import {
 import { useNavigate } from 'react-router-dom'
 import {
   getTelegramStatus, telegramSendCode, telegramSignIn, telegramLogout,
+  // ⚠️ `getTelegramChannels` 后端早就实现了，之前**没有前端入口**
+  //（"后端做了前端没接"的典型，见 tests/test_audit_fixes.py）
+  getTelegramChannels,
   type TelegramStatusResponse,
 } from '../../api'
 
@@ -51,6 +56,37 @@ export default function TelegramLoginPage() {
   const [needsPassword, setNeedsPassword] = useState(false)
   const [phone, setPhone] = useState('')
   const [form] = Form.useForm()
+
+  // ===== 「我的频道」（2026-10-02 审计补）=====
+  //
+  // 后端 `GET /telegram/channels` 早就实现了（列出已加入的频道/群组），
+  // 但**前端一直没有入口** —— 登录成功后只能"去采集"搜关键词，
+  // 看不到自己有哪些频道。
+  //
+  // ⚠️ 按需加载（点按钮才请求），并且**加载失败要与"没有频道"区分**。
+  const [myChannelsOpen, setMyChannelsOpen] = useState(false)
+  const [myChannels, setMyChannels] = useState<any[]>([])
+  const [chLoading, setChLoading] = useState(false)
+  const [chError, setChError] = useState('')
+
+  const loadMyChannels = async () => {
+    const next = !myChannelsOpen
+    setMyChannelsOpen(next)
+    if (!next || myChannels.length > 0) return
+    setChLoading(true)
+    setChError('')
+    try {
+      const res: any = await getTelegramChannels(100)
+      const list = res?.data || res?.channels || []
+      setMyChannels(Array.isArray(list) ? list : [])
+    } catch (e: any) {
+      setChError(
+        String(e?.response?.data?.detail || e?.message || '加载失败').slice(0, 120),
+      )
+    } finally {
+      setChLoading(false)
+    }
+  }
 
   const refresh = async () => {
     try {
@@ -191,11 +227,84 @@ export default function TelegramLoginPage() {
               <Button key="crawler" type="primary" onClick={() => navigate('/crawler?platform=telegram')}>
                 去采集
               </Button>,
+              // ⚠️ 「我的频道」入口（2026-10-02 审计补）
+              //
+              // 后端 `/telegram/channels`（列出已加入的频道/群组）
+              // **早就实现了但前端没有入口** —— 属"后端做了前端没接"。
+              <Button key="mych" onClick={loadMyChannels} loading={chLoading}>
+                我的频道
+              </Button>,
               <Button key="logout" danger icon={<LogoutOutlined />} loading={loading} onClick={handleLogout}>
                 退出登录
               </Button>,
             ]}
           />
+
+          {/* 我的频道列表（点上面按钮才加载）*/}
+          {myChannelsOpen && (
+            <div style={{ marginTop: 16 }}>
+              <Divider orientation="left" plain>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  我加入的频道 / 群组
+                </Text>
+              </Divider>
+              {chError ? (
+                <Alert
+                  type="warning"
+                  showIcon
+                  message="频道列表加载失败"
+                  description={
+                    <span style={{ fontSize: 12 }}>
+                      {chError}
+                      <br />
+                      ⚠️ 这是**请求失败**，不是「你没有加入任何频道」。
+                    </span>
+                  }
+                />
+              ) : myChannels.length === 0 ? (
+                <Empty description="没有找到你加入的频道（可能是私聊，或还没加入任何频道）" />
+              ) : (
+                <List
+                  size="small"
+                  bordered
+                  dataSource={myChannels}
+                  renderItem={(it: any) => (
+                    <List.Item
+                      actions={[
+                        <Button
+                          key="go"
+                          type="link"
+                          size="small"
+                          onClick={() => navigate(
+                            `/crawler?platform=telegram&keyword=${encodeURIComponent(
+                              it.username || it.title || '',
+                            )}`,
+                          )}
+                        >
+                          去采集
+                        </Button>,
+                      ]}
+                    >
+                      <List.Item.Meta
+                        title={
+                          <Space>
+                            <span>{it.title || '(无标题)'}</span>
+                            {it.username && <Tag color="blue">@{it.username}</Tag>}
+                            {it.is_channel === false && <Tag>群组</Tag>}
+                          </Space>
+                        }
+                        description={
+                          typeof it.participants_count === 'number'
+                            ? `${it.participants_count} 成员`
+                            : undefined
+                        }
+                      />
+                    </List.Item>
+                  )}
+                />
+              )}
+            </div>
+          )}
         </Card>
       ) : step === 0 ? (
         /* ===== 第一步：API 凭证 + 手机号 ===== */

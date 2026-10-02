@@ -54,7 +54,18 @@ SUPPORTED_PLATFORMS = [
     # YouTube 免登录（yt-dlp 取公开数据），没有"凭证"这回事，
     # 标 `none` 让账号中心不再要求抓 cookie（2026-10-01）
     {"value": "youtube",    "label": "YouTube",   "icon": "youtube",     "color": "#ff0000",  "auth_types": ["none"]},
-    {"value": "tiktok",     "label": "TikTok",    "icon": "tiktok",      "color": "#000000",  "auth_types": ["cookie"]},
+    # ⚠️ **TikTok 已移除**（2026-10-02 审计发现是**假支持**）
+    #
+    # 原来这里列了 TikTok，用户能在账号中心看到它、点进去、粘贴 cookie、
+    # 保存连接 —— 一切正常。但**后端根本没有 TikTok 采集客户端**
+    # （`create_client('tiktok')` 报 Unsupported platform，
+    #   `supported_platforms()` 里也没有它；搜索页的平台下拉也没有）。
+    #
+    # 结果：用户建了连接后**没有任何入口能用它** —— 纯浪费用户时间。
+    # 仓库铁律：**假选项比没有更糟**。
+    #
+    # 以后真要做 TikTok：写 `platforms/tiktok/client.py` +
+    # `meta.py` 声明 capabilities，再把这一行加回来。
     # 平台已改名 X（原 Twitter）。label 用现名，**value 保持 `twitter`**
     # —— PlatformType.TWITTER、连接表 platform 字段、既有数据都是
     # `twitter`，改 value 会破坏既有数据。

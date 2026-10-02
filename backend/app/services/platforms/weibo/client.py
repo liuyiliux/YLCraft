@@ -39,6 +39,9 @@ from ..base import BasePlatformClient, register_platform
 from ..types import (
     ClientConfig,
     ClientMode,
+    # ⚠️ 必须导入 —— `WeiboLoginRequiredError` 要继承它才能被 API 层
+    # 的 `except LoginExpiredError` 映射成 401（见该类的 docstring）
+    LoginExpiredError,
     NoteDetail,
     SearchParams,
     SearchResult,
@@ -57,11 +60,21 @@ MOBILE_UA = (
 )
 
 
-class WeiboLoginRequiredError(RuntimeError):
+class WeiboLoginRequiredError(LoginExpiredError):
     """微博未登录（ok=-100）。
 
     与"没有搜索结果"必须区分 —— 前者要用户去补登录态，
     后者才是关键词真没内容。
+
+    ## ⚠️ 必须继承 `LoginExpiredError`（2026-10-02 修）
+
+    原来这里是 `WeiboLoginRequiredError(RuntimeError)` —— 于是
+    API 层的 `except LoginExpiredError` 分支**全部落空**，
+    微博登录态过期时返回 **HTTP 500**「获取我的资料失败」。
+
+    500 在语义上是"服务端故障"，用户不会想到要去账号中心重新登录
+    —— 而这恰恰是用户自己能解决的问题。
+    审计见 `tests/test_error_class_hierarchy.py`。
     """
 
 

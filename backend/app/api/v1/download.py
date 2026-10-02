@@ -1741,11 +1741,20 @@ async def _run_download_task(task: DownloadTask):
         task.progress_message = "解析视频信息..."
         _download_tasks[task.task_id] = task.__dict__
 
-        # ⚠️ **平台下载器路径也要登记**（2026-10-01 加，断点续传）
+        # ⚠️ 平台下载器路径也要登记（2026-10-01 加，断点续传）
         #
-        # 原来只有 yt-dlp 路径登记 `resume_state.json` —— 但
+        # 原来只有 yt-dlp 路径会登记 `resume_state.json` —— 但
         # **B站/抖音/X 有专用下载器**，它们才是主力（先试专用、失败才降级）。
         # 实测：下载 B站视频走的是专用下载器，yt-dlp 那条路的登记**根本没触发**。
+        #
+        # ⚠️ `outtmpl` 传**空串**：平台下载器（B站的 `_stream_to_file`）用的是
+        # `<最终路径>.mp4.part` 约定，**不是** yt-dlp 的 `%(title)s` 模板。
+        # 之前这里传 `str(savedir / title)` —— 一个普通路径 ——
+        # `_partial_size_for` 据此找不到任何 `.part`，于是 `bytes_done` 恒为 0，
+        # `/download/resumable` 会把它当成"没有可续传数据"。
+        #
+        # 传空串 = 如实表示"这条路径不按 .part 追踪"，
+        # `list_resumable` 会因为找不到半成品而过滤掉它（不谎报）。
         _resume_savedir = ensure_download_path(
             _detect_platform(task.page_url or task.url) or ""
         )
@@ -1753,7 +1762,7 @@ async def _run_download_task(task: DownloadTask):
             task.task_id, task.url, task.page_url or task.url,
             task.quality, task.is_audio, task.title,
             _resume_savedir,
-            str(_resume_savedir / (task.title or "")),
+            "",   # ⚠️ 见上方说明：平台下载器不用 yt-dlp 的 outtmpl 模板
         )
 
         result = await download_with_manager(
