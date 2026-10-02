@@ -106,7 +106,15 @@ const PLATFORM_METAS: PlatformMeta[] = [
   // YouTube **免登录**（yt-dlp 取公开数据）—— 没有"凭证"这回事，
   // 标 none 让账号中心不再要求抓 cookie（2026-10-01）
   { value: 'youtube',    label: 'YouTube', icon: <span style={{fontSize:18}}>▶️</span>, color: '#ff0000', authTypes: ['none'], supportQrcode: false },
-  { value: 'tiktok',     label: 'TikTok',  icon: <span style={{fontSize:18}}>♪</span>,  color: '#000000', authTypes: ['cookie'], supportQrcode: false },
+  // ⚠️ **TikTok 已移除**（2026-10-02 审计发现是**假支持**）
+  //
+  // 原来这里列了 TikTok，用户能看到、能建连接 —— 但**后端没有 TikTok
+  // 采集客户端**（`create_client('tiktok')` 报 Unsupported platform），
+  // 搜索页的平台下拉也没有它。建了连接**没有任何入口能用**。
+  // 仓库铁律：**假选项比没有更糟**。
+  //
+  // 真要做时：写 `platforms/tiktok/client.py` + `meta.py`，
+  // 再把这一行加回前端**和**后端 `SUPPORTED_PLATFORMS`（两边都要）。
   { value: 'twitter',    label: 'X',       icon: <span style={{fontSize:18}}>🐦</span>, color: '#1da1f2', authTypes: ['cookie'], supportQrcode: false },
   // ⚠️ Telegram 走 **MTProto 登录**，不是 cookie/扫码 ——
   // 账号中心对它要显示「去登录」并跳到 `/telegram-login`

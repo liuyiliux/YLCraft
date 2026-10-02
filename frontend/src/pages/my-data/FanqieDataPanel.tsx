@@ -14,6 +14,9 @@ import { useState, useEffect } from 'react'
 import {
   Card, Button, Select, Tag, message, Spin, Space, Row, Col,
   Typography, Tabs, Empty, Statistic, Segmented, Alert, Image,
+  // ⚠️ Result 用于区分"连接列表加载失败"与"确实没有账号"
+  // （2026-10-02 审计修）—— 两者原来是同一句话，用户会白跑账号中心
+  Result,
 } from 'antd'
 import {
   BookOutlined, FireOutlined, ReloadOutlined, EyeOutlined,
@@ -100,6 +103,18 @@ export default function FanqieDataPanel() {
   // 连接选择
   const [connections, setConnections] = useState<PlatformConnectionResponse[]>([])
   const [connId, setConnId] = useState<string>('')
+  /**
+   * ⚠️ 连接列表**加载失败**（2026-10-02 审计修）
+   *
+   * 原来这里是 `.catch(() => {})` —— 于是：
+   *   网络抖动 → catch 吞掉 → `connections` 保持 `[]`
+   *   → 界面渲染「请先在账号中心添加番茄账号」
+   *   → 用户跑去账号中心发现**账号明明在**，回来更困惑
+   *
+   * 这是审计里**最主动误导**的一处：把"加载失败"和"确实没账号"
+   * 渲染成了同一句话，用户无法区分。
+   */
+  const [connLoadError, setConnLoadError] = useState('')
 
   // 书籍
   const [books, setBooks] = useState<any[]>([])
@@ -119,13 +134,20 @@ export default function FanqieDataPanel() {
 
   // 加载番茄连接
   useEffect(() => {
+    setConnLoadError('')
     listPlatformConnections().then((res: any) => {
       const conns = (res.connections || []).filter(
         (c: PlatformConnectionResponse) => c.platform === 'fanqie' && c.status === 'active',
       )
       setConnections(conns)
       if (conns.length > 0 && !connId) setConnId(conns[0].id)
-    }).catch(() => {})
+    }).catch((e: any) => {
+      // ⚠️ 如实报错，不要伪装成"你没有账号"
+      setConnLoadError(
+        String(e?.response?.data?.detail || e?.message || '连接列表加载失败')
+          .slice(0, 120) || '连接列表加载失败',
+      )
+    })
   }, [])
 
   // 连接变化时重置并拉取书籍
@@ -270,14 +292,46 @@ export default function FanqieDataPanel() {
   const hotCover = (h: any) => h?.thumb_url || h?.cover_url || h?.img || ''
 
   if (connections.length === 0) {
+    // ⚠️ **加载失败 ≠ 没有账号**（2026-10-02 审计修）
+    //
+    // 原来两种情况渲染**同一句话**「尚未配置番茄连接，请去账号中心添加」，
+    // 用户分不清自己是"没配"还是"网络抖了一下没加载出来"——
+    // 后者会让人白跑一趟账号中心（账号明明在那儿）。
     return (
       <Card style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 12 }}>
-        <Empty
-          description={<Text style={{ color: textSec }}>尚未配置番茄连接，请先在「账号中心」添加番茄小说（cookie）连接</Text>}
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-        >
-          <Button type="primary" onClick={() => (window.location.href = '/accounts')}>去添加账号</Button>
-        </Empty>
+        {connLoadError ? (
+          <Result
+            status="warning"
+            title="连接列表加载失败"
+            subTitle={
+              <div style={{ fontSize: 12, lineHeight: 1.7 }}>
+                <div>{connLoadError}</div>
+                <div style={{ marginTop: 6, color: textSec }}>
+                  ⚠️ 这是**请求失败**，不是「你没有番茄账号」——
+                  请先重试，确认真的没有再去找账号中心。
+                </div>
+              </div>
+            }
+            extra={
+              <Button type="primary" onClick={() => window.location.reload()}>
+                重试
+              </Button>
+            }
+          />
+        ) : (
+          <Empty
+            description={
+              <Text style={{ color: textSec }}>
+                尚未配置番茄连接，请先在「账号中心」添加番茄小说（cookie）连接
+              </Text>
+            }
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          >
+            <Button type="primary" onClick={() => (window.location.href = '/accounts')}>
+              去添加账号
+            </Button>
+          </Empty>
+        )}
       </Card>
     )
   }

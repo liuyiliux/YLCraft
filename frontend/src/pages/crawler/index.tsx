@@ -2048,25 +2048,57 @@ export default function CrawlerPage() {
   }
 
   // ===== B站专属：数据统计 =====
+  //
+  // ⚠️ 原来失败是 `catch { /* 忽略 */ }`（2026-10-02 审计修）——
+  // 用户会把"面板空白"读成"这个视频播放量是 0"，
+  // 而真相可能是 401（cookie 过期）/ 429（风控）。
+  // 现在**把原因显示出来**（复用体检的 `getBiliHealthIssue`，
+  // 它已经把"缺哪个 cookie 项"翻译成可操作提示）。
+  const [statsError, setStatsError] = useState('')
+  const [videoInfoError, setVideoInfoError] = useState('')
+
   const fetchBiliStats = async (bvid: string) => {
     setStatsLoading(true)
+    setStatsError('')
     try {
       const res: any = await getBiliStats({ bvid, conn_id: selectedBiliConn })
       if (res?.success && res?.data && Object.keys(res.data).length > 0) {
         setBiliStats(res.data)
+      } else {
+        setStatsError(
+          res?.message
+          || getBiliHealthIssue('stats')
+          || '没能取到数据（可能登录态失效或被风控）',
+        )
       }
-    } catch { /* 忽略 */ }
+    } catch (e: any) {
+      setStatsError(
+        String(e?.response?.data?.detail || getBiliHealthIssue('stats') || '')
+          .slice(0, 120)
+          || '获取数据统计失败（不是"播放量为 0"）',
+      )
+    }
     finally { setStatsLoading(false) }
   }
 
   // ===== B站专属：视频信息 =====
   const fetchBiliVideoInfo = async (bvid: string) => {
+    setVideoInfoError('')
     try {
       const res: any = await getBiliVideoInfo(bvid, selectedBiliConn)
       if (res?.success) {
         setBiliVideoInfo(res.data)
+      } else {
+        setVideoInfoError(
+          res?.message || getBiliHealthIssue('video_info') || '没能取到视频信息',
+        )
       }
-    } catch { /* 忽略 */ }
+    } catch (e: any) {
+      setVideoInfoError(
+        String(e?.response?.data?.detail || '').slice(0, 120)
+        || '获取视频信息失败',
+      )
+    }
   }
 
   // 格式化数字
@@ -3560,7 +3592,28 @@ export default function CrawlerPage() {
                     )}
                   </Descriptions>
 
-                  {/* B站视频信息 */}
+                  {/* B站视频信息
+                      ⚠️ 失败也要显示原因（2026-10-02 审计修）——
+                      原来是 `catch {}` 静默吞掉，导致详情里缺
+                      分区/UP主/发布时间，用户不知道是"没有"还是"取不到"。 */}
+                  {detailNote.platform === 'bili' && videoInfoError && (
+                    <>
+                      <Divider style={{ borderColor }} />
+                      <Alert
+                        type="info"
+                        showIcon
+                        message="视频信息未取到"
+                        description={
+                          <span style={{ fontSize: 12 }}>
+                            {videoInfoError}
+                            <span style={{ color: textSec }}>
+                              {' '}(分区/UP主/发布时间等是**额外信息**，不影响上方内容)
+                            </span>
+                          </span>
+                        }
+                      />
+                    </>
+                  )}
                   {detailNote.platform === 'bili' && biliVideoInfo && (
                     <>
                       <Divider style={{ borderColor }} />
@@ -4014,6 +4067,26 @@ export default function CrawlerPage() {
                   <Text style={{ color: textPri, fontWeight: 600, display: 'block', marginBottom: 12 }}>数据统计</Text>
                   {statsLoading ? (
                     <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
+                  ) : statsError ? (
+                    // 失败要显示原因（2026-10-02 审计修）
+                    // ⚠️ 原来 `catch {}` 静默吞掉，面板保持空白 ——
+                    // 用户会把"空白"读成"这个视频播放量是 0"，
+                    // 而真相可能是 401（cookie 过期）/ 429（风控）。
+                    // ⚠️ 尤其危险：空面板和"全是 0"在视觉上几乎一样。
+                    <Alert
+                      type="warning"
+                      showIcon
+                      message="没能取到数据统计"
+                      description={
+                        <div style={{ fontSize: 12, lineHeight: 1.6 }}>
+                          {statsError}
+                          <div style={{ marginTop: 6, color: textSec }}>
+                            ⚠️ 这是**请求失败**，不是「数据为 0」。
+                            可点上方「体检」查看登录态是否有效。
+                          </div>
+                        </div>
+                      }
+                    />
                   ) : biliStats ? (
                     <div>
                       <Row gutter={[8, 8]}>

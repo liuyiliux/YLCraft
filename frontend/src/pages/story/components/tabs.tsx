@@ -92,6 +92,9 @@ export function LogsTab({
           columns={columns}
           dataSource={logs}
           pagination={{ pageSize: 10 }}
+          // ⚠️ 加横向滚动（2026-10-02 审计）：日志表列多（阶段/耗时/状态/结果），
+          // 窄容器下会把表头压成竖排单字
+          scroll={{ x: 600 }}
           expandable={{
             expandedRowRender: (record: ProjectGenerationLog) => (
               <Space direction="vertical" size={12} style={{ width: '100%', minHeight: 0, overflowY: 'auto' }}>
@@ -230,9 +233,15 @@ export function AssetsTab({
               title: '时间',
               dataIndex: 'created_at',
               width: 190,
-              render: (value: string) => value || '-',
+              onHeaderCell: () => ({ style: { whiteSpace: 'nowrap' } }),
+              render: (value: string) => (
+                <span style={{ whiteSpace: 'nowrap' }}>{value || '-'}</span>
+              ),
             },
           ]}
+          // ⚠️ 定宽列合计 120+140+190=450，加素材 ID 列
+          //    不设 scroll 的话窄笔记本上会把「角色」「关系」压成竖排
+          scroll={{ x: 680 }}
         />
       ) : (
         <Empty description="暂无项目素材关联" />

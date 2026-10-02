@@ -47,7 +47,26 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from ..types import NoteDetail
+from ..types import (
+    ContentNotFoundError,
+    # ⚠️ 必须用**类型化异常**（2026-10-02 修）
+    #
+    # 原来这里全抛裸 `RuntimeError`，后果是：
+    #   · `crawler/service.py` 的 `except Exception: return {}` 把它吞成空 dict
+    #   · 路由层再把空 dict 变成 **404「笔记不存在或获取失败」**
+    #
+    # 但 461 是**风控**（笔记确实存在，用户刚从搜索结果点进来的），
+    # 缺 cookie 是**登录问题** —— 报"笔记不存在"是**谎报**，
+    # 用户会以为笔记被删了。
+    #
+    # 抛出正确类型后，API 层的映射会给出可操作提示：
+    #   RiskControlError   → 429（等一会 / 换 IP）
+    #   LoginExpiredError  → 401（去账号中心重新登录）
+    LoginExpiredError,
+    NetworkError,
+    NoteDetail,
+    RiskControlError,
+)
 
 logger = logging.getLogger("ylcraft.platforms.xiaohongshu.note")
 
@@ -113,7 +132,10 @@ async def get_detail_via_api(
 
     cookie = getattr(getattr(client, "config", None), "cookie", "") or ""
     if not cookie:
-        raise RuntimeError(
+        # ⚠️ `LoginExpiredError`（不是 RuntimeError）——
+        # 让 API 层映射成 401「去账号中心重新登录」，
+        # 而不是被 `except Exception: return {}` 吞成 404「笔记不存在」
+        raise LoginExpiredError(
             "[xhs] 获取笔记详情需要登录 Cookie：请先保存小红书连接。"
         )
 
@@ -126,7 +148,10 @@ async def get_detail_via_api(
         if u:
             token = (parse_qs(urlparse(u).query).get("xsec_token") or [""])[0]
     if not token:
-        raise RuntimeError(
+        # ⚠️ 类型化异常（不是 RuntimeError）—— 见文件头的说明：
+        #    裸 RuntimeError 会被 service 层 `except Exception: return {}`
+        #    吞成 404「笔记不存在」，而这里是**参数缺失**（可修）
+        raise ContentNotFoundError(
             "[xhs] 缺少 xsec_token —— 详情接口必需（实测缺失会返回 HTTP 461）。"
             "请从搜索结果里带上该笔记的 xsec_token。"
         )
@@ -156,19 +181,39 @@ async def get_detail_via_api(
         resp = await c.post(f"{EDITH_BASE}{uri}", json=body, headers=headers)
 
     if resp.status_code == 461:
-        raise RuntimeError(
-            "[xhs] 详情接口返回 HTTP 461 —— 通常是 `xsec_token` 无效或过期。"
-            "请重新搜索该笔记以获取新的 token。"
+        # ⚠️ `RiskControlError`（不是 RuntimeError）—— 2026-10-02 修
+        #
+        # 461 是**风控/验证**，笔记**确实存在**（用户刚从搜索结果点进来）。
+        # 原来抛 RuntimeError → `service.py` 的 `except Exception: return {}`
+        # 把它吞成空 dict → 路由层变成 **404「笔记不存在或获取失败」**。
+        # 用户会以为笔记被删了，实际是需要等风控过去或换 IP。
+        #
+        # 抛正确类型后映射成 **429**，并给出可操作提示。
+        raise RiskControlError(
+            "[xhs] 详情接口返回 HTTP 461 —— 这是**平台风控/需要验证**。\n"
+            "笔记**确实存在**（不是被删了）。\n"
+            "可尝试：\n"
+            "  1. 稍等一会儿再试（风控常是临时性的）\n"
+            "  2. 换个 IP / 网络环境\n"
+            "  3. 重新搜索该笔记以获取新的 xsec_token\n"
+            "  4. 若持续出现，去「账号中心」重新获取小红书登录态"
         )
     if resp.status_code != 200:
-        raise RuntimeError(
+        raise NetworkError(
             f"[xhs] 详情接口返回 HTTP {resp.status_code}。"
             f"（body 前 120：{resp.text[:120]!r}）"
         )
 
     payload = _json.loads(resp.text)
     if not payload.get("success"):
-        raise RuntimeError(
+        # ⚠️ code=-100 是**登录态失效**（不是"笔记不存在"）—— 分开报
+        if str(payload.get("code")) == "-100":
+            raise LoginExpiredError(
+                f"[xhs] 详情接口返回 code=-100 —— **登录态已失效**"
+                f"（msg={payload.get('msg')!r}）。\n"
+                "请到「账号中心」重新获取小红书登录态。"
+            )
+        raise NetworkError(
             f"[xhs] 详情接口返回失败：code={payload.get('code')} "
             f"msg={payload.get('msg')!r}"
         )
@@ -199,7 +244,10 @@ async def get_detail_via_patchright(
 
     cookie = getattr(getattr(client, "config", None), "cookie", "") or ""
     if not cookie:
-        raise RuntimeError(
+        # ⚠️ `LoginExpiredError`（不是 RuntimeError）——
+        # 让 API 层映射成 401「去账号中心重新登录」，
+        # 而不是被 `except Exception: return {}` 吞成 404「笔记不存在」
+        raise LoginExpiredError(
             "[xhs] 获取笔记详情需要登录 Cookie：请先保存小红书连接。"
         )
 
@@ -283,7 +331,9 @@ async def get_detail_via_patchright(
                     url, wait_until="domcontentloaded", timeout=60000
                 )
             except Exception as exc:
-                raise RuntimeError(
+                # ⚠️ 类型化异常（见文件头说明）：页面打不开通常是
+                #    Cookie 失效或被限流，**不是**"笔记不存在"
+                raise NetworkError(
                     f"[xhs] 打开笔记页超时：{type(exc).__name__}。"
                     "通常是 Cookie 失效或平台限流。"
                 ) from exc
@@ -328,7 +378,9 @@ async def get_detail_via_patchright(
                 "() => !!document.querySelector('#noteContainer')"
             )
             if not on_detail:
-                raise RuntimeError(
+                # ⚠️ 类型化异常（见文件头说明）：被安全策略拦截是**风控**，
+                #    不是"笔记不存在"
+                raise RiskControlError(
                     "[xhs] 未能进入笔记详情页（可能被安全策略拦截）。"
                     "小红书详情必须『站内点击』打开；若从搜索结果进入，"
                     "请带上当时的搜索关键词（详情接口支持 keyword 参数）。"
@@ -342,7 +394,9 @@ async def get_detail_via_patchright(
 
     data = _json.loads(raw)
     if data.get("notFound"):
-        raise RuntimeError(
+        # ⚠️ 这个**真的是**"不存在/无权浏览" → `ContentNotFoundError`
+        #    （映射成 404 语义正确）
+        raise ContentNotFoundError(
             "[xhs] 笔记无法浏览（可能需要 xsec_token，或笔记已删除/私密）。"
             "若从搜索结果进入，请确保带上链接里的 xsec_token。"
         )
