@@ -149,12 +149,23 @@ source venv/bin/activate
 # .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 alembic upgrade head
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+
+# ⚠️ --host 必须是 0.0.0.0，不能写 127.0.0.1
+#
+# 写 127.0.0.1 时后端只监听回环网卡：前端页面照样打得开（图片走相对路径
+# /api/v1/proxy/image，由 vite 转发到后端），但一旦后端进程没起，
+# 搜索结果里的图片就全是浏览器的破图图标，**且没有任何提示** ——
+# 看起来像"手机端图片被防盗链拦了"，实际是后端没在跑/没监听局域网。
+#
+# 0.0.0.0 = 监听所有网卡，本机和手机（192.168.x.x）都能直连 8000 端口。
+# 调试时把 --host 写死成 127.0.0.1 是常见习惯，但它会让局域网访问直接不可用。
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 # Windows 必须追加 --loop，否则浏览器类功能（Cookie 获取）全部失败：
 #   --reload 会让 uvicorn 选 SelectorEventLoop，它在 Windows 不支持创建子进程，
 #   Patchright 无法启动浏览器。详见 backend/app/core/win_loop.py。
-uvicorn app.main:app --reload --port 8000 --loop app.core.win_loop:new_loop
+# Windows 实测：--reload 会挂住 worker，因此本机不使用 --reload。
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --loop app.core.win_loop:new_loop
 ```
 
 ### 4. 启动前端
@@ -166,6 +177,28 @@ npm run dev
 ```
 
 打开 `http://localhost:3000`，或以终端实际输出的 Vite 地址为准。API 文档在 `http://127.0.0.1:8000/docs`。
+
+### 5.（可选）用手机在同一局域网访问
+
+前后端都监听 `0.0.0.0` 时，手机连同一个 Wi-Fi 即可访问：
+
+```bash
+# Windows
+ipconfig | findstr IPv4        # 找到 WLAN 那行的 192.168.x.x
+```
+
+手机浏览器打开 `http://<那个IP>:3000`（例如 `http://192.168.18.73:3000`）。
+
+排查顺序（图片全是破图时按这个顺序查）：
+
+1. 手机能打开页面，但图片全裂 → **后端没起，或 `--host` 写成了 127.0.0.1**。
+   封面是相对路径 `/api/v1/proxy/image?url=…`，由 vite 转发给后端；
+   后端不通时浏览器只显示破图图标，没有报错，**很容易误判成"图片防盗链"**。
+   验证：`curl http://<本机IP>:8000/api/v1/proxy/image?url=<任意图片URL>`，
+   返回 200 + 图片二进制即后端正常。
+2. 页面整个打不开 → 检查 Windows 防火墙是否放行 3000/8000 入站，
+   以及手机和电脑是否真的在同一网段（注意访客网络/AP 隔离会阻断）。
+3. 页面能开但接口报 502 → vite 代理拿不到后端，同第 1 条。
 
 ### 可选：初始化小说阅读子模块
 
