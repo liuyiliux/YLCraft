@@ -350,6 +350,7 @@ async def get_replies_via_http(
     max_results: int = 20,
     max_pages: int = 3,
     direct_only: bool = True,
+    parent_comment_id: str = "",
 ) -> List[Dict[str, Any]]:
     """取一条推文的评论（回复）—— 复用 TweetDetail，纯 HTTP。
 
@@ -416,10 +417,25 @@ async def get_replies_via_http(
         #    （不是 twscrape 模型属性 `inReplyToTweetId` —— 那个在原始
         #     JSON 里是全 None，我差点误判"没有回复"）
         parent = str(legacy.get("in_reply_to_status_id_str") or "")
-        if direct_only and parent != str(tweet_id):
+        if parent_comment_id:
+            # 取子回复：只要直接回复**那条评论**的
+            if parent != str(parent_comment_id):
+                continue
+        elif direct_only and parent != str(tweet_id):
             continue
         core = (t.get("core") or {}).get("user_results") or {}
         u = (core.get("result") or {}) if isinstance(core, dict) else {}
+        # 评论图片：X 在 `legacy.extended_entities.media[]`（可能也有 entities）
+        images: List[str] = []
+        for holder in ("extended_entities", "entities"):
+            media = (legacy.get(holder) or {}).get("media") or []
+            for m in media:
+                if isinstance(m, dict):
+                    url = m.get("media_url_https") or m.get("media_url")
+                    if isinstance(url, str) and url.startswith("http"):
+                        images.append(url)
+            if images:
+                break
         out.append({
             "id": rid,
             "content": legacy.get("full_text") or "",
@@ -434,6 +450,9 @@ async def get_replies_via_http(
             "create_time": legacy.get("created_at") or "",
             "reply_count": int(legacy.get("reply_count") or 0),
             "parent": parent,
+            "images": images,
+            # 回复给谁（handle）—— 前端可显示 "回复 @xxx"
+            "reply_to": legacy.get("in_reply_to_screen_name") or "",
         })
     return out
 

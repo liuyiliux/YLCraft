@@ -516,6 +516,35 @@ class BasePlatformClient(abc.ABC):
             "total": len(comments or []),
         }
 
+    async def get_replies(
+        self,
+        item_id: str,
+        comment_id: str,
+        max_results: int = 20,
+        cursor: str = "",
+    ) -> Dict[str, Any]:
+        """取某条评论的**子回复**（楼中楼，可选）。
+
+        ## 为什么单独一个方法
+
+        子回复**不是**"评论列表的下一页" —— 它是"某条评论下面的回复"，
+        参数、端点、甚至**签名函数**都可能不同：
+
+            抖音：端点换 `/comment/list/reply/`，
+                  参数用 `comment_id`+`item_id`（不是 aweme_id），
+                  且签名要用 `sign_reply`（主评论是 `sign_datail`）
+            快手：端点换 `/photo/comment/sublist`，加 `rootCommentId`
+            X   ：二级回复在**同一棵** TweetDetail 树里，靠
+                  `in_reply_to_status_id_str` 串（不用额外请求）
+
+        Returns:
+            与 `get_comments_page` 同构：
+            `{comments, has_more, next_cursor, total}`
+        """
+        raise NotImplementedError(
+            f"[{self.config.platform}] get_replies not implemented"
+        )
+
     # =========================================================================
     # 工具方法
     # =========================================================================

@@ -385,6 +385,38 @@
       ]
     },
     {
+      "name": "telegram",
+      "file": "backend/app/api/v1/telegram.py",
+      "prefix": "/api/v1",
+      "tags": [
+        "Telegram"
+      ]
+    },
+    {
+      "name": "comments",
+      "file": "backend/app/api/v1/comments.py",
+      "prefix": "/api/v1/comments",
+      "tags": [
+        "Comments"
+      ]
+    },
+    {
+      "name": "platform_stats",
+      "file": "backend/app/api/v1/platform_stats.py",
+      "prefix": "/api/v1/platforms",
+      "tags": [
+        "Platform Stats"
+      ]
+    },
+    {
+      "name": "health_routes",
+      "file": "backend/app/services/platforms/health_routes.py",
+      "prefix": "/api/v1/platforms",
+      "tags": [
+        "Platform Health"
+      ]
+    },
+    {
       "name": "ai_connectors",
       "file": "backend/app/api/v1/ai_connectors.py",
       "prefix": "/api/v1/ai/connectors",
@@ -5011,6 +5043,22 @@
       "include_in_schema": true
     },
     {
+      "method": "GET",
+      "path": "/api/v1/comments",
+      "router": "comments",
+      "prefix": "/api/v1/comments",
+      "local_path": "",
+      "tags": [
+        "Comments"
+      ],
+      "summary": "获取评论（统一入口）",
+      "function": "get_comments",
+      "file": "backend/app/api/v1/comments.py",
+      "line": 296,
+      "response_model": "CommentsResponse",
+      "include_in_schema": true
+    },
+    {
       "method": "POST",
       "path": "/api/v1/crawler/fetch-no-watermark",
       "router": "crawler",
@@ -5022,7 +5070,7 @@
       "summary": "批量获取无水印资源",
       "function": "fetch_no_watermark",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 412,
+      "line": 731,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5038,7 +5086,7 @@
       "summary": "导入到素材库",
       "function": "import_to_assets",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 220,
+      "line": 359,
       "response_model": "ImportResponse",
       "include_in_schema": true
     },
@@ -5054,7 +5102,7 @@
       "summary": "获取笔记详情（无水印）",
       "function": "get_note_detail",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 336,
+      "line": 622,
       "response_model": "NoteDetailResponse",
       "include_in_schema": true
     },
@@ -5070,7 +5118,7 @@
       "summary": "获取采集配置选项",
       "function": "get_options",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 165,
+      "line": 257,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5086,7 +5134,7 @@
       "summary": "获取支持的平台列表",
       "function": "get_platforms",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 159,
+      "line": 251,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5102,7 +5150,7 @@
       "summary": "搜索视频/图文素材",
       "function": "search_materials",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 174,
+      "line": 266,
       "response_model": "SearchResponse",
       "include_in_schema": true
     },
@@ -5118,7 +5166,7 @@
       "summary": "增强搜索（支持笔记/用户）",
       "function": "search_enhanced",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 281,
+      "line": 420,
       "response_model": "SearchResponse",
       "include_in_schema": true
     },
@@ -5134,7 +5182,7 @@
       "summary": "查询采集任务状态",
       "function": "get_task_status",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 266,
+      "line": 405,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6414,7 +6462,7 @@
       "summary": "封面图代理（弃用，请使用 /api/v1/proxy/image）",
       "function": "cover_proxy",
       "file": "backend/app/api/v1/download.py",
-      "line": 1400,
+      "line": 1681,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6430,7 +6478,7 @@
       "summary": "通过 yt-dlp 下载视频（返回文件流）",
       "function": "download_video",
       "file": "backend/app/api/v1/download.py",
-      "line": 882,
+      "line": 1150,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6446,7 +6494,7 @@
       "summary": "下载图集图片到本地",
       "function": "download_images",
       "file": "backend/app/api/v1/download.py",
-      "line": 1431,
+      "line": 1712,
       "response_model": "DownloadImagesResponse",
       "include_in_schema": true
     },
@@ -6462,7 +6510,7 @@
       "summary": "打开文件夹并选中文件（Windows）",
       "function": "open_folder",
       "file": "backend/app/api/v1/download.py",
-      "line": 1389,
+      "line": 1670,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6478,7 +6526,7 @@
       "summary": "解析视频链接",
       "function": "parse_download_url",
       "file": "backend/app/api/v1/download.py",
-      "line": 464,
+      "line": 519,
       "response_model": "ParseResponse",
       "include_in_schema": true
     },
@@ -6494,7 +6542,7 @@
       "summary": "创建下载任务（后台，后台轮询）",
       "function": "create_download_task",
       "file": "backend/app/api/v1/download.py",
-      "line": 1341,
+      "line": 1614,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6510,7 +6558,7 @@
       "summary": "查询下载任务状态",
       "function": "get_download_task",
       "file": "backend/app/api/v1/download.py",
-      "line": 1365,
+      "line": 1646,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9086,7 +9134,7 @@
       "summary": "列出所有平台连接",
       "function": "list_connections",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 117,
+      "line": 130,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9102,7 +9150,7 @@
       "summary": "创建平台连接",
       "function": "create_connection",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 145,
+      "line": 158,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9118,7 +9166,7 @@
       "summary": "获取支持的平台列表",
       "function": "get_supported_platforms",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 92,
+      "line": 105,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9134,7 +9182,7 @@
       "summary": "获取连接详情",
       "function": "get_connection",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 130,
+      "line": 143,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9150,7 +9198,7 @@
       "summary": "更新平台连接",
       "function": "update_connection",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 162,
+      "line": 175,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9166,7 +9214,7 @@
       "summary": "删除平台连接",
       "function": "delete_connection",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 179,
+      "line": 192,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9182,7 +9230,7 @@
       "summary": "获取 Netscape 格式 Cookie",
       "function": "get_cookie_content",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 307,
+      "line": 410,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9198,7 +9246,39 @@
       "summary": "保存 Netscape 格式 Cookie",
       "function": "save_cookie_content",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 333,
+      "line": 436,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/platforms/{conn_id}/disable",
+      "router": "platforms",
+      "prefix": "/api/v1/platforms",
+      "local_path": "/{conn_id}/disable",
+      "tags": [
+        "Platform Connections"
+      ],
+      "summary": "停用连接（风控冷却等）",
+      "function": "disable_connection",
+      "file": "backend/app/api/v1/platforms.py",
+      "line": 207,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/platforms/{conn_id}/enable",
+      "router": "platforms",
+      "prefix": "/api/v1/platforms",
+      "local_path": "/{conn_id}/enable",
+      "tags": [
+        "Platform Connections"
+      ],
+      "summary": "启用连接（恢复使用）",
+      "function": "enable_connection",
+      "file": "backend/app/api/v1/platforms.py",
+      "line": 264,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9214,7 +9294,7 @@
       "summary": "通过指定平台连接发布内容",
       "function": "publish_content",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 249,
+      "line": 352,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9230,7 +9310,7 @@
       "summary": "测试连接有效性",
       "function": "test_connection",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 194,
+      "line": 297,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9246,8 +9326,40 @@
       "summary": "标记为已使用",
       "function": "mark_used",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 208,
+      "line": 311,
       "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platforms/{platform}/health",
+      "router": "health_routes",
+      "prefix": "/api/v1/platforms",
+      "local_path": "/{platform}/health",
+      "tags": [
+        "Platform Health"
+      ],
+      "summary": "平台体检（统一入口，所有平台可用）",
+      "function": "platform_health",
+      "file": "backend/app/services/platforms/health_routes.py",
+      "line": 82,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/platforms/{platform}/stats",
+      "router": "platform_stats",
+      "prefix": "/api/v1/platforms",
+      "local_path": "/{platform}/stats",
+      "tags": [
+        "Platform Stats"
+      ],
+      "summary": "平台历史健康度统计",
+      "function": "platform_stats",
+      "file": "backend/app/api/v1/platform_stats.py",
+      "line": 86,
+      "response_model": "PlatformStatsResponse",
       "include_in_schema": true
     },
     {
@@ -9726,7 +9838,7 @@
       "summary": "下载 CA 证书",
       "function": "download_ca_cert",
       "file": "backend/app/api/v1/proxy.py",
-      "line": 205,
+      "line": 321,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9742,7 +9854,7 @@
       "summary": "检查代理状态",
       "function": "sniffer_health",
       "file": "backend/app/api/v1/proxy.py",
-      "line": 195,
+      "line": 311,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9758,7 +9870,7 @@
       "summary": "启动抓包代理",
       "function": "start_sniffer",
       "file": "backend/app/api/v1/proxy.py",
-      "line": 169,
+      "line": 285,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9774,7 +9886,7 @@
       "summary": "查询抓包状态",
       "function": "get_sniffer_status",
       "file": "backend/app/api/v1/proxy.py",
-      "line": 179,
+      "line": 295,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9790,7 +9902,23 @@
       "summary": "停止抓包",
       "function": "stop_sniffer",
       "file": "backend/app/api/v1/proxy.py",
-      "line": 187,
+      "line": 303,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/proxy/video",
+      "router": "proxy",
+      "prefix": "/api/v1/proxy",
+      "local_path": "/video",
+      "tags": [
+        "Proxy"
+      ],
+      "summary": "视频代理（去 Referer + 支持 Range）",
+      "function": "proxy_video",
+      "file": "backend/app/api/v1/proxy.py",
+      "line": 166,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10595,6 +10723,102 @@
       "include_in_schema": true
     },
     {
+      "method": "POST",
+      "path": "/api/v1/telegram/auth/logout",
+      "router": "telegram",
+      "prefix": "/api/v1/telegram",
+      "local_path": "/auth/logout",
+      "tags": [
+        "Telegram"
+      ],
+      "summary": "退出 Telegram 登录",
+      "function": "logout",
+      "file": "backend/app/api/v1/telegram.py",
+      "line": 119,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/telegram/auth/send-code",
+      "router": "telegram",
+      "prefix": "/api/v1/telegram",
+      "local_path": "/auth/send-code",
+      "tags": [
+        "Telegram"
+      ],
+      "summary": "发送 Telegram 验证码",
+      "function": "send_code",
+      "file": "backend/app/api/v1/telegram.py",
+      "line": 86,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/telegram/auth/sign-in",
+      "router": "telegram",
+      "prefix": "/api/v1/telegram",
+      "local_path": "/auth/sign-in",
+      "tags": [
+        "Telegram"
+      ],
+      "summary": "提交验证码完成登录",
+      "function": "sign_in",
+      "file": "backend/app/api/v1/telegram.py",
+      "line": 105,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/telegram/channel",
+      "router": "telegram",
+      "prefix": "/api/v1/telegram",
+      "local_path": "/channel",
+      "tags": [
+        "Telegram"
+      ],
+      "summary": "公开频道信息 + 消息（免登录）",
+      "function": "public_channel",
+      "file": "backend/app/api/v1/telegram.py",
+      "line": 179,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/telegram/channels",
+      "router": "telegram",
+      "prefix": "/api/v1/telegram",
+      "local_path": "/channels",
+      "tags": [
+        "Telegram"
+      ],
+      "summary": "我加入的频道（需登录）",
+      "function": "my_channels",
+      "file": "backend/app/api/v1/telegram.py",
+      "line": 135,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/telegram/status",
+      "router": "telegram",
+      "prefix": "/api/v1/telegram",
+      "local_path": "/status",
+      "tags": [
+        "Telegram"
+      ],
+      "summary": "Telegram 登录状态",
+      "function": "telegram_status",
+      "file": "backend/app/api/v1/telegram.py",
+      "line": 65,
+      "response_model": "TelegramStatus",
+      "include_in_schema": true
+    },
+    {
       "method": "GET",
       "path": "/api/v1/torrents",
       "router": "torrents",
@@ -10884,6 +11108,70 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/users/creator/overview",
+      "router": "users",
+      "prefix": "/api/v1/users",
+      "local_path": "/creator/overview",
+      "tags": [
+        "Users"
+      ],
+      "summary": "创作者中心：账号总览（仅号主可见的运营数据）",
+      "function": "get_creator_overview",
+      "file": "backend/app/api/v1/users.py",
+      "line": 348,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/users/creator/works",
+      "router": "users",
+      "prefix": "/api/v1/users",
+      "local_path": "/creator/works",
+      "tags": [
+        "Users"
+      ],
+      "summary": "创作者中心：作品列表（含完播率等深度指标）",
+      "function": "get_creator_works",
+      "file": "backend/app/api/v1/users.py",
+      "line": 473,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/users/creator/xhs/fans",
+      "router": "users",
+      "prefix": "/api/v1/users",
+      "local_path": "/creator/xhs/fans",
+      "tags": [
+        "Users"
+      ],
+      "summary": "小红书创作服务平台：粉丝数据",
+      "function": "get_xhs_creator_fans",
+      "file": "backend/app/api/v1/users.py",
+      "line": 450,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/users/creator/xhs/overview",
+      "router": "users",
+      "prefix": "/api/v1/users",
+      "local_path": "/creator/xhs/overview",
+      "tags": [
+        "Users"
+      ],
+      "summary": "小红书创作服务平台：账号总览",
+      "function": "get_xhs_creator_overview",
+      "file": "backend/app/api/v1/users.py",
+      "line": 407,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/users/me",
       "router": "users",
       "prefix": "/api/v1/users",
@@ -10894,7 +11182,7 @@
       "summary": "获取自己账号的资料（抖音/小红书）",
       "function": "get_self_profile",
       "file": "backend/app/api/v1/users.py",
-      "line": 184,
+      "line": 298,
       "response_model": "UserProfileResponse",
       "include_in_schema": true
     },
@@ -10910,7 +11198,7 @@
       "summary": "获取用户资料（抖音/小红书）",
       "function": "get_user_profile",
       "file": "backend/app/api/v1/users.py",
-      "line": 223,
+      "line": 516,
       "response_model": "UserProfileResponse",
       "include_in_schema": true
     },
@@ -10926,7 +11214,7 @@
       "summary": "搜索用户（抖音/小红书）",
       "function": "search_users",
       "file": "backend/app/api/v1/users.py",
-      "line": 155,
+      "line": 264,
       "response_model": "UserSearchResponse",
       "include_in_schema": true
     },
@@ -10939,10 +11227,10 @@
       "tags": [
         "Users"
       ],
-      "summary": "获取用户作品列表（抖音/小红书）",
+      "summary": "获取用户作品列表（抖音/小红书/微博/X/B站）",
       "function": "get_user_videos",
       "file": "backend/app/api/v1/users.py",
-      "line": 260,
+      "line": 553,
       "response_model": "UserVideosResponse",
       "include_in_schema": true
     },

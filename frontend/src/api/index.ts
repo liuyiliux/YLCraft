@@ -1510,7 +1510,42 @@ export const getPlatformHealth = (platform: string, connId = '', keyword = '') =
 // 统一入口让未实现的平台返回 **501 + 具体原因**，
 // 而不是空列表（"没实现" ≠ "这条没评论"）。
 
-/** 取某条内容的评论（目前仅 B站可用；其它平台返回 501 + 原因） */
+/** 平台**历史健康度**统计（成功率/耗时）—— 与"体检"不同：
+ *
+ *  · 体检 `/platforms/{p}/health` → **实时探针**：现在能不能用
+ *  · 本接口                      → **历史统计**：最近稳不稳
+ */
+export const getPlatformStats = (platform: string, hours = 24) =>
+  request(`/platforms/${platform}/stats?hours=${hours}`) as Promise<{
+    success: boolean
+    data?: {
+      platform: string
+      window_hours: number
+      total: number
+      success: number
+      failed: number
+      success_rate: number
+      avg_duration_ms: number
+      p95_duration_ms: number
+      by_action: Array<{
+        action: string
+        total: number
+        success: number
+        failed: number
+        success_rate: number
+      }>
+      last_error: string
+      last_error_at: number
+      /** ⚠️ 样本太少时**不要**下"稳定/不稳定"的结论 */
+      sample_sufficient: boolean
+    }
+    message: string
+  }>
+
+/** 取某条内容的评论（目前仅 B站可用；其它平台返回 501 + 原因）
+ *
+ * `parent_id`：传了就取**那条评论的子回复**（楼中楼）。
+ */
 export const getComments = (params: {
   platform: string
   item_id: string
@@ -1519,6 +1554,8 @@ export const getComments = (params: {
   sort?: number
   offset?: string
   conn_id?: string
+  /** 取某条评论的子回复（传父评论 id） */
+  parent_id?: string
 }) => {
   const qs = new URLSearchParams()
   qs.set('platform', params.platform)
@@ -1528,6 +1565,7 @@ export const getComments = (params: {
   if (params.sort !== undefined) qs.set('sort', String(params.sort))
   if (params.offset) qs.set('offset', params.offset)
   if (params.conn_id) qs.set('conn_id', params.conn_id)
+  if (params.parent_id) qs.set('parent_id', params.parent_id)
   return request(`/comments?${qs.toString()}`) as Promise<{
     success: boolean
     data?: {

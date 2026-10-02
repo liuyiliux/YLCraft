@@ -139,6 +139,70 @@ class TwitterClient(BasePlatformClient):
     # 用户（可选能力）
     # =========================================================================
 
+    async def get_comments_page(
+        self,
+        item_id: str,
+        max_results: int = 20,
+        page: int = 1,
+        cursor: str = "",
+        root_comment_id: str = "",
+    ) -> Dict[str, Any]:
+        """取**一页**推文评论。
+
+        ⚠️ X 的 GraphQL **没有 page 参数**，只有 cursor ——
+        所以 `cursor` 是唯一的分页手段（`Bottom` 类型，实测每页 40 条全新增）。
+        """
+        tweet_id = str(item_id or "").strip()
+        if not tweet_id:
+            return {"comments": [], "has_more": False, "next_cursor": "", "total": 0}
+
+        cookie = self.header_cookie()
+        if not cookie:
+            raise RuntimeError(
+                "[twitter] 取评论需要登录态（auth_token + ct0）—— "
+                "请在「账号中心」用浏览器方式登录一次 x.com。"
+            )
+
+        from .search_http import get_replies_via_http
+
+        # ⚠️ X 的分页是"每页取一批然后按 cursor 继续"，我们这里
+        # 一次取 max_results 条；has_more 用"取满没取满"推断
+        # （X 不返回总数，游标也只在内部流转）
+        comments = await get_replies_via_http(
+            tweet_id,
+            cookie_header=cookie,
+            max_results=max_results,
+            max_pages=1 if cursor else 3,
+            parent_comment_id=root_comment_id,
+        )
+        # ⚠️ X 不暴露"下一页游标"给调用方（它内部就翻了）——
+        # 这里如实返回空游标 + has_more=False，避免谎报能翻页
+        return {
+            "comments": comments,
+            "has_more": False,
+            "next_cursor": "",
+            "total": len(comments),
+        }
+
+    async def get_replies(
+        self,
+        item_id: str,
+        comment_id: str,
+        max_results: int = 20,
+        cursor: str = "",
+    ) -> Dict[str, Any]:
+        """取某条评论的子回复。
+
+        ⚠️ X 的二级回复**在同一棵 TweetDetail 树里**（不用额外请求）——
+        靠 `in_reply_to_status_id_str` 等于父评论 id 来筛。
+        """
+        return await self.get_comments_page(
+            item_id,
+            max_results=max_results,
+            cursor=cursor,
+            root_comment_id=str(comment_id or ""),
+        )
+
     async def get_comments(
         self,
         item_id: str,
