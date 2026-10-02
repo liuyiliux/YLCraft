@@ -26,9 +26,13 @@ import {
   SendOutlined, VideoCameraAddOutlined, CopyOutlined, ArrowUpOutlined,
   CalendarOutlined, FolderOpenOutlined, SyncOutlined, AppstoreOutlined,
   ClockCircleOutlined, SwapOutlined,
+  // ⚠️ 手机端筛选区的折叠入口图标（2026-10-02 移动端适配）
+  SlidersOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
 import { useResizableColumns } from '../../hooks/useResizableColumns'
+// ⚠️ 移动端适配（2026-10-02）—— 之前**完全没有**响应式处理
+import { useIsMobile } from '../../hooks/useResponsive'
 import {
   searchEnhanced, importCrawler, getNoteDetail, getSubtitles, downloadCrawlerSubtitle, listPlatformConnections,
   getDanmaku, downloadDanmaku, getBiliStats, getBiliComments, sendBiliComment, getBiliVideoInfo,
@@ -728,6 +732,22 @@ export default function CrawlerPage() {
   const navigate = useNavigate()
   const articleListRef = useRef<HTMLDivElement>(null)
   const [showScrollTop, setShowScrollTop] = useState(false)
+  // ⚠️ 手机端（< 768px）—— 2026-10-02 移动端适配
+  // 实测问题：手机上「去官网搜」盖住搜索框、停用按钮与账号下拉重叠、
+  //           搜索类型 tab 溢出屏幕、筛选区铺满半屏
+  const isMobile = useIsMobile()
+  /**
+   * 手机端筛选区是否展开（**默认折叠**）。
+   *
+   * ⚠️ 实测（2026-10-02）：手机上「综合排序/最多播放/…/时长/日期」
+   * 铺开后会占 **300+ px（半屏）**，把核心的搜索区挤到要滚动才看得全。
+   * 桌面端不受影响（保持全部展开，一次显示更高效）。
+   *
+   * 只依赖 `setState`（不读其它 state），所以可以安全放在组件开头 ——
+   * 读 `currentTypeConfig`/`sortBy`/`filters` 的"是否已筛选"判断
+   * 放在渲染处（IIFE 里），避开声明顺序问题。
+   */
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
 
   // 搜索状态
   const [platform, setPlatform] = useState<string>(() => {
@@ -893,7 +913,15 @@ export default function CrawlerPage() {
       title: 560,       // 标题：吸收剩余空间
       platform: 90,     // 平台：原 110
       author: 150,      // 作者：原 140
-      create_time: 64,  // 发布时间：原 120，收到接近"2月前"的宽度（仍可继续拖窄）
+      // ⚠️ 92 而不是 64（2026-10-02 审计修）
+      //
+      // `formatTime` 最坏输出是 `toLocaleDateString('zh-CN')` =「2026/10/1」
+      // ≈ 70px，加上 antd 单元格左右各 16px padding = **需要 ~102px**。
+      // 原来给 64px 装不下 → 文字按字竖排（用户截图里的同类问题）。
+      //
+      // 注释里说的"2月前"其实 `formatTime` 从不返回（最坏是「12分钟前」），
+      // 但绝对日期那条路确实需要这个宽度。
+      create_time: 92,
       stats: 150,       // 互动：原 160
       actions: 100,     // 操作：原 160
     },
@@ -1519,10 +1547,24 @@ export default function CrawlerPage() {
 
     return (
       <>
-        <Row gutter={[12, 8]} align="middle" style={{ marginTop: 10 }} wrap={false}>
+        {/* ⚠️ **手机端换行**（2026-10-02 移动端适配）
+          *
+          * 原来 `wrap={false}` + `minWidth: 240` 的账号下拉 + 停用按钮
+          * 挤在一行。手机上（~390px）：
+          *   "X账号："(~60) + 下拉(240) + gap + 「停用」(~70) > 390
+          *   → 停用按钮**压在下拉框上**（实测截图：橙色的"停用"骑在
+          *     账号选择框上面）
+          *
+          * 修法：手机端 `Space` 换行（`wrap`）且下拉不再固定 minWidth。
+          */}
+        <Row gutter={[12, 8]} align="middle" style={{ marginTop: 10 }} wrap={isMobile ? undefined : false}>
           <Col flex="1 1 auto" style={{ minWidth: 0 }}>
             {conns.length > 0 ? (
-              <Space size={8} style={{ width: '100%' }}>
+              <Space
+                size={8}
+                style={{ width: '100%' }}
+                wrap={isMobile ? true : undefined}
+              >
                 <Text style={{ fontSize: 12, color: textSec, whiteSpace: 'nowrap' }}>
                   {pf.label}账号：
                 </Text>
@@ -1530,7 +1572,8 @@ export default function CrawlerPage() {
                   size="small"
                   value={connValue || undefined}
                   onChange={setConnValue}
-                  style={{ minWidth: 240 }}
+                  // ⚠️ 手机端不设固定 minWidth（240px 会把按钮挤出屏幕）
+                  style={isMobile ? { flex: 1, minWidth: 0 } : { minWidth: 240 }}
                   options={[
                     // ⚠️ 「不使用账号」是**真实选项**，但要配风险提示 ——
                     // 很多平台不支持匿名搜索（小红书直接返回 -100），
@@ -2390,10 +2433,21 @@ export default function CrawlerPage() {
     ),
     ...(searchType !== 'user' && searchType !== 'live' && searchType !== 'account' ? [{
       title: wrapColumnTitle('发布时间', 'create_time'), dataIndex: 'create_time', key: 'create_time', width: colWidths['create_time'],
-      render: (create_time: any, r: CrawlerResult) => {
-        // 智能时间格式化（兼容 ISO 字符串 / 10 位秒 / 13 位毫秒）
-        return formatTime(create_time, r.platform, searchType)
-      },
+      // ⚠️ 表头与内容都不换行（2026-10-02 审计修）
+      //
+      // `formatTime` 的实际输出：
+      //   · 相对时间「12分钟前」「3小时前」≈ 5 个中文字（~60px）
+      //   · 绝对时间 `toLocaleDateString('zh-CN')` = 「2026/10/1」（~70px）
+      //
+      // 而列宽默认只有 64px，**减去 antd 单元格左右各 16px padding
+      // 只剩 32px** —— 装不下任何一个 → 文字按字竖排
+      // （这正是用户截图里"表头变竖排单字"的同类问题）。
+      onHeaderCell: () => ({ style: { whiteSpace: 'nowrap' } }),
+      render: (create_time: any, r: CrawlerResult) => (
+        <span style={{ whiteSpace: 'nowrap' }}>
+          {formatTime(create_time, r.platform, searchType)}
+        </span>
+      ),
     }] : []),
     {
       // 公众号账号列头改为「公众号信息」；其它维持原样
@@ -2538,7 +2592,6 @@ export default function CrawlerPage() {
       {/* ===== Search Panel ===== */}
       <Card style={{ marginBottom: 20, background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 12 }}
         styles={{ body: { padding: 0 } }}>
-
         {/* =====================================================================
             ① 主搜索行 —— **所有平台完全一致，宽度永不跳**（2026-10-01 重构）
 
@@ -2558,9 +2611,24 @@ export default function CrawlerPage() {
             只该取决于屏幕宽度。所以这里固定 `md=12`，
             把「连接选择」「体检」全部**下移到第二行**。
             ===================================================================== */}
-        <div style={{ padding: '16px 20px 12px' }}>
-          <Row gutter={[12, 12]} align="middle" wrap={false}>
-            <Col flex="0 0 150px">
+        {/* ⚠️ 手机端压缩上下留白（2026-10-02 移动端适配）
+          * 实测：手机上整张搜索卡从标题到"热门"要滚半屏。
+          * 这里压缩外边距与行间距（桌面端不变）。 */}
+        <div style={{ padding: isMobile ? '10px 12px 8px' : '16px 20px 12px' }}>
+          {/* ⚠️ **手机端换行**（2026-10-02 移动端适配）
+            *
+            * 原来这里是 `wrap={false}` + 固定 150px 平台选择 +
+            * `flex="none"` 的「去官网搜」按钮 —— 三者**挤在一行**。
+            * 手机（~390px 宽）上：
+            *   150(平台) + gap12 + 搜索框 + gap12 + ~130(去官网搜) > 390
+            *   → 搜索框被压到**几乎不可见**（实测截图：只剩一条细边，
+            *     而且「去官网搜」直接**盖在**搜索框上）
+            *
+            * 修法：手机端 `wrap` 打开且平台选择**占满一行**，
+            * 搜索框 + 按钮各占一行。
+            */}
+          <Row gutter={[12, 12]} align="middle" wrap={isMobile ? undefined : false}>
+            <Col flex={isMobile ? '0 0 100%' : '0 0 150px'}>
               <Select
                 value={platform}
                 onChange={setPlatform}
@@ -2594,9 +2662,10 @@ export default function CrawlerPage() {
 
                 ⚠️ 这是**降级路径**，不是替代品：它拿不到结构化数据
                 （没法导入素材库），只是"至少能查"。 */}
-            <Col flex="none">
+            <Col flex={isMobile ? '0 0 100%' : 'none'}>
               <Tooltip title={`在浏览器里打开${getPlatformInfo(platform).label}的搜索页（程序化搜索被风控时的备选）`}>
                 <Button
+                  block={isMobile}
                   icon={<ExportOutlined />}
                   onClick={() => {
                     const kw = keyword.trim()
@@ -2635,22 +2704,47 @@ export default function CrawlerPage() {
 
         {/* ② 搜索类型 Tab（带下划线高亮，B站风格） */}
         {platformConfig.searchTypes.length > 1 && (
-          <div style={{ padding: '0 20px', borderTop: `1px solid ${borderColor}` }}>
-            <div style={{ display: 'flex', gap: 0, overflowX: 'auto' }}>
+          <div style={{
+            padding: isMobile ? '0 12px' : '0 20px',
+            borderTop: `1px solid ${borderColor}`,
+          }}>
+            {/* ⚠️ **手机端可横向滚动 + 渐隐提示**（2026-10-02 移动端适配）
+              *
+              * 这里本来就有 `overflowX: 'auto'`，但手机上 tab 装不下时
+              * 用户**看不出右边还有内容**（截图里「用户」被切掉一半，
+              * 看起来像被禁用了）。
+              *
+              * 修法：手机端减小 padding、隐藏滚动条（移动端默认就藏，
+              *   更显"到头了"）、加右侧渐隐暗示还能滑。
+              */}
+            <div style={{
+              display: 'flex',
+              gap: 0,
+              overflowX: 'auto',
+              WebkitOverflowScrolling: 'touch',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+              // 右侧渐隐：暗示"还有内容可以往右滑"
+              maskImage: 'linear-gradient(to right, black 88%, transparent 100%)',
+              WebkitMaskImage: 'linear-gradient(to right, black 88%, transparent 100%)',
+            }}>
               {platformConfig.searchTypes.map(st => (
                 <button
                   key={st.value}
                   onClick={() => setSearchType(st.value)}
                   style={{
-                    padding: '10px 16px',
+                    // ⚠️ 手机端缩小 padding 与字号（多塞得下一个 tab）
+                    padding: isMobile ? '10px 11px' : '10px 16px',
                     border: 'none',
                     borderBottom: `2px solid ${searchType === st.value ? THEME.primary : 'transparent'}`,
                     background: 'transparent',
                     color: searchType === st.value ? THEME.primary : textSec,
                     fontWeight: searchType === st.value ? 600 : 400,
-                    fontSize: 14,
+                    fontSize: isMobile ? 13 : 14,
                     cursor: 'pointer',
                     whiteSpace: 'nowrap',
+                    // ⚠️ 不加这个，按钮会被 flex 压缩（文字竖排）
+                    flexShrink: 0,
                     transition: 'all 0.2s',
                     display: 'flex',
                     alignItems: 'center',
@@ -2685,17 +2779,46 @@ export default function CrawlerPage() {
         )}
 
         {/* ③ 排序 + 筛选 + 数量（根据当前搜索类型动态） */}
-        {currentTypeConfig && (
+        {currentTypeConfig && (() => {
+          // ⚠️ **手机端折叠筛选区**（2026-10-02 移动端适配）
+          //
+          // 实测：手机上「综合排序/最多播放/…/时长/日期」**铺了 300+ px**
+          // （半屏），把核心的搜索区挤到要滚动才看得全。
+          //
+          // 桌面端保留全部展开（一次显示更高效），手机端折叠成一行入口。
+          //
+          // ⚠️ 用 IIFE 而不是组件级 state：这里要读 `currentTypeConfig`/
+          //    `sortBy`/`filters`，而它们在渲染区**之后**才声明
+          //    （提前用会报 TS2448 "used before declaration"）。
+          const hasActive =
+            (currentTypeConfig.sortOptions.length > 1
+              && !!currentTypeConfig.defaultSort
+              && sortBy !== currentTypeConfig.defaultSort)
+            || Object.values(filters || {}).some(Boolean)
+          return (
           <div style={{
-            padding: '10px 20px',
+            padding: isMobile ? '8px 12px' : '10px 20px',
             display: 'flex',
             flexWrap: 'wrap',
-            gap: '12px 24px',
+            gap: isMobile ? '6px 12px' : '12px 24px',
             alignItems: 'center',
             borderTop: `1px solid ${borderColor}`,
           }}>
+            {isMobile && (
+              <Button
+                size="small"
+                type="text"
+                icon={<SlidersOutlined />}
+                onClick={() => setMobileFilterOpen(v => !v)}
+                style={{ fontSize: 12, height: 26, padding: '0 6px' }}
+              >
+                筛选与排序
+                {hasActive && <Badge count={1} size="small" offset={[6, -2]} />}
+              </Button>
+            )}
+
             {/* 排序 */}
-            {currentTypeConfig.sortOptions.length > 1 && (
+            {(!isMobile || mobileFilterOpen) && currentTypeConfig.sortOptions.length > 1 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
                 {currentTypeConfig.sortOptions.map(opt => (
                   <button
@@ -2722,8 +2845,8 @@ export default function CrawlerPage() {
               </div>
             )}
 
-            {/* 筛选条件 */}
-            {currentTypeConfig.filters?.map(f => (
+            {/* 筛选条件（手机端折叠，见上方说明）*/}
+            {(!isMobile || mobileFilterOpen) && currentTypeConfig.filters?.map(f => (
               <div key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
                 <Text style={{ color: textSec, fontSize: 12, marginRight: 4 }}>{f.label}</Text>
                 {f.options.map(opt => (
@@ -2803,10 +2926,15 @@ export default function CrawlerPage() {
               )}
             </div>
           </div>
-        )}
+          )
+        })()}
 
         {/* ④ 热门关键词 */}
-        <div style={{ padding: '10px 20px', borderTop: `1px solid ${borderColor}`, background: isDark ? 'rgba(255,255,255,0.02)' : '#fafbfc' }}>
+        <div style={{
+          padding: isMobile ? '8px 12px' : '10px 20px',
+          borderTop: `1px solid ${borderColor}`,
+          background: isDark ? 'rgba(255,255,255,0.02)' : '#fafbfc',
+        }}>
           <Space size={6} wrap>
             <Text style={{ color: textSec, fontSize: 12 }}>热门：</Text>
             {SEARCH_KEYWORDS.map(k => (
@@ -2819,6 +2947,8 @@ export default function CrawlerPage() {
                   background: keyword === k
                     ? (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.02)')
                     : 'transparent',
+                  // ⚠️ 手机端更紧凑（Tag 本身有 padding）
+                  ...(isMobile ? { fontSize: 11, marginInlineEnd: 0, lineHeight: '20px' } : {}),
                   transition: 'all 0.15s',
                 }}
                 onClick={() => { setKeyword(k) }}
@@ -3863,17 +3993,31 @@ export default function CrawlerPage() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                     <Text style={{ color: textPri, fontWeight: 600 }}>评论列表</Text>
                     <Space>
-                      <Segmented
-                        size="small"
-                        options={[{ label: '最热', value: 0 }, { label: '最新', value: 1 }, { label: '最早', value: 2 }]}
-                        value={commentSort}
-                        onChange={v => { 
-                          setCommentSort(v as number)
-                          setCommentNextOffset('')
-                          setCommentHasMore(true)
-                          fetchComments(detailNote.id, 1, v as number, '')
-                        }}
-                      />
+                      {/* ⚠️ 排序控件**只有 B站显示**（2026-10-02 审计修）
+                       *
+                       * 原来这里**无平台守卫** —— 但后端 `sort` 参数**只传给
+                       * B站**的 `get_comments_paged`（其它平台走
+                       * `get_comments_page`，压根不接收 sort）。
+                       *
+                       * 结果：非 B站平台显示"最热/最新/最早"，
+                       * 用户切了**毫无反应** —— 典型的**假选项**
+                       *（本仓库铁律：假选项比没有更糟）。
+                       *
+                       * 与内容搜索区的处理一致（那边也是按平台
+                       * `sortOptions` 决定显示不显示）。 */}
+                      {detailNote.platform === 'bili' && (
+                        <Segmented
+                          size="small"
+                          options={[{ label: '最热', value: 0 }, { label: '最新', value: 1 }, { label: '最早', value: 2 }]}
+                          value={commentSort}
+                          onChange={v => {
+                            setCommentSort(v as number)
+                            setCommentNextOffset('')
+                            setCommentHasMore(true)
+                            fetchComments(detailNote.id, 1, v as number, '')
+                          }}
+                        />
+                      )}
                       <Button size="small" icon={<ReloadOutlined />} loading={commentLoading} onClick={() => fetchComments(detailNote.id)}>
                         刷新
                       </Button>

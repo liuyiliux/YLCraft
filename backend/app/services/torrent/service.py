@@ -64,7 +64,20 @@ class TorrentService:
     # 如果之前存过 resume data，还会**跳过重新校验**。
 
     # 这些状态的种子不需要恢复（已完成 / 已删除）
-    _TERMINAL_STATES = {"completed", "finished", "seeding", "deleted"}
+    #
+    # ⚠️ **`done` 必须在里面**（2026-10-02 修）
+    #
+    # `models.py::_state_name` 把"上传完成"归一成 **`"done"`**，
+    # 而 `_apply_status` 会把 `record.status` 写成这个 `normalized_status`。
+    #
+    # 原来这个集合是 `{completed, finished, seeding, deleted}` —— **不含 `done`**，
+    # 于是每次启动都会把**已下载完成**的种子重新 add 进引擎并强制写成
+    # "downloading"：用户看到已下完的种子变成"下载中"，且每次开机
+    # 重复做无用的分片校验。
+    #
+    # 教训：这里的字面量必须与 `models.py` 的 `normalized_status`
+    # 实际产出的值对齐 —— 两处词汇表漂移是很隐蔽的 bug。
+    _TERMINAL_STATES = {"done", "completed", "finished", "seeding", "deleted"}
 
     async def restore_active_downloads(self) -> dict:
         """启动时恢复未完成的种子下载。

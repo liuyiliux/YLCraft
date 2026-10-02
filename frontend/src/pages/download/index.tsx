@@ -1,6 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Alert, Card, Input, Button, Typography, Tag, Spin, message, Space, Divider, Progress, Table, Upload, Modal, Image,
+  // ⚠️ List/Tag 用于"未完成的下载"区块（断点续传入口，2026-10-02 审计补）
+  List,
 } from 'antd'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -33,6 +35,10 @@ import {
   getDownloadTask,
   importCrawler,
   wechatMpDownloadSingle,
+  // ⚠️ 断点续传（2026-10-02 审计补）——
+  // 这两个 API 封装早就有了，但**全仓没有任何调用点**，
+  // 导致"单个下载"无法续传（批量可以，因为采集页另做了 UI）
+  listResumableDownloads, resumeDownload,
 } from '../../api'
 import type { DownloadParseResponse, VideoQuality } from '../../types/api'
 import { useTheme } from '../../constants/theme'
@@ -1082,6 +1088,46 @@ export default function DownloadPage() {
 
   const platformLabel = result ? (PLATFORM_LABELS[result.platform] || result.platform) : ''
 
+  // ===== 未完成的下载（断点续传）===== 2026-10-02 审计补
+  //
+  // 后端 `/download/resumable` 早就实现了，但前端**从来没调用过**
+  // （API 封装好了却没有 UI 入口）—— 单个下载无法续传。
+  const [resumableList, setResumableList] = useState<any[]>([])
+  const [resumingId, setResumingId] = useState('')
+
+  const loadResumable = useCallback(async () => {
+    try {
+      const res: any = await listResumableDownloads()
+      setResumableList(res?.data || [])
+    } catch {
+      // best-effort：拉不到就当没有（不影响本页其它功能）
+      setResumableList([])
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadResumable()
+    // 页面开着时定期刷新（下载可能在后台继续）
+    const t = setInterval(() => { void loadResumable() }, 8000)
+    return () => clearInterval(t)
+  }, [loadResumable])
+
+  const handleResumeOne = async (taskId: string) => {
+    setResumingId(taskId)
+    try {
+      const res: any = await resumeDownload(taskId)
+      message.success(res?.message || '已从断点继续')
+      // 续传后这条就从"未完成"里消失了（后端会注销登记）
+      setResumableList(prev => prev.filter(x => x.task_id !== taskId))
+    } catch (e: any) {
+      message.error(
+        String(e?.response?.data?.detail || e?.message || '续传失败').slice(0, 120),
+      )
+    } finally {
+      setResumingId('')
+    }
+  }
+
   return (
     // 左右两栏：左边「链接解析（输入 + 解析结果）」，右边「种子 / 磁力下载」。
     // 原来磁力面板夹在解析输入框和解析结果之间——解析一出结果，结果就压在磁力面板下面，
@@ -1096,6 +1142,73 @@ export default function DownloadPage() {
           支持视频和图片 · 1000+ 平台（抖音/B站/X 等）
         </Text>
       </Title>
+
+      {/* ===== 未完成的下载（可续传）=====
+          ⚠️ 2026-10-02 审计补：这个入口**之前完全没有**。
+          后端 `GET /download/resumable` 早就实现了、前端 API 也封装好了
+          （`listResumableDownloads` / `resumeDownload`），
+          但**全仓没有任何调用点** —— 意味着：
+            下载中途断网/重启后，用户看不到任何未完成任务，
+            也没有"继续下载"的按钮，只能手动重新下载。
+
+          而**批量**下载的续传是有 UI 的（采集页），所以这是
+          "批量能续传、单个不能"的能力不一致。 */}
+      {resumableList.length > 0 && (
+        <Card
+          style={{
+            background: THEME.bgCard, marginBottom: 24,
+            border: `1px solid ${THEME.warning || '#faad14'}`,
+          }}
+          title={
+            <Space>
+              <CloudDownloadOutlined style={{ color: THEME.warning || '#faad14' }} />
+              <Text style={{ color: THEME.textPrimary }}>未完成的下载</Text>
+              <Tag color="warning">{resumableList.length}</Tag>
+            </Space>
+          }
+        >
+          <List
+            size="small"
+            dataSource={resumableList}
+            renderItem={(it: any) => (
+              <List.Item
+                actions={[
+                  <Button
+                    key="resume"
+                    type="link"
+                    size="small"
+                    loading={resumingId === it.task_id}
+                    disabled={!it.can_resume}
+                    onClick={() => handleResumeOne(it.task_id)}
+                  >
+                    继续下载
+                  </Button>,
+                ]}
+              >
+                <List.Item.Meta
+                  title={
+                    <Space>
+                      <span style={{ fontSize: 13 }}>{it.title || it.url}</span>
+                      {!it.can_resume && (
+                        <Tag color="default">
+                          无已下载数据（续传=重下）
+                        </Tag>
+                      )}
+                    </Space>
+                  }
+                  description={
+                    <span style={{ fontSize: 12 }}>
+                      {it.can_resume
+                        ? `已下载 ${(it.bytes_done / 1024 / 1024).toFixed(1)} MB，可从断点继续`
+                        : '未找到半成品文件（可能被清理），继续会重新下载'}
+                    </span>
+                  }
+                />
+              </List.Item>
+            )}
+          />
+        </Card>
+      )}
 
       {/* Input Card */}
       <Card style={{ background: THEME.bgCard, marginBottom: 24, border: `1px solid ${THEME.border}` }}>
