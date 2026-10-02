@@ -277,10 +277,22 @@ class TwitterClient(BasePlatformClient):
         )
 
     async def get_user_profile(self, user_id: str) -> Optional[UserProfile]:
-        """按 handle 取 X 用户资料（`UserByScreenName`）。
+        """取 X 用户资料。
 
-        `user_id` 这里是 **handle**（不带 @）—— X 的 UserByScreenName
-        按 screen_name 查；数字 id 要用另一个 operation（未实现）。
+        ## ⚠️ `user_id` **可以是 handle 或数字 id**（2026-10-02 修）
+
+        `UserByScreenName` 只能按 **handle**（screen_name）查 —— 数字 id
+        要用另一个 operation（未实现）。
+
+        **但前端传过来的往往是数字 id**：
+        `search_users` 返回的 `id` 是 `rest_id`（数字），
+        前端点「查看资料」时直接把 `user.id` 传过来 → `UserByScreenName`
+        查不到 → 返回 None → 接口报"未能获取该用户资料"。
+
+        修法：数字 id 时**先按 id 反查一次**（用搜索的 `TweetDetail`/
+        `UserTweets` 拿不到就退回），更实际的做法是**让前端传 handle**。
+        这里做兜底：数字 id 先尝试当 handle 查（有些场景 id 恰好是 handle），
+        查不到就明确报错而不是静默 None。
         """
         from .search_http import get_user_via_http
 
@@ -289,7 +301,28 @@ class TwitterClient(BasePlatformClient):
             raise TwitterAuthError(
                 "[twitter] 查用户资料需要登录态。请在「账号中心」登录一次 x.com。"
             )
-        return await get_user_via_http(user_id.lstrip("@"), cookie_header=cookie)
+
+        raw_id = (user_id or "").strip().lstrip("@")
+        if not raw_id:
+            return None
+
+        # 直接按 handle 查（正常路径）
+        profile = await get_user_via_http(raw_id, cookie_header=cookie)
+        if profile is not None:
+            return profile
+
+        # ⚠️ 传进来是**数字 id**（rest_id）—— UserByScreenName 查不到。
+        # 这不是"用户不存在"，要**如实说明**，不能返回 None 让上层
+        # 报成"用户不存在或资料不可见"（会误导）。
+        if raw_id.isdigit():
+            raise TwitterAuthError(
+                f"[twitter] 收到的是 X 的**数字 ID**（{raw_id}），"
+                "但资料接口只能按 **handle**（用户名）查询。\n"
+                "这是 X 的接口限制（按数字 ID 查要另一个 operation，未实现）。\n"
+                "前端应传 `handle`（不带 @）—— 用户搜索结果里的 `raw_data.handle` 有。"
+            )
+
+        return None
 
     async def get_self_profile(self) -> Optional[UserProfile]:
         """取**自己**的资料（**纯 HTTP，不需要浏览器**）。

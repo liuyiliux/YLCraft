@@ -430,13 +430,32 @@ export default function PlatformUserPage() {
           message.info('快手不提供博主粉丝数接口 —— 展示的是搜索得到的信息')
         }
       } else {
-        const res: any = await getPlatformUserProfile(platform, {
-          userId: user.id, secUid: user.sec_uid || '',
-        })
-        if (res?.success && res.data) {
-          setProfile(res.data)
+        // ⚠️ **X 必须传 handle（不是数字 id）**（2026-10-02 修）
+        //
+        // X 的资料接口是 `UserByScreenName`，**只能按 handle 查**；
+        // 而搜索结果里的 `id` 是**数字 rest_id** —— 传 id 必然查不到
+        // （实测：点「查看」就报"未能获取该用户资料"）。
+        //
+        // 后端 `/users/search` 现在会把 handle 提升成 `username` 字段。
+        const isX = platform === 'twitter' || platform === 'x' || platform === 'tw'
+        const lookupId = isX
+          ? (user.username || user.raw_data?.handle || '')
+          : user.id
+        if (isX && !lookupId) {
+          message.warning(
+            '这条 X 用户记录里没有 handle（用户名）—— 无法查资料。\n' +
+            'X 的资料接口只支持按用户名查询，数字 ID 查不到。',
+          )
+          setProfile(user)
         } else {
-          message.warning(res?.message || '未能获取该用户资料')
+          const res: any = await getPlatformUserProfile(platform, {
+            userId: lookupId, secUid: user.sec_uid || '',
+          })
+          if (res?.success && res.data) {
+            setProfile(res.data)
+          } else {
+            message.warning(res?.message || '未能获取该用户资料')
+          }
         }
       }
     } catch (e: any) {
@@ -462,8 +481,13 @@ export default function PlatformUserPage() {
         // 取满一页就认为"可能还有"（B站接口不给总数）
         setVideoHasMore(list.length >= VIDEO_PAGE_SIZE)
       } else {
+        // ⚠️ X 同样要传 handle（见上面 profile 处的说明）
+        const isXv = platform === 'twitter' || platform === 'x' || platform === 'tw'
+        const vidLookup = isXv
+          ? (user.username || user.raw_data?.handle || '')
+          : user.id
         const res: any = await getPlatformUserVideos(platform, {
-          userId: user.id, secUid: user.sec_uid || '', maxResults: 20,
+          userId: vidLookup, secUid: user.sec_uid || '', maxResults: 20,
         })
         setVideos(res?.data || [])
         setVideoHasMore(false)   // 通用接口暂不支持翻页，如实置 false

@@ -138,6 +138,51 @@ interface PlatformSearchConfig {
   defaultSearchType: string
 }
 
+/** 详情抽屉里各平台**显示哪些 tab**（2026-10-02 加）。
+ *
+ * ## ⚠️ 为什么需要这个（一次真实的"功能白做"教训）
+ *
+ * 我把评论功能扩展到 6 个平台（`/api/v1/comments`）并**测通了 API**，
+ * 但详情抽屉的 tab 栏整块被 `detailNote.platform === 'bili'` 包着 ——
+ * `setDetailDrawerTab` 的**唯一**入口就在那块里。于是：
+ *
+ *   · 非 B站平台**连「评论」tab 都切不过去**
+ *   · 已写好的通用评论渲染（`detailDrawerTab === 'comments'`）成了**死代码**
+ *   · 用户完全用不到 6 个平台的评论功能
+ *
+ * **"API 测通" ≠ "用户能用"** —— 必须验证 **UI 可达性**。
+ * 教训记在这里，以后新增 tab 都要过这个检查。
+ *
+ * ## 数据来源
+ *
+ * 与后端 `platforms/meta.py` 的 `capabilities` 同源：
+ *   · `comments` → 声明了 `"comments"` 能力的平台
+ *     （bili / douyin / kuaishou / weibo / twitter / youtube）
+ *   · 弹幕/字幕/数据 → 只有 B站有（未实现，也别假装有）
+ *
+ * ⚠️ 平台名要用**后端客户端的正式名**（`bilibili` 的别名是 `bili`）。
+ */
+const PLATFORM_TABS: Record<string, { comments?: boolean }> = {
+  bili: { comments: true },
+  douyin: { comments: true },
+  dy: { comments: true },
+  kuaishou: { comments: true },
+  ks: { comments: true },
+  weibo: { comments: true },
+  wb: { comments: true },
+  twitter: { comments: true },
+  x: { comments: true },
+  tw: { comments: true },
+  youtube: { comments: true },
+  // ⚠️ 以下平台**没有** comments 能力，不给它们显示评论 tab
+  // （小红书：风控期做不了；Telegram：t.me/s 不含评论）
+  xiaohongshu: {},
+  xhs: {},
+  telegram: {},
+  wechat_mp: {},
+  fanqie: {},
+}
+
 const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
   bili: {
     searchTypes: [
@@ -1747,16 +1792,53 @@ export default function CrawlerPage() {
   /** 轮询进度（有未完成的批次时才轮）。 */
   useEffect(() => {
     if (!batchPolling) return
+    let alive = true
     const timer = setInterval(async () => {
       const rows = await refreshBatches()
-      // 全部结束就停（避免无意义的轮询）
-      if (rows.length > 0 && rows.every((b: any) => b.finished || !b.resumable)) {
-        const unfinished = rows.filter((b: any) => !b.finished)
-        if (unfinished.length === 0) setBatchPolling(false)
-      }
+      if (!alive) return
+      // ⚠️ 停止条件收紧（2026-10-02 修）
+      //
+      // 原来：`rows.every(b => b.finished || !b.resumable)` —— 只要有
+      // 一个批次还"在跑"（或卡在 failed），就**永远不会停**，
+      // 用户关掉弹窗/切页面后 setInterval 仍在跑（effect 不受弹窗影响），
+      // 持续消耗带宽。
+      //
+      // 现在：**没有任何条目处于 running** 才停。
+      const anyRunning = rows.some(
+        (b: any) => (b.counts?.running || 0) > 0,
+      )
+      if (!anyRunning) setBatchPolling(false)
     }, 4000)
-    return () => clearInterval(timer)
+    return () => {
+      alive = false
+      clearInterval(timer)
+    }
   }, [batchPolling, refreshBatches])
+
+  /** ⚠️ **挂载时加载一次批次列表**（2026-10-02 修）
+   *
+   * 原来只在"提交/续跑/删除记录"后调 `refreshBatches()` ——
+   * **页面刚打开时不加载**，于是：
+   *   · `batchList` 恒为 `[]`
+   *   · 「下载进度 (N)」入口按钮（依赖 `batchList.some(...)`）**不渲染**
+   *   · 程序重启后遗留的未完成批次，**用户进不去、点不了「续跑」**
+   *
+   * 而这正是「断点续传」的核心入口 —— 等于白做。
+   */
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      const rows = await refreshBatches()
+      if (!alive) return
+      // 有未完成的批次就**自动开始轮询**（不用用户手动点）
+      if (rows.some((b: any) => !b.finished)) {
+        setBatchPolling(true)
+      }
+    })()
+    return () => { alive = false }
+    // 只在挂载时跑一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleImport = async () => {
     if (selectedRows.length === 0) { message.warning('请先选择素材'); return }
@@ -2667,6 +2749,26 @@ export default function CrawlerPage() {
               {platform === 'wechat_mp' && (searchType === 'account' || searchType === 'global_article') && (
                 <Tag color="orange" style={{ margin: 0, fontSize: 11 }}>微信接口限制</Tag>
               )}
+              {/* ⚠️ **下载进度入口（常驻，不依赖是否勾选素材）**（2026-10-02 修）
+               *
+               * 原来这个入口在搜索结果卡片的 `extra` 里，而那整块被
+               * `selectedRows.length > 0` 包着 —— **不勾选素材就看不到**。
+               * 加上 `batchList` 挂载时不加载（已一并修），结果是：
+               * 程序重启后遗留的未完成批次，用户**根本进不去**。
+               *
+               * 而这是「断点续传」的核心入口 —— 等于白做。
+               * 现在放在**每页条数旁边**，任何时候都能点进去看进度/续跑。 */}
+              {batchList.some(b => !b.finished) && (
+                <Button
+                  size="small"
+                  type="link"
+                  icon={<DownloadOutlined />}
+                  onClick={() => setBatchPanelOpen(true)}
+                  style={{ fontSize: 12, height: 22, padding: '0 4px' }}
+                >
+                  下载进度 ({batchList.filter(b => !b.finished).length})
+                </Button>
+              )}
             </div>
           </div>
         )}
@@ -2746,16 +2848,8 @@ export default function CrawlerPage() {
                   批量下载 ({selectedRows.filter(r => r.platform !== 'wechat_mp').length})
                 </Button>
               )}
-              {/* 有未完成的批次时给个入口（点开看进度/续跑） */}
-              {batchList.some(b => !b.finished) && (
-                <Button
-                  size="small"
-                  type="link"
-                  onClick={() => setBatchPanelOpen(true)}
-                >
-                  下载进度 ({batchList.filter(b => !b.finished).length})
-                </Button>
-              )}
+              {/* ⚠️ 「下载进度」入口已移到搜索区工具栏（每页条数旁边）——
+               * 那才是**任何时候都可见**的位置（这里要勾选素材才渲染）。 */}
             </Space>
           ) : null
         }
@@ -2877,20 +2971,52 @@ export default function CrawlerPage() {
 
         {detailNote && !detailLoading && (
           <>
-            {/* B站专属 Tab 导航 */}
-            {detailNote.platform === 'bili' && (
-              <div style={{
-                display: 'flex', borderBottom: `1px solid ${borderColor}`,
-                background: isDark ? '#252538' : '#f0f2f5',
-                padding: '0 20px',
-              }}>
-                {[
-                  { key: 'detail', label: '详情', icon: <FileTextOutlined /> },
+            {/* ===== Tab 导航（**按平台能力生成**，2026-10-02 修）=====
+                ⚠️⚠️ 原来整块被 `detailNote.platform === 'bili'` 包着 ——
+                **非 B站平台连「评论」tab 都切不过去**（`setDetailDrawerTab`
+                的唯一入口在这里），导致：
+                  · 6 个平台的评论功能**用户根本用不到**
+                  · L3631 的通用评论内容渲染成了**死代码**
+                （这是"API 测通了 ≠ 用户能用"的典型 —— 我上一轮
+                  只验证了 /api/v1/comments，没验证 UI 可达性）
+
+                现在按**平台能力**决定显示哪些 tab：
+                  · 详情   —— 所有平台
+                  · 弹幕/字幕/数据 —— 仅 B站（它有独有能力）
+                  · 评论   —— 声明了 comments 能力的平台
+                数据来源：与后端 `platforms/meta.py` 的 capabilities 同源
+                （见下方 PLATFORM_TABS）。 */}
+            {(() => {
+              // ⚠️ 兜底：详情 tab 任何平台都要有（否则抽屉里一片空白）
+              // ⚠️ 显式标类型：首元素没有 `badge` 字段，
+              // 不标注的话 TS 会把数组元素类型推断成"只有三个字段"，
+              // 后面 push 带 badge 的会报 TS2353。
+              const tabs: Array<{
+                key: string; label: string; icon: React.ReactNode; badge?: number
+              }> = [{ key: 'detail', label: '详情', icon: <FileTextOutlined /> }];
+              if (detailNote.platform === 'bili') {
+                tabs.push(
                   { key: 'danmaku', label: '弹幕', icon: <CommentOutlined />, badge: danmakuList.length },
                   { key: 'subtitle', label: '字幕', icon: <FileTextOutlined />, badge: subtitleList.length },
-                  { key: 'comments', label: '评论', icon: <MessageOutlined />, badge: commentTotal },
-                  { key: 'stats', label: '数据', icon: <BarChartOutlined /> },
-                ].map(tab => (
+                );
+              }
+              // ⚠️ **支持评论的平台**（与后端 COMMENTS_SUPPORTED 对齐）
+              if (PLATFORM_TABS[detailNote.platform]?.comments) {
+                tabs.push({
+                  key: 'comments', label: '评论',
+                  icon: <MessageOutlined />, badge: commentTotal,
+                });
+              }
+              if (detailNote.platform === 'bili') {
+                tabs.push({ key: 'stats', label: '数据', icon: <BarChartOutlined /> });
+              }
+              return (
+                <div style={{
+                  display: 'flex', borderBottom: `1px solid ${borderColor}`,
+                  background: isDark ? '#252538' : '#f0f2f5',
+                  padding: '0 20px',
+                }}>
+                  {tabs.map(tab => (
                   <button
                     key={tab.key}
                     onClick={() => {
@@ -2933,8 +3059,9 @@ export default function CrawlerPage() {
                     )}
                   </button>
                 ))}
-              </div>
-            )}
+                </div>
+              );
+            })()}
 
             {detailNote.platform === 'bili' && (
               <div style={{ padding: '12px 20px 0' }}>
