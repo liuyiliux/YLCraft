@@ -48,23 +48,93 @@ def test_supported_platforms_match_implementation():
     反过来，实现了却没登记 → 用户看到"暂不支持"（功能白做）。
     两边都要对上。
     """
+    import inspect
+
     from app.api.v1.comments import COMMENTS_SUPPORTED
 
-    # B站：走自己的 get_comments_paged
+    # B站：走自己的 get_comments_paged（游标分页，含排序/总数）
     from app.services.platforms.bilibili.client import BilibiliClient
 
     assert hasattr(BilibiliClient, "get_comments_paged")
     assert "bili" in COMMENTS_SUPPORTED
 
-    # 快手：实现了 get_comments（免签名，纯 HTTP）
-    from app.services.platforms.kuaishou.client import KuaishouClient
+    # 其余平台：都必须有**真** get_comments（不是基类的 NotImplementedError）
+    checks = [
+        ("kuaishou", "KuaishouClient"),
+        ("ks", None),                     # 别名，只验证登记
+        ("weibo", "WeiboClient"),
+        ("wb", None),
+        ("twitter", "TwitterClient"),
+        ("x", None),
+        ("youtube", "YoutubeClient"),
+        ("douyin", "DouyinClient"),
+        ("dy", None),
+    ]
+    for plat, cls_name in checks:
+        assert plat in COMMENTS_SUPPORTED, f"{plat} 未登记"
+        if cls_name is None:
+            continue
+        mod = __import__(
+            f"app.services.platforms.{plat}.client", fromlist=[cls_name]
+        )
+        cls = getattr(mod, cls_name)
+        src = inspect.getsource(cls.get_comments)
+        assert "NotImplementedError" not in src, (
+            f"{cls_name}.get_comments 还是 TODO（登记了却没实现）"
+        )
+
+
+def test_youtube_comments_has_hard_limit():
+    """**关键回归**：YouTube 评论必须设**上限**。
+
+    ⚠️ 实测：不设 `max_comments` 就是无上限，会一直翻页。
+    某视频报 ~10,631,705 条评论，不设上限跑了 **10 分钟没停**，只能杀掉。
+
+    这是最危险的一条 —— 必须有硬上限保护。
+    """
     import inspect
 
-    ks_src = inspect.getsource(KuaishouClient.get_comments)
-    # 必须是真实现（不是 raise NotImplementedError）
-    assert "NotImplementedError" not in ks_src, "快手 get_comments 还没实现"
-    assert "kuaishou" in COMMENTS_SUPPORTED
-    assert "ks" in COMMENTS_SUPPORTED
+    from app.services.platforms.youtube.client import YoutubeClient
+
+    src = inspect.getsource(YoutubeClient.get_comments)
+    assert "MAX_SAFE" in src, "要有硬上限（防跑飞）"
+    assert "max_comments" in src, "要传 max_comments 给 yt-dlp"
+    # 必须限制 want，不能直接用传入值
+    assert "min(" in src and "MAX_SAFE" in src
+
+
+def test_douyin_signature_audit_is_documented():
+    """**关键**：抖音用了第三方混淆 JS —— 审查结论必须写在代码里。
+
+    ⚠️ 混淆 JS 肉眼无法确认行为，所以：
+      · 必须做过静态审查（网络/文件/系统/eval）
+      · 审查结论必须**记录在代码里**（后人能复核，不用重新猜）
+    """
+    import inspect
+
+    from app.services.platforms.douyin import sign as sign_mod
+
+    doc = inspect.getdoc(sign_mod) or ""
+    for kw in ("混淆", "XMLHttpRequest", "child_process", "eval"):
+        assert kw in doc, f"sign.py 的 docstring 缺审查记录（{kw}）"
+
+
+def test_douyin_empty_body_is_treated_as_signature_issue():
+    """**回归**：抖音空 body 要报"签名问题"，不是"没有评论"。
+
+    ⚠️ 实测失败模式是 HTTP 200 + **0 字节**（不是错误码）。
+    空 body 会让 json() 抛异常，按现有重试逻辑会试 3 次全失败，
+    **看起来像风控**。必须显式判空并说明原因。
+    """
+    import inspect
+
+    from app.services.platforms.douyin.client import DouyinClient
+
+    src = inspect.getsource(DouyinClient.get_comments)
+    assert "空响应体" in src or "0 字节" in src
+    assert "a_bogus" in src
+    # 不能把空当成"0 条评论"返回
+    assert "不是「没有评论」" in src or "不是没有评论" in src or "不是「没有评论」" in src
 
 
 def test_unimplemented_platforms_have_reasons():

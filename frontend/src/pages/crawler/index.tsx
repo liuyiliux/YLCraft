@@ -1861,6 +1861,10 @@ export default function CrawlerPage() {
     // 重置 B站数据
     setDanmakuList([])
     setComments([])
+    // ⚠️ **必须清空"不支持评论"的提示**（2026-10-01 修）
+    // 否则打开一条不支持评论的内容后，再打开支持的内容，
+    // 会残留上一条的"XX暂不支持评论采集"（张冠李戴）。
+    setCommentUnsupported('')
     setCommentTotal(0)
     setBiliStats(null)
     setBiliVideoInfo(null)
