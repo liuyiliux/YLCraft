@@ -686,10 +686,14 @@ export default function PlatformUserPage() {
       ),
     },
     {
-      title: '标题', dataIndex: 'title', key: 'title',
+      // ⚠️ 加 `ellipsis`（2026-10-02 审计）：原来既没 width 也没 ellipsis，
+      // 长标题会撑高单元格 / 与右侧元信息挤在一起
+      title: '标题', dataIndex: 'title', key: 'title', ellipsis: true,
       render: (t: string, r) => (
-        <Space direction="vertical" size={2}>
-          <Text style={{ color: THEME.textPrimary }}>{t || '(无标题)'}</Text>
+        <Space direction="vertical" size={2} style={{ maxWidth: '100%' }}>
+          <Text style={{ color: THEME.textPrimary }} ellipsis>
+            {t || '(无标题)'}
+          </Text>
           <Space size={6}>
             {r.type === 'video'
               ? <Tag color="blue" style={{ margin: 0 }}>视频</Tag>
@@ -727,10 +731,14 @@ export default function PlatformUserPage() {
       ),
     },
     {
-      title: '标题', dataIndex: 'title', key: 'title',
+      // ⚠️ 加 `ellipsis`（2026-10-02 审计）：原来既没 width 也没 ellipsis，
+      // 长标题会撑高单元格 / 与右侧元信息挤在一起
+      title: '标题', dataIndex: 'title', key: 'title', ellipsis: true,
       render: (t: string, r) => (
-        <Space direction="vertical" size={2}>
-          <Text style={{ color: THEME.textPrimary }}>{t || '(无标题)'}</Text>
+        <Space direction="vertical" size={2} style={{ maxWidth: '100%' }}>
+          <Text style={{ color: THEME.textPrimary }} ellipsis>
+            {t || '(无标题)'}
+          </Text>
           <Space size={6} wrap>
             {r.type === 'video'
               ? <Tag color="blue" style={{ margin: 0 }}>视频</Tag>
@@ -935,6 +943,10 @@ export default function PlatformUserPage() {
                 loading={searching}
                 columns={noteColumns}
                 dataSource={notes}
+                // ⚠️ 加横向滚动（2026-10-02 审计）：
+                // 之前只给 `userColumns` 加了 scroll，`noteColumns` 被漏掉
+                // —— 窄容器下同样会把「封面」「操作」压扁（表头竖排单字）
+                scroll={{ x: 520 }}
                 rowSelection={{
                   selectedRowKeys: selectedNotes.map((r) => r.id),
                   onChange: (_keys, rows) => setSelectedNotes(rows as CrawlerResult[]),

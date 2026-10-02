@@ -368,10 +368,34 @@ async def get_self_profile(
         小红书 逸流AI | 粉丝195 关注2 获赞2930 作品73
     """
     client = await _client_for(platform)
-    if not hasattr(client, "get_self_profile"):
+
+    # ⚠️ **用 `capabilities` 声明判断，不要用 `hasattr` 猜**（2026-10-02 修）
+    #
+    # 原来是 `hasattr(client, "get_self_profile")`：
+    #   · `hasattr` 只是"方法存不存在"，**不代表实现了**
+    #     （基类里每个平台都有这个方法，只是可能只 raise NotImplementedError）
+    #   · 更根本的问题：`platforms/meta.py` 的设计原则明确写了
+    #     "**能力用声明而非猜测**……而不是让公共代码去 hasattr 或猜名字"
+    #     —— 这里正是违反自己定的规矩
+    #
+    # 状态码也从 400 改成 **501**（与 `comments.py` 保持一致）：
+    #   400 = "你参数写错了"（听起来像用户的问题）
+    #   501 = "这个功能没做"（诚实的表达）
+    from app.services.platforms.meta import get_meta as _get_meta, supports as _supports
+
+    if not _supports(platform, "self_profile"):
+        _m = _get_meta(platform)
         raise HTTPException(
-            status_code=400,
-            detail=f"{platform} 不支持查询自己的资料",
+            status_code=501,
+            detail=(
+                f"平台 {platform!r} **没有实现「查询自己的资料」这个能力**"
+                "（不是你的参数写错了）。\n"
+                + (
+                    "如需查某个具体用户，请用 `/users/profile`（需要 user_id）。"
+                    if _m is not None and _m.name in ("bili", "telegram", "youtube")
+                    else ""
+                )
+            ),
         )
     try:
         async with client:

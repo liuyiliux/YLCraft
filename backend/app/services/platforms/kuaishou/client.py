@@ -34,8 +34,11 @@ from typing import Any, Dict, List, Optional
 from ..base import BasePlatformClient, register_platform
 from ..session_pool import PooledSession, get_session_pool
 from ..types import (
+    # ⚠️ 必须导入 —— `get_detail` 要用它们（见该方法的 docstring）
+    ContentNotFoundError,
     LoginExpiredError,
     NetworkError,
+    NoteDetail,
     RiskControlError,
     SearchParams,
     SearchResult,
@@ -1137,9 +1140,67 @@ class KuaishouClient(BasePlatformClient):
         logger.info("[kuaishou] 用户 %s 的作品 -> %d 条", uid, len(results))
         return results
 
-    async def get_detail(self, item_id: str):
-        """详情：搜索结果里已含全部字段，这里**不重新请求**（返回 None）。"""
-        return None
+    async def get_detail(self, item_id: str, **kwargs) -> Optional[NoteDetail]:
+        """取作品详情。
+
+        ## ⚠️ 原来这里**永远返回 None**（2026-10-02 修）
+
+        原来是 `return None`（注释说"搜索结果里已含全部字段，
+        这里不重新请求"）—— 但 `crawler/service.py::get_note_detail`
+        拿到 None 后会 `return {}`，路由层就变成
+        **404「笔记不存在或获取失败」**。
+
+        **而作品是真实存在的**（用户刚从搜索结果点进来）。
+        这是**谎报**。
+
+        ## 现在的做法（参照抖音的 `get_detail`）
+
+        抖音是 `raw = kwargs.get("raw")` → 有就用搜索结果直接解析
+        （零请求），没有才调真实接口。快手照做：
+
+          1. 调用方带了 `raw`（搜索时的原始条目）→ 直接解析
+          2. 没有 `raw` → **如实报错**（而不是静默 None）
+
+        搜索结果的 `photo` 字段已含标题/作者/封面/点赞等详情所需。
+        """
+        raw = (kwargs or {}).get("raw")
+        if not raw:
+            raise ContentNotFoundError(
+                "[kuaishou] 取详情需要**搜索结果的原始条目**"
+                "（`raw` 参数）—— 快手没有公开的「按作品 ID 查详情」接口。\n"
+                "请从搜索结果点进详情（前端已这样传），"
+                "不要单独用作品 ID 调详情接口。"
+            )
+
+        # 兼容两种形状：{photo:{...}} 或直接就是 photo
+        photo = raw.get("photo") if isinstance(raw, dict) else None
+        if not isinstance(photo, dict):
+            photo = raw if isinstance(raw, dict) else {}
+        if not photo:
+            raise ContentNotFoundError(
+                "[kuaishou] 搜索结果里没有 photo 字段，无法解析详情。"
+            )
+
+        return NoteDetail(
+            id=item_id,
+            title=str(photo.get("caption") or "").strip(),
+            desc=str(photo.get("caption") or "").strip(),
+            author=str((photo.get("author") or {}).get("name") or ""),
+            author_id=str((photo.get("author") or {}).get("id") or ""),
+            cover=str(photo.get("coverUrl") or photo.get("cover") or ""),
+            images=_to_int(photo.get("images")),
+            likes=_to_int(photo.get("likeCount")),
+            comments=_to_int(photo.get("commentCount")),
+            shares=_to_int(photo.get("shareCount")),
+            collects=_to_int(photo.get("collectCount")),
+            duration=_to_int(photo.get("duration")),
+            video_url=str(
+                (photo.get("mainMvUrls") or [{}])[0].get("url")
+                if photo.get("mainMvUrls") else ""
+            ),
+            platform="kuaishou",
+            raw_data=raw,
+        )
 
     # =========================================================================
     # 抽象方法（base 要求）
