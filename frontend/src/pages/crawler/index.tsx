@@ -817,17 +817,24 @@ function SafeImage({
 }
 
 /**
- * 封面图：保留 antd 预览大图能力，且加载失败时显示占位而不是破图图标。
+ * 封面图：加载失败时显示可读占位，而不是浏览器默认的破图图标。
  *
- * 实现要点：antd `Image` 不暴露 `onError`，无法直接监听加载失败。
- * 这里用 antd `Image.PreviewGroup` 的 `src` 列表 + 一张**可见的原生 `<img>`**：
- *   · 可见图负责显示与探测（`onError` → 占位块）
- *   · 预览能力由外层 antd `Image` 组件提供，点击时另开预览
+ * ## 为什么需要它（2026-10-02）
  *
- * ⚠️ 不用"隐藏探测图 + 可见 antd Image"的写法（试过，已弃）：
- * 那样每张封面会发**两次**图片请求（即使命中缓存也翻倍渲染成本），
- * 而且探测图会被无障碍树/统计脚本算成"两张图"，实测 YouTube 一屏 10 条
- * 就多出 10 次请求与 10 个占位节点，纯属浪费。
+ * 用户从手机局域网（192.168.x.x:3000）访问时，搜索结果封面**全是破图图标**。
+ * 浏览器对失败的 `<img>` 只画图标 + alt 文字，**不给任何原因**，
+ * 于是"后端没跑"被误读成"平台 CDN 防盗链拦了跨网访问"，排查方向整个跑偏。
+ *
+ * ## 实现：antd `Image` + `onError`
+ *
+ * ⚠️ 之前这里注释写的是"antd `Image` 不暴露 `onError`"，**是错的**（已核实）：
+ * antd 把除 `prefixCls/preview/className/style/fallback` 外的 props 透传给
+ * `rc-image`，而 `rc-image` 内部既有 `useStatus`（自己会加 `-error` class、
+ * 支持 `placeholder`/`fallback`），也会把 `onError` 挂到内部 `<img>` 上。
+ * 所以直接用官方能力即可，不需要隐藏探测图那套。
+ *
+ * 曾经试过"隐藏 `<img>` 探测 + 可见 antd Image"：每张封面会发**两次**请求，
+ * YouTube 一屏 10 条实测多 10 次请求与 10 个多余节点，已弃用。
  */
 function CoverCellImage({
   src, alt, dark,
@@ -839,35 +846,26 @@ function CoverCellImage({
   const [failed, setFailed] = useState(false)
   // src 变化时重置，否则上一张图失败会让新图也显示占位
   useEffect(() => { setFailed(false) }, [src])
-  const [previewOpen, setPreviewOpen] = useState(false)
 
   if (!src) return <ImageFallback text="无图片" dark={dark} />
   if (failed) return <ImageFallback text="图片加载失败" dark={dark} />
 
   return (
-    <div
-      style={{ width: '100%', display: 'block', cursor: 'pointer' }}
-      onClick={() => setPreviewOpen(true)}
-    >
-      {/* 宽度占满列、高度按 16:9 自适应：拖动封面列时图片跟着变大变小，
-          而不是固定尺寸旁边留白。16:9 而非 4:3——B站/抖音等封面本身就是横版，
-          用 4:3 配 objectFit:cover 会把两侧裁掉。 */}
-      <img
-        src={src}
-        alt={alt}
-        onError={() => setFailed(true)}
-        style={{
-          width: '100%', aspectRatio: '16 / 9', objectFit: 'cover',
-          borderRadius: 4, display: 'block', background: dark ? '#1a1a2e' : '#f0f2f5',
-        }}
-      />
-      <Image
-        src={src}
-        alt={alt}
-        style={{ display: 'none' }}
-        preview={{ visible: previewOpen, onVisibleChange: setPreviewOpen, mask: <EyeOutlined /> }}
-      />
-    </div>
+    <Image
+      // 宽度占满列、高度按 16:9 自适应：拖动封面列时图片跟着变大变小，
+      // 而不是固定尺寸旁边留白。16:9 而非 4:3——B站/抖音等封面本身就是横版，
+      // 用 4:3 配 objectFit:cover 会把两侧裁掉。
+      src={src}
+      alt={alt}
+      onError={() => setFailed(true)}
+      wrapperStyle={{ width: '100%', display: 'block' }}
+      style={{
+        width: '100%', aspectRatio: '16 / 9', objectFit: 'cover',
+        borderRadius: 4, cursor: 'pointer', display: 'block',
+        background: dark ? '#1a1a2e' : '#f0f2f5',
+      }}
+      preview={{ mask: <EyeOutlined /> }}
+    />
   )
 }
 
