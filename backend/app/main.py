@@ -124,6 +124,41 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to initialize connectors: {e}")
 
+    # ⚠️ **恢复未完成的种子下载**（2026-10-01 加，断点续传）
+    #
+    # 种子任务信息本来就存在数据库里（source_uri / save_path / hash），
+    # 但**原来没有任何代码在启动时读回来重新添加** —— 进程一重启，
+    # 之前正在下的种子全部消失（引擎里没了，数据库记录状态也不动了）。
+    #
+    # 这里重新 add：libtorrent 会**自动续传**
+    # （扫描已有文件 → 校验分片 → 只下缺的部分），
+    # 如果之前存过 resume data，还会**跳过重新校验**。
+    #
+    # ⚠️ **best-effort**：单个失败不影响其它，也不该拖垮启动 ——
+    # 所以整块包在 try 里，失败只打日志。
+    try:
+        from app.db.database import get_async_session
+        from app.services.torrent.service import TorrentService
+
+        async with get_async_session() as _tsession:
+            _tsvc = TorrentService(_tsession)
+            try:
+                _rst = await _tsvc.restore_active_downloads()
+                if _rst.get("total"):
+                    logger.info(
+                        "[startup] 种子下载恢复：%s/%s 成功%s",
+                        _rst.get("restored"), _rst.get("total"),
+                        (
+                            f"，{len(_rst.get('failed') or [])} 个失败"
+                            if _rst.get("failed") else ""
+                        ),
+                    )
+            finally:
+                # ⚠️ 关引擎前会**保存 resume data**（跳过下次的重新校验）
+                await _tsvc.close()
+    except Exception as e:
+        logger.warning(f"Torrent resume-on-startup failed: {e}")
+
     yield
 
     # 关闭时清理资源
