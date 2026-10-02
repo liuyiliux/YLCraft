@@ -36,6 +36,8 @@ from ..types import (
 from .apis import (
     AWEME_DETAIL,
     BASE_URL,
+    COMMENT_LIST,
+    COMMENT_REPLY,
     DEFAULT_AID,
     DEFAULT_CHANNEL,
     DEFAULT_DEVICE_PLATFORM,
@@ -625,6 +627,24 @@ class DouyinClient(BasePlatformClient):
     # 详情
     # =========================================================================
 
+    async def get_replies(
+        self,
+        item_id: str,
+        comment_id: str,
+        max_results: int = 20,
+        cursor: str = "",
+    ) -> Dict[str, Any]:
+        """取某条评论的子回复（楼中楼）。
+
+        实测：`reply_comment_total=11` 的评论能取到 10 条回复。
+        """
+        return await self.get_comments_page(
+            item_id,
+            max_results=max_results,
+            cursor=cursor,
+            root_comment_id=str(comment_id or ""),
+        )
+
     async def get_comments(
         self,
         item_id: str,
@@ -705,11 +725,20 @@ class DouyinClient(BasePlatformClient):
         max_results: int = 20,
         page: int = 1,
         cursor: str = "",
+        root_comment_id: str = "",
     ) -> Dict[str, Any]:
         """取**一页**抖音评论，带回 cursor。
 
         ⚠️ 抖音分页是 **cursor 游标**（实测 20→40→60），用 `has_more` 判断结束。
         必须把 cursor 透出去，否则前端"加载更多"会拿到重复数据。
+
+        ## 子评论（`root_comment_id`）
+
+        传了就取**楼中楼**（某条评论的回复）：
+          · 端点换成 `/comment/list/reply/`
+          · 参数是 `comment_id` + `item_id`（**不是 aweme_id**）
+          · **签名函数也不同**：子评论用 `sign_reply`（主评论是 `sign_datail`）
+        实测：`reply_comment_total=11` 的评论能取到 10 条回复。
         """
         aweme_id = str(item_id or "").strip()
         if not aweme_id:
@@ -718,12 +747,25 @@ class DouyinClient(BasePlatformClient):
         want = max(1, int(max_results or 20))
         ua = self._get_default_user_agent()
         cur = cursor or "0"
+        is_reply = bool(root_comment_id)
 
-        base = {"aweme_id": aweme_id, "cursor": cur, "count": want, "item_type": 0}
+        if is_reply:
+            base = {
+                "comment_id": str(root_comment_id),
+                "item_id": aweme_id,
+                "cursor": cur,
+                "count": want,
+                "item_type": 0,
+            }
+            uri = COMMENT_REPLY
+        else:
+            base = {"aweme_id": aweme_id, "cursor": cur, "count": want, "item_type": 0}
+            uri = COMMENT_LIST
+
         try:
             from .sign import sign_comment_params
 
-            params = sign_comment_params(base, ua)
+            params = sign_comment_params(base, ua, is_reply=is_reply)
         except RuntimeError as exc:
             raise RuntimeError(
                 f"[douyin] 评论签名不可用：{exc}\n"
@@ -732,7 +774,7 @@ class DouyinClient(BasePlatformClient):
 
         resp = await self.request(
             "GET",
-            f"{BASE_URL}/aweme/v1/web/comment/list/",
+            f"{BASE_URL}{uri}",
             params=params,
             headers={"User-Agent": ua},
         )
@@ -759,6 +801,17 @@ class DouyinClient(BasePlatformClient):
             av = (u.get("avatar_thumb") or {}).get("url_list")
             if isinstance(av, list) and av:
                 avatar = av[0]
+            # ⚠️ 评论可以带图（抖音实测 image_list 字段，每项含 url_list）
+            images: List[str] = []
+            for img in c.get("image_list") or []:
+                if isinstance(img, dict):
+                    u2 = img.get("url_list")
+                    if isinstance(u2, list) and u2:
+                        images.append(u2[0])
+                    elif img.get("url"):
+                        images.append(img["url"])
+                elif isinstance(img, str) and img.startswith("http"):
+                    images.append(img)
             out.append({
                 "id": cid,
                 "content": c.get("text") or "",
@@ -769,6 +822,9 @@ class DouyinClient(BasePlatformClient):
                 "create_time": int(c.get("create_time") or 0),
                 "reply_count": int(c.get("reply_comment_total") or 0),
                 "location": c.get("ip_label") or "",
+                "images": images,
+                # 子评论（楼中楼）的父评论 id；顶层评论是 "0"
+                "parent_id": c.get("reply_id") or "0",
                 "replies": [],
             })
 

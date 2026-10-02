@@ -32,7 +32,7 @@ import { useResizableColumns } from '../../hooks/useResizableColumns'
 import {
   searchEnhanced, importCrawler, getNoteDetail, getSubtitles, downloadCrawlerSubtitle, listPlatformConnections,
   getDanmaku, downloadDanmaku, getBiliStats, getBiliComments, sendBiliComment, getBiliVideoInfo,
-  getBiliLoginHealth, getPlatformHealth, getComments, disablePlatformConnection, enablePlatformConnection, wechatMpGetArticles, wechatMpDownloadSingle, wechatMpDownloadBatch, wechatMpImportAssets,
+  getBiliLoginHealth, getPlatformHealth, getPlatformStats, getComments, disablePlatformConnection, enablePlatformConnection, wechatMpGetArticles, wechatMpDownloadSingle, wechatMpDownloadBatch, wechatMpImportAssets,
   wechatMpExportEpub, openFolder,
 } from '../../api'
 import type { CrawlerResult, PlatformConnectionResponse, PlatformHealthCheck, PlatformHealthResponse } from '../../api'
@@ -810,6 +810,9 @@ export default function CrawlerPage() {
   // 两者格式同构（都有 checks/ready），但用途不同，混在一起会互相覆盖。
   const [health, setHealth] = useState<PlatformHealthResult | null>(null)
   const [healthLoading, setHealthLoading] = useState(false)
+  /** 历史统计（成功率/耗时）—— 与体检互补：体检说"现在行不行"，
+   *  统计说"最近稳不稳"。体检通过 ≠ 一直稳定。 */
+  const [healthStats, setHealthStats] = useState<any>(null)
 
   // B站专属状态
   const [danmakuList, setDanmakuList] = useState<any[]>([])
@@ -1280,10 +1283,20 @@ export default function CrawlerPage() {
   const runHealthCheck = async () => {
     setHealthLoading(true)
     setHealth(null)
+    setHealthStats(null)
     try {
       const connId = platform === 'bili' ? selectedBiliConn : selectedSearchConn
       const res = await getPlatformHealth(platform, connId || '')
       setHealth(res)
+      // ⚠️ **顺带取历史统计**（成功率）—— 实时体检通过 ≠ 一直稳定。
+      // 两者互补：体检说"现在行不行"，统计说"最近稳不稳"。
+      // 统计失败不影响体检结果（best-effort）。
+      try {
+        const st = await getPlatformStats(platform, 24)
+        setHealthStats(st)
+      } catch {
+        setHealthStats(null)
+      }
       const ready = res?.data?.ready
       const needsLogin = res?.data?.needs_login
       if (ready) {
@@ -1370,6 +1383,57 @@ export default function CrawlerPage() {
             )
           })}
         </div>
+        {/* ===== 历史稳定性（与体检互补）=====
+            ⚠️ 体检是**实时探针**（现在能不能用），这里是**历史统计**
+            （最近稳不稳）。体检通过 ≠ 一直稳定。
+            ⚠️ 样本不足时**不下结论**（后端给 sample_sufficient）。 */}
+        {healthStats?.data && (
+          <div style={{
+            marginTop: 10, padding: '8px 10px', borderRadius: 8,
+            border: `1px solid ${borderColor}`,
+            background: isDark ? '#1f1f1f' : '#fafafa',
+          }}>
+            <Space size={8} wrap>
+              <Text style={{ color: textPri, fontWeight: 600, fontSize: 12 }}>
+                最近 {healthStats.data.window_hours} 小时
+              </Text>
+              {healthStats.data.total === 0 ? (
+                <Text style={{ color: textSec, fontSize: 12 }}>
+                  暂无采集记录（不是"平台有问题"，是还没有数据）
+                </Text>
+              ) : (
+                <>
+                  <Tag color={
+                    !healthStats.data.sample_sufficient ? 'default'
+                      : healthStats.data.success_rate >= 90 ? 'success'
+                        : healthStats.data.success_rate >= 60 ? 'warning' : 'error'
+                  } style={{ margin: 0 }}>
+                    成功 {healthStats.data.success}/{healthStats.data.total}
+                    （{healthStats.data.success_rate}%）
+                  </Tag>
+                  {healthStats.data.avg_duration_ms > 0 && (
+                    <Text style={{ color: textSec, fontSize: 12 }}>
+                      平均 {(healthStats.data.avg_duration_ms / 1000).toFixed(1)}s
+                    </Text>
+                  )}
+                  {!healthStats.data.sample_sufficient && (
+                    <Text style={{ color: '#faad14', fontSize: 12 }}>
+                      ⚠️ 样本仅 {healthStats.data.total} 条，不足以判断稳定性
+                    </Text>
+                  )}
+                </>
+              )}
+            </Space>
+            {healthStats.data.last_error && (
+              <div style={{
+                marginTop: 6, color: '#ff4d4f', fontSize: 11,
+                lineHeight: 1.5, whiteSpace: 'pre-wrap',
+              }}>
+                最近一次失败：{String(healthStats.data.last_error).slice(0, 150)}
+              </div>
+            )}
+          </div>
+        )}
         {/* 需要重新登录时，直接给个跳账号中心的入口 */}
         {d.needs_login && (
           <div style={{ marginTop: 10 }}>
@@ -3586,7 +3650,43 @@ export default function CrawlerPage() {
                                     <Tag style={{ fontSize: 11 }}>{c.reply_count ?? c.rcount} 回复</Tag>
                                   )}
                                 </div>
-                                <Text style={{ color: textPri, fontSize: 13 }}>{c.content || c.message}</Text>
+                                <Text style={{ color: textPri, fontSize: 13 }}>
+                                  {/* 子回复里"回复给谁"（抖音/快手/X 都可能有） */}
+                                  {c.reply_to ? (
+                                    <span style={{ color: textSec }}>回复 @{c.reply_to}：</span>
+                                  ) : null}
+                                  {c.content || c.message}
+                                </Text>
+                                {/* 评论图片（微博/抖音/X 实测都有）——
+                                    ⚠️ 走反代，直接 img src 会被防盗链拦 */}
+                                {Array.isArray(c.images) && c.images.length > 0 && (
+                                  <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                                    {c.images.slice(0, 4).map((img: string, i: number) => (
+                                      <img
+                                        key={i}
+                                        src={`/api/v1/proxy/image?url=${encodeURIComponent(img)}`}
+                                        alt=""
+                                        loading="lazy"
+                                        onClick={() => window.open(img, '_blank')}
+                                        style={{
+                                          width: 64, height: 64, objectFit: 'cover',
+                                          borderRadius: 6, cursor: 'zoom-in',
+                                          border: `1px solid ${borderColor}`,
+                                        }}
+                                      />
+                                    ))}
+                                    {c.images.length > 4 && (
+                                      <div style={{
+                                        width: 64, height: 64, borderRadius: 6,
+                                        border: `1px solid ${borderColor}`,
+                                        display: 'flex', alignItems: 'center',
+                                        justifyContent: 'center', fontSize: 12, color: textSec,
+                                      }}>
+                                        +{c.images.length - 4}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                                 <div style={{ marginTop: 4, fontSize: 11, color: textSec }}>
                                   {c.create_time
                                     ? new Date(c.create_time).toLocaleString('zh-CN')
@@ -3595,7 +3695,60 @@ export default function CrawlerPage() {
                                       : ''}
                                   {' · '}
                                   {c.likes ?? c.like_count ?? 0} 赞
+                                  {/* 有子回复时给个入口（点击取该评论的回复） */}
+                                  {(c.reply_count ?? c.rcount) > 0 && detailNote.platform !== 'bili' && (
+                                    <a
+                                      style={{ marginLeft: 8, color: BILI_COLORS.primary, cursor: 'pointer' }}
+                                      onClick={async () => {
+                                        setCommentLoading(true)
+                                        try {
+                                          const res: any = await getComments({
+                                            platform: detailNote.platform,
+                                            item_id: detailNote.id,
+                                            parent_id: c.id || c.rpid,
+                                            page_size: 20,
+                                            conn_id: selectedSearchConn,
+                                          })
+                                          const replies = res?.data?.comments || []
+                                          if (replies.length === 0) {
+                                            message.info('这条评论暂无子回复')
+                                          } else {
+                                            setComments(prev => prev.map((x: any) =>
+                                              (x.id || x.rpid) === (c.id || c.rpid)
+                                                ? { ...x, _replies: replies } : x
+                                            ))
+                                          }
+                                        } catch (e: any) {
+                                          message.error(
+                                            String(e?.response?.data?.detail || e?.message || '取回复失败').slice(0, 100)
+                                          )
+                                        } finally {
+                                          setCommentLoading(false)
+                                        }
+                                      }}
+                                    >
+                                      查看 {c.reply_count ?? c.rcount} 条回复
+                                    </a>
+                                  )}
                                 </div>
+                                {/* 展开的子回复 */}
+                                {Array.isArray((c as any)._replies) && (c as any)._replies.length > 0 && (
+                                  <div style={{
+                                    marginTop: 8, paddingLeft: 10,
+                                    borderLeft: `2px solid ${borderColor}`,
+                                  }}>
+                                    {(c as any)._replies.map((r: any) => (
+                                      <div key={r.id} style={{ marginBottom: 6 }}>
+                                        <Text style={{ fontSize: 12, color: textPri, fontWeight: 600 }}>
+                                          {r.author}
+                                        </Text>
+                                        <Text style={{ fontSize: 12, color: textPri, marginLeft: 6 }}>
+                                          {r.content}
+                                        </Text>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>

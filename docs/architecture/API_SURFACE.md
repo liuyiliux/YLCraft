@@ -6,9 +6,9 @@
 
 ## Summary
 
-- Router mounts: 58
-- Endpoints: 709
-- Public schema endpoints: 708
+- Router mounts: 62
+- Endpoints: 725
+- Public schema endpoints: 724
 - Hidden compatibility endpoints: 1
 
 ## Router Mounts
@@ -23,6 +23,7 @@
 | `/api/v1` | 3D Models | `model3d` | `backend/app/api/v1/model3d.py` |
 | `/api/v1` | JianYing | `jianying` | `backend/app/api/v1/jianying.py` |
 | `/api/v1` | Export | `export` | `backend/app/api/v1/export.py` |
+| `/api/v1` | Telegram | `telegram` | `backend/app/api/v1/telegram.py` |
 | `/api/v1` | Cookie Acquisition | `cookie_acquisition` | `backend/app/api/v1/cookie_acquisition.py` |
 | `/api/v1/agent` | Agent | `agent` | `backend/app/api/v1/agent.py` |
 | `/api/v1/ai` | AI Capabilities | `ai_capabilities` | `backend/app/api/v1/ai_capabilities.py` |
@@ -40,6 +41,7 @@
 | `/api/v1/clip-ops` | Clip Operations | `clip_ops` | `backend/app/api/v1/clip_ops.py` |
 | `/api/v1/clip/cutclaw` | Clip — CutClaw | `cutclaw` | `backend/app/api/v1/cutclaw.py` |
 | `/api/v1/comfyui` | ComfyUI | `comfyui` | `backend/app/api/v1/comfyui.py` |
+| `/api/v1/comments` | Comments | `comments` | `backend/app/api/v1/comments.py` |
 | `/api/v1/crawler` | Crawler | `crawler` | `backend/app/api/v1/crawler.py` |
 | `/api/v1/creative-projects` | Creative Projects | `creative_projects` | `backend/app/api/v1/creative_projects.py` |
 | `/api/v1/creative-projects` | Creative Projects — Fanqie | `creative_fanqie` | `backend/app/api/v1/creative_fanqie.py` |
@@ -57,6 +59,8 @@
 | `/api/v1/model-3d` | Image to 3D | `model3d_workspace` | `backend/app/api/v1/model3d_workspace.py` |
 | `/api/v1/novels` | Novels | `novels` | `backend/app/api/v1/novels.py` |
 | `/api/v1/platforms` | Platform Connections | `platforms` | `backend/app/api/v1/platforms.py` |
+| `/api/v1/platforms` | Platform Stats | `platform_stats` | `backend/app/api/v1/platform_stats.py` |
+| `/api/v1/platforms` | Platform Health | `health_routes` | `backend/app/services/platforms/health_routes.py` |
 | `/api/v1/previs` | 3D Director Previs | `previs` | `backend/app/api/v1/previs.py` |
 | `/api/v1/proxy` | Proxy | `proxy` | `backend/app/api/v1/proxy.py` |
 | `/api/v1/reader` | Reader | `reader` | `backend/app/api/v1/reader.py` |
@@ -410,6 +414,12 @@
 | `DELETE` | `/api/v1/comfyui/workflows/{name}` | 删除工作流 | `delete_workflow` | `backend/app/api/v1/comfyui.py:184` |
 | `WEBSOCKET` | `/api/v1/comfyui/ws/progress` | - | `websocket_progress` | `backend/app/api/v1/comfyui.py:446` |
 
+### Comments
+
+| Method | Path | Summary | Handler | Source |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/v1/comments` | 获取评论（统一入口） | `get_comments` | `backend/app/api/v1/comments.py:296` |
+
 ### Cookie Acquisition
 
 | Method | Path | Summary | Handler | Source |
@@ -427,14 +437,14 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `POST` | `/api/v1/crawler/fetch-no-watermark` | 批量获取无水印资源 | `fetch_no_watermark` | `backend/app/api/v1/crawler.py:412` |
-| `POST` | `/api/v1/crawler/import` | 导入到素材库 | `import_to_assets` | `backend/app/api/v1/crawler.py:220` |
-| `GET` | `/api/v1/crawler/note-detail` | 获取笔记详情（无水印） | `get_note_detail` | `backend/app/api/v1/crawler.py:336` |
-| `GET` | `/api/v1/crawler/options` | 获取采集配置选项 | `get_options` | `backend/app/api/v1/crawler.py:165` |
-| `GET` | `/api/v1/crawler/platforms` | 获取支持的平台列表 | `get_platforms` | `backend/app/api/v1/crawler.py:159` |
-| `POST` | `/api/v1/crawler/search` | 搜索视频/图文素材 | `search_materials` | `backend/app/api/v1/crawler.py:174` |
-| `POST` | `/api/v1/crawler/search-enhanced` | 增强搜索（支持笔记/用户） | `search_enhanced` | `backend/app/api/v1/crawler.py:281` |
-| `GET` | `/api/v1/crawler/tasks/{task_id}` | 查询采集任务状态 | `get_task_status` | `backend/app/api/v1/crawler.py:266` |
+| `POST` | `/api/v1/crawler/fetch-no-watermark` | 批量获取无水印资源 | `fetch_no_watermark` | `backend/app/api/v1/crawler.py:731` |
+| `POST` | `/api/v1/crawler/import` | 导入到素材库 | `import_to_assets` | `backend/app/api/v1/crawler.py:359` |
+| `GET` | `/api/v1/crawler/note-detail` | 获取笔记详情（无水印） | `get_note_detail` | `backend/app/api/v1/crawler.py:622` |
+| `GET` | `/api/v1/crawler/options` | 获取采集配置选项 | `get_options` | `backend/app/api/v1/crawler.py:257` |
+| `GET` | `/api/v1/crawler/platforms` | 获取支持的平台列表 | `get_platforms` | `backend/app/api/v1/crawler.py:251` |
+| `POST` | `/api/v1/crawler/search` | 搜索视频/图文素材 | `search_materials` | `backend/app/api/v1/crawler.py:266` |
+| `POST` | `/api/v1/crawler/search-enhanced` | 增强搜索（支持笔记/用户） | `search_enhanced` | `backend/app/api/v1/crawler.py:420` |
+| `GET` | `/api/v1/crawler/tasks/{task_id}` | 查询采集任务状态 | `get_task_status` | `backend/app/api/v1/crawler.py:405` |
 
 ### Crawler — Bilibili
 
@@ -592,13 +602,13 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/download/cover-proxy` | 封面图代理（弃用，请使用 /api/v1/proxy/image） | `cover_proxy` | `backend/app/api/v1/download.py:1400` |
-| `POST` | `/api/v1/download/download` | 通过 yt-dlp 下载视频（返回文件流） | `download_video` | `backend/app/api/v1/download.py:882` |
-| `POST` | `/api/v1/download/download-images` | 下载图集图片到本地 | `download_images` | `backend/app/api/v1/download.py:1431` |
-| `POST` | `/api/v1/download/open-folder` | 打开文件夹并选中文件（Windows） | `open_folder` | `backend/app/api/v1/download.py:1389` |
-| `POST` | `/api/v1/download/parse` | 解析视频链接 | `parse_download_url` | `backend/app/api/v1/download.py:464` |
-| `POST` | `/api/v1/download/tasks` | 创建下载任务（后台，后台轮询） | `create_download_task` | `backend/app/api/v1/download.py:1341` |
-| `GET` | `/api/v1/download/tasks/{task_id}` | 查询下载任务状态 | `get_download_task` | `backend/app/api/v1/download.py:1365` |
+| `GET` | `/api/v1/download/cover-proxy` | 封面图代理（弃用，请使用 /api/v1/proxy/image） | `cover_proxy` | `backend/app/api/v1/download.py:1681` |
+| `POST` | `/api/v1/download/download` | 通过 yt-dlp 下载视频（返回文件流） | `download_video` | `backend/app/api/v1/download.py:1150` |
+| `POST` | `/api/v1/download/download-images` | 下载图集图片到本地 | `download_images` | `backend/app/api/v1/download.py:1712` |
+| `POST` | `/api/v1/download/open-folder` | 打开文件夹并选中文件（Windows） | `open_folder` | `backend/app/api/v1/download.py:1670` |
+| `POST` | `/api/v1/download/parse` | 解析视频链接 | `parse_download_url` | `backend/app/api/v1/download.py:519` |
+| `POST` | `/api/v1/download/tasks` | 创建下载任务（后台，后台轮询） | `create_download_task` | `backend/app/api/v1/download.py:1614` |
+| `GET` | `/api/v1/download/tasks/{task_id}` | 查询下载任务状态 | `get_download_task` | `backend/app/api/v1/download.py:1646` |
 
 ### Ebook
 
@@ -866,28 +876,43 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/platforms` | 列出所有平台连接 | `list_connections` | `backend/app/api/v1/platforms.py:117` |
-| `POST` | `/api/v1/platforms` | 创建平台连接 | `create_connection` | `backend/app/api/v1/platforms.py:145` |
-| `GET` | `/api/v1/platforms/supported` | 获取支持的平台列表 | `get_supported_platforms` | `backend/app/api/v1/platforms.py:92` |
-| `GET` | `/api/v1/platforms/{conn_id}` | 获取连接详情 | `get_connection` | `backend/app/api/v1/platforms.py:130` |
-| `PUT` | `/api/v1/platforms/{conn_id}` | 更新平台连接 | `update_connection` | `backend/app/api/v1/platforms.py:162` |
-| `DELETE` | `/api/v1/platforms/{conn_id}` | 删除平台连接 | `delete_connection` | `backend/app/api/v1/platforms.py:179` |
-| `GET` | `/api/v1/platforms/{conn_id}/cookie-content` | 获取 Netscape 格式 Cookie | `get_cookie_content` | `backend/app/api/v1/platforms.py:307` |
-| `POST` | `/api/v1/platforms/{conn_id}/cookie-content` | 保存 Netscape 格式 Cookie | `save_cookie_content` | `backend/app/api/v1/platforms.py:333` |
-| `POST` | `/api/v1/platforms/{conn_id}/publish` | 通过指定平台连接发布内容 | `publish_content` | `backend/app/api/v1/platforms.py:249` |
-| `POST` | `/api/v1/platforms/{conn_id}/test` | 测试连接有效性 | `test_connection` | `backend/app/api/v1/platforms.py:194` |
-| `POST` | `/api/v1/platforms/{conn_id}/use` | 标记为已使用 | `mark_used` | `backend/app/api/v1/platforms.py:208` |
+| `GET` | `/api/v1/platforms` | 列出所有平台连接 | `list_connections` | `backend/app/api/v1/platforms.py:130` |
+| `POST` | `/api/v1/platforms` | 创建平台连接 | `create_connection` | `backend/app/api/v1/platforms.py:158` |
+| `GET` | `/api/v1/platforms/supported` | 获取支持的平台列表 | `get_supported_platforms` | `backend/app/api/v1/platforms.py:105` |
+| `GET` | `/api/v1/platforms/{conn_id}` | 获取连接详情 | `get_connection` | `backend/app/api/v1/platforms.py:143` |
+| `PUT` | `/api/v1/platforms/{conn_id}` | 更新平台连接 | `update_connection` | `backend/app/api/v1/platforms.py:175` |
+| `DELETE` | `/api/v1/platforms/{conn_id}` | 删除平台连接 | `delete_connection` | `backend/app/api/v1/platforms.py:192` |
+| `GET` | `/api/v1/platforms/{conn_id}/cookie-content` | 获取 Netscape 格式 Cookie | `get_cookie_content` | `backend/app/api/v1/platforms.py:410` |
+| `POST` | `/api/v1/platforms/{conn_id}/cookie-content` | 保存 Netscape 格式 Cookie | `save_cookie_content` | `backend/app/api/v1/platforms.py:436` |
+| `POST` | `/api/v1/platforms/{conn_id}/disable` | 停用连接（风控冷却等） | `disable_connection` | `backend/app/api/v1/platforms.py:207` |
+| `POST` | `/api/v1/platforms/{conn_id}/enable` | 启用连接（恢复使用） | `enable_connection` | `backend/app/api/v1/platforms.py:264` |
+| `POST` | `/api/v1/platforms/{conn_id}/publish` | 通过指定平台连接发布内容 | `publish_content` | `backend/app/api/v1/platforms.py:352` |
+| `POST` | `/api/v1/platforms/{conn_id}/test` | 测试连接有效性 | `test_connection` | `backend/app/api/v1/platforms.py:297` |
+| `POST` | `/api/v1/platforms/{conn_id}/use` | 标记为已使用 | `mark_used` | `backend/app/api/v1/platforms.py:311` |
+
+### Platform Health
+
+| Method | Path | Summary | Handler | Source |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/v1/platforms/{platform}/health` | 平台体检（统一入口，所有平台可用） | `platform_health` | `backend/app/services/platforms/health_routes.py:82` |
+
+### Platform Stats
+
+| Method | Path | Summary | Handler | Source |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/v1/platforms/{platform}/stats` | 平台历史健康度统计 | `platform_stats` | `backend/app/api/v1/platform_stats.py:86` |
 
 ### Proxy
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
 | `GET` | `/api/v1/proxy/image` | 通用图片代理（解决各平台 CDN 防盗链） | `proxy_image` | `backend/app/api/v1/proxy.py:122` |
-| `GET` | `/api/v1/proxy/sniffer/cert` | 下载 CA 证书 | `download_ca_cert` | `backend/app/api/v1/proxy.py:205` |
-| `GET` | `/api/v1/proxy/sniffer/health` | 检查代理状态 | `sniffer_health` | `backend/app/api/v1/proxy.py:195` |
-| `POST` | `/api/v1/proxy/sniffer/start` | 启动抓包代理 | `start_sniffer` | `backend/app/api/v1/proxy.py:169` |
-| `GET` | `/api/v1/proxy/sniffer/status/{session_id}` | 查询抓包状态 | `get_sniffer_status` | `backend/app/api/v1/proxy.py:179` |
-| `POST` | `/api/v1/proxy/sniffer/stop/{session_id}` | 停止抓包 | `stop_sniffer` | `backend/app/api/v1/proxy.py:187` |
+| `GET` | `/api/v1/proxy/sniffer/cert` | 下载 CA 证书 | `download_ca_cert` | `backend/app/api/v1/proxy.py:321` |
+| `GET` | `/api/v1/proxy/sniffer/health` | 检查代理状态 | `sniffer_health` | `backend/app/api/v1/proxy.py:311` |
+| `POST` | `/api/v1/proxy/sniffer/start` | 启动抓包代理 | `start_sniffer` | `backend/app/api/v1/proxy.py:285` |
+| `GET` | `/api/v1/proxy/sniffer/status/{session_id}` | 查询抓包状态 | `get_sniffer_status` | `backend/app/api/v1/proxy.py:295` |
+| `POST` | `/api/v1/proxy/sniffer/stop/{session_id}` | 停止抓包 | `stop_sniffer` | `backend/app/api/v1/proxy.py:303` |
+| `GET` | `/api/v1/proxy/video` | 视频代理（去 Referer + 支持 Range） | `proxy_video` | `backend/app/api/v1/proxy.py:166` |
 
 ### Reader
 
@@ -994,6 +1019,17 @@
 | `POST` | `/api/v1/tasks/{task_id}/cancel` | 取消任务 | `cancel_task` | `backend/app/api/v1/tasks.py:943` |
 | `POST` | `/api/v1/tasks/{task_id}/retry` | 重试失败任务 | `retry_task` | `backend/app/api/v1/tasks.py:1006` |
 
+### Telegram
+
+| Method | Path | Summary | Handler | Source |
+| --- | --- | --- | --- | --- |
+| `POST` | `/api/v1/telegram/auth/logout` | 退出 Telegram 登录 | `logout` | `backend/app/api/v1/telegram.py:119` |
+| `POST` | `/api/v1/telegram/auth/send-code` | 发送 Telegram 验证码 | `send_code` | `backend/app/api/v1/telegram.py:86` |
+| `POST` | `/api/v1/telegram/auth/sign-in` | 提交验证码完成登录 | `sign_in` | `backend/app/api/v1/telegram.py:105` |
+| `GET` | `/api/v1/telegram/channel` | 公开频道信息 + 消息（免登录） | `public_channel` | `backend/app/api/v1/telegram.py:179` |
+| `GET` | `/api/v1/telegram/channels` | 我加入的频道（需登录） | `my_channels` | `backend/app/api/v1/telegram.py:135` |
+| `GET` | `/api/v1/telegram/status` | Telegram 登录状态 | `telegram_status` | `backend/app/api/v1/telegram.py:65` |
+
 ### Torrents
 
 | Method | Path | Summary | Handler | Source |
@@ -1019,10 +1055,14 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/users/me` | 获取自己账号的资料（抖音/小红书） | `get_self_profile` | `backend/app/api/v1/users.py:184` |
-| `GET` | `/api/v1/users/profile` | 获取用户资料（抖音/小红书） | `get_user_profile` | `backend/app/api/v1/users.py:223` |
-| `GET` | `/api/v1/users/search` | 搜索用户（抖音/小红书） | `search_users` | `backend/app/api/v1/users.py:155` |
-| `GET` | `/api/v1/users/videos` | 获取用户作品列表（抖音/小红书） | `get_user_videos` | `backend/app/api/v1/users.py:260` |
+| `GET` | `/api/v1/users/creator/overview` | 创作者中心：账号总览（仅号主可见的运营数据） | `get_creator_overview` | `backend/app/api/v1/users.py:348` |
+| `GET` | `/api/v1/users/creator/works` | 创作者中心：作品列表（含完播率等深度指标） | `get_creator_works` | `backend/app/api/v1/users.py:473` |
+| `GET` | `/api/v1/users/creator/xhs/fans` | 小红书创作服务平台：粉丝数据 | `get_xhs_creator_fans` | `backend/app/api/v1/users.py:450` |
+| `GET` | `/api/v1/users/creator/xhs/overview` | 小红书创作服务平台：账号总览 | `get_xhs_creator_overview` | `backend/app/api/v1/users.py:407` |
+| `GET` | `/api/v1/users/me` | 获取自己账号的资料（抖音/小红书） | `get_self_profile` | `backend/app/api/v1/users.py:298` |
+| `GET` | `/api/v1/users/profile` | 获取用户资料（抖音/小红书） | `get_user_profile` | `backend/app/api/v1/users.py:516` |
+| `GET` | `/api/v1/users/search` | 搜索用户（抖音/小红书） | `search_users` | `backend/app/api/v1/users.py:264` |
+| `GET` | `/api/v1/users/videos` | 获取用户作品列表（抖音/小红书/微博/X/B站） | `get_user_videos` | `backend/app/api/v1/users.py:553` |
 
 ### Videos
 

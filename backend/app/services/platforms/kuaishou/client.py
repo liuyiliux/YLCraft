@@ -784,6 +784,22 @@ class KuaishouClient(BasePlatformClient):
             cid = str(c.get("comment_id") or "")
             if not cid:
                 continue
+            # 评论图片：快手字段名未实测确认，按平台惯例做**防御性**提取
+            # （有就取，没有就空 —— **不编造**）
+            images: List[str] = []
+            for key in ("pictures", "picList", "imageList", "images"):
+                raw_imgs = c.get(key)
+                if not isinstance(raw_imgs, list):
+                    continue
+                for im in raw_imgs:
+                    if isinstance(im, str) and im.startswith("http"):
+                        images.append(im)
+                    elif isinstance(im, dict):
+                        url = im.get("url") or im.get("cdnUrl") or im.get("src")
+                        if isinstance(url, str) and url.startswith("http"):
+                            images.append(url)
+                if images:
+                    break
             out.append({
                 "id": cid,
                 "content": c.get("content") or "",
@@ -795,6 +811,7 @@ class KuaishouClient(BasePlatformClient):
                 "create_time": int(c.get("timestamp") or 0) // 1000,
                 "reply_count": 0,   # V2 无子评论计数字段
                 "has_sub": bool(c.get("hasSubComments")),
+                "images": images,
             })
 
         nxt = payload.get("pcursorV2")
@@ -806,6 +823,89 @@ class KuaishouClient(BasePlatformClient):
             "has_more": has_more,
             # commentCountV2 是总数（实测 612）—— 但注意它可能不准
             "total": int(payload.get("commentCountV2") or 0),
+        }
+
+    async def get_replies(
+        self,
+        item_id: str,
+        comment_id: str,
+        max_results: int = 20,
+        cursor: str = "",
+    ) -> Dict[str, Any]:
+        """取某条评论的子回复（楼中楼）。
+
+        接口：`POST /rest/v/photo/comment/sublist`
+              body 加 `rootCommentId`（**int**，不是字符串）。
+
+        ⚠️ **不需要签名**（与 `comment/list` 一样，实测确认）。
+        实测：`rootCommentId=1181356104491` → `result=1`，1 条回复。
+        """
+        photo_id = str(item_id or "").strip()
+        if not photo_id or not comment_id:
+            return {"comments": [], "has_more": False, "next_cursor": "", "total": 0}
+
+        headers = {
+            "User-Agent": self._get_default_user_agent(),
+            "Content-Type": "application/json",
+            "Referer": f"{BASE}/short-video/{photo_id}",
+        }
+        cookie = self.header_cookie()
+        if cookie:
+            headers["Cookie"] = cookie
+
+        # ⚠️ rootCommentId 是 **int**（实测）—— 传字符串可能被拒
+        try:
+            root_id: Any = int(comment_id)
+        except ValueError:
+            root_id = comment_id
+
+        try:
+            payload = await self.request(
+                "POST",
+                f"{BASE}{COMMENT_SUB_LIST}",
+                json={
+                    "photoId": photo_id,
+                    "pcursor": cursor or "",
+                    "rootCommentId": root_id,
+                },
+                headers=headers,
+            )
+        except Exception as exc:
+            logger.warning("[kuaishou] 子评论请求失败：%s", type(exc).__name__)
+            return {"comments": [], "has_more": False, "next_cursor": "", "total": 0}
+
+        if not isinstance(payload, dict) or payload.get("result") != 1:
+            return {"comments": [], "has_more": False, "next_cursor": "", "total": 0}
+
+        # 子评论字段与顶层一致（实测）：content / author_name / likeCount …
+        # 额外有 `replyToUserName`（回复给谁）
+        out: List[Dict[str, Any]] = []
+        for c in payload.get("subCommentsV2") or payload.get("rootCommentsV2") or []:
+            if not isinstance(c, dict):
+                continue
+            cid = str(c.get("comment_id") or "")
+            if not cid:
+                continue
+            out.append({
+                "id": cid,
+                "content": c.get("content") or "",
+                "author": c.get("author_name") or "",
+                "author_id": str(c.get("author_id") or ""),
+                "avatar": c.get("headurl") or "",
+                "likes": int(c.get("likeCount") or 0),
+                "create_time": int(c.get("timestamp") or 0) // 1000,
+                "reply_count": 0,
+                # ⚠️ 子评论特有：回复给谁（前端可显示 "回复 @xxx"）
+                "reply_to": c.get("replyToUserName") or "",
+            })
+
+        nxt = payload.get("pcursorV2")
+        has_more = bool(nxt) and str(nxt) != "no_more"
+        return {
+            "comments": out[:max_results],
+            "has_more": has_more,
+            "next_cursor": str(nxt) if has_more else "",
+            "total": len(out),
         }
 
     async def get_comments(

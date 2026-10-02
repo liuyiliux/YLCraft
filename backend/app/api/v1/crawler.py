@@ -462,6 +462,7 @@ async def search_enhanced(req: SearchEnhancedRequest):
 
     # ===== 普通搜索模式 =====
     try:
+        _t0 = time.time()
         using = "platforms"
         results = await service.search_videos(
             platform=req.platform,
@@ -494,6 +495,25 @@ async def search_enhanced(req: SearchEnhancedRequest):
                 total = rd["_total"]
             has_more = bool(rd.get("_has_more"))
 
+        # 记一条健康度事件（**best-effort**，失败不影响搜索）
+        #
+        # ⚠️ 2026-10-01 加：`platform_event_logs` 原本只记 LLM/图片等
+        # AI 场景，**没有平台采集记录** → `/platforms/{p}/stats` 无数据可算。
+        # 这里开始记录，历史统计才有来源。
+        try:
+            from app.api.v1.platform_stats import record_platform_event
+
+            await record_platform_event(
+                req.platform,
+                f"search_{req.search_type or 'note'}",
+                success=True,
+                duration_ms=int((time.time() - _t0) * 1000),
+                conn_id=req.conn_id or "",
+                extra={"count": len(results), "keyword_len": len(req.keyword or "")},
+            )
+        except Exception:
+            pass
+
         return SearchResponse(
             success=True,
             results=results,
@@ -514,6 +534,21 @@ async def search_enhanced(req: SearchEnhancedRequest):
         # 这里再把"平台侧拒绝"映射成 **429**（稍后重试/去登录），
         # 而不是 500（服务端故障）—— 语义不同，前端提示也不同。
         msg = str(e)
+
+        # 记一条**失败**事件（best-effort）—— 统计里的成功率靠它
+        try:
+            from app.api.v1.platform_stats import record_platform_event
+
+            await record_platform_event(
+                req.platform,
+                f"search_{req.search_type or 'note'}",
+                success=False,
+                duration_ms=int((time.time() - _t0) * 1000),
+                error=f"{type(e).__name__}: {msg}",
+                conn_id=req.conn_id or "",
+            )
+        except Exception:
+            pass
 
         # ⚠️ **登录态失效要单独映射成 401**（2026-10-01 补）
         #

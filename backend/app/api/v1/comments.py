@@ -120,7 +120,13 @@ class CommentItem(BaseModel):
     create_time: str = ""
     reply_count: int = 0
     location: str = ""
+    # 评论带的图片（各平台可有可无）
+    images: List[str] = Field(default_factory=list)
+    # 子回复（楼中楼）—— 默认不在列表里展开，
+    # 由 `/comments?parent_id=xxx` 单独取（`reply_count > 0` 表示有）
     replies: List[Dict[str, Any]] = Field(default_factory=list)
+    # 这条评论是回复给谁的（子回复场景）
+    reply_to: str = ""
 
 
 class CommentsData(BaseModel):
@@ -211,6 +217,13 @@ def _normalize_bili_comment(raw: Dict[str, Any]) -> Dict[str, Any]:
         "reply_count": reply_count,
         "location": (raw.get("reply_control") or {}).get("location") or "",
         "replies": raw.get("replies") or [],
+        # B站评论图：在 `content.pictures[].img_src`（有就取，没有就空）
+        "images": [
+            (p or {}).get("img_src")
+            for p in ((raw.get("content") or {}).get("pictures") or [])
+            if isinstance(p, dict) and (p or {}).get("img_src")
+        ],
+        "reply_to": "",
     }
 
 
@@ -272,6 +285,10 @@ def _normalize_generic_comment(raw: Dict[str, Any]) -> Dict[str, Any]:
         "reply_count": int(raw.get("reply_count") or 0),
         "location": raw.get("location") or "",
         "replies": raw.get("replies") or [],
+        # 评论图片（微博/抖音/X 实测都有，快手做防御性提取）
+        "images": raw.get("images") or [],
+        # 子回复里"回复给谁"（抖音 reply_to / 快手 replyToUserName / X in_reply_to_screen_name）
+        "reply_to": raw.get("reply_to") or "",
     }
 
 
@@ -284,12 +301,26 @@ async def get_comments(
     sort: int = Query(0, description="排序（B站：0=最热 1=最新 2=最早）"),
     offset: str = Query("", description="游标（从响应的 next_offset 取，用于加载更多）"),
     conn_id: str = Query("", description="平台连接 ID"),
+    parent_id: str = Query(
+        "",
+        description=(
+            "取**某条评论的子回复**（楼中楼）—— 传父评论 id。"
+            "留空则取顶层评论。"
+        ),
+    ),
 ):
-    """取某条内容的评论。
+    """取某条内容的评论（或某条评论的子回复）。
 
-    ## ⚠️ 目前只有 B站能用
+    ## 两种用法
 
-    其它平台会返回 **501 + 具体原因**（不是空列表）——
+      · `?platform=x&item_id=y`           → 顶层评论
+      · `?platform=x&item_id=y&parent_id=<评论id>` → 那条评论的**子回复**
+
+    ## 支持评论的平台（2026-10-01）
+
+        bili / kuaishou / weibo / twitter / youtube / douyin
+
+    未实现的平台返回 **501 + 具体原因**（不是空列表）——
     "没实现"和"这条没评论"是两回事，不能混。
     """
     p = (platform or "").strip().lower()
@@ -358,7 +389,42 @@ async def get_comments(
         if client_name == "dy":
             client_name = "douyin"
         async with create_client(client_name, mode="api", cookie=cookie) as client:
-            if p in ("bili", "bilibili"):
+            if parent_id:
+                # ===== 取**子回复**（楼中楼）=====
+                #
+                # ⚠️ 子回复不是"评论列表的下一页" —— 端点/参数/签名都可能不同
+                # （抖音换端点且签名函数不同；快手加 rootCommentId；X 靠父 id 筛）。
+                # B站没有独立的子回复接口（它的回复在 `replies` 字段里随顶层返回），
+                # 所以对 B站如实说明。
+                if p in ("bili", "bilibili"):
+                    raise HTTPException(
+                        status_code=501,
+                        detail=(
+                            "B站的子回复**随顶层评论一起返回**（在每条评论的 "
+                            "`replies` 字段里），不需要单独取。\n"
+                            "如需查看，请直接看顶层评论返回里的 `replies`。"
+                        ),
+                    )
+                try:
+                    reply_data = await client.get_replies(
+                        item, parent_id,
+                        max_results=page_size, cursor=offset,
+                    )
+                except NotImplementedError:
+                    raise HTTPException(
+                        status_code=501,
+                        detail=(
+                            f"平台 {p!r} 暂不支持单独取子回复。\n"
+                            "（顶层评论仍可用 —— 去掉 parent_id 参数即可。）"
+                        ),
+                    )
+                raw_comments = reply_data.get("comments") or []
+                comments = [_normalize_generic_comment(c) for c in raw_comments]
+                total = int(reply_data.get("total") or len(comments))
+                has_more = bool(reply_data.get("has_more"))
+                next_offset = str(reply_data.get("next_cursor") or "")
+                message = f"该评论有 {len(comments)} 条回复"
+            elif p in ("bili", "bilibili"):
                 result = await client.get_comments_paged(
                     item, page, page_size, sort, offset
                 )

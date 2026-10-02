@@ -539,6 +539,20 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load comments router: {e}")
 
+    # **平台健康度统计**（历史成功率/耗时，读 platform_event_logs）
+    #
+    # ⚠️ 与「体检」不同：体检是**实时探针**（现在行不行），
+    # 这个是**历史统计**（最近稳不稳）。2026-10-01 加。
+    try:
+        from app.api.v1 import platform_stats
+        app.include_router(
+            platform_stats.router,
+            prefix="/api/v1/platforms",
+            tags=["Platform Stats"],
+        )
+    except Exception as e:
+        logger.warning(f"Could not load platform_stats router: {e}")
+
     # **统一**平台体检（所有平台一个入口）
     #
     # 原来体检是各平台各写一份（B站/抖音/小红书），结果**前端只接了 B站那个**

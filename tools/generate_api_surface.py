@@ -132,6 +132,20 @@ def _collect_router_imports() -> dict[str, str]:
          → {"xhs_router": "app.services.platforms.xiaohongshu.routes"}
 
     也支持不带别名的 `from ... import router`（变量名就是 `router`）。
+
+    ## ⚠️ 也支持「导入**模块**再取 `.router`」这种形式（2026-10-01 修）
+
+        from app.services.platforms import health_routes
+        app.include_router(health_routes.router, prefix=...)
+
+    这里变量名是 `health_routes` —— **不以 `router` 结尾**，
+    原来的 `local.endswith("router")` 判断会漏掉它，
+    导致 `/api/v1/platforms/{p}/health` 这条路由
+    **完全不出现在 API 文档里**（生成器还报"成功"）。
+
+    修法：模块级导入也纳入映射，值是「模块路径 + 该名字」——
+    即 `app.services.platforms` + `health_routes`
+    → `app.services.platforms.health_routes`。
     """
     mapping: dict[str, str] = {}
     try:
@@ -146,6 +160,11 @@ def _collect_router_imports() -> dict[str, str]:
             local = alias.asname or alias.name
             if local.endswith("router") or alias.name == "router":
                 mapping[local] = node.module
+            elif alias.asname is None and not alias.name.endswith("router"):
+                # `from app.services.platforms import health_routes`
+                # → health_routes 模块在 app.services.platforms.health_routes
+                # ⚠️ 只有**没有别名**时才能这么推（起了别名就不知道原名了）
+                mapping[local] = f"{node.module}.{alias.name}"
     return mapping
 
 
@@ -167,7 +186,25 @@ def parse_mounts() -> list[RouterMount]:
         file_path: Path | None = None
         if isinstance(router_arg, ast.Attribute) and isinstance(router_arg.value, ast.Name):
             name = router_arg.value.id
-            file_path = API_DIR / f"{name}.py"
+            # ⚠️ 先按惯例找 `app/api/v1/<name>.py`，**找不到再走完整查找链**
+            # （2026-10-01 修）。
+            #
+            # 原来这里只有 `API_DIR / f"{name}.py"` 一条路，于是
+            #
+            #     from app.services.platforms import health_routes
+            #     app.include_router(health_routes.router, prefix="/api/v1/platforms")
+            #
+            # 这种"模块不在 api/v1 下"的路由**永远找不到源文件** ——
+            # `/api/v1/platforms/{platform}/health` 这条端点
+            # 完全不出现在 API 文档里，而生成器照样报"成功"。
+            #
+            # 与下面 `ast.Name` 分支同样的毛病（那边已经修过一轮：
+            # 硬编码 `bili_router` 特例导致 douyin_router 等全丢）。
+            candidate = API_DIR / f"{name}.py"
+            if candidate.exists():
+                file_path = candidate
+            else:
+                file_path = _find_router_file(name, router_imports)
         elif isinstance(router_arg, ast.Name):
             # 形如 `app.include_router(douyin_router, ...)` ——
             # 名字不是 `xxx.router`，得自己去源码里找它在哪个文件定义。
