@@ -423,3 +423,72 @@ def test_delete_batch_keeps_files_by_default():
     src = inspect.getsource(routes.delete_batch)
     assert "delete_files" in src
     assert "文件保留" in src or "delete_files=true" in src
+
+
+# =============================================================================
+# 前端接线
+# =============================================================================
+
+def _crawler_src() -> str:
+    p = BACKEND.parent / "frontend" / "src" / "pages" / "crawler" / "index.tsx"
+    if not p.exists():
+        pytest.skip("搜索页不在预期位置")
+    return p.read_text(encoding="utf-8", errors="ignore")
+
+
+def test_frontend_wires_batch_download():
+    """**关键回归**：前端要**真的接上**批量下载。
+
+    ⚠️ 本仓库反复踩过的坑：**后端实现了但前端没接**
+    （X、快手、YouTube/Telegram、微博、抖音/小红书体检都犯过）。
+    后端接口做好只是"能做"，没 UI 入口等于没做。
+
+    这里断言前端确实调了那三个接口。
+    """
+    src = _crawler_src()
+    assert "createDownloadBatch" in src, "没有提交批量的调用"
+    assert "listDownloadBatches" in src, "没有查进度的调用"
+    assert "resumeDownloadBatch" in src, "没有续跑的调用"
+
+
+def test_frontend_batch_has_progress_ui():
+    """要有进度 UI（否则用户看不到下载到哪了）。"""
+    src = _crawler_src()
+    assert "batchPanelOpen" in src, "没有进度面板"
+    assert "batchList" in src, "没有批次列表状态"
+    # 进度条
+    assert "percent={b.progress}" in src or "b.progress" in src
+
+
+def test_frontend_batch_polls_progress():
+    """要有轮询（否则进度不会自己刷新）。
+
+    ⚠️ 并且**全部完成时要停**（避免无意义的持续轮询）。
+    """
+    src = _crawler_src()
+    assert "batchPolling" in src, "没有轮询状态"
+    assert "setInterval" in src
+    assert "clearInterval" in src, "没有清理定时器"
+    assert "setBatchPolling(false)" in src, "完成后要停止轮询"
+
+
+def test_frontend_excludes_wechat_from_batch():
+    """微信文章要**排除**在批量下载外（它有专属按钮 + 格式选项）。
+
+    ⚠️ 混在一起会让用户以为能选格式，实际走的是通用路径。
+    """
+    src = _crawler_src()
+    # handleBatchDownload 里要过滤 wechat_mp
+    i = src.find("const handleBatchDownload")
+    assert i != -1
+    seg = src[i:i + 1200]
+    assert "wechat_mp" in seg, "handleBatchDownload 没排除微信文章"
+
+
+def test_frontend_explains_delete_keeps_files():
+    """UI 要说明"移除记录不删文件"。
+
+    ⚠️ 不说的话用户会以为文件也没了，不敢点。
+    """
+    src = _crawler_src()
+    assert "只删任务记录" in src or "文件会保留" in src
