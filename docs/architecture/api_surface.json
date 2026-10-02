@@ -393,6 +393,14 @@
       ]
     },
     {
+      "name": "download_batch_routes",
+      "file": "backend/app/api/v1/download_batch_routes.py",
+      "prefix": "/api/v1/download",
+      "tags": [
+        "Download Batch"
+      ]
+    },
+    {
       "name": "comments",
       "file": "backend/app/api/v1/comments.py",
       "prefix": "/api/v1/comments",
@@ -5054,7 +5062,7 @@
       "summary": "获取评论（统一入口）",
       "function": "get_comments",
       "file": "backend/app/api/v1/comments.py",
-      "line": 296,
+      "line": 349,
       "response_model": "CommentsResponse",
       "include_in_schema": true
     },
@@ -6452,6 +6460,86 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/download/batches",
+      "router": "download_batch_routes",
+      "prefix": "/api/v1/download",
+      "local_path": "/batches",
+      "tags": [
+        "Download Batch"
+      ],
+      "summary": "列出批量下载批次",
+      "function": "list_batches",
+      "file": "backend/app/api/v1/download_batch_routes.py",
+      "line": 126,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/download/batches",
+      "router": "download_batch_routes",
+      "prefix": "/api/v1/download",
+      "local_path": "/batches",
+      "tags": [
+        "Download Batch"
+      ],
+      "summary": "提交批量下载",
+      "function": "create_batch",
+      "file": "backend/app/api/v1/download_batch_routes.py",
+      "line": 77,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/download/batches/{batch_id}",
+      "router": "download_batch_routes",
+      "prefix": "/api/v1/download",
+      "local_path": "/batches/{batch_id}",
+      "tags": [
+        "Download Batch"
+      ],
+      "summary": "查看单个批次详情",
+      "function": "get_batch",
+      "file": "backend/app/api/v1/download_batch_routes.py",
+      "line": 145,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/download/batches/{batch_id}",
+      "router": "download_batch_routes",
+      "prefix": "/api/v1/download",
+      "local_path": "/batches/{batch_id}",
+      "tags": [
+        "Download Batch"
+      ],
+      "summary": "删除批次记录",
+      "function": "delete_batch",
+      "file": "backend/app/api/v1/download_batch_routes.py",
+      "line": 212,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/download/batches/{batch_id}/resume",
+      "router": "download_batch_routes",
+      "prefix": "/api/v1/download",
+      "local_path": "/batches/{batch_id}/resume",
+      "tags": [
+        "Download Batch"
+      ],
+      "summary": "续跑未完成的批量下载",
+      "function": "resume_batch",
+      "file": "backend/app/api/v1/download_batch_routes.py",
+      "line": 160,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/download/cover-proxy",
       "router": "download",
       "prefix": "/api/v1/download",
@@ -6462,7 +6550,7 @@
       "summary": "封面图代理（弃用，请使用 /api/v1/proxy/image）",
       "function": "cover_proxy",
       "file": "backend/app/api/v1/download.py",
-      "line": 1681,
+      "line": 2072,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6478,7 +6566,7 @@
       "summary": "通过 yt-dlp 下载视频（返回文件流）",
       "function": "download_video",
       "file": "backend/app/api/v1/download.py",
-      "line": 1150,
+      "line": 1508,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6494,7 +6582,7 @@
       "summary": "下载图集图片到本地",
       "function": "download_images",
       "file": "backend/app/api/v1/download.py",
-      "line": 1712,
+      "line": 2103,
       "response_model": "DownloadImagesResponse",
       "include_in_schema": true
     },
@@ -6510,7 +6598,7 @@
       "summary": "打开文件夹并选中文件（Windows）",
       "function": "open_folder",
       "file": "backend/app/api/v1/download.py",
-      "line": 1670,
+      "line": 2061,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6531,6 +6619,38 @@
       "include_in_schema": true
     },
     {
+      "method": "GET",
+      "path": "/api/v1/download/resumable",
+      "router": "download",
+      "prefix": "/api/v1/download",
+      "local_path": "/resumable",
+      "tags": [
+        "Download"
+      ],
+      "summary": "列出未完成的下载（可续传）",
+      "function": "list_resumable",
+      "file": "backend/app/api/v1/download.py",
+      "line": 1078,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/download/resume/{task_id}",
+      "router": "download",
+      "prefix": "/api/v1/download",
+      "local_path": "/resume/{task_id}",
+      "tags": [
+        "Download"
+      ],
+      "summary": "续传未完成的下载",
+      "function": "resume_download",
+      "file": "backend/app/api/v1/download.py",
+      "line": 1138,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
       "method": "POST",
       "path": "/api/v1/download/tasks",
       "router": "download",
@@ -6542,7 +6662,7 @@
       "summary": "创建下载任务（后台，后台轮询）",
       "function": "create_download_task",
       "file": "backend/app/api/v1/download.py",
-      "line": 1614,
+      "line": 2005,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6558,7 +6678,7 @@
       "summary": "查询下载任务状态",
       "function": "get_download_task",
       "file": "backend/app/api/v1/download.py",
-      "line": 1646,
+      "line": 2037,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9342,7 +9462,7 @@
       "summary": "平台体检（统一入口，所有平台可用）",
       "function": "platform_health",
       "file": "backend/app/services/platforms/health_routes.py",
-      "line": 82,
+      "line": 102,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9358,7 +9478,7 @@
       "summary": "平台历史健康度统计",
       "function": "platform_stats",
       "file": "backend/app/api/v1/platform_stats.py",
-      "line": 86,
+      "line": 109,
       "response_model": "PlatformStatsResponse",
       "include_in_schema": true
     },
@@ -11118,7 +11238,7 @@
       "summary": "创作者中心：账号总览（仅号主可见的运营数据）",
       "function": "get_creator_overview",
       "file": "backend/app/api/v1/users.py",
-      "line": 348,
+      "line": 399,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11134,7 +11254,7 @@
       "summary": "创作者中心：作品列表（含完播率等深度指标）",
       "function": "get_creator_works",
       "file": "backend/app/api/v1/users.py",
-      "line": 473,
+      "line": 524,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11150,7 +11270,7 @@
       "summary": "小红书创作服务平台：粉丝数据",
       "function": "get_xhs_creator_fans",
       "file": "backend/app/api/v1/users.py",
-      "line": 450,
+      "line": 501,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11166,7 +11286,7 @@
       "summary": "小红书创作服务平台：账号总览",
       "function": "get_xhs_creator_overview",
       "file": "backend/app/api/v1/users.py",
-      "line": 407,
+      "line": 458,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11182,7 +11302,7 @@
       "summary": "获取自己账号的资料（抖音/小红书）",
       "function": "get_self_profile",
       "file": "backend/app/api/v1/users.py",
-      "line": 298,
+      "line": 349,
       "response_model": "UserProfileResponse",
       "include_in_schema": true
     },
@@ -11198,7 +11318,7 @@
       "summary": "获取用户资料（抖音/小红书）",
       "function": "get_user_profile",
       "file": "backend/app/api/v1/users.py",
-      "line": 516,
+      "line": 567,
       "response_model": "UserProfileResponse",
       "include_in_schema": true
     },
@@ -11214,7 +11334,7 @@
       "summary": "搜索用户（抖音/小红书）",
       "function": "search_users",
       "file": "backend/app/api/v1/users.py",
-      "line": 264,
+      "line": 315,
       "response_model": "UserSearchResponse",
       "include_in_schema": true
     },
@@ -11230,7 +11350,7 @@
       "summary": "获取用户作品列表（抖音/小红书/微博/X/B站）",
       "function": "get_user_videos",
       "file": "backend/app/api/v1/users.py",
-      "line": 553,
+      "line": 604,
       "response_model": "UserVideosResponse",
       "include_in_schema": true
     },
