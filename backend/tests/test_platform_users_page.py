@@ -161,3 +161,247 @@ def test_images_go_through_proxy():
     """图片要走 /api/v1/proxy/image（图床有防盗链）。"""
     src = _read("pages/platform-users/index.tsx")
     assert "/api/v1/proxy/image" in src
+
+
+# =============================================================================
+# 2026-10-02：用户报的三个问题（排序真实性 / 缺X / B站功能变少）
+# =============================================================================
+
+def test_twitter_in_platform_list():
+    """**关键回归**：博主中心必须**有 X**。
+
+    ⚠️ 后端 `twitter` 的 search_users / get_user_profile / get_user_videos
+    **全都有**、`users.py::SUPPORTED` 也含 —— 只是前端下拉漏了。
+    这是本仓库第 N 次犯"**后端做了前端没接**"。
+    """
+    src = _read("pages/platform-users/index.tsx")
+    i = src.find("const PLATFORMS = [")
+    assert i != -1
+    seg = src[i:i + 3000]
+    assert "value: 'twitter'" in seg, "博主中心的平台下拉里没有 X"
+    assert "connKeys: ['twitter', 'x', 'tw']" in seg, (
+        "X 的 connKeys 不完整（连接表可能用 twitter/x/tw 任一种）"
+    )
+
+
+def test_all_supported_platforms_have_ui_entry():
+    """**核心防线**：后端支持的平台，前端下拉里**都要有**。
+
+    这条能一次性防住"后端做了前端没接"这个反复出现的坑
+    （X、快手、YouTube/Telegram、微博都犯过）。
+    """
+    from app.api.v1.users import SUPPORTED
+
+    src = _read("pages/platform-users/index.tsx")
+    i = src.find("const PLATFORMS = [")
+    seg = src[i:i + 3000]
+
+    # 排除纯别名（它们由正式名的 connKeys 覆盖）
+    aliases = {"bilibili", "dy", "ks", "wb", "x", "tw", "xhs"}
+    canonical = {p for p in SUPPORTED.keys() if p not in aliases}
+
+    missing = [p for p in canonical if f"value: '{p}'" not in seg]
+    assert not missing, (
+        f"这些平台后端支持用户查询，但博主中心下拉里没有：{sorted(missing)}\n"
+        "用户选不到 = 功能等于不存在。"
+    )
+
+
+# =============================================================================
+# 排序真实性（防"假选项"）
+# =============================================================================
+
+def test_sort_consumers_are_known():
+    """**关键**：记录哪些平台的 `search()` **真的消费排序参数**。
+
+    ## 实测（2026-10-02）
+
+    · B站 / YouTube：`search()` 里出现排序参数 ✅
+    · 小红书：排序在 `search_api.py`（有 `resolve_sort`）
+    · **抖音 / 快手 / 微博 / X / 番茄：完全不消费 `sort_by`**
+
+    当前前端**也没给它们显示排序档位**，所以不算假选项 ——
+    但**这是隐患**：谁给它们加个"最新/最热"下拉，用户点了**毫无反应**
+    （本仓库铁律：**假选项比没有更糟**）。
+
+    这个测试把"谁消费、谁不消费"钉下来：以后给不消费的平台加前端排序，
+    这里会失败并提醒先实现后端。
+    """
+    import importlib
+
+    from app.services.platforms.base import BasePlatformClient
+
+    CONSUMES_SORT = {"bilibili", "youtube"}
+    SORT_ELSEWHERE = {"xiaohongshu"}
+
+    markers = ("sort_by", "order_sort", "orderby", "sort_field",
+               "sortType", "sort_type")
+
+    for plat in ("bilibili", "douyin", "kuaishou", "weibo", "twitter",
+                 "youtube", "xiaohongshu", "fanqie"):
+        mod = importlib.import_module(f"app.services.platforms.{plat}.client")
+        cls = None
+        for _n, o in vars(mod).items():
+            if (inspect.isclass(o) and issubclass(o, BasePlatformClient)
+                    and o is not BasePlatformClient):
+                cls = o
+                break
+        if cls is None:
+            continue
+        src = inspect.getsource(cls.search)
+        code = "\n".join(
+            ln for ln in src.splitlines()
+            if ln.strip() and not ln.strip().startswith("#")
+        )
+        consumes = any(m in code for m in markers)
+
+        if plat in CONSUMES_SORT:
+            assert consumes, (
+                f"{plat} 原本消费排序参数，现在不消费了 —— "
+                "前端若还显示排序档位就是**假选项**"
+            )
+        elif plat in SORT_ELSEWHERE:
+            assert not consumes, f"{plat} 的排序位置变了，请更新本测试"
+        else:
+            assert not consumes, (
+                f"{plat} 现在消费排序参数了！请加进 CONSUMES_SORT，"
+                "并同步前端（否则后端支持了但没入口 = 白做）"
+            )
+
+
+def test_bili_sort_passes_order_to_backend():
+    """**关键回归**：博主中心的排序 Tag 必须**真把 order 传给后端**。
+
+    ⚠️ 旧版 /up-analytics 有排序，合并时丢了。恢复时最容易
+    **只加 UI 不传参** —— 那就是假选项。
+    """
+    src = _read("pages/platform-users/index.tsx")
+    assert "order: videoOrder" in src, (
+        "排序 Tag 只是 UI，没把 order 传给后端 —— 假选项"
+    )
+    i = src.find("排序：")
+    assert i != -1
+    seg = src[i:i + 800]
+    # 只该有三档（实测 pubdate/click/stow 生效）
+    for v in ("pubdate", "click", "stow"):
+        assert f"'{v}'" in seg, f"缺少排序档位 {v}"
+    assert "'danmaku'" not in seg, "加了没验证过的档位"
+
+
+# =============================================================================
+# B站功能恢复（合集/收藏夹/加载更多）
+# =============================================================================
+
+def test_bili_series_and_favorites_restored():
+    """**关键回归**：合集 + 收藏夹 tab 要恢复。
+
+    ⚠️ `db03be3c` 把 `/up-analytics` 合并进博主中心时**丢了三样**：
+    排序、合集 tab、收藏夹 tab。后端接口和 API 封装**一直都在**。
+    用户反馈"以前东西比现在全" —— 记忆准确。
+    """
+    src = _read("pages/platform-users/index.tsx")
+    assert "getBiliUpSeries" in src, "合集接口没接回来"
+    assert "getBiliFavorites" in src, "收藏夹接口没接回来"
+    assert "key: 'series'" in src and "key: 'favorites'" in src
+
+
+def test_bili_extra_tabs_are_bili_only():
+    """**关键**：合集/收藏夹**只能给 B站**。
+
+    ⚠️ 别的平台后端没有这两个接口 —— 给它们显示就是**假 tab**
+    （点开永远空，用户以为坏了）。
+    """
+    src = _read("pages/platform-users/index.tsx")
+    assert "platform === 'bili' ? [" in src, (
+        "合集/收藏夹没被 platform === 'bili' 包起来"
+    )
+
+
+def test_favorites_requires_conn_id():
+    """**回归**：收藏夹接口**必须要 conn_id**（实测不传返回 400）。
+
+    要**提前检查 + 给可操作提示**，而不是让用户撞一个 400 报错。
+    """
+    src = _read("pages/platform-users/index.tsx")
+    i = src.find("getBiliFavorites(")
+    assert i != -1
+    seg = src[max(0, i - 900):i + 200]
+    assert "connId" in seg or "conn_id" in seg, "没传 conn_id"
+    assert "!connId" in seg or "账号中心" in seg, "没做前置检查/提示"
+
+
+def test_favorites_explains_it_is_own_account():
+    """**诚实性**：要说明收藏夹是**你自己账号**的。
+
+    ⚠️ B站没有"看别人收藏夹"的公开接口 —— 不说明的话
+    用户以为在看该博主的收藏夹（误导）。
+    """
+    src = _read("pages/platform-users/index.tsx")
+    assert "未开放" in src or "你自己账号" in src
+
+
+def test_series_rowkey_has_index_fallback():
+    """**回归**：合集列表 rowKey 要能兜底。
+
+    ⚠️ 实测：`/up/series` 返回的**首条 `id` 和 `title` 都是空串**
+    （B站接口字段不全）—— 直接用 `r.id` 会让所有行 key 相同
+    （React key 冲突 → 行状态错乱）。
+    """
+    src = _read("pages/platform-users/index.tsx")
+    i = src.find("key: 'series'")
+    assert i != -1
+    seg = src[i:i + 2500]
+    assert "series-${i}" in seg, "合集 rowKey 没有 index 兜底"
+
+
+def test_videos_have_load_more_and_backend_paging():
+    """**关键回归**：作品列表要**后端翻页 + 加载更多**。
+
+    ⚠️ 原来固定 20 条，且 `pagination={{pageSize: 5}}` 只是
+    **切当前数据** —— 点第 2 页看到的还是那 20 条里的，属于**假分页**。
+    """
+    src = _read("pages/platform-users/index.tsx")
+    assert "loadMoreVideos" in src, "没有加载更多"
+    assert "videoHasMore" in src, "没有'还有更多'状态"
+
+    i = src.find("dataSource={videos}")
+    assert i != -1
+    seg = src[i - 400:i + 400]
+    assert "pagination={false}" in seg, (
+        "作品表还开着 antd 本地分页（假翻页），应改成后端翻页"
+    )
+
+
+def test_videos_dedup_and_limit():
+    """加载更多要**去重**（B站翻页会重复）**且有上限**（防限流）。"""
+    src = _read("pages/platform-users/index.tsx")
+    i = src.find("const loadMoreVideos")
+    assert i != -1
+    seg = src[i:i + 2200]
+    assert "seen" in seg or "Set(" in seg, "加载更多没去重"
+    assert "MAX_VIDEOS" in src, "没有上限保护"
+
+
+# =============================================================================
+# 样式（截图里的列被挤成竖排）
+# =============================================================================
+
+def test_tables_have_horizontal_scroll():
+    """**样式回归**：表格要设 `scroll={{ x }}`。
+
+    ⚠️ 用户截图：选中博主后左列只有 `span=13`（半屏），
+    表格被压得极窄 → 表头「粉丝」「作品」**被挤成竖排文字**。
+    设 `x` 会**横向滚动**而不是压扁列。
+    """
+    src = _read("pages/platform-users/index.tsx")
+    assert "scroll={{ x:" in src, "表格没有横向滚动（窄屏会把列压成竖排）"
+
+
+def test_numeric_columns_do_not_wrap():
+    """**样式回归**：数字列表头要 `whiteSpace: nowrap`。
+
+    ⚠️ 不设的话「粉丝」会上下排（截图里的问题）。
+    """
+    src = _read("pages/platform-users/index.tsx")
+    assert "NUM_COL_STYLE" in src or "onHeaderCell" in src
+    assert "whiteSpace: 'nowrap'" in src

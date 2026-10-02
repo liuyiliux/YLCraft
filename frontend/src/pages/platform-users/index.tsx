@@ -28,12 +28,17 @@ import {
   SearchOutlined, UserOutlined, VideoCameraOutlined, FireOutlined,
   LikeOutlined, TeamOutlined, LinkOutlined, ReloadOutlined,
   DatabaseOutlined,
+  // ⚠️ 合集/收藏夹 tab 的图标（2026-10-02 恢复这两个 tab 时加）
+  AppstoreOutlined, FolderOutlined,
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import {
   searchPlatformUsers, getPlatformUserProfile, getPlatformUserVideos,
   listPlatformConnections, searchEnhanced, importCrawler,
   getBiliUpProfile, getBiliUpVideos,
+  // ⚠️ 这两个 API 封装**一直都在**（后端接口也没删），
+  // 只是 `db03be3c` 合并页面时漏接了 —— 见下方 tab 的说明
+  getBiliUpSeries, getBiliFavorites,
 } from '../../api'
 import type { PlatformUserItem, PlatformUserVideo, PlatformConnectionResponse, CrawlerResult } from '../../api'
 import { useTheme } from '../../constants/theme'
@@ -65,6 +70,14 @@ const PLATFORMS = [
   // 但**下拉里一直没有** —— 用户根本选不到，属"业务可用但 UI 无入口"
   // （skill 里点名的坑，X 和快手都犯过）。这里补上。
   { value: 'weibo', label: '微博', connKeys: ['weibo', 'wb'] },
+  // ⚠️ X（2026-10-02 补）：**同一个坑又犯了一次** ——
+  // 后端 `twitter` 早就在 `users.py::SUPPORTED` 里，
+  // `search_users` / `get_user_profile` / `get_user_videos` 三个方法**全都有**，
+  // 但下拉里一直没有 —— 用户选不到 = 功能等于不存在。
+  //
+  // ⚠️ 连接表里的平台名是 `twitter`（不是 `x`），且 API 用 `twitter`。
+  // X 的 cookie_domain 是 `x.com`（见平台 meta），但那跟这里的 value 无关。
+  { value: 'twitter', label: 'X', connKeys: ['twitter', 'x', 'tw'] },
   // ⚠️ YouTube（2026-10-01 补）：同上 —— 后端已实现（频道搜索/资料/视频），
   // 但它**免登录**（`no_login`），所以下面"选连接"那块要允许无连接。
   { value: 'youtube', label: 'YouTube', connKeys: ['youtube'] },
@@ -186,6 +199,39 @@ export default function PlatformUserPage() {
   const [loadingProfile, setLoadingProfile] = useState(false)
   const [loadingVideos, setLoadingVideos] = useState(false)
   const [activeTab, setActiveTab] = useState('profile')
+
+  // ===== 作品列表：排序 + 加载更多（2026-10-02）=====
+  //
+  // ⚠️ **state 必须声明在 `loadUserDetail` 之前** —— 那个 useCallback
+  // 的依赖数组里引用了它们，声明在后面会报
+  // "Block-scoped variable used before its declaration"（实测踩到）。
+  //
+  // ⚠️ 原来固定 `max_results: 20` 且**没有排序** ——
+  // 旧版 /up-analytics 是有排序的（最新/播放最多/收藏最多），
+  // 页面合并时丢了。用户反馈"以前东西比现在全"就是指这个。
+  const [videoOrder, setVideoOrder] = useState('pubdate')
+  const [videoPage, setVideoPage] = useState(1)
+  const [videoHasMore, setVideoHasMore] = useState(false)
+  const [loadingMoreVideos, setLoadingMoreVideos] = useState(false)
+
+  // ===== B站专属：合集 / 收藏夹（2026-10-02 恢复）=====
+  //
+  // ⚠️ 这两个 tab **原来有**（旧的 /up-analytics 页面），
+  // `db03be3c` 合并进博主中心时**漏接了** —— 后端接口
+  // （`/bilibili/up/series`、`/bilibili/favorites`）和前端 API 封装
+  // 一直都还在，纯粹是页面合并时没搬过来。
+  const [upSeries, setUpSeries] = useState<any[]>([])
+  const [upFavorites, setUpFavorites] = useState<any[]>([])
+  const [loadingSeries, setLoadingSeries] = useState(false)
+  const [loadingFavorites, setLoadingFavorites] = useState(false)
+
+  /** 每页拉多少条作品（与后端默认一致） */
+  const VIDEO_PAGE_SIZE = 20
+  /** ⚠️ 硬上限：避免无限翻页把平台惹毛（也防用户手抖点太多次） */
+  const MAX_VIDEOS = 100
+
+  /** 上一次加载的博主 id（用来判断"是不是换人了"，换人才清空合集/收藏夹）。 */
+  const selectedRef = useRef<PlatformUserItem | null>(null)
 
   // 加载该平台的连接
   useEffect(() => {
@@ -352,6 +398,13 @@ export default function PlatformUserPage() {
   const loadUserDetail = useCallback(async (user: PlatformUserItem) => {
     setSelected(user)
     setActiveTab('profile')
+    // ⚠️ 切人时清掉上一个博主的合集/收藏夹 ——
+    // 不清的话切到合集 tab 会看到**上一个人**的数据（张冠李戴）。
+    // 用 ref 比较 id，避免 videoOrder 变化时（同一人重载）也清空。
+    if (selectedRef.current?.id !== user.id) {
+      resetBiliExtras()
+    }
+    selectedRef.current = user
 
     setLoadingProfile(true)
     setProfile(null)
@@ -394,26 +447,33 @@ export default function PlatformUserPage() {
 
     setLoadingVideos(true)
     setVideos([])
+    setVideoPage(1)
     try {
       if (platform === 'bili') {
+        // ⚠️ 传 order（排序）—— 旧版 /up-analytics 有"最新/播放最多/收藏最多"，
+        // 合并时丢了（2026-10-02 恢复）。后端 `/bilibili/up/videos` 一直支持。
         const res: any = await getBiliUpVideos({
-          uid: user.id, page: 1, page_size: 20, conn_id: connId,
+          uid: user.id, page: 1, page_size: VIDEO_PAGE_SIZE,
+          order: videoOrder, conn_id: connId,
         })
         const rawList = res?.data?.videos || res?.data?.list || res?.data || []
         const list: PlatformUserVideo[] = (Array.isArray(rawList) ? rawList : []).map(adaptBiliVideo)
         setVideos(list)
+        // 取满一页就认为"可能还有"（B站接口不给总数）
+        setVideoHasMore(list.length >= VIDEO_PAGE_SIZE)
       } else {
         const res: any = await getPlatformUserVideos(platform, {
           userId: user.id, secUid: user.sec_uid || '', maxResults: 20,
         })
         setVideos(res?.data || [])
+        setVideoHasMore(false)   // 通用接口暂不支持翻页，如实置 false
       }
     } catch (e: any) {
       message.error(e?.response?.data?.detail || '获取作品失败')
     } finally {
       setLoadingVideos(false)
     }
-  }, [platform, connId])
+  }, [platform, connId, videoOrder])
 
   // `?uid=xxx` 直达某人详情（「我的数据」页点 UP 主卡片走这个 URL）。
   // 等连接就绪后再加载 —— B站详情接口需要 conn_id。
@@ -432,23 +492,124 @@ export default function PlatformUserPage() {
   }, [deepLinkUid, conns, loadUserDetail])
 
   // ===== 用户列表 =====
+  // ⚠️ 列宽策略（2026-10-02 修样式）
+  //
+  // 实测问题：选中博主后左列只有 `span=13`（半屏），表格被压得很窄 ——
+  // 「粉丝」「作品」的表头被**挤成竖排文字**（一个字一行），很难看。
+  //
+  // 修法：
+  //   · 昵称列 `ellipsis: true`（弹性，自动收缩 + 省略号）
+  //   · 数字列给足宽度 + `whiteSpace: nowrap`（表头不换行）
+  //   · 表格加 `scroll={{ x: 520 }}`（窄了横向滚动，而不是压扁列）
+  const NUM_COL_STYLE: React.CSSProperties = { whiteSpace: 'nowrap' }
+
+  // ===== B站合集/收藏夹的**懒加载**（state 已在上面声明）=====
+  //
+  // 只在切到对应 tab 时请求（避免每次点博主都多打两个请求）。
+  useEffect(() => {
+    if (platform !== 'bili' || !selected?.id) return
+    if (activeTab === 'series' && upSeries.length === 0 && !loadingSeries) {
+      setLoadingSeries(true)
+      getBiliUpSeries({ uid: selected.id, page: 1, page_size: 30, conn_id: connId })
+        .then((res: any) => {
+          // ⚠️ 实测结构是 `{total, list, page, page_size}`（不是 series）
+          const d = res?.data
+          const list = Array.isArray(d) ? d : (d?.list || d?.series || d?.items || [])
+          setUpSeries(Array.isArray(list) ? list : [])
+        })
+        .catch((e: any) => {
+          message.error(String(e?.response?.data?.detail || e?.message || '获取合集失败').slice(0, 100))
+        })
+        .finally(() => setLoadingSeries(false))
+    }
+    if (activeTab === 'favorites' && upFavorites.length === 0 && !loadingFavorites) {
+      setLoadingFavorites(true)
+      // ⚠️ 收藏夹接口取的是**当前登录用户自己**的收藏夹
+      // （B站没有"看别人收藏夹"的公开接口）—— 所以 UI 里如实说明了。
+      // ⚠️ 该接口**必须要 conn_id**（实测：不传返回 400 "需要提供 B站连接ID"）。
+      if (!connId) {
+        setLoadingFavorites(false)
+        message.warning('需要先在账号中心保存 B站登录态才能看收藏夹')
+        return
+      }
+      getBiliFavorites(connId)
+        .then((res: any) => {
+          const d = res?.data
+          // ⚠️ 实测结构是 `{total, list, page, page_size}`（不是 favorites）
+          const list = Array.isArray(d) ? d : (d?.list || d?.favorites || d?.items || [])
+          setUpFavorites(Array.isArray(list) ? list : [])
+        })
+        .catch((e: any) => {
+          message.error(String(e?.response?.data?.detail || e?.message || '获取收藏夹失败').slice(0, 100))
+        })
+        .finally(() => setLoadingFavorites(false))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, platform, selected?.id, connId])
+
+  /** 加载下一页作品（**追加**，不是替换）。 */
+  const loadMoreVideos = useCallback(async () => {
+    if (platform !== 'bili' || !selected?.id) return
+    if (videos.length >= MAX_VIDEOS) {
+      message.info(`已达上限 ${MAX_VIDEOS} 条（避免一次拉太多被限流）`)
+      setVideoHasMore(false)
+      return
+    }
+    setLoadingMoreVideos(true)
+    const next = videoPage + 1
+    try {
+      const res: any = await getBiliUpVideos({
+        uid: selected.id, page: next, page_size: VIDEO_PAGE_SIZE,
+        order: videoOrder, conn_id: connId,
+      })
+      const rawList = res?.data?.videos || res?.data?.list || res?.data || []
+      const list: PlatformUserVideo[] = (Array.isArray(rawList) ? rawList : []).map(adaptBiliVideo)
+      if (list.length === 0) {
+        setVideoHasMore(false)
+        message.info('没有更多作品了')
+      } else {
+        // ⚠️ 按 id 去重 —— B站翻页有时会**重复返回**上一页的末尾几条
+        setVideos(prev => {
+          const seen = new Set(prev.map(v => String(v.id)))
+          return [...prev, ...list.filter(v => !seen.has(String(v.id)))]
+        })
+        setVideoPage(next)
+        setVideoHasMore(list.length >= VIDEO_PAGE_SIZE)
+      }
+    } catch (e: any) {
+      message.error(String(e?.response?.data?.detail || e?.message || '加载更多失败').slice(0, 100))
+    } finally {
+      setLoadingMoreVideos(false)
+    }
+  }, [platform, selected?.id, videoPage, videoOrder, connId, videos.length])
+
+  /** 切博主时清掉旧数据（否则会显示上一个人的合集）。 */
+  const resetBiliExtras = useCallback(() => {
+    setUpSeries([])
+    setUpFavorites([])
+  }, [])
+
   const userColumns: ColumnsType<PlatformUserItem> = [
     {
-      title: '头像', dataIndex: 'avatar', key: 'avatar', width: 72,
+      title: '头像', dataIndex: 'avatar', key: 'avatar', width: 64,
       render: (src: string) => (
         <Avatar
-          size={44}
+          size={40}
           src={src ? `/api/v1/proxy/image?url=${encodeURIComponent(src)}` : undefined}
           icon={<UserOutlined />}
         />
       ),
     },
     {
-      title: '用户名', dataIndex: 'name', key: 'name',
+      // ⚠️ 昵称列**不设固定宽度** + `ellipsis` —— 让它吃掉剩余空间，
+      // 而不是把旁边的数字列挤扁
+      title: '用户名', dataIndex: 'name', key: 'name', ellipsis: true,
       render: (name: string, r) => (
-        <Space direction="vertical" size={0}>
+        <Space direction="vertical" size={0} style={{ maxWidth: '100%' }}>
           <Space size={6}>
-            <Text strong style={{ color: THEME.textPrimary }}>{name || '(无昵称)'}</Text>
+            <Text strong style={{ color: THEME.textPrimary }} ellipsis>
+              {name || '(无昵称)'}
+            </Text>
             {r.verified && <Tag color="gold" style={{ margin: 0 }}>认证</Tag>}
           </Space>
           {r.desc && (
@@ -460,20 +621,26 @@ export default function PlatformUserPage() {
       ),
     },
     {
-      title: '粉丝', dataIndex: 'followers', key: 'followers', width: 100,
+      title: '粉丝', dataIndex: 'followers', key: 'followers', width: 104,
+      // ⚠️ 表头不换行（否则"粉丝"会变竖排）
+      onHeaderCell: () => ({ style: NUM_COL_STYLE }),
       sorter: (a, b) => (a.followers || 0) - (b.followers || 0),
       render: (v: number) => (
-        <Text style={{ color: '#f59e0b' }}>
+        <Text style={{ color: '#f59e0b', whiteSpace: 'nowrap' }}>
           <TeamOutlined /> {formatCount(v)}
         </Text>
       ),
     },
     {
-      title: '作品', dataIndex: 'total_videos', key: 'total_videos', width: 90,
-      render: (v: number) => (v ? formatCount(v) : '-'),
+      title: '作品', dataIndex: 'total_videos', key: 'total_videos', width: 88,
+      onHeaderCell: () => ({ style: NUM_COL_STYLE }),
+      render: (v: number) => (
+        <span style={{ whiteSpace: 'nowrap' }}>{v ? formatCount(v) : '-'}</span>
+      ),
     },
     {
-      title: '操作', key: 'action', width: 100,
+      title: '操作', key: 'action', width: 84,
+      onHeaderCell: () => ({ style: NUM_COL_STYLE }),
       render: (_, r) => (
         <Button type="link" size="small" onClick={() => loadUserDetail(r)}>
           查看
@@ -701,6 +868,12 @@ export default function PlatformUserPage() {
                 loading={searching}
                 columns={userColumns}
                 dataSource={users}
+                // ⚠️ 加横向滚动（2026-10-02 修样式）
+                //
+                // 选中博主后左列只有 `span=13`（半屏），不加这个的话
+                // antd 会把列**压扁**（表头"粉丝"变竖排文字）。
+                // 设了 `x` 就会在不够宽时**横向滚动**，而不是压列。
+                scroll={{ x: 520 }}
                 // B站是服务端分页（search-enhanced 返回 total=1000），
                 // 必须传 total，否则永远 1 页 —— 和作品表同一个坑。
                 pagination={platform === 'bili'
@@ -858,15 +1031,69 @@ export default function PlatformUserPage() {
                     key: 'profile',
                     label: <Space size={4}><VideoCameraOutlined />作品<Text type="secondary" style={{ fontSize: 11 }}>{videos.length || ''}</Text></Space>,
                     children: (
-                      <Table
-                        rowKey="id"
-                        size="small"
-                        loading={loadingVideos}
-                        columns={videoColumns}
-                        dataSource={videos}
-                        pagination={{ pageSize: 5, size: 'small' }}
-                        locale={{ emptyText: <Empty description="暂无作品" /> }}
-                      />
+                      <>
+                        {/* ⚠️ 排序条**只有 B站有**（后端 `/bilibili/up/videos` 支持 order）
+                            —— 别的平台后端不给 order 参数，显示了就是假选项 */}
+                        {platform === 'bili' && (
+                          <Space size={6} style={{ marginBottom: 8 }} wrap>
+                            <Text style={{ fontSize: 12, color: THEME.textSecondary }}>排序：</Text>
+                            {[
+                              { value: 'pubdate', label: '最新' },
+                              { value: 'click', label: '播放最多' },
+                              { value: 'stow', label: '收藏最多' },
+                            ].map(opt => (
+                              <Tag
+                                key={opt.value}
+                                // ⚠️ 用主题色而不是硬编码（`BILI_COLORS` 是
+                                // `crawler/index.tsx` 的**局部常量**，没导出）
+                                color={videoOrder === opt.value ? 'blue' : undefined}
+                                style={{ cursor: 'pointer', margin: 0 }}
+                                onClick={() => {
+                                  if (videoOrder === opt.value) return
+                                  setVideoOrder(opt.value)
+                                  // ⚠️ 换排序要**重新拉第一页**（在 loadUserDetail 里
+                                  // 通过 videoOrder 依赖触发）
+                                  if (selected) void loadUserDetail(selected)
+                                }}
+                              >
+                                {opt.label}
+                              </Tag>
+                            ))}
+                          </Space>
+                        )}
+                        <Table
+                          rowKey="id"
+                          size="small"
+                          loading={loadingVideos}
+                          columns={videoColumns}
+                          dataSource={videos}
+                          // ⚠️ 不用 antd 分页（它只切当前数据，不请求后端）——
+                          // 改成**后端翻页**，避免"看着有第 2 页其实没数据"
+                          pagination={false}
+                          scroll={{ x: 420 }}
+                          locale={{ emptyText: <Empty description="暂无作品" /> }}
+                        />
+                        {/* 加载更多（只有确实支持翻页的平台才显示） */}
+                        {platform === 'bili' && (videoHasMore || loadingMoreVideos) && (
+                          <div style={{ textAlign: 'center', marginTop: 10 }}>
+                            <Button
+                              size="small"
+                              loading={loadingMoreVideos}
+                              onClick={loadMoreVideos}
+                            >
+                              加载更多（已 {videos.length} 条）
+                            </Button>
+                          </div>
+                        )}
+                        {platform === 'bili' && !videoHasMore && videos.length > 0 && (
+                          <div style={{
+                            textAlign: 'center', marginTop: 8,
+                            fontSize: 11, color: THEME.textSecondary,
+                          }}>
+                            — 已加载全部（{videos.length} 条）—
+                          </div>
+                        )}
+                      </>
                     ),
                   },
                   {
@@ -882,6 +1109,121 @@ export default function PlatformUserPage() {
                       </pre>
                     ),
                   },
+                  // ⚠️ 合集 / 收藏夹**只有 B站有**（2026-10-02 恢复）
+                  // —— 别的平台后端没这两个接口，不给它们显示假 tab
+                  ...(platform === 'bili' ? [
+                    {
+                      key: 'series',
+                      label: (
+                        <Space size={4}>
+                          <AppstoreOutlined />合集
+                          <Text type="secondary" style={{ fontSize: 11 }}>
+                            {upSeries.length || ''}
+                          </Text>
+                        </Space>
+                      ),
+                      children: (
+                        <Table
+                          // ⚠️ 实测：`/up/series` 返回的首条 `id` 和 `title` 都是**空串**
+                          // （B站的合集列表接口字段不全）—— 用 `r.id` 做 rowKey
+                          // 会**全部重复**（React 报 key 冲突、行状态错乱）。
+                          // 所以用 index 兜底。
+                          rowKey={(r: any, i?: number) =>
+                            String(r.id || r.title || `series-${i}`)}
+                          size="small"
+                          loading={loadingSeries}
+                          dataSource={upSeries}
+                          pagination={{ pageSize: 5, size: 'small' }}
+                          locale={{ emptyText: <Empty description="暂无合集" /> }}
+                          scroll={{ x: 380 }}
+                          columns={[
+                            {
+                              // ⚠️ B站合集接口的标题字段可能是 `title` 或 `name`
+                              title: '合集', key: 'title', ellipsis: true,
+                              render: (_: any, r: any, i: number) => (
+                                <Space size={8}>
+                                  {r.cover && (
+                                    <img
+                                      src={`/api/v1/proxy/image?url=${encodeURIComponent(r.cover)}`}
+                                      alt=""
+                                      style={{ width: 48, height: 30, objectFit: 'cover', borderRadius: 4 }}
+                                    />
+                                  )}
+                                  <a
+                                    href={r.url || `https://space.bilibili.com/${selected?.id}/channel/seriesdetail?sid=${r.id || ''}`}
+                                    target="_blank" rel="noopener noreferrer"
+                                    style={{ fontSize: 12 }}
+                                  >
+                                    {/* ⚠️ 字段缺失时**如实显示占位**，不编造 */}
+                                    {r.title || r.name || `合集 ${i + 1}`}
+                                  </a>
+                                </Space>
+                              ),
+                            },
+                            {
+                              title: '数量', dataIndex: 'count', width: 72,
+                              onHeaderCell: () => ({ style: { whiteSpace: 'nowrap' } }),
+                              render: (v: number) => (
+                                <span style={{ whiteSpace: 'nowrap' }}>{v || '-'}</span>
+                              ),
+                            },
+                          ]}
+                        />
+                      ),
+                    },
+                    {
+                      key: 'favorites',
+                      label: (
+                        <Space size={4}>
+                          <FolderOutlined />收藏夹
+                          <Text type="secondary" style={{ fontSize: 11 }}>
+                            {upFavorites.length || ''}
+                          </Text>
+                        </Space>
+                      ),
+                      children: (
+                        <>
+                          {/* ⚠️ 如实说明：B站**没有**"看别人收藏夹"的公开接口，
+                              这个 tab 取的是**你自己账号**的收藏夹 */}
+                          <Text style={{ fontSize: 11, color: THEME.textSecondary, display: 'block', marginBottom: 8 }}>
+                            注：B站未开放"查看他人收藏夹"，这里显示的是**你自己账号**的收藏夹。
+                          </Text>
+                          <Table
+                            // ⚠️ 同样用 index 兜底（B站字段可能不全）
+                            rowKey={(r: any, i?: number) =>
+                              String(r.id || r.title || `fav-${i}`)}
+                            size="small"
+                            loading={loadingFavorites}
+                            dataSource={upFavorites}
+                            pagination={{ pageSize: 5, size: 'small' }}
+                            locale={{ emptyText: <Empty description="暂无收藏夹" /> }}
+                            scroll={{ x: 380 }}
+                            columns={[
+                              {
+                                title: '收藏夹', key: 'title', ellipsis: true,
+                                render: (_: any, r: any, i: number) => (
+                                  <a
+                                    href={r.url || `https://space.bilibili.com/${selected?.id}/favlist?fid=${r.id || ''}`}
+                                    target="_blank" rel="noopener noreferrer"
+                                    style={{ fontSize: 12 }}
+                                  >
+                                    {r.title || r.name || `收藏夹 ${i + 1}`}
+                                  </a>
+                                ),
+                              },
+                              {
+                                title: '数量', dataIndex: 'count', width: 72,
+                                onHeaderCell: () => ({ style: { whiteSpace: 'nowrap' } }),
+                                render: (v: number) => (
+                                  <span style={{ whiteSpace: 'nowrap' }}>{v || '-'}</span>
+                                ),
+                              },
+                            ]}
+                          />
+                        </>
+                      ),
+                    },
+                  ] : []),
                 ]}
               />
             </Card>
