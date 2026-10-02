@@ -6,9 +6,9 @@
 
 ## Summary
 
-- Router mounts: 62
-- Endpoints: 725
-- Public schema endpoints: 724
+- Router mounts: 63
+- Endpoints: 732
+- Public schema endpoints: 731
 - Hidden compatibility endpoints: 1
 
 ## Router Mounts
@@ -47,6 +47,7 @@
 | `/api/v1/creative-projects` | Creative Projects — Fanqie | `creative_fanqie` | `backend/app/api/v1/creative_fanqie.py` |
 | `/api/v1/douyin` | Crawler — Douyin | `douyin_router` | `backend/app/services/platforms/douyin/routes.py` |
 | `/api/v1/download` | Download | `download` | `backend/app/api/v1/download.py` |
+| `/api/v1/download` | Download Batch | `download_batch_routes` | `backend/app/api/v1/download_batch_routes.py` |
 | `/api/v1/ebook` | Ebook | `ebook` | `backend/app/api/v1/ebook.py` |
 | `/api/v1/external-api-keys` | External API Keys | `external_api_keys` | `backend/app/api/v1/external_api_keys.py` |
 | `/api/v1/fanqie` | Crawler — Fanqie | `fanqie_router` | `backend/app/services/platforms/fanqie/routes.py` |
@@ -418,7 +419,7 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/comments` | 获取评论（统一入口） | `get_comments` | `backend/app/api/v1/comments.py:296` |
+| `GET` | `/api/v1/comments` | 获取评论（统一入口） | `get_comments` | `backend/app/api/v1/comments.py:349` |
 
 ### Cookie Acquisition
 
@@ -602,13 +603,25 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/download/cover-proxy` | 封面图代理（弃用，请使用 /api/v1/proxy/image） | `cover_proxy` | `backend/app/api/v1/download.py:1681` |
-| `POST` | `/api/v1/download/download` | 通过 yt-dlp 下载视频（返回文件流） | `download_video` | `backend/app/api/v1/download.py:1150` |
-| `POST` | `/api/v1/download/download-images` | 下载图集图片到本地 | `download_images` | `backend/app/api/v1/download.py:1712` |
-| `POST` | `/api/v1/download/open-folder` | 打开文件夹并选中文件（Windows） | `open_folder` | `backend/app/api/v1/download.py:1670` |
+| `GET` | `/api/v1/download/cover-proxy` | 封面图代理（弃用，请使用 /api/v1/proxy/image） | `cover_proxy` | `backend/app/api/v1/download.py:2072` |
+| `POST` | `/api/v1/download/download` | 通过 yt-dlp 下载视频（返回文件流） | `download_video` | `backend/app/api/v1/download.py:1508` |
+| `POST` | `/api/v1/download/download-images` | 下载图集图片到本地 | `download_images` | `backend/app/api/v1/download.py:2103` |
+| `POST` | `/api/v1/download/open-folder` | 打开文件夹并选中文件（Windows） | `open_folder` | `backend/app/api/v1/download.py:2061` |
 | `POST` | `/api/v1/download/parse` | 解析视频链接 | `parse_download_url` | `backend/app/api/v1/download.py:519` |
-| `POST` | `/api/v1/download/tasks` | 创建下载任务（后台，后台轮询） | `create_download_task` | `backend/app/api/v1/download.py:1614` |
-| `GET` | `/api/v1/download/tasks/{task_id}` | 查询下载任务状态 | `get_download_task` | `backend/app/api/v1/download.py:1646` |
+| `GET` | `/api/v1/download/resumable` | 列出未完成的下载（可续传） | `list_resumable` | `backend/app/api/v1/download.py:1078` |
+| `POST` | `/api/v1/download/resume/{task_id}` | 续传未完成的下载 | `resume_download` | `backend/app/api/v1/download.py:1138` |
+| `POST` | `/api/v1/download/tasks` | 创建下载任务（后台，后台轮询） | `create_download_task` | `backend/app/api/v1/download.py:2005` |
+| `GET` | `/api/v1/download/tasks/{task_id}` | 查询下载任务状态 | `get_download_task` | `backend/app/api/v1/download.py:2037` |
+
+### Download Batch
+
+| Method | Path | Summary | Handler | Source |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/v1/download/batches` | 列出批量下载批次 | `list_batches` | `backend/app/api/v1/download_batch_routes.py:126` |
+| `POST` | `/api/v1/download/batches` | 提交批量下载 | `create_batch` | `backend/app/api/v1/download_batch_routes.py:77` |
+| `GET` | `/api/v1/download/batches/{batch_id}` | 查看单个批次详情 | `get_batch` | `backend/app/api/v1/download_batch_routes.py:145` |
+| `DELETE` | `/api/v1/download/batches/{batch_id}` | 删除批次记录 | `delete_batch` | `backend/app/api/v1/download_batch_routes.py:212` |
+| `POST` | `/api/v1/download/batches/{batch_id}/resume` | 续跑未完成的批量下载 | `resume_batch` | `backend/app/api/v1/download_batch_routes.py:160` |
 
 ### Ebook
 
@@ -894,13 +907,13 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/platforms/{platform}/health` | 平台体检（统一入口，所有平台可用） | `platform_health` | `backend/app/services/platforms/health_routes.py:82` |
+| `GET` | `/api/v1/platforms/{platform}/health` | 平台体检（统一入口，所有平台可用） | `platform_health` | `backend/app/services/platforms/health_routes.py:102` |
 
 ### Platform Stats
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/platforms/{platform}/stats` | 平台历史健康度统计 | `platform_stats` | `backend/app/api/v1/platform_stats.py:86` |
+| `GET` | `/api/v1/platforms/{platform}/stats` | 平台历史健康度统计 | `platform_stats` | `backend/app/api/v1/platform_stats.py:109` |
 
 ### Proxy
 
@@ -1055,14 +1068,14 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/users/creator/overview` | 创作者中心：账号总览（仅号主可见的运营数据） | `get_creator_overview` | `backend/app/api/v1/users.py:348` |
-| `GET` | `/api/v1/users/creator/works` | 创作者中心：作品列表（含完播率等深度指标） | `get_creator_works` | `backend/app/api/v1/users.py:473` |
-| `GET` | `/api/v1/users/creator/xhs/fans` | 小红书创作服务平台：粉丝数据 | `get_xhs_creator_fans` | `backend/app/api/v1/users.py:450` |
-| `GET` | `/api/v1/users/creator/xhs/overview` | 小红书创作服务平台：账号总览 | `get_xhs_creator_overview` | `backend/app/api/v1/users.py:407` |
-| `GET` | `/api/v1/users/me` | 获取自己账号的资料（抖音/小红书） | `get_self_profile` | `backend/app/api/v1/users.py:298` |
-| `GET` | `/api/v1/users/profile` | 获取用户资料（抖音/小红书） | `get_user_profile` | `backend/app/api/v1/users.py:516` |
-| `GET` | `/api/v1/users/search` | 搜索用户（抖音/小红书） | `search_users` | `backend/app/api/v1/users.py:264` |
-| `GET` | `/api/v1/users/videos` | 获取用户作品列表（抖音/小红书/微博/X/B站） | `get_user_videos` | `backend/app/api/v1/users.py:553` |
+| `GET` | `/api/v1/users/creator/overview` | 创作者中心：账号总览（仅号主可见的运营数据） | `get_creator_overview` | `backend/app/api/v1/users.py:399` |
+| `GET` | `/api/v1/users/creator/works` | 创作者中心：作品列表（含完播率等深度指标） | `get_creator_works` | `backend/app/api/v1/users.py:524` |
+| `GET` | `/api/v1/users/creator/xhs/fans` | 小红书创作服务平台：粉丝数据 | `get_xhs_creator_fans` | `backend/app/api/v1/users.py:501` |
+| `GET` | `/api/v1/users/creator/xhs/overview` | 小红书创作服务平台：账号总览 | `get_xhs_creator_overview` | `backend/app/api/v1/users.py:458` |
+| `GET` | `/api/v1/users/me` | 获取自己账号的资料（抖音/小红书） | `get_self_profile` | `backend/app/api/v1/users.py:349` |
+| `GET` | `/api/v1/users/profile` | 获取用户资料（抖音/小红书） | `get_user_profile` | `backend/app/api/v1/users.py:567` |
+| `GET` | `/api/v1/users/search` | 搜索用户（抖音/小红书） | `search_users` | `backend/app/api/v1/users.py:315` |
+| `GET` | `/api/v1/users/videos` | 获取用户作品列表（抖音/小红书/微博/X/B站） | `get_user_videos` | `backend/app/api/v1/users.py:604` |
 
 ### Videos
 

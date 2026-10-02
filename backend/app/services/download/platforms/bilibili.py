@@ -254,23 +254,118 @@ async def _download_with_free_api(
         return None
 
 
-async def _download_file_simple(url: str, output_path: Path, max_retries: int = 3):
-    """简单下载（单线程，带重试）"""
+async def _stream_to_file(
+    url: str,
+    output_path: Path,
+    *,
+    headers: dict,
+    cookies: dict | None = None,
+    max_retries: int = 3,
+    label: str = "BilibiliDownloader",
+) -> None:
+    """把 URL 流式下到文件，**带断点续传**（两处下载共用这一段）。
+
+    ## ⚠️ 为什么抽出来（2026-10-01）
+
+    原来有**两份**几乎一样的下载循环（`_download_file_simple` 和
+    `BilibiliDownloader._download_file`），都写
+    `open(path, "wb")` —— 没有续传、重试时从头来。
+    修一份必然漏另一份（本仓库"同一个逻辑写两遍必然漂移"的教训）。
+
+    ## 断点续传的关键三步
+
+      1. 写 **`.part`** 临时文件（"存在" ≠ "完整"）
+      2. 重试/续传时带 `Range: bytes=<已下载>-`
+      3. 服务器给 **206** 才追加（`"ab"`）——
+         给 **200** 说明 CDN 忽略了 Range，必须从头写
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    part_path = output_path.with_suffix(output_path.suffix + ".part")
+
+    retryable = (
+        httpx.RemoteProtocolError, httpx.ReadError,
+        httpx.TimeoutException, httpx.TransportError,
+    )
+    last_error: Exception | None = None
+
     for attempt in range(max_retries):
+        existing = part_path.stat().st_size if part_path.exists() else 0
+        req_headers = dict(headers)
+        if existing > 0:
+            req_headers["Range"] = f"bytes={existing}-"
+
         try:
-            async with httpx.AsyncClient(timeout=300) as client:
-                async with client.stream("GET", url, headers=_FREE_HEADERS) as resp:
+            # ⚠️ `follow_redirects=True` **必须开**（2026-10-01 修）
+            #
+            # 踩过：不开的话，CDN 返回 302 时会把**重定向页面**
+            # （几十字节的 HTML）当成文件写下来 ——
+            # 表现为"下载成功但文件只有 90 字节、打不开"。
+            #
+            # 参照 `bilibili_paid_course.py` 的同款实现（那里一直是对的）。
+            async with httpx.AsyncClient(
+                timeout=300, follow_redirects=True
+            ) as client:
+                async with client.stream(
+                    "GET", url, headers=req_headers, cookies=cookies or {}
+                ) as resp:
+                    if resp.status_code == 416 and existing > 0:
+                        os.replace(part_path, output_path)   # 已下完
+                        return
+                    if existing > 0 and resp.status_code == 200:
+                        # ⚠️ CDN 忽略 Range（返回完整文件）—— 必须从头写，
+                        # 否则会得到"半截旧数据 + 完整新数据"的坏文件
+                        logger.info("[%s] CDN 忽略 Range，从头下载", label)
+                        existing = 0
                     resp.raise_for_status()
-                    with open(output_path, "wb") as f:
-                        async for chunk in resp.aiter_bytes():
-                            f.write(chunk)
+
+                    expected = int(resp.headers.get("content-length") or 0)
+                    mode = "ab" if (existing > 0 and resp.status_code == 206) else "wb"
+                    got = 0
+                    with open(part_path, mode) as f:
+                        async for chunk in resp.aiter_bytes(1024 * 1024):
+                            if chunk:
+                                f.write(chunk)
+                                got += len(chunk)
+
+                    # 响应体不完整（连接中断）→ 交给下轮续传
+                    if expected and got < expected:
+                        raise httpx.RemoteProtocolError(
+                            f"incomplete body ({got}/{expected} bytes)"
+                        )
+
+            os.replace(part_path, output_path)   # 原子改名
             return
+
+        except retryable as e:
+            last_error = e
         except Exception as e:
-            if attempt == max_retries - 1:
-                raise
-            logger.warning(f"[BilibiliDownloader] 下载失败，重试 {attempt + 2}/{max_retries}: {e}")
+            last_error = e
+
+        if attempt < max_retries - 1:
+            size_mb = part_path.stat().st_size / 1024 / 1024 if part_path.exists() else 0
+            logger.warning(
+                "[%s] 下载失败，重试 %s/%s（已存 %.1f MB，下次从断点续传）: %s",
+                label, attempt + 2, max_retries, size_mb, last_error,
+            )
             await asyncio.sleep(2)
-    raise ValueError(f"下载失败（已重试 {max_retries} 次）")
+
+    raise ValueError(
+        f"下载失败（已重试 {max_retries} 次）: {url[:80]} | {last_error}"
+    )
+
+
+async def _download_file_simple(url: str, output_path: Path, max_retries: int = 3):
+    """简单下载（单线程，**带断点续传**）。
+
+    ⚠️ 与 `BilibiliDownloader._download_file` 共用
+    `_stream_to_file` —— 避免两处实现漂移。
+    """
+    await _stream_to_file(
+        url, output_path,
+        headers=_FREE_HEADERS,
+        max_retries=max_retries,
+        label="BilibiliDownloader/free",
+    )
 
 
 # =============================================================================
@@ -578,30 +673,31 @@ class BilibiliDownloader(BaseDownloader):
         return video_url, audio_url
 
     async def _download_file(self, url: str, output_path: Path, max_retries: int = 3):
-        """下载文件（带重试，带 Referer）"""
+        """下载文件（**带断点续传** + 重试 + Referer）。
+
+        ## ⚠️ 2026-10-01 加断点续传
+
+        原来是 `open(output_path, "wb")` —— **每次都从头写**：
+          · 重试时把已下载的字节**全部丢弃**重来（大文件很痛）
+          · 进程重启后**完全没有恢复能力**（文件是半截的，但没人知道）
+
+        现在共用 `_stream_to_file`（`.part` + Range + 206 判定 +
+        CDN 忽略 Range 的兜底 + 原子改名）。
+        与 `_download_file_simple` **同一份实现**，避免漂移。
+        """
         cookie_jar = get_cookie_manager().get_cookiejar_for_url(url)
         cookies_dict = {c.name: c.value for c in cookie_jar} if cookie_jar else {}
 
-        headers = {
-            "User-Agent": _USER_AGENT,
-            "Referer": "https://www.bilibili.com/",
-        }
-
-        for attempt in range(max_retries):
-            try:
-                async with httpx.AsyncClient(timeout=300) as client:
-                    async with client.stream("GET", url, headers=headers, cookies=cookies_dict) as resp:
-                        resp.raise_for_status()
-                        with open(output_path, "wb") as f:
-                            async for chunk in resp.aiter_bytes():
-                                f.write(chunk)
-                return
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    raise
-                logger.warning(f"[BilibiliDownloader] 下载失败，重试 {attempt + 2}/{max_retries}: {e}")
-                await asyncio.sleep(2)
-        raise ValueError(f"下载失败（已重试 {max_retries} 次）: {url[:80]}")
+        await _stream_to_file(
+            url, output_path,
+            headers={
+                "User-Agent": _USER_AGENT,
+                "Referer": "https://www.bilibili.com/",
+            },
+            cookies=cookies_dict,
+            max_retries=max_retries,
+            label="BilibiliDownloader",
+        )
 
     async def _merge_av(self, video_path: Path, audio_path: Path, output_path: Path):
         """使用 ffmpeg 合并音视频"""

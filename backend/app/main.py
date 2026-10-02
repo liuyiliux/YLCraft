@@ -527,6 +527,21 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load telegram router: {e}")
 
+    # **批量下载队列**（可恢复）—— 2026-10-01 加
+    #
+    # `POST /download/batches` 提交一批、`GET` 看进度、
+    # `POST /{id}/resume` **只续跑没成功的**。
+    # 状态落盘（batches.json），所以重启后进度不丢。
+    try:
+        from app.api.v1 import download_batch_routes
+        app.include_router(
+            download_batch_routes.router,
+            prefix="/api/v1/download",
+            tags=["Download Batch"],
+        )
+    except Exception as e:
+        logger.warning(f"Could not load download_batch router: {e}")
+
     # **统一**评论接口（所有平台一个入口）
     #
     # 原来评论只有 B站有（`/api/v1/bilibili/comments`），

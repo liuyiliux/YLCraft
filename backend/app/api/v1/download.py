@@ -880,6 +880,331 @@ def _cleanup_temp_cookies() -> None:
             logger.debug("[download] 清理 cookie 副本失败 %s: %s", p, exc)
 
 
+def _finalize_download(partial_path: str, savedir: Path) -> str:
+    """把下好的文件从 `.partial/` 移到正式下载目录。
+
+    ## 为什么需要这一步
+
+    下载是在 `<下载目录>/.partial/` 里做的（半成品不混进成品区）。
+    下完后要**移出来**，否则用户在下载目录里看不到文件。
+
+    ## ⚠️ 同名的处理
+
+    目标已存在同名文件时**加序号**（`xxx (1).mp4`），
+    不覆盖 —— 覆盖会让用户丢掉已有的文件。
+
+    ## 移动失败时
+
+    跨盘移动可能失败（`shutil.move` 会先复制再删）——
+    失败就**退回原地返回**（至少文件是好的，路径不理想但不丢数据）。
+    """
+    import shutil
+
+    src = Path(partial_path)
+    if not src.exists():
+        return partial_path
+
+    dst = savedir / src.name
+    if dst.exists():
+        stem, suffix = src.stem, src.suffix
+        for i in range(1, 100):
+            cand = savedir / f"{stem} ({i}){suffix}"
+            if not cand.exists():
+                dst = cand
+                break
+
+    try:
+        shutil.move(str(src), str(dst))
+        logger.info("[download] 成品已移出 .partial：%s", dst.name)
+        return str(dst)
+    except Exception as exc:
+        logger.warning(
+            "[download] 移出 .partial 失败（%s），文件留在原地：%s",
+            exc, partial_path,
+        )
+        return partial_path
+
+
+def _download_file_key(url: str) -> str:
+    """由 URL 算出**跨进程稳定**的文件标识（断点续传的基础）。
+
+    ## ⚠️ 为什么不能用 `hash(url)`
+
+    原来这里写的是 `hash(effective_url) & 0xFFFFFFFF`，实测**是真 bug**：
+
+        $ python -c "print(hash(url))"    # 第 1 次
+        1561049425
+        $ python -c "print(hash(url))"    # 第 2 次（同一个 URL！）
+        900355450
+
+    Python 对 `str` 的 `hash()` 带**随机盐**（`PYTHONHASHSEED`），
+    **每个进程都不同**。后果：
+
+      1. **断点续传失效** —— 重启后文件名变了，yt-dlp 找不到 `.part`
+         文件，只能从头下载（这正是"断点续传"要解决的问题本身）
+      2. **垃圾文件堆积** —— 同一 URL 下多次会在下载目录里留下
+         一堆不同 hash 的半截文件
+
+    改用 **md5**（确定性哈希）：同 URL 永远同一个值。
+    """
+    import hashlib
+
+    return hashlib.md5((url or "").encode("utf-8")).hexdigest()[:16]
+
+
+def partial_dir(savedir: Path) -> Path:
+    """未完成下载的存放目录（`<下载目录>/.partial/`）。
+
+    ## 为什么单独一个子目录
+
+      · `.part` 文件是**半成品**，混在成品里会让用户困惑
+        （"这个视频怎么打不开"）
+      · 放子目录便于**统一清理**（删目录即可，不会误删成品）
+      · 加 `.` 前缀，在文件管理器和 `ls` 里默认不显眼
+
+    ⚠️ 文件名里仍带**稳定 hash**，所以同 URL 重下能找到自己的 `.part`。
+    """
+    d = savedir / ".partial"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+# =============================================================================
+# 断点续传：任务落盘（跨进程）
+# =============================================================================
+#
+# ## 为什么需要落盘
+#
+# `_download_tasks` 是**内存字典**，进程重启就没了 ——
+# 而断点续传**必须跨进程**（"关了程序明天接着下"）。
+#
+# 所以把"未完成的下载"写进一个 JSON 文件：
+#   · 下载开始时登记（url / outtmpl / 目标目录）
+#   · 下载成功/失败后移除
+#   · 启动时可查"有哪些没下完"
+#
+# ⚠️ 用 JSON 文件而不是数据库表：这是**临时状态**，
+# 且下载是 IO 密集的本地操作，不值得为它加表 + 迁移。
+
+_RESUME_FILE = "resume_state.json"
+
+
+def _resume_state_path() -> Path:
+    """断点续传状态文件的位置（与下载目录同级，避免被当成品）。"""
+    try:
+        savedir = ensure_download_path("")
+    except Exception:
+        savedir = Path(__file__).resolve().parents[2] / "downloads"
+    savedir.mkdir(parents=True, exist_ok=True)
+    return savedir / _RESUME_FILE
+
+
+def _load_resume_state() -> dict:
+    """读取未完成下载记录（坏文件不影响下载功能）。"""
+    p = _resume_state_path()
+    if not p.exists():
+        return {}
+    try:
+        with open(p, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception as exc:
+        logger.warning("[resume] 状态文件损坏，忽略：%s", exc)
+        return {}
+
+
+def _save_resume_state(state: dict) -> None:
+    """写回状态（best-effort，失败不影响下载本身）。"""
+    p = _resume_state_path()
+    try:
+        tmp = p.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, p)      # 原子替换，避免写一半崩了留下坏文件
+    except Exception as exc:
+        logger.warning("[resume] 状态写回失败：%s", exc)
+
+
+def _register_resumable(
+    task_id: str, url: str, page_url: str, quality: str | None,
+    is_audio: bool, title: str | None, savedir: Path, outtmpl: str,
+) -> None:
+    """登记一个"可能未完成"的下载（下载开始前调用）。"""
+    state = _load_resume_state()
+    state[task_id] = {
+        "task_id": task_id,
+        "url": url,
+        "page_url": page_url,
+        "quality": quality or "",
+        "is_audio": bool(is_audio),
+        "title": title or "",
+        "savedir": str(savedir),
+        "outtmpl": outtmpl,
+        "created_at": time.time(),
+        "updated_at": time.time(),
+    }
+    _save_resume_state(state)
+
+
+def _unregister_resumable(task_id: str) -> None:
+    """下载完成（或确定失败）后移除记录。"""
+    state = _load_resume_state()
+    if task_id in state:
+        del state[task_id]
+        _save_resume_state(state)
+
+
+def _partial_size_for(outtmpl: str) -> int:
+    """这个下载任务已落盘的**半成品字节数**（用于显示"下到哪了"）。
+
+    ⚠️ yt-dlp 的分片下载会有多个 `.part`（视频/音频分开），
+    所以这里**累加**同前缀的所有 `.part` / `.ytdl` 文件。
+    """
+    base = Path(outtmpl).parent
+    prefix = Path(outtmpl).name.split("%(title)s")[0]
+    total = 0
+    try:
+        for f in base.glob(f"{prefix}*"):
+            if f.is_file() and (
+                f.suffix in (".part", ".ytdl") or ".part" in f.name
+            ):
+                total += f.stat().st_size
+    except Exception:
+        pass
+    return total
+
+
+@router.get("/resumable", summary="列出未完成的下载（可续传）")
+async def list_resumable():
+    """列出**未完成**的下载任务。
+
+    ## 怎么判定"未完成"
+
+    登记在 `resume_state.json` 里，**且**临时目录里还有对应的
+    半成品文件（`.part`）。两者缺一不可：
+      · 只有记录没文件 → 文件被清理了，续传不了 → 顺手清掉记录
+      · 只有文件没记录 → 孤儿文件（进程被杀时未登记）→ 报告但不可续传
+
+    ## 返回什么
+
+    ```json
+    {"success": true, "data": [{"task_id":…, "url":…, "bytes_done":…,
+                                 "savedir":…, "updated_at":…}]}
+    ```
+
+    ⚠️ **不谎报可用性**：`bytes_done == 0` 的会标 `can_resume=false`
+    （没有已下载数据，续传等于重下）。
+    """
+    state = _load_resume_state()
+    out: list[dict] = []
+    stale: list[str] = []
+    for task_id, rec in state.items():
+        outtmpl = rec.get("outtmpl") or ""
+        done = _partial_size_for(outtmpl) if outtmpl else 0
+        if outtmpl and not done:
+            # 记录还在但半成品没了（被清理）→ 记录也清掉
+            stale.append(task_id)
+            continue
+        out.append({
+            "task_id": task_id,
+            "url": rec.get("url") or "",
+            "page_url": rec.get("page_url") or "",
+            "title": rec.get("title") or "",
+            "quality": rec.get("quality") or "",
+            "is_audio": bool(rec.get("is_audio")),
+            "savedir": rec.get("savedir") or "",
+            "bytes_done": done,
+            "updated_at": rec.get("updated_at") or 0,
+            # ⚠️ 没有已下载数据时，续传 == 重下，如实标注
+            "can_resume": done > 0,
+        })
+    if stale:
+        for t in stale:
+            state.pop(t, None)
+        _save_resume_state(state)
+
+    out.sort(key=lambda x: -(x.get("updated_at") or 0))
+    return {
+        "success": True,
+        "data": out,
+        "message": (
+            f"有 {len(out)} 个未完成的下载"
+            if out else "没有未完成的下载"
+        ),
+    }
+
+
+@router.post("/resume/{task_id}", summary="续传未完成的下载")
+async def resume_download(task_id: str, background: BackgroundTasks):
+    """继续一个**未完成**的下载（断点续传）。
+
+    ## 怎么做到"接着下"而不是"重下"
+
+    两个前提（缺一不可）：
+
+      1. **文件名跨进程稳定** —— 用 URL 的 md5 而非 `hash()`
+         （后者带随机盐，重启就变，导致找不到 `.part`）
+      2. **`.part` 文件还在** —— 存在 `<下载目录>/.partial/`
+
+    满足后重新调 yt-dlp 即可：它**原生支持续传**
+    （`continuedl=True` 是默认值），看到同名 `.part` 会发
+    `Range: bytes=<已下载>-` 请求接着传。
+
+    ## 返回
+
+    立即返回（下载在后台跑），用 `GET /download/tasks/{task_id}`
+    或 `GET /download/resumable` 看进度。
+
+    ⚠️ 记录不存在或没有半成品数据时**如实报错**，
+    不假装"已开始"（那会让用户白等）。
+    """
+    state = _load_resume_state()
+    rec = state.get(task_id)
+    if not rec:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"找不到任务 {task_id} 的续传记录。\n"
+                "可能原因：该下载已完成（记录会清除）、"
+                "或服务重启过且当时没登记。\n"
+                "可用 `GET /download/resumable` 查看当前可续传的任务。"
+            ),
+        )
+
+    done = _partial_size_for(rec.get("outtmpl") or "")
+    if done <= 0:
+        # ⚠️ 没有已下载数据 → 续传 == 重下，如实说明而不是假装"续传"
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"任务 {task_id} 没有已下载的数据（`.part` 文件不存在或为空）。\n"
+                "⚠️ 这种情况**续传等同于重新下载** —— 请直接重新发起下载。\n"
+                "（如果文件已被清理，记录也会在下次查询时自动移除。）"
+            ),
+        )
+
+    task = DownloadTask(
+        task_id=task_id,
+        url=rec.get("url") or "",
+        quality=rec.get("quality") or None,
+        title=rec.get("title") or None,
+        page_url=rec.get("page_url") or None,
+        is_audio=bool(rec.get("is_audio")),
+    )
+    _download_tasks[task_id] = task.__dict__
+    background.add_task(_run_download_task, task)
+
+    mb = done / 1024 / 1024
+    return {
+        "success": True,
+        "task_id": task_id,
+        "bytes_done": done,
+        "message": (
+            f"已从断点继续（已下载 {mb:.1f} MB，将接着传剩余部分）"
+        ),
+    }
+
+
 def ytdlp_progress_percent(d: dict) -> float:
     """从 yt-dlp 的进度回调字典算百分比。
 
@@ -1005,7 +1330,27 @@ def _ytdlp_download(url: str, quality_label: str | None, title: str | None, page
     else:
         format_str = "bestvideo+bestaudio/best"
 
-    outtmpl = str(savedir / f"ytdlp_{hash(effective_url) & 0xFFFFFFFF}_%(title)s.%(ext)s")
+    # ⚠️ **文件名必须跨进程稳定**，否则断点续传失效（2026-10-01 修）
+    #
+    # 原来是 `hash(effective_url) & 0xFFFFFFFF` —— Python 的 str hash
+    # 带随机盐，**每个进程都不同**（实测同一 URL 两次跑出不同值）。
+    # 后果：中断后重启，文件名变了，yt-dlp 找不到 `.part` → 从头下。
+    #
+    # 改用 md5（确定性）→ 同 URL 永远同一文件名 → yt-dlp 能接着传。
+    #
+    # ⚠️ 半成品放 `.partial/` 子目录：
+    #   · 不混进成品（用户不会把半截文件当成品）
+    #   · 便于统一清理
+    file_key = _download_file_key(effective_url)
+    workdir = partial_dir(savedir)
+    outtmpl = str(workdir / f"dl_{file_key}_%(title)s.%(ext)s")
+
+    # 登记"可能未完成"的下载（供 `/download/resumable` 查询与续传）
+    if task_id:
+        _register_resumable(
+            task_id, url, effective_url, quality_label, is_audio,
+            title, savedir, outtmpl,
+        )
 
     # B站需要 Referer 头，否则 HTTP 412
     effective_headers = {"User-Agent": _BROWSER_UA}
@@ -1129,19 +1474,32 @@ def _ytdlp_download(url: str, quality_label: str | None, title: str | None, page
         output_path = info.get("_filename") or ydl.prepare_filename(info)
         if output_path and os.path.exists(output_path):
             logger.info(f"[download] yt-dlp success | path={output_path}")
-            return output_path
+            # ⚠️ **成品要从 `.partial/` 移出来**（2026-10-01）
+            #
+            # 下载是在 `.partial/` 子目录里做的（半成品不混进成品区），
+            # 成功了就得移到正式下载目录 —— 否则用户看不到文件。
+            final = _finalize_download(output_path, savedir)
+            if task_id:
+                _unregister_resumable(task_id)   # 完成了，不用再续传
+            return final
 
         # fallback：按前缀匹配最新文件
+        #
+        # ⚠️ 前缀也用**稳定的 file_key**（原来是 hash()，跨进程会变，
+        # 导致这条 fallback 在重启后永远匹配不到）
         candidates = [
-            os.path.join(savedir, f)
-            for f in os.listdir(savedir)
-            if f.startswith(f"ytdlp_{hash(effective_url) & 0xFFFFFFFF}_")
+            os.path.join(workdir, f)
+            for f in os.listdir(workdir)
+            if f.startswith(f"dl_{file_key}_")
             and f.endswith((".mp4", ".m4a", ".mp3", ".wav"))
         ]
         if candidates:
             latest = max(candidates, key=os.path.getmtime)
             logger.info(f"[download] yt-dlp fallback | path={latest}")
-            return latest
+            final = _finalize_download(latest, savedir)
+            if task_id:
+                _unregister_resumable(task_id)
+            return final
 
     raise ValueError("yt-dlp 下载失败，未找到输出文件")
 
@@ -1382,7 +1740,22 @@ async def _run_download_task(task: DownloadTask):
         task.progress = 10
         task.progress_message = "解析视频信息..."
         _download_tasks[task.task_id] = task.__dict__
-        
+
+        # ⚠️ **平台下载器路径也要登记**（2026-10-01 加，断点续传）
+        #
+        # 原来只有 yt-dlp 路径登记 `resume_state.json` —— 但
+        # **B站/抖音/X 有专用下载器**，它们才是主力（先试专用、失败才降级）。
+        # 实测：下载 B站视频走的是专用下载器，yt-dlp 那条路的登记**根本没触发**。
+        _resume_savedir = ensure_download_path(
+            _detect_platform(task.page_url or task.url) or ""
+        )
+        _register_resumable(
+            task.task_id, task.url, task.page_url or task.url,
+            task.quality, task.is_audio, task.title,
+            _resume_savedir,
+            str(_resume_savedir / (task.title or "")),
+        )
+
         result = await download_with_manager(
             url=task.url,
             quality=task.quality or "best",
@@ -1415,7 +1788,13 @@ async def _run_download_task(task: DownloadTask):
         task.progress = 90
         task.progress_message = "下载完成，正在写入素材库..."
         _download_tasks[task.task_id] = task.__dict__
-        
+
+        # ⚠️ 下载**已成功** —— 注销续传登记（2026-10-01）
+        #
+        # 不注销的话 `/download/resumable` 会一直列出这个已完成的任务，
+        # 用户点"续传"会重复下载。
+        _unregister_resumable(task.task_id)
+
         # 记录到数据库
         try:
             from app.db.database import get_async_session
@@ -1555,7 +1934,19 @@ async def _run_download_task(task: DownloadTask):
         task.error = str(e)
         task.progress_message = f"下载失败: {str(e)[:50]}"
         logger.error(f"[_run_download_task] 下载失败: {e}")
-        
+
+        # ⚠️ **失败时保留续传登记**（2026-10-01）
+        #
+        # 下载失败/中断时，半成品文件（`.part`）通常还在 ——
+        # 保留登记，用户就能在 `/download/resumable` 里看到它并**续传**。
+        #
+        # 这是断点续传的**关键**：只有成功的才注销（见上面的
+        # `_unregister_resumable`），失败的留着重试。
+        #
+        # ⚠️ 但如果失败是因为"文件根本不存在"（如解析失败），
+        # `/download/resumable` 会自动过滤掉（没有 `.part` 就不列出）。
+        task.progress_message = f"下载失败（可续传）: {str(e)[:40]}"
+
     finally:
         task.completed_at = time.time()
         # 更新全局任务字典
