@@ -42,6 +42,117 @@ class TorrentService:
     async def close(self) -> None:
         await self.engine.close()
 
+    # =========================================================================
+    # 启动恢复（断点续传 —— 2026-10-01 加）
+    # =========================================================================
+    #
+    # ## 为什么需要
+    #
+    # 种子任务信息**本来就存在数据库**（`TorrentDownload` 有
+    # `source_uri` / `save_path` / `torrent_hash`）——
+    # 但**没有任何代码在启动时读回来重新添加**。
+    #
+    # 后果：重启程序后，之前正在下的种子**全部消失**：
+    #   · 引擎里没有它们（`_handles` 空了）
+    #   · 数据库记录还在，但状态永远停在最后那一刻
+    #   · 用户看到"任务还在但进度不动"，只能删了重加
+    #
+    # ## 怎么恢复
+    #
+    # 读出未完成的记录 → 用 `source_uri` 重新 add →
+    # libtorrent **自动续传**（它会扫描已有文件、校验分片、只下缺的部分）；
+    # 如果之前存过 resume data，还会**跳过重新校验**。
+
+    # 这些状态的种子不需要恢复（已完成 / 已删除）
+    _TERMINAL_STATES = {"completed", "finished", "seeding", "deleted"}
+
+    async def restore_active_downloads(self) -> dict:
+        """启动时恢复未完成的种子下载。
+
+        Returns:
+            `{"total": N, "restored": M, "failed": [...], "skipped": K}`
+
+        ⚠️ **best-effort**：单个种子恢复失败**不影响其它的** ——
+        在列表里记下来，让用户知道哪个需要手动处理。
+        """
+        from sqlmodel import select
+
+        stmt = select(TorrentDownload)
+        records = list((await self.session.scalars(stmt)).all())
+        active = [
+            r for r in records
+            if (r.status or "").lower() not in self._TERMINAL_STATES
+        ]
+
+        restored = 0
+        failed: list[dict] = []
+        skipped = 0
+
+        for rec in active:
+            uri = (rec.source_uri or "").strip()
+            if not uri:
+                # 没有 source_uri 就没法重新添加 —— 如实记账，不假装成功
+                failed.append({
+                    "id": rec.id,
+                    "name": rec.name,
+                    "reason": "记录里没有 magnet / 种子文件路径，无法恢复",
+                })
+                continue
+
+            save_path = Path(rec.save_path or self.config.download_dir)
+            try:
+                if rec.source == "torrent_file":
+                    f = Path(uri)
+                    if not f.is_file():
+                        failed.append({
+                            "id": rec.id, "name": rec.name,
+                            "reason": f"种子文件已不存在：{f}",
+                        })
+                        continue
+                    th = await self.engine.add_torrent_file(
+                        f, save_path, start_paused=False
+                    )
+                else:
+                    th = await self.engine.add_magnet(
+                        uri, save_path, start_paused=False
+                    )
+
+                # 更新 hash（可能之前是空的）与状态
+                if th and th != rec.torrent_hash:
+                    rec.torrent_hash = th
+                rec.status = "downloading"
+                rec.error_message = ""
+                self.session.add(rec)
+                restored += 1
+            except Exception as exc:
+                logger.warning(
+                    "[torrent] 恢复 %s 失败：%s", rec.name or rec.id, exc
+                )
+                failed.append({
+                    "id": rec.id, "name": rec.name,
+                    "reason": str(exc)[:200],
+                })
+                skipped += 1
+
+        try:
+            await self.session.commit()
+        except Exception as exc:
+            logger.warning("[torrent] 恢复后提交失败：%s", exc)
+
+        result = {
+            "total": len(active),
+            "restored": restored,
+            "failed": failed,
+            "skipped": skipped,
+        }
+        if active:
+            logger.info(
+                "[torrent] 启动恢复：%d/%d 已恢复%s",
+                restored, len(active),
+                f"，{len(failed)} 个失败" if failed else "",
+            )
+        return result
+
     async def add_magnet(self, magnet: str, start_paused: bool = True) -> TorrentDownload:
         if not magnet.lower().startswith("magnet:?") or "btih:" not in magnet.lower():
             raise ValueError("Invalid magnet link")

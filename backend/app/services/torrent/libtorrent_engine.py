@@ -7,6 +7,7 @@ requires the libtorrent Python package to be installed in the backend venv.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from pathlib import Path
 from urllib.parse import unquote
@@ -16,6 +17,10 @@ import httpx
 from app.services.torrent.config import TorrentConfig
 from app.services.torrent.engine import TorrentEngine
 from app.services.torrent.models import PUBLIC_TRACKERS, TorrentFileInfo, TorrentHealth, TorrentStatus
+
+# ⚠️ 本模块原来**没有 logger**（2026-10-01 加 resume data 时才发现）——
+# 直接写 `logger.debug(...)` 会是 NameError，且只在异常路径触发（平时测不出来）。
+logger = logging.getLogger("ylcraft.torrent.libtorrent")
 
 
 DHT_ROUTERS = (
@@ -74,6 +79,9 @@ class LibtorrentEngine(TorrentEngine):
         self._ensure_magnet_trackers(params)
         self._set_param(params, "save_path", str(save_path))
         self._set_storage_mode(params)
+        # ⚠️ magnet 也加载 resume data（用 magnet 里的 hash 找）
+        if magnet_hash:
+            self._load_resume_data_into(params, magnet_hash)
         handle = self._session.add_torrent(params)
         self._set_sequential(handle)
         torrent_hash = _hash_from_handle(handle) or _hash_from_magnet(magnet)
@@ -90,6 +98,13 @@ class LibtorrentEngine(TorrentEngine):
 
     def _add_torrent_info(self, torrent_info, save_path: Path, start_paused: bool = True, expected_hash: str = "") -> str:
         params = self._new_add_torrent_params()
+        # ⚠️ 先尝试加载 resume data（有就跳过重新校验）
+        try:
+            ih = str(getattr(torrent_info, "info_hash", "") or "").lower()
+        except Exception:
+            ih = ""
+        if ih:
+            self._load_resume_data_into(params, ih)
         self._set_param(params, "ti", torrent_info)
         self._set_param(params, "save_path", str(save_path))
         self._set_storage_mode(params)
@@ -108,6 +123,9 @@ class LibtorrentEngine(TorrentEngine):
         return torrent_hash
 
     async def list_torrents(self) -> list[TorrentStatus]:
+        # ⚠️ 先处理 alert（把 `save_resume_data` 的结果写盘）——
+        # 这个接口会被前端**定期轮询**，正好当"心跳"用。
+        self._drain_alerts()
         items: list[TorrentStatus] = []
         for torrent_hash, handle in list(self._handles.items()):
             if not handle.is_valid():
@@ -210,7 +228,42 @@ class LibtorrentEngine(TorrentEngine):
         )
 
     async def pause(self, torrent_hash: str) -> None:
-        self._require_handle(torrent_hash).pause()
+        handle = self._require_handle(torrent_hash)
+        # ⚠️ 暂停前**请求保存 resume data**（2026-10-01）
+        # 这样下次启动能跳过"重新校验全部已下载数据"。
+        # 实际写盘在 `_drain_alerts`（前端轮询 list_torrents 时触发）。
+        self._save_resume_data(torrent_hash, handle)
+        handle.pause()
+
+    async def close(self) -> None:
+        """关闭引擎 —— **先保存所有 resume data**（2026-10-01 加）。
+
+        ⚠️ 原来是直接 `return None`，什么都不做 —— 于是进程退出时
+        **所有种子的校验进度都丢了**，下次启动要重新校验全部数据。
+
+        这里：请求保存 → 等一会儿让 libtorrent 生成 → 处理 alert 写盘。
+
+        ⚠️ 注意 `_session` 是**类变量**（单例），这里**不销毁**它 ——
+        否则下次请求会拿不到 handle。
+        """
+        try:
+            session = self._session
+            if session is None:
+                return
+            # 1) 请求保存所有种子的 resume data
+            for th, handle in list(self._handles.items()):
+                try:
+                    if handle.is_valid():
+                        handle.save_resume_data()
+                except Exception:
+                    continue
+            # 2) 等一会儿让它生成（异步的，不等就丢了）
+            await asyncio.sleep(1.5)
+            # 3) 处理 alert 写盘
+            self._drain_alerts()
+        except Exception:
+            pass
+        return None
 
     async def resume(self, torrent_hash: str) -> None:
         handle = self._require_handle(torrent_hash)
@@ -257,9 +310,6 @@ class LibtorrentEngine(TorrentEngine):
             return
         option = self._delete_option(delete_files)
         self._session.remove_torrent(handle, option)
-
-    async def close(self) -> None:
-        return None
 
     def _create_session(self):
         settings = {
@@ -478,6 +528,153 @@ class LibtorrentEngine(TorrentEngine):
     def _new_add_torrent_params(self):
         factory = getattr(self.lt, "add_torrent_params", None)
         return factory() if factory else {}
+
+    # =========================================================================
+    # Resume data（断点续传 —— 2026-10-01 加）
+    # =========================================================================
+    #
+    # ## 为什么需要
+    #
+    # libtorrent 本身**会**对已下载分片做校验续传：重新 add 同一种子，
+    # 它会扫描现有文件、校验分片、只下缺的部分。
+    #
+    # **但**没有 resume data 时必须**重新校验全部已下载数据**
+    # （几十 GB 的种子要扫很久，表现为"重启后卡在 checking"）。
+    # resume data 保存了"哪些分片已确认"的位图，加载后**跳过校验**。
+    #
+    # ## 存哪
+    #
+    # `<下载目录>/_resume_data/<hash>.resume`（与 `_metadata_cache` 同级）
+
+    def _resume_data_path(self, torrent_hash: str) -> Path | None:
+        normalized = (torrent_hash or "").strip().lower()
+        if not normalized:
+            return None
+        return self.config.download_dir / "_resume_data" / f"{normalized}.resume"
+
+    def _load_resume_data_into(self, params, torrent_hash: str) -> bool:
+        """把 `.resume` 的内容合并进 `params`（成功返回 True）。
+
+        ⚠️ 失败**不能中断添加** —— resume data 只是优化，
+        没有它 libtorrent 退回"重新校验"，功能仍正常。
+
+        ## ⚠️ 两个坑（2026-10-01 实测，都踩了）
+
+        ### 坑 1：`getattr(...) or rd.get(...)` 是错的
+
+        `read_resume_data()` 返回 `libtorrent.add_torrent_params`
+        **对象**（不是 dict），**没有 `.get` 方法**。
+        当 `getattr` 返回 `None` 时（如 magnet 还没元数据，`ti` 就是 None），
+        会去调 `rd.get(key)` → `AttributeError` → 被 except 吞掉
+        → 整个加载返回 False。症状：resume 文件明明写出来了，加载**永远失败**。
+
+        ### 坑 2：不能 `setattr(params, "resume_data", bytes)`
+
+        实测报 **C++ 签名不匹配**：
+
+            None.None(add_torrent_params, bytes)
+            did not match C++ signature: ...
+
+        libtorrent 2.0 的 `resume_data` 不是裸 bytes 字段。
+        **正确做法**：`read_resume_data()` 返回的就是一个
+        `add_torrent_params` —— 直接把它上面的字段搬到我们的 params 即可。
+        """
+        path = self._resume_data_path(torrent_hash)
+        if not path or not path.is_file():
+            return False
+        try:
+            data = path.read_bytes()
+            load = getattr(self.lt, "read_resume_data", None)
+            if load is None:
+                return False
+            rd = load(data)
+            # 新版 API 返回 (params, error) 元组；旧版直接返回 params
+            if isinstance(rd, tuple):
+                rd = rd[0]
+            if rd is None:
+                return False
+
+            # ⚠️ 逐字段搬运（**不要** setattr resume_data=bytes，见坑 2）
+            moved = 0
+            for key in (
+                "ti", "info_hash", "info_hashes", "trackers",
+                "tracker_tiers", "url_seeds", "save_path",
+                "storage_mode", "flags", "file_priorities",
+                "max_connections", "upload_limit", "download_limit",
+            ):
+                try:
+                    val = getattr(rd, key, None)
+                except Exception:
+                    continue
+                if val is None or val == [] or val == "":
+                    continue
+                try:
+                    self._set_param(params, key, val)
+                    moved += 1
+                except Exception:
+                    # 单个字段不接受就跳过（不同版本字段名/类型有差异）
+                    continue
+            return moved > 0
+        except Exception as exc:
+            logger.debug("[torrent] 读取 resume data 失败 %s: %s", path.name, exc)
+            return False
+
+    def _save_resume_data(self, torrent_hash: str, handle) -> None:
+        """**请求**保存 resume data（异步）。
+
+        ⚠️ 这只是请求 —— libtorrent 在后台生成，完成后发
+        `save_resume_data_alert`。真正的写盘在 `_drain_alerts()` 里。
+        不处理 alert 的话 resume data **永远写不出去**（常见坑）。
+        """
+        if not handle or not handle.is_valid():
+            return
+        try:
+            handle.save_resume_data()
+        except Exception:
+            pass
+
+    def _drain_alerts(self) -> None:
+        """处理 libtorrent 异步 alert（主要是 resume data 写盘）。"""
+        session = self._session
+        if session is None:
+            return
+        pop = getattr(session, "pop_alerts", None)
+        if pop is None:
+            return
+        try:
+            alerts = pop()
+        except Exception:
+            return
+
+        for alert in alerts or []:
+            try:
+                name = type(alert).__name__
+                if "save_resume_data" not in name:
+                    continue
+                h = getattr(alert, "handle", None)
+                th = _hash_from_handle(h) if h is not None else ""
+                if not th:
+                    continue
+                params = getattr(alert, "params", None)
+                if params is None:
+                    continue
+                write = getattr(self.lt, "write_resume_data_buf", None)
+                if write is None:
+                    write = getattr(self.lt, "write_resume_data", None)
+                if write is None:
+                    continue
+                data = write(params)
+                if isinstance(data, tuple):
+                    data = data[0]
+                path = self._resume_data_path(th)
+                if not path or not data:
+                    continue
+                path.parent.mkdir(parents=True, exist_ok=True)
+                tmp = path.with_suffix(".resume.tmp")
+                tmp.write_bytes(data)
+                tmp.replace(path)      # 原子替换
+            except Exception:
+                continue
 
     def _set_param(self, params, key: str, value) -> None:
         if isinstance(params, dict):
