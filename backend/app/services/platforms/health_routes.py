@@ -51,23 +51,43 @@ logger = logging.getLogger("ylcraft.platforms.health")
 
 router = APIRouter()
 
-# 体检用的关键词：短、通用、各平台都有大量结果
+# 体检用的**默认**关键词：短、通用、各平台都有大量结果
+#
+# ⚠️ 单个平台的特殊关键词由它自己在 `meta.py` 里声明
+# （如 Telegram 要用频道名而不是关键词）—— 见 `probe_keyword`。
 PROBE_KEYWORD = "美食"
 
-# 每个平台体检时用的 search_type（要选该平台**默认可用**的那种）
-PROBE_SEARCH_TYPE = {
-    "bili": "video",
-    "bilibili": "video",
-    "telegram": "channel",
-    "wechat_mp": "account",
-    "fanqie": "",          # 番茄没有内容搜索，跳过探针
-}
 
-# 探针用的关键词（部分平台语义特殊，见注释）
-PROBE_KEYWORD_BY_PLATFORM = {
-    # Telegram 的"频道消息"tab 填的是**频道名**而不是关键词
-    "telegram": "telegram",
-}
+def _probe_search_type(platform: str) -> str:
+    """该平台体检用哪个 search_type（**从平台元数据取**）。
+
+    ⚠️ 2026-10-01 收敛：原来这里是**手写字典**
+    `PROBE_SEARCH_TYPE = {"bili": "video", ...}`，
+    与 `users.py` / `comments.py` 里的表重复 ——
+    新增平台漏改一处，体检就拿不到结果。
+
+    现在改由平台自己声明（`platforms/<平台>/meta.py`
+    的 `probe_search_type`，空字符串表示"没有内容搜索，跳过探针"）。
+    """
+    from app.services.platforms.meta import get_meta
+
+    meta = get_meta(platform)
+    return meta.probe_search_type if meta else ""
+
+
+def _probe_keyword(platform: str) -> str:
+    """该平台体检探针用的关键词（平台可覆盖默认值）。
+
+    ⚠️ Telegram 的"频道消息"tab 填的是**频道名**而不是关键词 ——
+    这类平台语义差异由它自己在 meta 里声明 `probe_keyword`，
+    而不是让公共代码记住每个平台的特征。
+    """
+    from app.services.platforms.meta import get_meta
+
+    meta = get_meta(platform)
+    if meta and meta.probe_keyword:
+        return meta.probe_keyword
+    return PROBE_KEYWORD
 
 
 def _item(key: str, label: str, ok: bool, message: str,
@@ -140,7 +160,15 @@ async def platform_health(
         }
 
     # ---- ② 凭证状态（免登录平台跳过这条）----
-    no_login = p in ("youtube", "telegram")
+    #
+    # ⚠️ 2026-10-01 收敛：原来这里是
+    #     `no_login = p in ("youtube", "telegram")`   ← 硬编码名单
+    # 加一个免登录平台就得改这里（公共代码被迫记住平台特征）。
+    # 现在由平台自己声明（meta 的 `no_login`）。
+    from app.services.platforms.meta import get_meta
+
+    _meta = get_meta(p)
+    no_login = bool(_meta and _meta.no_login)
     if no_login:
         checks["credential"] = _item(
             "credential", "登录态", True,
@@ -149,14 +177,10 @@ async def platform_health(
     else:
         from app.services.platforms.login_health import resolve_connection
 
-        conn_platform = {
-            "xhs": "XHS", "xiaohongshu": "XHS",
-            "douyin": "DOUYIN", "dy": "DOUYIN",
-            "bili": "BILIBILI", "bilibili": "BILIBILI",
-            "weibo": "WEIBO", "wb": "WEIBO",
-            "twitter": "TWITTER", "x": "TWITTER", "tw": "TWITTER",
-            "kuaishou": "KUAISHOU", "ks": "KUAISHOU",
-        }.get(p, p.upper())
+        # ⚠️ 连接表里的平台名从 meta 取 —— 原来这里有一份**19 项内联映射**
+        # （"xhs": "XHS", "wb": "WEIBO", ...），与 users.py / comments.py
+        # 里的表重复，新增平台漏改就查不到连接。
+        conn_platform = _meta.conn_platform if _meta else p.upper()
         try:
             actual_id, raw = resolve_connection(conn_id, conn_platform)
         except Exception as exc:
@@ -237,14 +261,20 @@ async def platform_health(
             }
 
     # ---- ③ 最小搜索探针（**真正的判据**）----
-    st = PROBE_SEARCH_TYPE.get(p, "note")
-    kw = keyword.strip() or PROBE_KEYWORD_BY_PLATFORM.get(p, PROBE_KEYWORD)
+    #
+    # ⚠️ 2026-10-01 收敛：search_type 和 keyword 都从**平台元数据**取
+    # （平台自己声明 `probe_search_type` / `probe_keyword`），
+    # 不再由公共代码维护平台字典。
+    st = _probe_search_type(p) or "note"
+    kw = keyword.strip() or _probe_keyword(p)
 
-    if not st and p == "fanqie":
-        # 番茄没有内容搜索能力 —— 如实说明，不假装失败
+    if not _probe_search_type(p) and _meta is not None:
+        # 平台声明了"没有内容搜索"（probe_search_type 为空字符串）——
+        # 如实说明，**不假装失败**。
+        # 原来这里硬编码 `p == "fanqie"`，新增同类平台就得改公共代码。
         checks["search"] = _item(
             "search", "搜索", True,
-            "该平台是章节式发布，**没有内容搜索**（不是故障）",
+            "该平台**没有内容搜索**能力（不是故障）",
         )
         ready = all(c["ok"] for c in checks.values())
         return {

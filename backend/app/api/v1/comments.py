@@ -68,16 +68,69 @@ logger = logging.getLogger("ylcraft.api.comments")
 
 router = APIRouter()
 
-# 已实现评论采集的平台（新增平台时**必须**同步改这里 —— 与 supported_platforms() 无关，
-# 因为那个表管的是"搜索"，评论是另一套能力）
-COMMENTS_SUPPORTED = {
-    "bili", "bilibili",
-    "kuaishou", "ks",
-    "weibo", "wb",
-    "twitter", "x", "tw",
-    "youtube",
-    "douyin", "dy",
-}
+# 已实现评论采集的平台 —— **从平台元数据生成**（2026-10-01 收敛）
+#
+# ⚠️ 原来这里是**手写名单** `{"bili","bilibili","kuaishou",...}`，
+# 与 `users.py` / `health_routes.py` 里的表**各写一遍** ——
+# 新增平台要改 4 个文件，漏一个就静默出错（KeyError / 找不到客户端）。
+#
+# 现在改由**平台自己声明**（`platforms/<平台>/meta.py` 的 capabilities），
+# 这里有 meta 生成。新增平台只需在自己的 meta.py 里加 `"comments"`。
+from app.services.platforms.meta import (
+    all_metas as _all_metas,
+    get_meta as _get_meta,
+    no_login_platforms as _no_login_platforms,
+    resolve_name as _resolve_name,
+    supports as _supports,
+)
+
+
+def _comment_platforms() -> set:
+    """声明了 `comments` 能力的平台（含别名）。"""
+    out: set = set()
+    for m in _all_metas():
+        if "comments" in m.capabilities:
+            out |= m.all_names
+    return out
+
+
+# ⚠️ 用**函数**而不是模块级常量：元数据是懒加载的
+# （`_discover()` 在首次调用时才扫目录），模块导入时还不一定有。
+# 保留 `COMMENTS_SUPPORTED` 这个名字是为了兼容已有测试与调用方。
+def _supported() -> set:
+    return _comment_platforms()
+
+
+# 兼容：模块级符号（首次访问时求值）
+class _SupportedSet:
+    """惰性集合 —— 让 `COMMENTS_SUPPORTED` 用起来像普通 set。"""
+
+    def __contains__(self, item) -> bool:
+        return item in _comment_platforms()
+
+    def __iter__(self):
+        return iter(_comment_platforms())
+
+    def __len__(self) -> int:
+        return len(_comment_platforms())
+
+    def __repr__(self) -> str:
+        return repr(_comment_platforms())
+
+    def __and__(self, other):
+        return _comment_platforms() & set(other)
+
+    def __or__(self, other):
+        return _comment_platforms() | set(other)
+
+    def __le__(self, other):
+        return _comment_platforms() <= set(other)
+
+    def __ge__(self, other):
+        return _comment_platforms() >= set(other)
+
+
+COMMENTS_SUPPORTED = _SupportedSet()
 
 # 各平台「为什么还没做」的诚实说明（**仅未实现平台**）。
 #
@@ -346,63 +399,63 @@ async def get_comments(
             resolve_connection,
         )
 
-        # 各平台的连接平台名 + cookie 域名（⚠️ 域名必须写对 —— 实测
-        # netscape_to_header 认的是这些名字，写错会返回 0 字符）
-        cookie_domain = ""        # 免登录平台不需要
-        conn_platform = ""        # 免登录平台不需要
-        # 需要登录的平台才有连接映射；YouTube 免登录 → 保持空
-        mapping = {
-            "bili": ("BILIBILI", "bili"),
-            "bilibili": ("BILIBILI", "bili"),
-            "kuaishou": ("KUAISHOU", "kuaishou"),
-            "ks": ("KUAISHOU", "kuaishou"),
-            # ⚠️ 微博必须用**移动端**域名 `.weibo.cn`（实测：主站 weibo.com
-            # 的 cookie 在 m.weibo.cn 无效，api/config 返回 login=false）
-            "weibo": ("WEIBO", "weibo"),
-            "wb": ("WEIBO", "weibo"),
-            # ⚠️ X 的 cookie_domain 必须是 `x.com`（实测：netscape_to_header
-            # 认这个名字，用 "twitter" 会返回 0 字符）
-            "twitter": ("TWITTER", "x.com"),
-            "x": ("TWITTER", "x.com"),
-            "tw": ("TWITTER", "x.com"),
-            "douyin": ("DOUYIN", "douyin"),
-            "dy": ("DOUYIN", "douyin"),
-        }.get(p)
-        # 免登录平台（YouTube 取评论不需要凭证 —— 实测未传 cookie 可取到）
-        if mapping is None:
+        # ===== 平台元数据全部从 meta 取（2026-10-01 收敛）=====
+        #
+        # ⚠️ 原来这里有 16 行**手写映射**（平台 → (连接名, cookie域名)）
+        # 再加上 8 行**逐个 if 的别名转换**（wb→weibo, dy→douyin…）——
+        # 与 `users.py` / `health_routes.py` 里的表重复，
+        # 新增平台漏改一处就报错。
+        #
+        # 现在改为查平台自己声明的元数据（`platforms/<平台>/meta.py`）。
+        meta = _get_meta(p)
+        client_name = _resolve_name(p)          # 别名 → 注册名（wb→weibo）
+        if meta is None:
+            # 有 comments 能力却没声明 meta —— 是**开发时的遗漏**，
+            # 不是用户错误。给明确提示（不是 500）。
+            raise HTTPException(
+                status_code=501,
+                detail=(
+                    f"平台 {p!r} 声明了评论能力，但缺少 `meta.py` 元数据声明。\n"
+                    "请在该平台目录下补 `meta.py`（含 conn_platform / "
+                    "cookie_domain / capabilities）。"
+                ),
+            )
+
+        # 免登录平台不需要连接与 cookie（YouTube 实测未传 cookie 可取到）
+        if meta.no_login:
             raw_cookie = ""
         else:
-            conn_platform, cookie_domain = mapping
-            _cid, raw_cookie = resolve_connection(conn_id, conn_platform)
-        cookie = netscape_to_header(raw_cookie, cookie_domain) if raw_cookie else ""
+            _cid, raw_cookie = resolve_connection(conn_id, meta.conn_platform)
+        # ⚠️ cookie_domain 必须与 meta 里声明的一致（实测认这些名字，
+        #    写错会返回 0 字符 cookie）
+        cookie = (
+            netscape_to_header(raw_cookie, meta.cookie_domain)
+            if raw_cookie else ""
+        )
 
-        # B站有更完整的游标分页方法（含排序/总数），优先用它；
-        # 其它平台走基类 `get_comments`（各平台自己实现）
-        # `wb` 是 `weibo` 的别名（两者都注册了同一个客户端类），
-        # create_client 认 `weibo`
-        client_name = "bili" if p in ("bili", "bilibili") else p
-        # 别名 → 真实注册名（注册时用的是 `weibo` / `twitter`）
-        if client_name == "wb":
-            client_name = "weibo"
-        if client_name in ("x", "tw"):
-            client_name = "twitter"
-        if client_name == "dy":
-            client_name = "douyin"
         async with create_client(client_name, mode="api", cookie=cookie) as client:
             if parent_id:
                 # ===== 取**子回复**（楼中楼）=====
                 #
                 # ⚠️ 子回复不是"评论列表的下一页" —— 端点/参数/签名都可能不同
                 # （抖音换端点且签名函数不同；快手加 rootCommentId；X 靠父 id 筛）。
-                # B站没有独立的子回复接口（它的回复在 `replies` 字段里随顶层返回），
-                # 所以对 B站如实说明。
-                if p in ("bili", "bilibili"):
+                #
+                # 平台**有没有** replies 能力由它自己声明（meta.capabilities）。
+                if not _supports(p, "replies"):
                     raise HTTPException(
                         status_code=501,
                         detail=(
-                            "B站的子回复**随顶层评论一起返回**（在每条评论的 "
-                            "`replies` 字段里），不需要单独取。\n"
-                            "如需查看，请直接看顶层评论返回里的 `replies`。"
+                            f"{meta.name} 不支持单独取子回复。\n"
+                            + (
+                                # B站：回复就在顶层评论里，**不需要**单独取
+                                "它的子回复**随顶层评论一起返回**（在每条评论的 "
+                                "`replies` 字段里）—— 直接看顶层返回即可。"
+                                if meta.name == "bili" else
+                                # 微博：平台就没开放这个数据（实测过）
+                                "⚠️ 这不是「这条评论没有回复」—— "
+                                "是该平台没有开放这个数据。\n"
+                                "（顶层评论仍可用：去掉 parent_id 参数。）"
+                            )
                         ),
                     )
                 try:
@@ -430,7 +483,10 @@ async def get_comments(
                 has_more = bool(reply_data.get("has_more"))
                 next_offset = str(reply_data.get("next_cursor") or "")
                 message = f"该评论有 {len(comments)} 条回复"
-            elif p in ("bili", "bilibili"):
+            elif _supports(p, "comments_paged"):
+                # 平台自己声明了更完整的游标分页方法（含排序/总数）
+                # ⚠️ B站的 `get_comments_paged` 比基类的通用路径更完整，
+                # 所以走这条分支。**由能力声明决定**，不是硬编码平台名。
                 result = await client.get_comments_paged(
                     item, page, page_size, sort, offset
                 )
