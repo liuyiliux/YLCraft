@@ -560,7 +560,29 @@ class KuaishouClient(BasePlatformClient):
                     "「登录态有效」。\n"
                     "请在「账号中心」重新获取快手登录态（扫码）后重试。"
                 )
-            return None
+            # ⚠️ 搜索路径**不能** `return None`（2026-10-02 修）
+            #
+            # 原来这里返回 None → `search()` 里 `if payload is None: break`
+            # → 返回空列表 → API 层报 **200 "找到 0 条结果"**。
+            #
+            # 实测（快手登录态失效后搜索关键词）：
+            #
+            #     HTTP 200  {"success":true,"results":[],"message":"找到 0 条结果"}
+            #
+            # 用户完全看不出是"登录态过期"，只会以为这个关键词没内容，
+            # 于是反复换关键词 —— 而真正的原因（result=2/109）被吞掉了。
+            #
+            # 讽刺的是**本函数上面的注释已经把这个道理写清楚了**
+            #（"所以这里给可操作的错误，别让它静默变空白"），
+            # 却只对 profile 路径兑现了，搜索路径照样 `return None`。
+            #
+            # `result` 已经在上面算出来了，直接用它给出可操作的错误。
+            raise LoginExpiredError(
+                f"[kuaishou] 搜索失败：{hint}（result={result}）。\n"
+                "请在「账号中心」重新获取快手登录态（扫码）后重试。\n"
+                "⚠️ 快手登录态**约 20 分钟**失效（服务端控制），"
+                "建议搜索前重新读一次 cookie。"
+            )
         return payload
 
     # =========================================================================
@@ -584,12 +606,32 @@ class KuaishouClient(BasePlatformClient):
         for idx in range(page_no + 2):
             payload = await self._post(SEARCH_FEED, build_feed_body(params.keyword, pcursor))
             if payload is None:
-                break
+                # ⚠️ `_post` 只在**翻页中途**才会返回 None：第一页就拿不到
+                # 的话，`_post` 内部已经按 result 码抛出 `LoginExpiredError`
+                # 了（2026-10-02 修），走不到这里。
+                #
+                # 走到这里 = 已经拿到过至少一页，只是在翻页途中断了。
+                # 此时**不能静默 break**：第 1 页有结果、第 2 页断了的话，
+                # 用户看到的是"只有 10 条"，而真相是分页中途失败。
+                # 已积累的结果要保留，但必须把失败说清楚。
+                if out:
+                    logger.warning(
+                        "[kuaishou] 翻页途中失败（第 %d 页），已保留 %d 条结果",
+                        idx + 1, len(out),
+                    )
+                    break
+                raise NetworkError(
+                    "[kuaishou] 搜索请求未返回数据（页面脚本执行失败或无响应）。\n"
+                    "这通常意味着浏览器会话已断开或页面结构变化，"
+                    "不是「关键词没有内容」。"
+                )
             if idx < page_no - 1:
                 # 还没到目标页 —— 只推进游标
                 pcursor = str(payload.get("pcursor") or "")
                 if not pcursor:
-                    return []
+                    # 到目标页之前游标就断了 —— 后面根本没有数据。
+                    # 属于**明确的分页边界**，不是错误。
+                    return out[:want]
                 continue
 
             feeds = payload.get("feeds") or []
