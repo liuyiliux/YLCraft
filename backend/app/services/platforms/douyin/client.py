@@ -670,94 +670,116 @@ class DouyinClient(BasePlatformClient):
             return []
 
         want = max(1, int(max_results or 20))
-        ua = self._get_default_user_agent()
         out: List[Dict[str, Any]] = []
         seen: set[str] = set()
         cur = cursor or "0"
 
+        # ⚠️ 循环调 `get_comments_page`（归一与签名逻辑只写一处）
         for _ in range(max(1, (want + 19) // 20) + 1):
             if len(out) >= want:
                 break
-            base = {
-                "aweme_id": aweme_id,
-                "cursor": cur,
-                "count": 20,
-                "item_type": 0,
-            }
-            try:
-                from .sign import sign_comment_params
-
-                params = sign_comment_params(base, ua)
-            except RuntimeError as exc:
-                # 签名文件/依赖缺失 —— 这是**没实现**，不是"没评论"
-                raise RuntimeError(
-                    f"[douyin] 评论签名不可用：{exc}\n"
-                    "抖音评论必须要 a_bogus 签名，没有它拿不到数据。"
-                ) from exc
-
-            try:
-                resp = await self.request(
-                    "GET",
-                    f"{BASE_URL}/aweme/v1/web/comment/list/",
-                    params=params,
-                    headers={"User-Agent": ua},
-                )
-            except Exception as exc:
-                logger.warning("[douyin] 评论请求失败：%s", type(exc).__name__)
-                break
-
-            if not isinstance(resp, dict):
-                # ⚠️ 空 body 的典型表现（签名缺失/失效）
-                raise RuntimeError(
-                    "[douyin] 评论接口返回空响应体（HTTP 200 但无内容）。\n"
-                    "实测：这是 **a_bogus 签名缺失或失效**的典型症状"
-                    "（不带签名时就是这样），不是「没有评论」。\n"
-                    "可能原因：签名用的混淆 JS 已随抖音改版失效，"
-                    "或登录 Cookie 已过期（Cookie 缺失也会返回空）。"
-                )
-
-            if resp.get("status_code") not in (0, None):
-                # 明确错误码（如登录态问题）—— 停，但不假装是空
-                logger.info(
-                    "[douyin] 评论返回 status_code=%s", resp.get("status_code")
-                )
-                break
-
-            for c in resp.get("comments") or []:
-                if not isinstance(c, dict):
-                    continue
-                cid = str(c.get("cid") or "")
+            page_data = await self.get_comments_page(
+                aweme_id, max_results=20, cursor=cur
+            )
+            for c in page_data.get("comments") or []:
+                cid = str(c.get("id") or "")
                 if not cid or cid in seen:
                     continue
                 seen.add(cid)
-                u = c.get("user") or {}
-                avatar = ""
-                av = (u.get("avatar_thumb") or {}).get("url_list")
-                if isinstance(av, list) and av:
-                    avatar = av[0]
-                out.append({
-                    "id": cid,
-                    "content": c.get("text") or "",
-                    "author": u.get("nickname") or "",
-                    "author_id": str(u.get("uid") or ""),
-                    "avatar": avatar,
-                    "likes": int(c.get("digg_count") or 0),
-                    "create_time": int(c.get("create_time") or 0),
-                    "reply_count": int(c.get("reply_comment_total") or 0),
-                    "location": c.get("ip_label") or "",
-                    "replies": [],
-                })
+                out.append(c)
                 if len(out) >= want:
                     break
 
-            if not resp.get("has_more"):
+            if not page_data.get("has_more"):
                 break
-            nxt = resp.get("cursor")
-            if not nxt or str(nxt) == str(cur):
+            nxt = str(page_data.get("next_cursor") or "")
+            if not nxt or nxt == cur:
                 break
-            cur = str(nxt)
+            cur = nxt
 
         return out[:want]
+
+    async def get_comments_page(
+        self,
+        item_id: str,
+        max_results: int = 20,
+        page: int = 1,
+        cursor: str = "",
+    ) -> Dict[str, Any]:
+        """取**一页**抖音评论，带回 cursor。
+
+        ⚠️ 抖音分页是 **cursor 游标**（实测 20→40→60），用 `has_more` 判断结束。
+        必须把 cursor 透出去，否则前端"加载更多"会拿到重复数据。
+        """
+        aweme_id = str(item_id or "").strip()
+        if not aweme_id:
+            return {"comments": [], "has_more": False, "next_cursor": "", "total": 0}
+
+        want = max(1, int(max_results or 20))
+        ua = self._get_default_user_agent()
+        cur = cursor or "0"
+
+        base = {"aweme_id": aweme_id, "cursor": cur, "count": want, "item_type": 0}
+        try:
+            from .sign import sign_comment_params
+
+            params = sign_comment_params(base, ua)
+        except RuntimeError as exc:
+            raise RuntimeError(
+                f"[douyin] 评论签名不可用：{exc}\n"
+                "抖音评论必须要 a_bogus 签名，没有它拿不到数据。"
+            ) from exc
+
+        resp = await self.request(
+            "GET",
+            f"{BASE_URL}/aweme/v1/web/comment/list/",
+            params=params,
+            headers={"User-Agent": ua},
+        )
+
+        if not isinstance(resp, dict):
+            # ⚠️ 空 body 的典型表现（签名缺失/失效）
+            raise RuntimeError(
+                "[douyin] 评论接口返回空响应体（HTTP 200 但无内容）。\n"
+                "实测：这是 **a_bogus 签名缺失或失效**的典型症状"
+                "（不带签名时就是这样），不是「没有评论」。\n"
+                "可能原因：签名用的混淆 JS 已随抖音改版失效，"
+                "或登录 Cookie 已过期（Cookie 缺失也会返回空）。"
+            )
+
+        out: List[Dict[str, Any]] = []
+        for c in resp.get("comments") or []:
+            if not isinstance(c, dict):
+                continue
+            cid = str(c.get("cid") or "")
+            if not cid:
+                continue
+            u = c.get("user") or {}
+            avatar = ""
+            av = (u.get("avatar_thumb") or {}).get("url_list")
+            if isinstance(av, list) and av:
+                avatar = av[0]
+            out.append({
+                "id": cid,
+                "content": c.get("text") or "",
+                "author": u.get("nickname") or "",
+                "author_id": str(u.get("uid") or ""),
+                "avatar": avatar,
+                "likes": int(c.get("digg_count") or 0),
+                "create_time": int(c.get("create_time") or 0),
+                "reply_count": int(c.get("reply_comment_total") or 0),
+                "location": c.get("ip_label") or "",
+                "replies": [],
+            })
+
+        has_more = bool(resp.get("has_more"))
+        nxt = resp.get("cursor")
+        return {
+            "comments": out[:want],
+            "has_more": has_more,
+            "next_cursor": str(nxt) if (has_more and nxt) else "",
+            "total": int(resp.get("total") or 0),
+        }
 
     async def get_detail(self, item_id: str, **kwargs) -> NoteDetail:
         """获取作品详情（视频 / 图文）。

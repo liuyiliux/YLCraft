@@ -733,6 +733,81 @@ class KuaishouClient(BasePlatformClient):
             "粉丝数需要快手后续开放接口，或登录态下另找路径。"
         )
 
+    async def get_comments_page(
+        self,
+        item_id: str,
+        max_results: int = 20,
+        page: int = 1,
+        cursor: str = "",
+    ) -> Dict[str, Any]:
+        """取**一页**快手评论，带回游标。
+
+        ⚠️ 快手分页是 **`pcursor` 游标不是页码**，
+        且**终值是字符串 `"no_more"`**（实测）—— 必须透出去，
+        否则前端"加载更多"会拿到重复数据。
+        """
+        photo_id = str(item_id or "").strip()
+        if not photo_id:
+            return {"comments": [], "has_more": False, "next_cursor": "", "total": 0}
+
+        headers = {
+            "User-Agent": self._get_default_user_agent(),
+            "Content-Type": "application/json",
+            "Referer": f"{BASE}/short-video/{photo_id}",
+        }
+        cookie = self.header_cookie()
+        if cookie:
+            headers["Cookie"] = cookie
+
+        try:
+            payload = await self.request(
+                "POST",
+                f"{BASE}{COMMENT_LIST}",
+                json={"photoId": photo_id, "pcursor": cursor or ""},
+                headers=headers,
+            )
+        except Exception as exc:
+            logger.warning("[kuaishou] 评论请求失败：%s", type(exc).__name__)
+            return {"comments": [], "has_more": False, "next_cursor": "", "total": 0}
+
+        if not isinstance(payload, dict) or payload.get("result") != 1:
+            logger.info(
+                "[kuaishou] 评论 result=%s",
+                payload.get("result") if isinstance(payload, dict) else "?",
+            )
+            return {"comments": [], "has_more": False, "next_cursor": "", "total": 0}
+
+        out: List[Dict[str, Any]] = []
+        for c in payload.get("rootCommentsV2") or []:
+            if not isinstance(c, dict):
+                continue
+            cid = str(c.get("comment_id") or "")
+            if not cid:
+                continue
+            out.append({
+                "id": cid,
+                "content": c.get("content") or "",
+                "author": c.get("author_name") or "",
+                "author_id": str(c.get("author_id") or ""),
+                "avatar": c.get("headurl") or "",
+                "likes": int(c.get("likeCount") or 0),
+                # ⚠️ 毫秒 → 秒（实测 timestamp=1790774972457）
+                "create_time": int(c.get("timestamp") or 0) // 1000,
+                "reply_count": 0,   # V2 无子评论计数字段
+                "has_sub": bool(c.get("hasSubComments")),
+            })
+
+        nxt = payload.get("pcursorV2")
+        # ⚠️ 终值是 "no_more"（不是空串）
+        has_more = bool(nxt) and str(nxt) != "no_more"
+        return {
+            "comments": out[:max_results],
+            "next_cursor": str(nxt) if has_more else "",
+            "has_more": has_more,
+            # commentCountV2 是总数（实测 612）—— 但注意它可能不准
+            "total": int(payload.get("commentCountV2") or 0),
+        }
+
     async def get_comments(
         self,
         item_id: str,
@@ -777,66 +852,33 @@ class KuaishouClient(BasePlatformClient):
         out: List[Dict[str, Any]] = []
         seen: set[str] = set()
         pcursor = cursor or ""
-        headers = {
-            "User-Agent": self._get_default_user_agent(),
-            "Content-Type": "application/json",
-            "Referer": f"{BASE}/short-video/{photo_id}",
-        }
-        # 带 cookie（实测不带 → {"result":2}，是登录态问题不是签名问题）
-        cookie = self.header_cookie()
-        if cookie:
-            headers["Cookie"] = cookie
 
-        # 实测：快手限流敏感 —— 每页之间 sleep（参照 MediaCrawler 的 random.uniform(1,3)）
         import asyncio
         import random
 
+        # ⚠️ 循环调 `get_comments_page`（归一与游标逻辑只写一处）
         for _ in range(max(1, (want + 19) // 20) + 1):
             if len(out) >= want:
                 break
-            body: Dict[str, Any] = {"photoId": photo_id, "pcursor": pcursor}
-            try:
-                payload = await self.request(
-                    "POST", f"{BASE}{COMMENT_LIST}", json=body, headers=headers
-                )
-            except Exception as exc:
-                logger.warning("[kuaishou] 评论请求失败：%s", type(exc).__name__)
-                break
-
-            if not isinstance(payload, dict) or payload.get("result") != 1:
-                # result=2 → 登录态失效；其它 → 如实停（不抛，评论是次要能力）
-                logger.info(
-                    "[kuaishou] 评论返回 result=%s，停止", payload.get("result") if isinstance(payload, dict) else "?"
-                )
-                break
-
-            for c in payload.get("rootCommentsV2") or []:
-                if not isinstance(c, dict):
-                    continue
-                cid = str(c.get("comment_id") or "")
+            page_data = await self.get_comments_page(
+                photo_id, max_results=20, cursor=pcursor
+            )
+            for c in page_data.get("comments") or []:
+                cid = str(c.get("id") or "")
                 if not cid or cid in seen:
                     continue
                 seen.add(cid)
-                out.append({
-                    "id": cid,
-                    "content": c.get("content") or "",
-                    "author": c.get("author_name") or "",
-                    "author_id": str(c.get("author_id") or ""),
-                    "avatar": c.get("headurl") or "",
-                    "likes": int(c.get("likeCount") or 0),
-                    # ⚠️ 毫秒 → 秒（实测 timestamp=1790774972457）
-                    "create_time": int(c.get("timestamp") or 0) // 1000,
-                    "reply_count": 0,   # V2 无子评论计数字段，别用 commentCount
-                    "has_sub": bool(c.get("hasSubComments")),
-                })
+                out.append(c)
                 if len(out) >= want:
                     break
 
-            nxt = payload.get("pcursorV2")
-            # ⚠️ 终值是字符串 "no_more"（不是空串），实测确认
-            if not nxt or nxt == "no_more" or nxt == pcursor:
+            if not page_data.get("has_more"):
                 break
-            pcursor = str(nxt)
+            nxt = str(page_data.get("next_cursor") or "")
+            if not nxt or nxt == pcursor:
+                break
+            pcursor = nxt
+            # 实测：快手限流敏感 → 每页 sleep（参照 MediaCrawler 的 random.uniform(1,3)）
             await asyncio.sleep(random.uniform(1, 2))
 
         return out[:want]

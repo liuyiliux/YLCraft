@@ -103,6 +103,67 @@ def test_youtube_comments_has_hard_limit():
     assert "min(" in src and "MAX_SAFE" in src
 
 
+def test_platforms_implement_cursor_pagination():
+    """**关键回归**：各平台要能**透出游标**（否则"加载更多"拿重复数据）。
+
+    ## 为什么这条重要（2026-10-01 优化）
+
+    实测各平台分页大都是 **cursor 不是页码**：
+        微博 `max_id` / 快手 `pcursor` / X `Bottom cursor` / YouTube continuation
+
+    原来统一接口只传 `page` → 第二次请求**拿到和第一次相同的数据**
+    （前端点"加载更多"看起来没反应，实测踩过同类问题）。
+
+    修法：基类加 `get_comments_page()`（返回 comments + has_more +
+    **next_cursor**），各平台实现它。`get_comments` 保留（向后兼容），
+    内部循环调 page 版本。
+    """
+    import inspect
+
+    # 基类要有默认实现（未实现的平台退化成调 get_comments）
+    from app.services.platforms.base import BasePlatformClient
+
+    assert hasattr(BasePlatformClient, "get_comments_page")
+    base_src = inspect.getsource(BasePlatformClient.get_comments_page)
+    assert "next_cursor" in base_src
+
+    # 这些平台必须**自己实现**（真的透出游标）
+    impls = [
+        ("weibo", "WeiboClient", "max_id"),
+        ("kuaishou", "KuaishouClient", "pcursor"),
+        ("douyin", "DouyinClient", "cursor"),
+        ("youtube", "YoutubeClient", "offset"),
+    ]
+    for plat, cls_name, cursor_hint in impls:
+        mod = __import__(f"app.services.platforms.{plat}.client", fromlist=[cls_name])
+        cls = getattr(mod, cls_name)
+        src = inspect.getsource(cls.get_comments_page)
+        assert "next_cursor" in src, f"{cls_name} 没返回 next_cursor"
+        assert "has_more" in src, f"{cls_name} 没返回 has_more"
+        assert cursor_hint in src or "cursor" in src, (
+            f"{cls_name} 没处理游标（{cursor_hint}）"
+        )
+
+
+def test_comments_avoid_duplicate_transport():
+    """**回归**：实现 `get_comments_page` 的平台，`get_comments` 别再写一遍分页。
+
+    否则两处分页逻辑会**漂移**（改了游标处理忘了同步另一处）。
+    正确做法：`get_comments` 循环调 `get_comments_page`。
+    """
+    import inspect
+
+    for plat, cls_name in (("weibo", "WeiboClient"),
+                           ("kuaishou", "KuaishouClient"),
+                           ("douyin", "DouyinClient")):
+        mod = __import__(f"app.services.platforms.{plat}.client", fromlist=[cls_name])
+        cls = getattr(mod, cls_name)
+        src = inspect.getsource(cls.get_comments)
+        assert "get_comments_page" in src, (
+            f"{cls_name}.get_comments 应复用 get_comments_page（避免分页逻辑写两遍）"
+        )
+
+
 def test_douyin_signature_audit_is_documented():
     """**关键**：抖音用了第三方混淆 JS —— 审查结论必须写在代码里。
 
@@ -125,16 +186,24 @@ def test_douyin_empty_body_is_treated_as_signature_issue():
     ⚠️ 实测失败模式是 HTTP 200 + **0 字节**（不是错误码）。
     空 body 会让 json() 抛异常，按现有重试逻辑会试 3 次全失败，
     **看起来像风控**。必须显式判空并说明原因。
+
+    ⚠️ 2026-10-01 重构后：抖音的**实际请求逻辑搬到了 `get_comments_page`**
+    （`get_comments` 变成循环调它，只为跨页去重）——
+    所以断言要查 `get_comments_page`，不是 `get_comments`。
     """
     import inspect
 
     from app.services.platforms.douyin.client import DouyinClient
 
-    src = inspect.getsource(DouyinClient.get_comments)
+    src = inspect.getsource(DouyinClient.get_comments_page)
     assert "空响应体" in src or "0 字节" in src
     assert "a_bogus" in src
     # 不能把空当成"0 条评论"返回
-    assert "不是「没有评论」" in src or "不是没有评论" in src or "不是「没有评论」" in src
+    assert "不是「没有评论」" in src or "不是「没有评论」" in src
+
+    # `get_comments` 仍要能跨页去重（置顶评论会重复出现）
+    src2 = inspect.getsource(DouyinClient.get_comments)
+    assert "seen" in src2, "get_comments 要去重（抖音置顶评论会跨页重复）"
 
 
 def test_unimplemented_platforms_have_reasons():
@@ -144,10 +213,43 @@ def test_unimplemented_platforms_have_reasons():
     """
     from app.api.v1.comments import COMMENTS_TODO_REASON
 
-    for p in ("xhs", "douyin", "dy", "weibo", "kuaishou", "ks",
-              "twitter", "youtube", "telegram"):
+    # 真·未实现的平台（小红书按用户要求排除；Telegram/番茄/公众号语义不同）
+    for p in ("xhs", "xiaohongshu", "telegram", "fanqie", "wechat_mp"):
         assert p in COMMENTS_TODO_REASON, f"{p} 缺说明"
         assert len(COMMENTS_TODO_REASON[p]) > 8, f"{p} 的说明太简短"
+
+
+def test_todo_reason_only_for_unimplemented():
+    """**关键回归**：`COMMENTS_TODO_REASON` 里**不能有已实现的平台**。
+
+    ## 为什么要守这条（2026-10-01 清理过一轮）
+
+    快手/微博/X/抖音/YouTube 陆续实现后，
+    它们的"尚未实现"说明**还留在 `COMMENTS_TODO_REASON` 里**。
+
+    虽然这些平台走 `COMMENTS_SUPPORTED` 分支、永远不会读到那些文案，
+    但**文案与实际矛盾** —— 一旦有人改动判断逻辑（比如把
+    `if p not in COMMENTS_SUPPORTED` 改错），就会给用户显示
+    "抖音评论尚未实现"这种**完全错误的**信息。
+
+    文案与代码不一致是隐患，必须同步清理。
+    """
+    from app.api.v1.comments import COMMENTS_SUPPORTED, COMMENTS_TODO_REASON
+
+    overlap = COMMENTS_SUPPORTED & set(COMMENTS_TODO_REASON)
+    assert not overlap, (
+        f"这些平台**已实现**却仍留在「未实现说明」里：{sorted(overlap)}\n"
+        "请从 COMMENTS_TODO_REASON 中删除它们 —— 否则文案与代码矛盾。"
+    )
+
+
+def test_todo_reason_does_not_say_unimplemented_for_supported():
+    """补充：已实现平台的说明里不该出现"尚未实现"字样。"""
+    from app.api.v1.comments import COMMENTS_SUPPORTED, COMMENTS_TODO_REASON
+
+    for p, reason in COMMENTS_TODO_REASON.items():
+        if p in COMMENTS_SUPPORTED:
+            assert "尚未实现" not in reason, f"{p} 已实现，说明却写「尚未实现」"
 
 
 # =============================================================================

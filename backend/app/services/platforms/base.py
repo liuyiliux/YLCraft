@@ -463,7 +463,59 @@ class BasePlatformClient(abc.ABC):
         raise NotImplementedError(
             f"[{self.config.platform}] get_comments not implemented"
         )
-    
+
+    async def get_comments_page(
+        self,
+        item_id: str,
+        max_results: int = 20,
+        page: int = 1,
+        cursor: str = "",
+    ) -> Dict[str, Any]:
+        """取**一页**评论，并带回游标（可选，比 `get_comments` 更完整）。
+
+        ## 为什么单独加这个方法，而不是改 `get_comments` 的返回类型
+
+        `get_comments` 已经返回 `List[Dict]` 且 5 个平台都实现了 ——
+        改返回类型会**破坏全部已实现平台**。
+
+        所以加这个**可选**方法：实现它就能支持"加载更多"，
+        不实现则上层退化成"用 page 猜"（可能翻不出新数据）。
+
+        Returns:
+            ```python
+            {
+                "comments": [...],      # 评论列表（各平台字段，上层归一）
+                "has_more": bool,       # 还有没有下一页
+                "next_cursor": str,     # 下一页游标（**核心**）
+                "total": int,           # 总数（拿不到就 0）
+            }
+            ```
+
+        ## ⚠️ 为什么游标重要
+
+        实测：很多平台的分页是 **cursor 游标不是页码**
+        （微博 `max_id`、快手 `pcursor`、X `Bottom cursor`、
+        YouTube continuation）。
+
+        上层若只会传 `page`，第二次请求会**拿到和第一次相同的数据**
+        —— 前端点"加载更多"看起来没反应（实测踩过同类问题）。
+
+        ## 与 `get_comments` 的关系
+
+        实现者可以让 `get_comments` 调它、只取 `comments` 字段
+        （避免两处各写一遍分页逻辑）。
+        """
+        # 默认实现：退化成调 get_comments（无游标）
+        comments = await self.get_comments(
+            item_id, max_results=max_results, page=page, cursor=cursor
+        )
+        return {
+            "comments": comments,
+            "has_more": len(comments or []) >= max_results,
+            "next_cursor": "",
+            "total": len(comments or []),
+        }
+
     # =========================================================================
     # 工具方法
     # =========================================================================
