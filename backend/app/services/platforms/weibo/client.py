@@ -235,6 +235,40 @@ class WeiboClient(BasePlatformClient):
             client=self,
         )
 
+    async def get_replies(
+        self,
+        item_id: str,
+        comment_id: str,
+        max_results: int = 20,
+        cursor: str = "",
+    ) -> Dict[str, Any]:
+        """取某条微博评论的子回复（楼中楼）。
+
+        ## ⚠️ 微博的楼中楼**拿不到**（2026-10-01 实测 + 交叉验证）
+
+        实测两条路都不行：
+
+            ① 顶层评论的 `comments` 字段（楼中楼就放这儿）
+               实测 20 条评论里 **0 条**带 `comments`
+            ② `/comments/hotFlowChild`（PC 端楼中楼端点）
+               实测返回 `ok=0`（不是 `ok=1`），需要额外参数
+
+        **交叉验证**：MediaCrawler（★66k）的
+        `get_comments_all_sub_comments()` 同样只是读 `comment.get("comments")`，
+        而且它用 `ENABLE_GET_SUB_COMMENTS` 开关**默认关着** ——
+        说明这条路本来就不稳。
+
+        所以这里**如实抛错**（可操作提示），
+        **不返回空列表** —— 后者会让用户以为"这条评论没人回复"。
+        """
+        raise NotImplementedError(
+            "[weibo] 微博不支持单独取子回复（楼中楼）。\n"
+            "实测：顶层评论接口的 `comments` 字段实测为空，"
+            "`/comments/hotFlowChild` 返回 ok=0 需要额外参数。\n"
+            "⚠️ 这不是「这条评论没有回复」—— 是微博没有开放这个数据。\n"
+            "（顶层评论仍可用：去掉 parent_id 参数即可。）"
+        )
+
     async def get_comments_page(
         self,
         item_id: str,
