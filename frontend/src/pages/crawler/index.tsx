@@ -32,7 +32,7 @@ import { useResizableColumns } from '../../hooks/useResizableColumns'
 import {
   searchEnhanced, importCrawler, getNoteDetail, getSubtitles, downloadCrawlerSubtitle, listPlatformConnections,
   getDanmaku, downloadDanmaku, getBiliStats, getBiliComments, sendBiliComment, getBiliVideoInfo,
-  getBiliLoginHealth, getPlatformHealth, getPlatformStats, getComments, disablePlatformConnection, enablePlatformConnection, wechatMpGetArticles, wechatMpDownloadSingle, wechatMpDownloadBatch, wechatMpImportAssets,
+  getBiliLoginHealth, getPlatformHealth, getPlatformStats, getComments, disablePlatformConnection, enablePlatformConnection, createDownloadBatch, listDownloadBatches, resumeDownloadBatch, deleteDownloadBatch, wechatMpGetArticles, wechatMpDownloadSingle, wechatMpDownloadBatch, wechatMpImportAssets,
   wechatMpExportEpub, openFolder,
 } from '../../api'
 import type { CrawlerResult, PlatformConnectionResponse, PlatformHealthCheck, PlatformHealthResponse } from '../../api'
@@ -1677,6 +1677,87 @@ export default function CrawlerPage() {
   }
 
   // ===== 导入素材库 =====
+  // ===== 批量下载（断点续传）=====
+  //
+  // ⚠️ 与"下载选中"的区别：批量下载走**队列**（后台逐条跑 + 状态落盘），
+  // 所以中途中断后能**只续跑没成功的**，不会把已下好的再下一遍。
+  const [batchDownloading, setBatchDownloading] = useState(false)
+  const [batchList, setBatchList] = useState<Array<Record<string, any>>>([])
+  const [batchPanelOpen, setBatchPanelOpen] = useState(false)
+  const [batchPolling, setBatchPolling] = useState(false)
+
+  /** 拉一次批次列表（含进度）。 */
+  const refreshBatches = useCallback(async () => {
+    try {
+      const res = await listDownloadBatches()
+      setBatchList(res?.data || [])
+      return res?.data || []
+    } catch {
+      return []
+    }
+  }, [])
+
+  /** 提交选中素材为一批下载。 */
+  const handleBatchDownload = async () => {
+    const rows = selectedRows.filter(r => r.url || r.id)
+    if (rows.length === 0) {
+      message.warning('请先选择要下载的素材')
+      return
+    }
+    // ⚠️ 微信文章有自己的批量接口（带格式选项），别混用
+    const items = rows
+      .filter(r => r.platform !== 'wechat_mp')
+      .map(r => ({ url: r.url || '', title: r.title || '' }))
+      .filter(it => it.url)
+    if (items.length === 0) {
+      message.warning('选中的素材没有可下载的链接（微信文章请用「下载微信文章」按钮）')
+      return
+    }
+    setBatchDownloading(true)
+    try {
+      const res = await createDownloadBatch(
+        items,
+        `${getPlatformInfo(platform).label} 批量下载（${items.length} 项）`,
+        'best',
+      )
+      message.success(res?.message || `已提交 ${items.length} 项`)
+      setBatchPanelOpen(true)
+      await refreshBatches()
+      // 开始轮询进度
+      setBatchPolling(true)
+    } catch (e: any) {
+      message.error(String(e?.response?.data?.detail || e?.message || '提交失败').slice(0, 120))
+    } finally {
+      setBatchDownloading(false)
+    }
+  }
+
+  /** 续跑某个批次（只跑没成功的）。 */
+  const handleResumeBatch = async (batchId: string) => {
+    try {
+      const res = await resumeDownloadBatch(batchId)
+      message.success(res?.message || '已续跑')
+      setBatchPolling(true)
+      await refreshBatches()
+    } catch (e: any) {
+      message.error(String(e?.response?.data?.detail || e?.message || '续跑失败').slice(0, 120))
+    }
+  }
+
+  /** 轮询进度（有未完成的批次时才轮）。 */
+  useEffect(() => {
+    if (!batchPolling) return
+    const timer = setInterval(async () => {
+      const rows = await refreshBatches()
+      // 全部结束就停（避免无意义的轮询）
+      if (rows.length > 0 && rows.every((b: any) => b.finished || !b.resumable)) {
+        const unfinished = rows.filter((b: any) => !b.finished)
+        if (unfinished.length === 0) setBatchPolling(false)
+      }
+    }, 4000)
+    return () => clearInterval(timer)
+  }, [batchPolling, refreshBatches])
+
   const handleImport = async () => {
     if (selectedRows.length === 0) { message.warning('请先选择素材'); return }
     setImporting(true)
@@ -2654,6 +2735,27 @@ export default function CrawlerPage() {
               <Button type="primary" icon={<DatabaseOutlined />} onClick={handleImport} loading={importing}>
                 导入素材库 ({selectedRows.length})
               </Button>
+              {/* 批量下载（走队列，支持中断续传）——
+                  ⚠️ 微信文章有自己的按钮（带格式选项），这里排除掉 */}
+              {selectedRows.some(r => r.platform !== 'wechat_mp' && (r.url || r.id)) && (
+                <Button
+                  icon={<DownloadOutlined />}
+                  loading={batchDownloading}
+                  onClick={handleBatchDownload}
+                >
+                  批量下载 ({selectedRows.filter(r => r.platform !== 'wechat_mp').length})
+                </Button>
+              )}
+              {/* 有未完成的批次时给个入口（点开看进度/续跑） */}
+              {batchList.some(b => !b.finished) && (
+                <Button
+                  size="small"
+                  type="link"
+                  onClick={() => setBatchPanelOpen(true)}
+                >
+                  下载进度 ({batchList.filter(b => !b.finished).length})
+                </Button>
+              )}
             </Space>
           ) : null
         }
@@ -3856,6 +3958,102 @@ export default function CrawlerPage() {
           </>
         )}
       </Drawer>
+
+      {/* ===== 批量下载进度面板（支持中断续传）===== */}
+      <Modal
+        open={batchPanelOpen}
+        onCancel={() => setBatchPanelOpen(false)}
+        footer={null}
+        width={720}
+        title={
+          <Space>
+            <DownloadOutlined />
+            <span>批量下载</span>
+            <Tag color="blue">{batchList.length} 个批次</Tag>
+            {batchPolling && <Tag color="processing">刷新中</Tag>}
+          </Space>
+        }
+      >
+        {batchList.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 32, color: textSec }}>
+            <DownloadOutlined style={{ fontSize: 36, opacity: 0.3 }} />
+            <div style={{ marginTop: 10 }}>还没有批量下载记录</div>
+            <div style={{ fontSize: 12, marginTop: 6 }}>
+              在搜索结果里勾选素材，点「批量下载」即可
+            </div>
+          </div>
+        ) : (
+          <div style={{ maxHeight: 460, overflowY: 'auto' }}>
+            {batchList.map((b: any) => {
+              const counts = b.counts || {}
+              const failed = counts.failed || 0
+              return (
+                <div key={b.batch_id} style={{
+                  padding: '10px 12px', marginBottom: 8, borderRadius: 8,
+                  border: `1px solid ${borderColor}`,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Space size={8}>
+                      <Text style={{ color: textPri, fontWeight: 600, fontSize: 13 }}>
+                        {b.title || b.batch_id}
+                      </Text>
+                      {b.finished ? (
+                        <Tag color={failed > 0 ? 'warning' : 'success'} style={{ margin: 0 }}>
+                          {failed > 0 ? `完成（${failed} 项失败）` : '全部完成'}
+                        </Tag>
+                      ) : (
+                        <Tag color="processing" style={{ margin: 0 }}>进行中</Tag>
+                      )}
+                    </Space>
+                    <Space size={6}>
+                      {/* ⚠️ 只跑**没成功的** —— 已下好的不重复下 */}
+                      {b.resumable && !b.finished && (
+                        <Button size="small" type="primary" onClick={() => handleResumeBatch(b.batch_id)}>
+                          续跑
+                        </Button>
+                      )}
+                      <Button
+                        size="small"
+                        onClick={async () => {
+                          try {
+                            const r = await deleteDownloadBatch(b.batch_id, false)
+                            message.success(r?.message || '已删除记录')
+                            await refreshBatches()
+                          } catch (e: any) {
+                            message.error(String(e?.message || '删除失败').slice(0, 100))
+                          }
+                        }}
+                      >
+                        移除记录
+                      </Button>
+                    </Space>
+                  </div>
+                  <Progress
+                    percent={b.progress}
+                    size="small"
+                    status={failed > 0 && b.finished ? 'exception' : undefined}
+                    style={{ marginTop: 6, marginBottom: 0 }}
+                  />
+                  <div style={{ fontSize: 11, color: textSec, marginTop: 2 }}>
+                    {b.done}/{b.total} 完成
+                    {Object.entries(counts).map(([k, v]) => (
+                      <span key={k} style={{ marginLeft: 8 }}>
+                        {k === 'pending' ? '待下载' : k === 'running' ? '下载中'
+                          : k === 'done' ? '已完成' : k === 'failed' ? '失败' : k}
+                        {' '}{String(v)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+            {/* ⚠️ 说明"移除记录不删文件"—— 避免用户误以为文件也没了 */}
+            <div style={{ fontSize: 11, color: textSec, marginTop: 8 }}>
+              「移除记录」**只删任务记录，已下载的文件会保留**。
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* ===== 公众号文章列表弹窗 ===== */}
       <Modal

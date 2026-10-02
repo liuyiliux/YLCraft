@@ -430,6 +430,90 @@ export const createDownloadTask = (url: string, quality?: string, title?: string
 
 export const getDownloadTask = (taskId: string) => request(`/download/tasks/${taskId}`)
 
+// ===== 断点续传 + 批量下载（2026-10-01 加）=====
+//
+// ⚠️ 与"单个下载"的区别：
+//   · 批量下载有**队列概念** —— 提交一批，后台逐条跑
+//   · 状态**落盘**（batches.json），重启后进度不丢
+//   · `resume` **只跑没成功的**（已完成的跳过，不重复下载）
+
+/** 提交批量下载（立刻返回，后台跑） */
+export const createDownloadBatch = (
+  items: Array<{ url: string; title?: string }>,
+  title?: string,
+  quality?: string,
+) =>
+  request('/download/batches', {
+    method: 'POST',
+    body: JSON.stringify({ items, title: title || '', quality: quality || 'best' }),
+  }) as Promise<{
+    success: boolean
+    batch_id: string
+    total: number
+    message: string
+  }>
+
+/** 列出批量下载批次（含进度与 resumable 标记） */
+export const listDownloadBatches = () =>
+  request('/download/batches') as Promise<{
+    success: boolean
+    data: Array<{
+      batch_id: string
+      title: string
+      total: number
+      done: number
+      counts: Record<string, number>
+      progress: number
+      finished: boolean
+      /** 有 pending/failed 的条目 → 可以续跑 */
+      resumable: boolean
+      created_at: number
+      updated_at: number
+    }>
+    message: string
+  }>
+
+/** 续跑未完成的批量下载（**只跑没成功的**） */
+export const resumeDownloadBatch = (batchId: string) =>
+  request(`/download/batches/${batchId}/resume`, { method: 'POST' }) as Promise<{
+    success: boolean
+    batch_id: string
+    resumed: number
+    message: string
+  }>
+
+/** 删除批次记录（默认**保留已下载的文件**） */
+export const deleteDownloadBatch = (batchId: string, deleteFiles = false) =>
+  request(`/download/batches/${batchId}?delete_files=${deleteFiles}`, {
+    method: 'DELETE',
+  }) as Promise<{ success: boolean; message: string }>
+
+/** 列出**未完成**的单个下载（可续传） */
+export const listResumableDownloads = () =>
+  request('/download/resumable') as Promise<{
+    success: boolean
+    data: Array<{
+      task_id: string
+      url: string
+      title: string
+      quality: string
+      bytes_done: number
+      updated_at: number
+      /** ⚠️ 没有已下载数据时为 false（续传=重下） */
+      can_resume: boolean
+    }>
+    message: string
+  }>
+
+/** 续传一个未完成的下载 */
+export const resumeDownload = (taskId: string) =>
+  request(`/download/resume/${taskId}`, { method: 'POST' }) as Promise<{
+    success: boolean
+    task_id: string
+    bytes_done: number
+    message: string
+  }>
+
 export const openFolder = (filePath: string) =>
   request('/download/open-folder', { method: 'POST', body: JSON.stringify({ file_path: filePath }) })
 
