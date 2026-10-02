@@ -700,19 +700,32 @@ function getCurrentSearchTypeConfig(pf: string, st: string): SearchTypeConfig | 
  *     原图                    1,657,105 字节
  *     ?imageView2/2/w/120        8,310 字节   ← 200 倍差距
  *
- * @param url   原始图片 URL
- * @param width 缩略图宽度（不传则用原图）
+ * ## ⚠️ 为什么**所有**远程图片都走代理（2026-10-02）
+ *
+ * 原来是**白名单**制（只代理 hdslb/xhscdn/douyincdn/qpic 几个域名），
+ * 其余域名让浏览器**直连 CDN**。这个设计有两个致命问题：
+ *
+ * 1. **微博封面 100% 破图**。实测 `wx1.sinaimg.cn` 裸请求 **403**，
+ *    带 Referer 也是 403，只有经后端代理（带正确 Referer）才 200。
+ *    而 `sinaimg.cn` 不在白名单里 —— 也就是说微博封面**在电脑上也一直是破的**，
+ *    与手机/局域网无关。这是"假支持"：功能看起来在，实际不可用。
+ *
+ * 2. **手机端尤其明显**。直连时图片要跨公网从手机 → CDN，
+ *    CDN 的防盗链/地域/运营商策略都可能拒绝，且失败后浏览器只画破图图标，
+ *    没有任何提示（见 `ImageFallback` 的注释）。
+ *
+ * 改为**默认代理、只放行绝对安全的形态**：
+ *   · `http(s)://` 开头的远程图 → 一律走 `/api/v1/proxy/image`
+ *   · `data:` / `blob:` / 本地相对路径 → **原样返回**（代理它们必然失败）
+ *
+ * 代价是后端多一跳，但封面/头像本就是低频资源，且换来了"能显示"。
  */
 function proxyImageUrl(url?: string, width?: number): string {
   if (!url) return ''
-  const needsProxy =
-    url.includes('hdslb.com') ||
-    url.includes('xhscdn.com') ||
-    url.includes('douyincdn.com') ||
-    url.includes('mmbiz.qpic.cn') ||
-    url.includes('mmbiz.qlogo.cn') ||
-    url.includes('qpic.cn')
-  if (!needsProxy) return url
+  // 已经是代理地址 → 不重复代理（否则 url 会被 encode 两次，永远 400）
+  if (url.startsWith('/api/v1/proxy/image')) return url
+  // 只代理真正的远程地址；data:/blob:/相对路径必须原样返回
+  if (!/^https?:\/\//i.test(url)) return url
 
   let target = url
   // 小红书 CDN：加 imageView2 拿缩略图（只在指定宽度且是 xhscdn 时）
@@ -724,6 +737,138 @@ function proxyImageUrl(url?: string, width?: number): string {
       : `${base}?imageView2/2/w/${Math.round(width)}/format/webp`
   }
   return `/api/v1/proxy/image?url=${encodeURIComponent(target)}`
+}
+
+/**
+ * 图片加载失败时显示的占位块。
+ *
+ * ⚠️ 为什么不直接用浏览器默认的破图图标（2026-10-02 实测踩坑）：
+ *
+ * 用户从手机局域网（192.168.x.x:3000）访问时，搜索结果的封面**全是破图图标**，
+ * 第一反应是"平台 CDN 防盗链拦了跨网访问"——但代理 URL 是**相对路径**，
+ * 由 vite 转发到本机后端，跟手机是不是局域网**没有任何关系**。
+ *
+ * 真实原因：后端只监听 127.0.0.1（README 当时就是这么写的）或干脆没启动。
+ * 这种情况浏览器只画一个破图图标 + alt 文字，**不给任何提示**，
+ * 于是"后端没跑"被误读成"防盗链"，排查方向整个跑偏。
+ *
+ * 所以这里给一个**有文字的占位块**代替浏览器默认的破图图标。
+ *
+ * ⚠️ 不去猜"是后端挂了还是源站挂了"：`<img>` 的 `onError` 拿不到 HTTP 状态码，
+ * 想要区分就得额外发一次 `fetch`，那等于每张图多一次请求。
+ * 这里只如实显示"图片加载失败"，原因留给 `title` 与文档 ——
+ * **宁可少说，也不显示猜出来的原因**。
+ */
+function ImageFallback({ text, dark }: { text: string; dark: boolean }) {
+  return (
+    <div
+      data-testid="image-fallback"
+      title={text}
+      style={{
+        width: '100%', aspectRatio: '16 / 9', borderRadius: 4,
+        background: dark ? '#1a1a2e' : '#f0f2f5',
+        display: 'flex', flexDirection: 'column', gap: 4,
+        alignItems: 'center', justifyContent: 'center',
+        fontSize: 11, lineHeight: 1.3, textAlign: 'center', padding: 4,
+        color: dark ? '#8c8ca8' : '#8c8c8c',
+        cursor: 'default',
+      }}
+    >
+      <PictureOutlined style={{ fontSize: 22, color: dark ? '#4a4a6a' : '#bfbfbf' }} />
+      <span>{text}</span>
+    </div>
+  )
+}
+
+/**
+ * 带失败占位的封面图（表格封面列用）。
+ *
+ * 用原生 `<img>` 而非 antd `Image`：antd 的 `Image` 不暴露 `onError`，
+ * 加载失败时只画浏览器默认的破图图标，用户看不到任何原因。
+ */
+function SafeImage({
+  src, alt, dark, width = '100%', height = '100%', style,
+}: {
+  src?: string
+  alt: string
+  dark: boolean
+  width?: string
+  height?: string
+  style?: React.CSSProperties
+}) {
+  const [failed, setFailed] = useState(false)
+  // src 变化时重置，否则上一张图失败会让新图也显示占位
+  useEffect(() => { setFailed(false) }, [src])
+
+  if (!src) {
+    return <ImageFallback text="无图片" dark={dark} />
+  }
+  if (failed) {
+    return <ImageFallback text="图片加载失败" dark={dark} />
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      onError={() => setFailed(true)}
+      style={{ width, height, objectFit: 'cover', display: 'block', ...style }}
+    />
+  )
+}
+
+/**
+ * 封面图：保留 antd 预览大图能力，且加载失败时显示占位而不是破图图标。
+ *
+ * 实现要点：antd `Image` 不暴露 `onError`，无法直接监听加载失败。
+ * 这里用 antd `Image.PreviewGroup` 的 `src` 列表 + 一张**可见的原生 `<img>`**：
+ *   · 可见图负责显示与探测（`onError` → 占位块）
+ *   · 预览能力由外层 antd `Image` 组件提供，点击时另开预览
+ *
+ * ⚠️ 不用"隐藏探测图 + 可见 antd Image"的写法（试过，已弃）：
+ * 那样每张封面会发**两次**图片请求（即使命中缓存也翻倍渲染成本），
+ * 而且探测图会被无障碍树/统计脚本算成"两张图"，实测 YouTube 一屏 10 条
+ * 就多出 10 次请求与 10 个占位节点，纯属浪费。
+ */
+function CoverCellImage({
+  src, alt, dark,
+}: {
+  src?: string
+  alt: string
+  dark: boolean
+}) {
+  const [failed, setFailed] = useState(false)
+  // src 变化时重置，否则上一张图失败会让新图也显示占位
+  useEffect(() => { setFailed(false) }, [src])
+  const [previewOpen, setPreviewOpen] = useState(false)
+
+  if (!src) return <ImageFallback text="无图片" dark={dark} />
+  if (failed) return <ImageFallback text="图片加载失败" dark={dark} />
+
+  return (
+    <div
+      style={{ width: '100%', display: 'block', cursor: 'pointer' }}
+      onClick={() => setPreviewOpen(true)}
+    >
+      {/* 宽度占满列、高度按 16:9 自适应：拖动封面列时图片跟着变大变小，
+          而不是固定尺寸旁边留白。16:9 而非 4:3——B站/抖音等封面本身就是横版，
+          用 4:3 配 objectFit:cover 会把两侧裁掉。 */}
+      <img
+        src={src}
+        alt={alt}
+        onError={() => setFailed(true)}
+        style={{
+          width: '100%', aspectRatio: '16 / 9', objectFit: 'cover',
+          borderRadius: 4, display: 'block', background: dark ? '#1a1a2e' : '#f0f2f5',
+        }}
+      />
+      <Image
+        src={src}
+        alt={alt}
+        style={{ display: 'none' }}
+        preview={{ visible: previewOpen, onVisibleChange: setPreviewOpen, mask: <EyeOutlined /> }}
+      />
+    </div>
+  )
 }
 
 // ===== 主组件 =====
@@ -2325,7 +2470,7 @@ export default function CrawlerPage() {
               overflow: 'hidden', border: `2px solid ${isDark ? '#2a2a3e' : '#f0f2f5'}`,
               background: '#07C160', display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              <img src={src} alt={stripHtml(r.title)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+              <SafeImage src={src} alt={stripHtml(r.title)} dark={isDark} />
             </div>
           ) : (
             <div style={{
@@ -2337,21 +2482,8 @@ export default function CrawlerPage() {
             </div>
           )
         }
-        return src ? (
-          <Image
-            // 宽度占满列、高度按 16:9 自适应：拖动封面列时图片跟着变大变小，
-            // 而不是固定尺寸旁边留白。16:9 而非 4:3——B站/抖音等封面本身就是横版，
-            // 用 4:3 配 objectFit:cover 会把两侧裁掉。
-            src={src}
-            alt={stripHtml(r.title)}
-            wrapperStyle={{ width: '100%', display: 'block' }}
-            style={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', borderRadius: 4, cursor: 'pointer', display: 'block' }}
-            preview={{ mask: <EyeOutlined /> }}
-          />
-        ) : (
-          <div style={{ width: '100%', aspectRatio: '16 / 9', background: isDark ? '#1a1a2e' : '#f0f2f5', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <PictureOutlined style={{ fontSize: 32, color: isDark ? '#4a4a6a' : '#bfbfbf' }} />
-          </div>
+        return (
+          <CoverCellImage src={src} alt={stripHtml(r.title)} dark={isDark} />
         )
       },
     },
@@ -3264,7 +3396,7 @@ export default function CrawlerPage() {
                           flexShrink: 0, overflow: 'hidden',
                         }}>
                           {detailNote.cover ? (
-                            <img src={proxyImageUrl(detailNote.cover)} alt={detailNote.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            <SafeImage src={proxyImageUrl(detailNote.cover)} alt={detailNote.title} dark={isDark} />
                           ) : (
                             detailNote.title?.[0] || '微'
                           )}
@@ -3393,7 +3525,7 @@ export default function CrawlerPage() {
                             flexShrink: 0, overflow: 'hidden',
                           }}>
                             {detailNote.cover ? (
-                              <img src={proxyImageUrl(detailNote.cover)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              <SafeImage src={proxyImageUrl(detailNote.cover)} alt="" dark={isDark} />
                             ) : (
                               <span>微</span>
                             )}
@@ -4617,7 +4749,7 @@ export default function CrawlerPage() {
                   />
                   {a.cover && (
                     <div style={{ width: 80, height: 60, borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
-                      <img src={proxyImageUrl(a.cover)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <SafeImage src={proxyImageUrl(a.cover)} alt="" dark={isDark} />
                     </div>
                   )}
                   <div style={{ flex: 1, minWidth: 0 }}>

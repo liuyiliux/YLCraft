@@ -42,13 +42,19 @@ export function formatDuration(seconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-// 代理图片URL
+/**
+ * 代理图片URL。
+ *
+ * ⚠️ 2026-10-02：原来只代理 `hdslb.com` / `biliimg.com`（白名单），
+ * 其余直连 CDN。实测微博 `sinaimg.cn` 裸请求 **403**、带 Referer 也 403，
+ * 只有经后端代理才 200 —— 白名单外的平台封面**在电脑上也一直是破图**。
+ * 这里与 crawler 页保持一致：**远程图一律走代理**，只放行 data:/blob:/相对路径。
+ */
 export function proxyImageUrl(url?: string): string {
   if (!url) return ''
-  if (url.includes('hdslb.com') || url.includes('biliimg.com')) {
-    return `/api/v1/proxy/image?url=${encodeURIComponent(url)}`
-  }
-  return url
+  if (url.startsWith('/api/v1/proxy/image')) return url
+  if (!/^https?:\/\//i.test(url)) return url
+  return `/api/v1/proxy/image?url=${encodeURIComponent(url)}`
 }
 
 // 相对时间
