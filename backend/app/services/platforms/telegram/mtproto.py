@@ -32,8 +32,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("ylcraft.platforms.telegram.mtproto")
 
@@ -112,10 +113,97 @@ def save_credentials(api_id: str, api_hash: str) -> None:
         pass  # Windows 上 chmod 语义有限，失败不影响功能
 
 
+def _detect_socks5() -> Optional[Tuple[str, int]]:
+    """探测本机可用的 SOCKS5 / mixed 代理端口。
+
+    ## 为什么必须有这个（2026-10-03 实测）
+
+    Telegram 的 MTProto 是**原始 TCP**（不是 HTTPS），
+    所以 `HTTPS_PROXY` / `HTTP_PROXY` 环境变量**对它完全无效** ——
+    httpx 那些请求能走代理，telethon 一个都不行。
+
+    实测（国内 + Clash 仅开"系统代理"、未开 TUN）：
+        TCP 直连 149.154.167.51:443   → **超时**
+        HTTPS_PROXY 指定的 HTTP 代理   → httpx 能用，**telethon 用不了**
+
+    而 Clash 的 **mixed 端口**（默认 7890，本机是 10090）
+    同时支持 SOCKS5 与 HTTP CONNECT，实测：
+        SOCKS5 握手   → `0500`（接受 no-auth）
+        HTTP CONNECT  → `200 Connection established`
+    telethon 认的正是 `proxy=("socks5", host, port)`。
+
+    所以：**不要求用户去开 TUN 模式**，只要把 mixed 端口告诉 telethon 即可。
+
+    ## 端口从哪来
+
+    顺序：`TELEGRAM_SOCKS5` 环境变量 → 系统代理里的端口 → 常见端口扫描。
+    扫到就返回，全都不通则返回 None（直连，能连上就不用代理）。
+    """
+    # 1) 显式指定优先
+    env = (os.getenv("TELEGRAM_SOCKS5") or "").strip()
+    if env:
+        m = re.match(r"^(?:socks5://)?([\w.\-]+):(\d+)$", env, re.I)
+        if m:
+            return (m.group(1), int(m.group(2)))
+
+    # 2) 从系统代理借端口（Clash 的 mixed 端口在系统代理里也是它）
+    for var in ("HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"):
+        raw = (os.getenv(var) or "").strip()
+        if not raw:
+            continue
+        m = re.search(r":(\d{2,5})(?:\D|$)", raw)
+        if m:
+            port = int(m.group(1))
+            if _is_socks5("127.0.0.1", port):
+                return ("127.0.0.1", port)
+
+    # 3) 扫常见 mixed / socks 端口
+    for port in (7890, 7891, 1080, 10090, 7897, 7892):
+        if _is_socks5("127.0.0.1", port):
+            return ("127.0.0.1", port)
+
+    return None
+
+
+def _is_socks5(host: str, port: int, timeout: float = 1.5) -> bool:
+    """发一个 SOCKS5 no-auth 握手，看对方是否应答。"""
+    import socket
+
+    try:
+        with socket.create_connection((host, port), timeout=timeout) as s:
+            s.sendall(b"\x05\x01\x00")
+            return s.recv(2)[:2] == b"\x05\x00"
+    except OSError:
+        return False
+
+
 def _build_client(api_id: int, api_hash: str):
-    """构造 telethon client（不连接）。"""
+    """构造 telethon client（不连接）。
+
+    ## ⚠️ 必须显式传 SOCKS5（2026-10-03 加）
+
+    原来这里只有 `TelegramClient(session, api_id, api_hash)`，
+    **没有 proxy 参数** —— 于是在国内（Clash 只开"系统代理"、没开 TUN）
+    连 Telegram 必然超时，而用户看到的报错是
+    「无法连接 Telegram（TimeoutError）。请确认 VPN/代理可用」——
+    明明 VPN 是开着的，提示却让人以为没开。
+
+    根因：MTProto 走原始 TCP，不读 `HTTPS_PROXY`；
+    而 telethon 认的是 `("socks5", host, port)`。
+    Clash 的 mixed 端口同时支持两者，所以直接用 SOCKS5 握手探测即可。
+    """
     from telethon import TelegramClient
 
+    socks = _detect_socks5()
+    if socks:
+        host, port = socks
+        logger.info(
+            "[telegram] 走 SOCKS5 代理 %s:%s（MTProto 不读 HTTPS_PROXY）",
+            host, port,
+        )
+        return TelegramClient(str(session_path()), api_id, api_hash,
+                              proxy=("socks5", host, port))
+    logger.info("[telegram] 未探测到 SOCKS5 代理，尝试直连")
     return TelegramClient(str(session_path()), api_id, api_hash)
 
 
