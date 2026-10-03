@@ -7,8 +7,8 @@
 ## Summary
 
 - Router mounts: 64
-- Endpoints: 735
-- Public schema endpoints: 734
+- Endpoints: 736
+- Public schema endpoints: 735
 - Hidden compatibility endpoints: 1
 
 ## Router Mounts
@@ -447,9 +447,9 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `POST` | `/api/v1/crawler/fetch-no-watermark` | 批量获取无水印资源 | `fetch_no_watermark` | `backend/app/api/v1/crawler.py:769` |
+| `POST` | `/api/v1/crawler/fetch-no-watermark` | 批量获取无水印资源 | `fetch_no_watermark` | `backend/app/api/v1/crawler.py:785` |
 | `POST` | `/api/v1/crawler/import` | 导入到素材库 | `import_to_assets` | `backend/app/api/v1/crawler.py:372` |
-| `GET` | `/api/v1/crawler/note-detail` | 获取笔记详情（无水印） | `get_note_detail` | `backend/app/api/v1/crawler.py:660` |
+| `GET` | `/api/v1/crawler/note-detail` | 获取笔记详情（无水印） | `get_note_detail` | `backend/app/api/v1/crawler.py:676` |
 | `GET` | `/api/v1/crawler/options` | 获取采集配置选项 | `get_options` | `backend/app/api/v1/crawler.py:270` |
 | `GET` | `/api/v1/crawler/platforms` | 获取支持的平台列表 | `get_platforms` | `backend/app/api/v1/crawler.py:264` |
 | `POST` | `/api/v1/crawler/search` | 搜索视频/图文素材 | `search_materials` | `backend/app/api/v1/crawler.py:279` |
@@ -1048,8 +1048,9 @@
 | `POST` | `/api/v1/telegram/auth/logout` | 退出 Telegram 登录 | `logout` | `backend/app/api/v1/telegram.py:119` |
 | `POST` | `/api/v1/telegram/auth/send-code` | 发送 Telegram 验证码 | `send_code` | `backend/app/api/v1/telegram.py:86` |
 | `POST` | `/api/v1/telegram/auth/sign-in` | 提交验证码完成登录 | `sign_in` | `backend/app/api/v1/telegram.py:105` |
-| `GET` | `/api/v1/telegram/channel` | 公开频道信息 + 消息（免登录） | `public_channel` | `backend/app/api/v1/telegram.py:179` |
+| `GET` | `/api/v1/telegram/channel` | 公开频道信息 + 消息（免登录） | `public_channel` | `backend/app/api/v1/telegram.py:241` |
 | `GET` | `/api/v1/telegram/channels` | 我加入的频道（需登录） | `my_channels` | `backend/app/api/v1/telegram.py:135` |
+| `GET` | `/api/v1/telegram/saved` | 我的收藏夹 Saved Messages（需登录） | `my_saved` | `backend/app/api/v1/telegram.py:179` |
 | `GET` | `/api/v1/telegram/status` | Telegram 登录状态 | `telegram_status` | `backend/app/api/v1/telegram.py:65` |
 
 ### Torrents

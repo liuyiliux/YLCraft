@@ -193,6 +193,67 @@ async def list_dialogs(client, limit: int = 100) -> List[TelegramChannel]:
     return out
 
 
+async def list_saved_messages(
+    client,
+    limit: int = 50,
+    query: str = "",
+) -> List[TelegramMessage]:
+    """**读取「收藏夹」（Saved Messages）**（A 方案绝对做不到）。
+
+    ## 它是什么
+
+    Telegram 客户端里那个固定的 **Saved Messages / 已收藏** 对话 ——
+    你把任意消息、链接、文件转发进这个对话就等于收藏了。
+    MTProto 里它就是你**自己**（`User`）与自己的对话历史：
+
+        client.get_messages("me", limit=N)
+                    ↓ 解析为
+        messages.GetHistory(peer=InputPeerSelf)
+
+    telethon 原生支持 `'me'` / `'self'` 这个写法
+    （`get_input_entity` 里 `if peer in ('me','self'): return InputPeerSelf()`），
+    不需要手工构造 `InputPeerSelf`。
+
+    ## ⚠️ 与 `list_dialogs`（我的频道）是**两件不同的事**（2026-10-03 澄清）
+
+    | 功能 | 数据源 | 实体类型 |
+    |------|--------|---------|
+    | **我的频道** | `iter_dialogs` | `Channel` / `Chat`（群组、频道） |
+    | **我的收藏** | `get_messages('me')` | `User`（**你自己**） |
+
+    `list_dialogs` 显式**跳过** `User`（私聊），
+    所以收藏夹**永远不会**出现在「我的频道」列表里 —— 这是对的，
+    它本来就不是一个"频道"。用户要的是两个都能看。
+
+    ## 参数
+
+    * `limit` —— 取多少条（客户端默认一页 20）
+    * `query` —— 收藏夹内按关键词过滤
+      （⚠️ 这是**你的收藏里**搜，不是全网；全网要 `channels.SearchPosts`，
+      需 Premium 且按 Stars 计费 —— 本项目不做，见 `search_global` 的说明）
+    """
+    kw = (query or "").strip()
+    out: List[TelegramMessage] = []
+    try:
+        kwargs: Dict[str, Any] = {"limit": limit}
+        if kw:
+            kwargs["search"] = kw
+        async for msg in client.iter_messages("me", **kwargs):
+            # ⚠️ 收藏夹里什么都能存：文本、图片、视频、文件、纯链接转发。
+            #    channel 一律标成 "saved"，前端据此显示「收藏」而不是频道名。
+            m = await _msg_to_model(msg, channel="saved", channel_title="我的收藏")
+            m.raw_data["is_saved"] = True
+            out.append(m)
+    except Exception as exc:
+        hint = _flood_wait_message(exc)
+        if hint:
+            raise RuntimeError(hint) from exc
+        raise RuntimeError(
+            f"[telegram] 读取收藏夹失败：{type(exc).__name__}: {str(exc)[:150]}"
+        ) from exc
+    return out
+
+
 async def fetch_channel_messages(
     client,
     channel: str,
