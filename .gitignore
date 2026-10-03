@@ -114,6 +114,13 @@ esbuild_*.err
 # ---- 本地代理记忆（工作笔记，不属于代码）----
 .workbuddy/
 
+# ---- 一次性迁移脚本（不入库）----
+# `backend/migrate_assets_v2.py`：目标库 `backend/data/ylcraft.db` 是 0 字节空库，
+# 项目已迁到 PostgreSQL，`assets_v2` 在代码中出现 0 次、当前资产表是
+# `asset_nodes` 系列（db/models/asset_hub.py）。脚本内含
+# `DROP TABLE IF EXISTS assets_v2` 破坏性操作，留着是给未来埋雷。
+backend/migrate_assets_v2.py
+
 # ---- 截图与验证产物 ----
 _mobile_shots/
 _check_mobile_report/
