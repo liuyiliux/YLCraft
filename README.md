@@ -200,6 +200,30 @@ ipconfig | findstr IPv4        # 找到 WLAN 那行的 192.168.x.x
    以及手机和电脑是否真的在同一网段（注意访客网络/AP 隔离会阻断）。
 3. 页面能开但接口报 502 → vite 代理拿不到后端，同第 1 条。
 
+### 6. 浏览器登录 profile 会越跑越大（可安全清理缓存）
+
+采集用的 Chromium profile 在 `backend/data/browser_profiles/<平台>/`，
+每跑一次 Patchright 都会增长 —— 实测 9 个平台合计 **1.2 GB**，
+但**其中约 1.15 GB 是 Chromium 缓存，不是 cookie**：
+
+| 内容 | 小红书单平台实测 | 能否删 |
+|------|-----------------|--------|
+| `Default/Cache` | 377 MB（单文件 `data_3` 就 108 MB） | **可随时删** |
+| `Default/Code Cache` | 27 MB | **可随时删** |
+| `Default/Network/Cookies` | < 0.1 MB | ❌ **删了要重新登录** |
+| `Default/Local Storage`、`Sessions` | 很小 | ❌ **删了要重新登录** |
+
+PowerShell 清理（**先关掉后端**，否则文件被占用）：
+
+```powershell
+Get-ChildItem backend\data\browser_profiles -Recurse -Directory |
+  Where-Object { $_.Name -in 'Cache','Code Cache','GPUCache','DawnGraphiteCache','DawnWebGPUCache' } |
+  ForEach-Object { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+```
+
+⚠️ 这些目录已被 `.gitignore` 忽略（`backend/data/`），**不要提交**：
+`Default/Network/Cookies` 是各平台的登录态，泄漏等于账号被直接冒用。
+
 ### 可选：初始化小说阅读子模块
 
 ```bash
