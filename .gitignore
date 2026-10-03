@@ -1,6 +1,136 @@
-﻿*.png
+# =============================================================================
+# YLCraft .gitignore
+#
+# ⚠️ 2026-10-02 大幅补全：原文件只有 6 行（*.png + _mobile_shots），
+# 导致以下内容全部处于"待提交"状态，任何一次 `git add -A` 都会推上去：
+#
+#     backend/downloads        15.9 GB   下载的视频/种子内容
+#     backend/data              1.2 GB   **9 个平台的浏览器登录 profile**
+#     backend/storage           1.1 GB
+#     backend/venv_win          585 MB
+#     backend/venv              356 MB
+#     frontend/node_modules     359 MB
+#     backend/.env              含 DOUBAO_API_KEY / MINIMAX_API_KEY
+#
+# 其中 **`backend/data/browser_profiles/` 是登录态本体**
+# （Chromium 完整用户配置：Cookies / Local Storage / Sessions / 扩展数据），
+# 泄漏等于各平台账号被直接冒用 —— 这是本文件最重要的一条。
+#
+# 已核实：历史提交中 `.env` 的 API 密钥字段**全为空**（仅 DATABASE_URL/REDIS_URL
+# 有连接串），`node_modules` 已在 7031cc26 untrack —— 密钥从未真正泄漏。
+# 但这依赖于每个人都遵守本文件，所以规则必须完整。
+# =============================================================================
+
+# ---- 密钥与本地配置（最高优先级）----
+.env
+.env.*
+!.env.example
+*.env
+backend/.env
+backend/.env.local
+*.pem
+*.key
+!frontend/public/**/*.pem
+
+# ---- 浏览器登录 profile（登录态本体，绝不能入库）----
+backend/data/browser_profiles/
+**/browser_profiles/
+backend/.codex-temp/
+.codex-temp/
+.codebuddy/
+.trae/
+.local/
+.idea/
+
+# ---- 下载与运行时数据 ----
+backend/downloads/
+backend/storage/
+backend/data/
+backend/app/uploads/
+backend/app/storage/
+backend/app/data/
+*.db
+*.sqlite
+*.sqlite3
+backend/ylcraft.db
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+backend/venv/
+backend/venv_win/
+venv/
+.venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+.pytest_cache
+
+# ---- Node / 前端 ----
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/dist-verify/
+frontend/.cache/
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.vite/
+
+# ---- 日志与临时文件 ----
+*.log
+*.log.*
+backend/*.log
+frontend/*.log
+backend/uvicorn-*.log
+*.out.log
+*.err.log
+*.stdout.log
+*.stderr.log
+tmp/
+temp/
+.tmp/
+*.tmp
+*.bak
+*.orig
+*.rej
+esbuild_*.err
+
+# ---- 编辑器 / IDE ----
+.vscode/
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# ---- 本地代理记忆（工作笔记，不属于代码）----
+.workbuddy/
+
+# ---- 截图与验证产物 ----
+_mobile_shots/
+_check_mobile_report/
+_check_*.py
+_verify_*.py
+_cover_*.py
+_cover_*.txt
+_verify_*.txt
+_mob_cred.txt
+_cm_*.txt
+_cm*.txt
+check_mobile.py
+check_cover*.py
+
+# ---- 文档需要图片：白名单必须放在 *.png 之后 ----
+# ⚠️ 顺序很重要：先 `*.png` 全忽略，再用 `!` 逐级放行。
+*.png
 !docs/**/*.png
 !frontend/public/**/*.png
 !frontend/src/assets/**/*.png
-_mobile_shots/
-_check_mobile_report/
