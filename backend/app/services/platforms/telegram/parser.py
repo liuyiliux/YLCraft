@@ -367,10 +367,21 @@ def detect_structure_change(html: str) -> Optional[str]:
     `<title>` 是 "Telegram – a new era of messaging"。
     所以**必须靠页面内容判断**，不能看状态码。
 
-    三种"拿不到内容"的形态（实测已覆盖）：
-      · 不存在/私有邀请 → 主页壳（无 tgme_channel_history）
-      · 普通用户账号 → "Telegram: Contact @xxx" 联系人页
-      · 真·改版 → 有 tgme_channel_history 但没有消息容器
+    四种"拿不到内容"的形态（实测已覆盖，特征**互斥**）：
+
+    | 形态 | 特征标志 | 实测样本 |
+    |---|---|---|
+    | 正常频道页（有网页消息） | `tgme_channel_info` + `tgme_widget_message` | `durov`（145601B，20 条消息）|
+    | 不存在 / 私有邀请 | telegram.org 主页壳（无 tgme_*） | `美女`（中文，19854B）|
+    | 普通用户账号 | `tgme_username` / `Contact @xxx` | `zzz_nonexist_9x8k2`（9744B）|
+    | **频道存在但无网页消息** | `tgme_page_title` + `Preview channel` | **`kshelfs`（12313B，真实频道）** |
+    | 真·改版 | 有 `tgme_channel_history` 但无消息容器 | — |
+
+    ⚠️ 第三种是 2026-10-03 补的：`kshelfs`（涩涩深夜研讨会，5032 订阅者）
+    真实存在，但 `t.me/s` 只给「Download / Preview channel」页，
+    **零个 `tgme_channel_info`/`tgme_widget_message`**。
+    原来落进"主页壳"分支，被误报成"Telegram 改了页面结构"——
+    把"平台没开放"说成"我们的解析器坏了"，方向完全反了。
     """
     if not html:
         return "页面内容为空（网络或代理问题？）"
@@ -390,6 +401,39 @@ def detect_structure_change(html: str) -> Optional[str]:
             "③ Telegram 改了页面结构（解析器需更新）。"
         )
 
+    # ⚠️ **第四种形态：频道真实存在，但 Telegram 只给了"查看"预览页**
+    # （2026-10-03 实测 @kshelfs 发现）
+    #
+    #     kshelfs（涩涩深夜研讨会，5032 订阅者，**真实存在**）
+    #       → <title>Telegram: View @kshelfs</title>   12313 字节
+    #       → 页面写着 "Preview channel … If you have Telegram,
+    #          you can view and join … right away."
+    #       → **没有** tgme_channel_info / tgme_widget_message
+    #
+    # 我原来把它归到"主页壳"分支，报错说"Telegram 改了页面结构
+    # （解析器需要更新）" —— **误导**：频道好好的，是 Telegram 对这类
+    # 频道不开放网页端消息列表。
+    #
+    # 判据（实测四类页面特征互斥，见下表）：
+    #
+    #   正常频道页   tgme_channel_info + tgme_widget_message
+    #   仅预览页     tgme_page_title + "preview channel"
+    #   用户名不存在  tgme_username
+    #   telegram.org 主页壳  以上都没有
+    #
+    # 所以这里能**确定**地说"频道存在但内容没开放"，而不是猜。
+    if "tgme_page_title" in low and ("preview channel" in low or "tgme_page_extra" in low):
+        return (
+            "这个频道**存在**，但 Telegram **没有开放网页端的消息列表**。\n"
+            "（实测 @kshelfs 就是这种：频道是「涩涩深夜研讨会」，"
+            "5032 名订阅者，但 t.me/s 只给一个「Download / Preview channel」页）\n"
+            "能做的：\n"
+            "  1. **去客户端看**（Telegram App / Desktop 都能看）\n"
+            "  2. 在**应用里登录 Telegram**后用「我的频道」读取 —— "
+            "登录走 MTProto，不受这个网页端限制\n"
+            "  3. 如果该频道只是**禁止匿名预览**，等 Telegram 放开"
+        )
+
     # 主页壳 / 联系人页 —— 频道不存在或不是频道
     #
     # ⚠️ **实测：这两种情况 Telegram 返回的页面几乎一样**
@@ -398,7 +442,7 @@ def detect_structure_change(html: str) -> Optional[str]:
     #     sedlyachok（真实用户）        → Contact @sedlyachok
     # **无法从 HTML 区分**，所以文案要把两种可能都列出来，
     # 不能假装能判断是哪一种（那会误导用户去改一个没拼错的名字）。
-    if "contact @" in low:
+    if "contact @" in low or "tgme_username" in low:
         return (
             "拿不到该地址的频道内容。Telegram 对以下情况返回的页面**一样**，"
             "无法进一步区分，请逐一排查：\n"
@@ -413,13 +457,14 @@ def detect_structure_change(html: str) -> Optional[str]:
             "     正确做法：在客户端打开该频道 → 复制链接 → 形如 https://t.me/xxx"
         )
     return (
-        "页面里既没有频道信息也没有消息容器 —— 通常是 "
-        "**Telegram 改了页面结构**（解析器需要更新），"
-        "也可能是频道不存在或为私有。\n"
-        "⚠️ 如果你输入的是**频道标题**（如「美女」），那必然是这个结果：\n"
+        "拿不到这个地址的内容。**如果你输入的是频道标题**"
+        "（中文、emoji、带空格的），那必然是这个结果：\n"
         "  · 频道 username **只允许英文字母/数字/下划线，不能是中文**\n"
         "  · 客户端里能用中文搜到频道，那搜的是**标题**，不经过 t.me 链接\n"
-        "  · 本工具只吃 username —— 请复制频道链接（形如 https://t.me/xxx）"
+        "  · 本工具只吃 username —— 请复制频道链接（形如 https://t.me/xxx）\n"
+        "若确认是英文 username，则可能是："
+        "① 该地址不是频道（是用户账号）；② 私有频道；"
+        "③ Telegram 改了页面结构（解析器需更新）。"
     )
 
 
