@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../constants/theme'
+import ProfileCacheCard from '../../components/ProfileCacheCard'
 import {
   Card,
   Button,
@@ -1751,6 +1752,13 @@ export default function PlatformsPage() {
           </div>
         </Card>
       )}
+
+      {/* 采集浏览器缓存（2026-10-03）
+          放这里而不是「设置」：profile 是**账号/采集**功能的副产品，
+          用户看到"9 平台占了 724MB、94% 可清"时，就在这个页面顺手清掉。 */}
+      <div style={{ marginTop: 16 }}>
+        <ProfileCacheCard />
+      </div>
 
       {/* ===== 添加账号抽屉 — 参考 XHS_ALL_IN_ONE 的 AddAccountDrawer ===== */}
       <AddAccountDrawer

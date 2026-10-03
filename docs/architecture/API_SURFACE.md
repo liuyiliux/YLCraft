@@ -6,9 +6,9 @@
 
 ## Summary
 
-- Router mounts: 63
-- Endpoints: 732
-- Public schema endpoints: 731
+- Router mounts: 64
+- Endpoints: 735
+- Public schema endpoints: 734
 - Hidden compatibility endpoints: 1
 
 ## Router Mounts
@@ -35,6 +35,7 @@
 | `/api/v1/bilibili` | Crawler — Bilibili | `bili_router` | `backend/app/services/platforms/bilibili/routes.py` |
 | `/api/v1/book-sources` | Book Sources | `book_sources` | `backend/app/api/v1/book_sources.py` |
 | `/api/v1/breaker` | Breaker | `breaker` | `backend/app/api/v1/breaker.py` |
+| `/api/v1/browser-profiles` | Browser Profiles | `browser_profile_cache` | `backend/app/api/v1/browser_profile_cache.py` |
 | `/api/v1/canvas` | Creative Canvas | `canvas` | `backend/app/api/v1/canvas.py` |
 | `/api/v1/characters` | Characters | `characters` | `backend/app/api/v1/characters.py` |
 | `/api/v1/clip` | Clip — NarratoAI / MoE | `clip` | `backend/app/api/v1/clip.py` |
@@ -310,6 +311,14 @@
 | `GET` | `/api/v1/breaker/tasks/{task_id}` | 查询任务状态 | `get_task_status` | `backend/app/api/v1/breaker.py:72` |
 | `GET` | `/api/v1/breaker/tasks/{task_id}/result` | 获取拆解结果 | `get_result` | `backend/app/api/v1/breaker.py:93` |
 
+### Browser Profiles
+
+| Method | Path | Summary | Handler | Source |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/v1/browser-profiles/caches` | 列出各平台采集 profile 的缓存占用 | `list_caches` | `backend/app/api/v1/browser_profile_cache.py:88` |
+| `POST` | `/api/v1/browser-profiles/caches/clear-all` | 清理所有平台的采集缓存 | `clear_all` | `backend/app/api/v1/browser_profile_cache.py:141` |
+| `DELETE` | `/api/v1/browser-profiles/caches/{platform}` | 清理指定平台的采集缓存 | `clear_cache` | `backend/app/api/v1/browser_profile_cache.py:115` |
+
 ### Characters
 
 | Method | Path | Summary | Handler | Source |
@@ -419,7 +428,7 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/comments` | 获取评论（统一入口） | `get_comments` | `backend/app/api/v1/comments.py:349` |
+| `GET` | `/api/v1/comments` | 获取评论（统一入口） | `get_comments` | `backend/app/api/v1/comments.py:357` |
 
 ### Cookie Acquisition
 
@@ -438,9 +447,9 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `POST` | `/api/v1/crawler/fetch-no-watermark` | 批量获取无水印资源 | `fetch_no_watermark` | `backend/app/api/v1/crawler.py:731` |
+| `POST` | `/api/v1/crawler/fetch-no-watermark` | 批量获取无水印资源 | `fetch_no_watermark` | `backend/app/api/v1/crawler.py:755` |
 | `POST` | `/api/v1/crawler/import` | 导入到素材库 | `import_to_assets` | `backend/app/api/v1/crawler.py:359` |
-| `GET` | `/api/v1/crawler/note-detail` | 获取笔记详情（无水印） | `get_note_detail` | `backend/app/api/v1/crawler.py:622` |
+| `GET` | `/api/v1/crawler/note-detail` | 获取笔记详情（无水印） | `get_note_detail` | `backend/app/api/v1/crawler.py:646` |
 | `GET` | `/api/v1/crawler/options` | 获取采集配置选项 | `get_options` | `backend/app/api/v1/crawler.py:257` |
 | `GET` | `/api/v1/crawler/platforms` | 获取支持的平台列表 | `get_platforms` | `backend/app/api/v1/crawler.py:251` |
 | `POST` | `/api/v1/crawler/search` | 搜索视频/图文素材 | `search_materials` | `backend/app/api/v1/crawler.py:266` |
@@ -603,15 +612,15 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/download/cover-proxy` | 封面图代理（弃用，请使用 /api/v1/proxy/image） | `cover_proxy` | `backend/app/api/v1/download.py:2072` |
+| `GET` | `/api/v1/download/cover-proxy` | 封面图代理（弃用，请使用 /api/v1/proxy/image） | `cover_proxy` | `backend/app/api/v1/download.py:2081` |
 | `POST` | `/api/v1/download/download` | 通过 yt-dlp 下载视频（返回文件流） | `download_video` | `backend/app/api/v1/download.py:1508` |
-| `POST` | `/api/v1/download/download-images` | 下载图集图片到本地 | `download_images` | `backend/app/api/v1/download.py:2103` |
-| `POST` | `/api/v1/download/open-folder` | 打开文件夹并选中文件（Windows） | `open_folder` | `backend/app/api/v1/download.py:2061` |
+| `POST` | `/api/v1/download/download-images` | 下载图集图片到本地 | `download_images` | `backend/app/api/v1/download.py:2112` |
+| `POST` | `/api/v1/download/open-folder` | 打开文件夹并选中文件（Windows） | `open_folder` | `backend/app/api/v1/download.py:2070` |
 | `POST` | `/api/v1/download/parse` | 解析视频链接 | `parse_download_url` | `backend/app/api/v1/download.py:519` |
 | `GET` | `/api/v1/download/resumable` | 列出未完成的下载（可续传） | `list_resumable` | `backend/app/api/v1/download.py:1078` |
 | `POST` | `/api/v1/download/resume/{task_id}` | 续传未完成的下载 | `resume_download` | `backend/app/api/v1/download.py:1138` |
-| `POST` | `/api/v1/download/tasks` | 创建下载任务（后台，后台轮询） | `create_download_task` | `backend/app/api/v1/download.py:2005` |
-| `GET` | `/api/v1/download/tasks/{task_id}` | 查询下载任务状态 | `get_download_task` | `backend/app/api/v1/download.py:2037` |
+| `POST` | `/api/v1/download/tasks` | 创建下载任务（后台，后台轮询） | `create_download_task` | `backend/app/api/v1/download.py:2014` |
+| `GET` | `/api/v1/download/tasks/{task_id}` | 查询下载任务状态 | `get_download_task` | `backend/app/api/v1/download.py:2046` |
 
 ### Download Batch
 
@@ -889,19 +898,19 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/platforms` | 列出所有平台连接 | `list_connections` | `backend/app/api/v1/platforms.py:130` |
-| `POST` | `/api/v1/platforms` | 创建平台连接 | `create_connection` | `backend/app/api/v1/platforms.py:158` |
-| `GET` | `/api/v1/platforms/supported` | 获取支持的平台列表 | `get_supported_platforms` | `backend/app/api/v1/platforms.py:105` |
-| `GET` | `/api/v1/platforms/{conn_id}` | 获取连接详情 | `get_connection` | `backend/app/api/v1/platforms.py:143` |
-| `PUT` | `/api/v1/platforms/{conn_id}` | 更新平台连接 | `update_connection` | `backend/app/api/v1/platforms.py:175` |
-| `DELETE` | `/api/v1/platforms/{conn_id}` | 删除平台连接 | `delete_connection` | `backend/app/api/v1/platforms.py:192` |
-| `GET` | `/api/v1/platforms/{conn_id}/cookie-content` | 获取 Netscape 格式 Cookie | `get_cookie_content` | `backend/app/api/v1/platforms.py:410` |
-| `POST` | `/api/v1/platforms/{conn_id}/cookie-content` | 保存 Netscape 格式 Cookie | `save_cookie_content` | `backend/app/api/v1/platforms.py:436` |
-| `POST` | `/api/v1/platforms/{conn_id}/disable` | 停用连接（风控冷却等） | `disable_connection` | `backend/app/api/v1/platforms.py:207` |
-| `POST` | `/api/v1/platforms/{conn_id}/enable` | 启用连接（恢复使用） | `enable_connection` | `backend/app/api/v1/platforms.py:264` |
-| `POST` | `/api/v1/platforms/{conn_id}/publish` | 通过指定平台连接发布内容 | `publish_content` | `backend/app/api/v1/platforms.py:352` |
-| `POST` | `/api/v1/platforms/{conn_id}/test` | 测试连接有效性 | `test_connection` | `backend/app/api/v1/platforms.py:297` |
-| `POST` | `/api/v1/platforms/{conn_id}/use` | 标记为已使用 | `mark_used` | `backend/app/api/v1/platforms.py:311` |
+| `GET` | `/api/v1/platforms` | 列出所有平台连接 | `list_connections` | `backend/app/api/v1/platforms.py:141` |
+| `POST` | `/api/v1/platforms` | 创建平台连接 | `create_connection` | `backend/app/api/v1/platforms.py:169` |
+| `GET` | `/api/v1/platforms/supported` | 获取支持的平台列表 | `get_supported_platforms` | `backend/app/api/v1/platforms.py:116` |
+| `GET` | `/api/v1/platforms/{conn_id}` | 获取连接详情 | `get_connection` | `backend/app/api/v1/platforms.py:154` |
+| `PUT` | `/api/v1/platforms/{conn_id}` | 更新平台连接 | `update_connection` | `backend/app/api/v1/platforms.py:186` |
+| `DELETE` | `/api/v1/platforms/{conn_id}` | 删除平台连接 | `delete_connection` | `backend/app/api/v1/platforms.py:203` |
+| `GET` | `/api/v1/platforms/{conn_id}/cookie-content` | 获取 Netscape 格式 Cookie | `get_cookie_content` | `backend/app/api/v1/platforms.py:421` |
+| `POST` | `/api/v1/platforms/{conn_id}/cookie-content` | 保存 Netscape 格式 Cookie | `save_cookie_content` | `backend/app/api/v1/platforms.py:447` |
+| `POST` | `/api/v1/platforms/{conn_id}/disable` | 停用连接（风控冷却等） | `disable_connection` | `backend/app/api/v1/platforms.py:218` |
+| `POST` | `/api/v1/platforms/{conn_id}/enable` | 启用连接（恢复使用） | `enable_connection` | `backend/app/api/v1/platforms.py:275` |
+| `POST` | `/api/v1/platforms/{conn_id}/publish` | 通过指定平台连接发布内容 | `publish_content` | `backend/app/api/v1/platforms.py:363` |
+| `POST` | `/api/v1/platforms/{conn_id}/test` | 测试连接有效性 | `test_connection` | `backend/app/api/v1/platforms.py:308` |
+| `POST` | `/api/v1/platforms/{conn_id}/use` | 标记为已使用 | `mark_used` | `backend/app/api/v1/platforms.py:322` |
 
 ### Platform Health
 
@@ -1068,14 +1077,14 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/users/creator/overview` | 创作者中心：账号总览（仅号主可见的运营数据） | `get_creator_overview` | `backend/app/api/v1/users.py:399` |
-| `GET` | `/api/v1/users/creator/works` | 创作者中心：作品列表（含完播率等深度指标） | `get_creator_works` | `backend/app/api/v1/users.py:524` |
-| `GET` | `/api/v1/users/creator/xhs/fans` | 小红书创作服务平台：粉丝数据 | `get_xhs_creator_fans` | `backend/app/api/v1/users.py:501` |
-| `GET` | `/api/v1/users/creator/xhs/overview` | 小红书创作服务平台：账号总览 | `get_xhs_creator_overview` | `backend/app/api/v1/users.py:458` |
-| `GET` | `/api/v1/users/me` | 获取自己账号的资料（抖音/小红书） | `get_self_profile` | `backend/app/api/v1/users.py:349` |
-| `GET` | `/api/v1/users/profile` | 获取用户资料（抖音/小红书） | `get_user_profile` | `backend/app/api/v1/users.py:567` |
-| `GET` | `/api/v1/users/search` | 搜索用户（抖音/小红书） | `search_users` | `backend/app/api/v1/users.py:315` |
-| `GET` | `/api/v1/users/videos` | 获取用户作品列表（抖音/小红书/微博/X/B站） | `get_user_videos` | `backend/app/api/v1/users.py:604` |
+| `GET` | `/api/v1/users/creator/overview` | 创作者中心：账号总览（仅号主可见的运营数据） | `get_creator_overview` | `backend/app/api/v1/users.py:432` |
+| `GET` | `/api/v1/users/creator/works` | 创作者中心：作品列表（含完播率等深度指标） | `get_creator_works` | `backend/app/api/v1/users.py:557` |
+| `GET` | `/api/v1/users/creator/xhs/fans` | 小红书创作服务平台：粉丝数据 | `get_xhs_creator_fans` | `backend/app/api/v1/users.py:534` |
+| `GET` | `/api/v1/users/creator/xhs/overview` | 小红书创作服务平台：账号总览 | `get_xhs_creator_overview` | `backend/app/api/v1/users.py:491` |
+| `GET` | `/api/v1/users/me` | 获取自己账号的资料（抖音/小红书） | `get_self_profile` | `backend/app/api/v1/users.py:358` |
+| `GET` | `/api/v1/users/profile` | 获取用户资料（抖音/小红书） | `get_user_profile` | `backend/app/api/v1/users.py:600` |
+| `GET` | `/api/v1/users/search` | 搜索用户（抖音/小红书） | `search_users` | `backend/app/api/v1/users.py:324` |
+| `GET` | `/api/v1/users/videos` | 获取用户作品列表（抖音/小红书/微博/X/B站） | `get_user_videos` | `backend/app/api/v1/users.py:637` |
 
 ### Videos
 
