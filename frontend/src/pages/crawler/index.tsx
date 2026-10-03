@@ -421,7 +421,7 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
     defaultSearchType: 'note',
   },
   // ⚠️⚠️ Telegram 的 searchTypes **不是"内容类型"，而是几个数据源** ——
-  // 因为它的输入语义完全不同（频道名 vs 关键词 vs 无需输入），
+  // 因为它的输入语义完全不同（频道名 vs 关键词 vs 列表内筛选），
   // 硬塞进一个搜索框会让用户困惑"我该填什么"。
   //
   // 实测能力边界（2026-10-01 调研修正，2026-10-03 补 saved）：
@@ -460,13 +460,17 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
         value: 'dialogs', label: '我的频道', icon: <AppstoreOutlined />,
         sortOptions: [],
         defaultSort: '',
-        placeholder: '无需输入 —— 直接点搜索列出你加入的频道',
+        // ⚠️ 交互：**不输入 = 列出频道；输入 = 按名字筛选**（2026-10-03）
+        // 其它应用（小红书/微信/浏览器书签）都是这个模式：空态给全量，
+        // 让用户先看到东西再决定要不要筛，而不是逼他先想好关键词。
+        placeholder: '直接点搜索列出我加入的频道；也可输入频道名筛选',
       },
       {
         value: 'saved', label: '我的收藏', icon: <StarOutlined />,
         sortOptions: [],
         defaultSort: '',
-        placeholder: '无需输入 —— 点搜索看收藏夹（Saved Messages）',
+        // 同上：空 = 列出收藏；输入 = 在收藏里搜（后端已支持）
+        placeholder: '直接点搜索列出收藏；也可输入关键词在收藏里搜',
       },
     ],
     defaultSearchType: 'channel',
