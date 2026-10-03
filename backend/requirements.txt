@@ -31,6 +31,11 @@ pytest-asyncio>=0.21.0
 openai>=1.0.0
 google-genai>=1.0.0
 patchright>=1.60.1
+
+# Telegram MTProto（渠道：公开频道免登录 t.me/s + 登录后读收藏/我的频道）
+telethon>=1.45.0
+# telethon 走 SOCKS5 代理必需（MTProto 是原始 TCP，不读 HTTPS_PROXY）
+python-socks>=2.5.0
 ebooklib>=0.18.0
 
 # 小红书 API 签名（纯 Python 复现 X-s/X-s-common，MIT）
