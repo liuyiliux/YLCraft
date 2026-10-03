@@ -35,6 +35,23 @@
 
 平台接入入口：**新增平台先读 `docs/platform/ADDING_A_PLATFORM.md`（含必改清单与自动校验脚本）**；**采集功能整体结构见 `docs/platform/COLLECTION_ARCHITECTURE.md`（搜索/详情/下载走哪条路、为什么、踩坑清单）**；已接入平台：`docs/platform/BILIBILI_GUIDE.md`、`docs/platform/DOUYIN_GUIDE.md`、`docs/platform/XIAOHONGSHU_GUIDE.md`、`docs/platform/FANQIE_GUIDE.md`；其余跨平台对比资料仍在 `docs/platform/MULTI_PLATFORM_REFERENCE.md`。本地历史归属维护见 `docs/guides/owner-backfill.md`。
 
+## `docs/research/` 索引
+
+> 这三份是 2026-10-01/02 的专题调研，**每条结论都带来源 URL**，
+> 无法核实的一律标 `[UNVERIFIED]`（不凭记忆写）。
+> 按 `docs/README.md` 的规则，它们只保留推导过程 —— **结论若已落地，
+> 要回写到对应架构/领域文档**，不要只留在这里。
+
+| 文档 | 调研对象 | 核心结论（摘要） |
+| --- | --- | --- |
+| `DB_AND_SCHEDULING_RESEARCH.md` | 采集结果存储 / 增量爬取 upsert / 媒体文件管理 / 单机调度 | 纠正了任务书里两处事实错误（`dramatiq-periodiq` 仓库不存在、periodiq 实际在 GitLab）；raw JSON 与结构化列并存的取舍、绝对路径迁移陷阱（Immich 自述为已知问题）；末尾列出 **15 条仍未解决/未一手核实**的条目，不要当成定论引用 |
+| `LARGE_FILE_DOWNLOAD_RESEARCH.md` | 大文件媒体下载：`yt-dlp` 当库用 vs 断点续传 HTTP 方案 | 全部结论基于 `raw.githubusercontent.com` 一手源码 + GitHub/PyPI API，非记忆；说明各库的 Range/ETag/分片语义差异 |
+| `LIGHTWEIGHT_OBSERVABILITY_2026-10-01.md` | 单机 Python 采集器的轻量可观测性 | **指标不要再加库**：events 表就是时序存储，用 `GROUP BY` + `percentile_cont` 算成功率与 p50/p95/p99；可选逃生口是 `prometheus_client`（零必需依赖，~64KB wheel）挂 `/metrics`。**日志别换**：保留 stdlib `logging` + `RotatingFileHandler`，不要引入 `loguru`（并行日志系统，非 formatter） |
+
+**尚未回写到架构文档的部分**：上面三份的结论目前只存在于 research 目录，
+架构文档未同步。落地任何一条前先确认它与现网实现（Postgres + pgvector、
+`platform_event_logs`、yt-dlp 稳定 md5 文件名 + `.partial/` 断点续传）不冲突。
+
 ## 当前主线状态
 
 > **2026-09-25 update:** `triposr-connector-migration` is no longer planning-only: its connector migration and focused tests are complete, while the real-provider smoke remains unverified because no key is available. `unirig-local-rigging-service` has completed tasks 1-3 (pinned revision/license/checkpoints, sidecar contract, connector mapping); Phase 2+ is deferred because the current machine has 6GB VRAM, below the upstream 8GB minimum, and the user is not buying a supported GPU now.
