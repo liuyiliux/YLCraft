@@ -126,19 +126,38 @@ class TelegramClient(BasePlatformClient):
           · channel（默认）→ 公开频道消息（免登录，可带频道内关键词）
           · joined        → 在你已加入的频道里搜（需登录）
           · dialogs       → 我加入的频道（需登录）
+          · saved         → 我的收藏夹 Saved Messages（需登录）
 
         ⚠️ `global` / `search` 作为 `joined` 的**兼容别名**保留 ——
         但语义是"已加入的频道"，不是全网（见模块 docstring）。
+
+        ## 翻页：`dialogs` / `saved` 用**游标**，不是页码
+
+        这两个数据源是"**我的东西**"（我的频道 / 我的收藏），
+        不是"按关键词搜出来的结果"，所以：
+          · **不需要关键词**（传空即可，列最近几条）
+          · `page` 参数**无效** —— 实测传 page=1 和 page=2
+            返回的是**完全一样的 10 条**（假翻页）
+
+        正确做法是传**游标** `offset_id`（`params.extra` 里带）：
+        MTProto 的 `iter_messages(..., offset_id=N)` 表示
+        "取比 N 更旧的"，正是「加载更多」要的语义。
         """
         raw_st = getattr(params, "search_type", "") or "channel"
         st = str(getattr(raw_st, "value", raw_st)).lower()
         keyword = (params.keyword or "").strip()
         want = max(1, int(params.max_results or 20))
+        # 游标（加载更多用）：前端把上一页最后一条的 id 放在 extra.offset_id
+        _extra = getattr(params, "extra", None) or {}
+        try:
+            cursor = int(_extra.get("offset_id") or 0)
+        except (TypeError, ValueError):
+            cursor = 0
 
         if st in ("joined", "global", "search", "keyword"):
             return await self._search_joined(keyword, want)
         if st in ("dialogs", "channels", "my"):
-            return await self._list_dialogs(want)
+            return await self._list_dialogs(want, cursor=cursor)
         if st == "saved":
             # ⚠️ **我的收藏**与**我的频道**是两件不同的事（2026-10-03 澄清）：
             #   · 我的频道 = 我加入的频道/群组（`iter_dialogs`，跳过私聊）
@@ -146,7 +165,7 @@ class TelegramClient(BasePlatformClient):
             #     （`get_messages('me')` = 你与自己的对话，`InputPeerSelf`）
             # 所以**不能**复用 `_list_dialogs` —— 那里显式跳过 `User`，
             # 收藏夹正好是 `User`，用它永远拿不到。
-            return await self._list_saved(want)
+            return await self._list_saved(want, cursor=cursor)
         # 默认：频道消息（免登录）
         return await self._search_channel(keyword, want)
 
@@ -274,7 +293,7 @@ class TelegramClient(BasePlatformClient):
             out[0].raw_data["_total"] = len(out)
         return out
 
-    async def _list_saved(self, want: int) -> List[SearchResult]:
+    async def _list_saved(self, want: int, cursor: int = 0) -> List[SearchResult]:
         """**我的收藏**（Saved Messages，需登录）。
 
         ⚠️ 与 `_list_dialogs`（我的频道）的区别（2026-10-03 用户澄清）：
@@ -287,13 +306,26 @@ class TelegramClient(BasePlatformClient):
         它是**私有数据**，`t.me/s` 那条免登录路径拿不到。
 
         `type="saved"` 让前端渲染成"收藏"而不是频道条目。
+
+        `cursor` = 上一页最后一条的 id（`offset_id` 语义：取更旧的），
+        实现「加载更多」—— 不传就是取最近 `want` 条。
         """
         from .mtproto import get_authorized_client
         from .mtproto_data import list_saved_messages
 
         client = await get_authorized_client()
         try:
-            msgs = await list_saved_messages(client, limit=max(want, 20))
+            # ⚠️ `limit` 必须**正好等于 want**（2026-10-03 修）
+            #
+            # 原来取 `max(want, 20)` = 20 条，然后 `msgs[:want]` 只留 10 条。
+            # 多取的那 10 条被丢掉，但**游标语义是"取比它更旧的"** ——
+            # 于是下一次带游标请求会**重新取到那批被丢掉的 10 条**，
+            # 实测两页重叠 9 条（假翻页）。
+            #
+            # 正确：取多少就返回多少，游标才能真正往下走。
+            msgs = await list_saved_messages(
+                client, limit=want, offset_id=cursor
+            )
         finally:
             try:
                 await client.disconnect()
@@ -309,10 +341,17 @@ class TelegramClient(BasePlatformClient):
             r.channel_title = "我的收藏"
             r.url = ""
             r.raw_data["is_saved"] = True
+            # ⚠️ 游标取**本页每一条**自己的 id，但前端要用**最后一条**。
+            #    （MTProto 的 offset_id 语义是"从这条开始往前"，
+            #      传第一条会把它自己也包含进来 —— 实测重叠 4 条；
+            #      传最后一条 → 重叠 0。所以前端必须取 results 末位的 cursor_id。）
+            r.raw_data["cursor_id"] = m.id
             out.append(r)
         if out:
             out[0].raw_data["_total"] = len(out)
-            out[0].raw_data["_has_more"] = len(out) >= want
+            # ⚠️ `has_more` 只能"猜"：MTProto 不告诉你总条数。
+            # 拿满 want 只能说"可能还有"（下次带游标就知道）。
+            out[0].raw_data["_has_more"] = len(msgs) >= want
         return out
 
     async def _list_dialogs(self, want: int) -> List[SearchResult]:

@@ -80,6 +80,7 @@ class SearchCache:
         search_type: str = "",
         conn_id: str = "",
         sort_by: str = "",
+        extra: str = "",
     ) -> str:
         """缓存键。
 
@@ -87,6 +88,13 @@ class SearchCache:
         串了会把 A 账号的结果给 B 账号看。
 
         ⚠️ 也要含 `sort_by` —— 综合排序和最新排序是不同的结果集。
+
+        ⚠️ `extra` 用于**游标翻页**（2026-10-03 加）——
+        `dialogs`（我的频道）/ `saved`（我的收藏）不用页码翻页，
+        而是用 MTProto 游标 `offset_id`（语义："取比它更旧的"）。
+        游标不同 = 不同的结果集，**必须**进键 ——
+        否则"首次"和"带游标的下一页"算出同一个键，
+        实测两页返回**完全一样的 10 条**（假翻页）。
         """
         return "|".join([
             platform,
@@ -96,6 +104,7 @@ class SearchCache:
             (sort_by or "").strip(),
             str(page),
             str(size),
+            (extra or "").strip(),
         ])
 
     def get(self, key: str) -> Optional[Any]:

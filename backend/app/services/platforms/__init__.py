@@ -193,6 +193,14 @@ async def search(
     from .cache import get_search_cache
 
     cache = get_search_cache()
+    # ⚠️ 游标必须进缓存键（2026-10-03 修）
+    #
+    # `dialogs` / `saved`（我的频道 / 我的收藏）**不用页码翻页**，
+    # 而是用 MTProto 游标 `offset_id`（"取比它更旧的"）。
+    # 而缓存键里只有 `page` —— 于是"首次"和"带游标的下一页"
+    # 算出**同一个键**，第二次直接命中首次的缓存，
+    # 实测两页返回**完全一样的 10 条**（假翻页）。
+    _cursor = search_kwargs.get("offset_id") or 0
     cache_key = cache.make_key(
         platform=platform,
         keyword=keyword,
@@ -201,6 +209,8 @@ async def search(
         search_type=search_type,
         conn_id=conn_id,
         sort_by=sort_by,
+        # 游标不同的请求必须是不同的缓存项
+        extra=f"cur{_cursor}" if _cursor else "",
     )
     cached = cache.get(cache_key)
     if cached is not None:

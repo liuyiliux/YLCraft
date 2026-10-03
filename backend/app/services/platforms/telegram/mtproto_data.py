@@ -197,6 +197,7 @@ async def list_saved_messages(
     client,
     limit: int = 50,
     query: str = "",
+    offset_id: int = 0,
 ) -> List[TelegramMessage]:
     """**读取「收藏夹」（Saved Messages）**（A 方案绝对做不到）。
 
@@ -231,6 +232,7 @@ async def list_saved_messages(
     * `query` —— 收藏夹内按关键词过滤
       （⚠️ 这是**你的收藏里**搜，不是全网；全网要 `channels.SearchPosts`，
       需 Premium 且按 Stars 计费 —— 本项目不做，见 `search_global` 的说明）
+    * `offset_id` —— **向前翻**（取比该 id 更旧的），实现「加载更多」
     """
     kw = (query or "").strip()
     out: List[TelegramMessage] = []
@@ -238,6 +240,12 @@ async def list_saved_messages(
         kwargs: Dict[str, Any] = {"limit": limit}
         if kw:
             kwargs["search"] = kw
+        # ⚠️ `offset_id` 语义是"**从这条开始往前翻**"（比它更旧的），
+        # 所以要用**本页最后一条的 id**，不是页码。
+        # 不传则每次都从最新开始 → 前端点"下一页"会拿到完全重复的数据
+        # （实测踩过：page=1 和 page=2 一模一样 10 条）。
+        if offset_id:
+            kwargs["offset_id"] = offset_id
         async for msg in client.iter_messages("me", **kwargs):
             # ⚠️ 收藏夹里什么都能存：文本、图片、视频、文件、纯链接转发。
             #    channel 一律标成 "saved"，前端据此显示「收藏」而不是频道名。

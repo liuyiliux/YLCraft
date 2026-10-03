@@ -1013,6 +1013,9 @@ export default function CrawlerPage() {
   const [singlePageMax, setSinglePageMax] = useState(0)
   // 「加载更多」模式下已加载的条数（单页型平台往下追加用）
   const [loadedMore, setLoadedMore] = useState(false)
+  // ⚠️ **游标**（Telegram 的 dialogs/saved 翻页用，不用页码）
+  // 值来自后端返回的 `next_cursor`（本页最后一条的 id）。
+  const [nextCursor, setNextCursor] = useState('')
 
   // 选择/导入
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
@@ -1869,7 +1872,7 @@ export default function CrawlerPage() {
   }
 
   // ===== 搜索 =====
-  const handleSearch = async (page: number = currentPage) => {
+  const handleSearch = async (page: number = currentPage, appendMode = false) => {
     // ⚠️ Telegram 有两个 tab **不需要关键词**（2026-10-03 补 saved）：
     //   · 「我的频道」dialogs → 列出我加入的频道/群组
     //   · 「我的收藏」saved   → 客户端那个固定的 Saved Messages
@@ -1915,14 +1918,23 @@ export default function CrawlerPage() {
         max_results: maxResults,
         sort_by: sortByForApi,
         ...(platform === 'bili' && searchType === 'user' ? { order_sort: orderSort } : {}),
-        filters,
+        // ⚠️ 游标翻页：Telegram 的 dialogs/saved 传 offset_id（取更旧的）
+        filters: appendMode && nextCursor ? { ...filters, offset_id: nextCursor } : filters,
         page,
         conn_id: platform === 'bili' ? selectedBiliConn : selectedSearchConn,
       })
       const rows = (data.results || []) as CrawlerResult[]
-      setResults(rows)
-      setTotal(data.total || 0)
+      // ⚠️ 游标翻页的平台（Telegram 的 dialogs/saved）**追加**，其余**替换**
+      // （appendMode 置位时是「加载更多」，不能把已有内容冲掉）
+      setResults(prev => (appendMode && prev.length ? [...prev, ...rows] : rows))
+      setTotal((data.total || 0) + (appendMode ? (results?.length || 0) : 0))
       setLoadedMore(false)
+      // ⚠️ **游标**（Telegram 的 dialogs/saved 不用页码翻页）
+      //
+      // 实测 2026-10-03：这两个 tab 传 page=1 / page=2 返回**完全一样**的数据
+      // （游标没进缓存键 → 命中首次缓存 → 假翻页）。
+      // 正确做法是把后端回的 `next_cursor`（本页**最后一条**的 id）传回去。
+      setNextCursor((data as any).next_cursor || '')
       // ⚠️ **空页 = 到底了**（2026-09-29）
       //
       // 平台不给真实总数时只能靠 `has_more` 一路翻。若某页返回 0 条，
@@ -1949,29 +1961,32 @@ export default function CrawlerPage() {
   }
 
   /**
-   * 「加载更多」—— 单页型平台（抖音）用
+   * 「加载更多」—— 单页型 / 游标型平台用
    *
-   * ## 为什么单页型平台要"追加"而不是"翻页"
+   * ## 两种「加载更多」，语义不同
    *
-   * 抖音实测 `offset>0` 服务端返回空（`data=[]` / 429），
-   * 所以"第 2 页"这个概念在抖音上**不成立** —— 点它必然失败。
+   * **1. 游标型**（Telegram 的「我的频道」/「我的收藏」）
+   *    后端返回 `next_cursor`（本页**最后一条**的 id），
+   *    回传为 `filters.offset_id` = 「取比它更旧的」。
+   *    传第一条会把它自己也包进来（实测重叠 4 条）——所以必须用
+   *    后端给的那个值，别自己取。
    *
-   * 但用户确实想要更多内容，可行的只有两条路：
-   *   1. 一次把单页取满（`max_results` 拉到 20）—— 已由 handleSearch 覆盖
-   *   2. **换关键词**重新搜，或用「去官网搜」在浏览器里翻
-   *
-   * 所以这里"加载更多"的语义不是"取第 2 页"，而是：
-   * **用更大的 max_results 再搜一次，并把结果追加到现有列表下面**。
-   *
-   * ⚠️ 若平台恢复分页能力（抖音 09-27 还行），后端会把 `pagination.model`
-   *    改回 `paged`，前端自动切回页码分页器 —— 不需要改前端代码。
+   * **2. 单页型**（抖音）
+   *    抖音 `offset>0` 服务端返空，点「第 2 页」必然失败。
+   *    唯一可行的"更多"是**用更大的 max_results 重搜一次并追加**。
    */
   const loadMore = async () => {
-    if (loading || !keyword.trim()) return
+    if (loading || !keyword.trim() && !(platform === 'telegram' && (searchType === 'dialogs' || searchType === 'saved'))) return
     setLoading(true)
     setError('')
     try {
-      // 拉更大的一页（抖音单次上限 18，给再多也没有）
+      if (nextCursor) {
+        // 游标型：接着往下取
+        await handleSearch(currentPage + 1, true)
+        setLoadedMore(true)
+        return
+      }
+      // 单页型：拉更大的一页再追加
       const bigger = Math.min((maxResults || 10) * 2, 50)
       const data = await searchEnhanced({
         platform,
@@ -3316,11 +3331,13 @@ export default function CrawlerPage() {
           </div>
         )}
 
-        {/* ===== 单页型平台的「加载更多」=====
-            抖音实测 `offset>0` 服务端返空，点「第 2 页」必然失败，
-            所以这类平台不给页码分页器（上面 `pagination={false}`），
-            改成往下追加。值由后端 `pagination.model` 决定。 */}
-        {results.length > 0 && paginationModel === 'single' && (
+        {/* ===== 「加载更多」=====
+            两种平台需要它：
+              · 单页型（抖音）—— 平台固定只返回一页，点「第 2 页」必失败
+              · 游标型（Telegram 的「我的频道」/「我的收藏」）—— 它们是
+                "我的东西"，不用页码翻页，后端回 `next_cursor` 让我们接着取
+            其它平台走页码分页器（上面的 Table pagination）。 */}
+        {results.length > 0 && (paginationModel === 'single' || nextCursor) && (
           <div style={{
             marginTop: 12, paddingTop: 12,
             borderTop: `1px solid ${borderColor}`,
@@ -3330,18 +3347,22 @@ export default function CrawlerPage() {
               onClick={loadMore}
               loading={loading}
               icon={<ReloadOutlined />}
+              disabled={!hasMore}
             >
-              {loadedMore ? '再加载一些' : '加载更多'}
+              {loadedMore ? '加载更多' : '加载更多'}
             </Button>
-            <div style={{ fontSize: 12, color: textSec, textAlign: 'center', lineHeight: 1.6 }}>
-              <div>
-                {getPlatformInfo(platform).label}单次最多返回
-                {singlePageMax || '约 18'} 条（平台限制），已全部显示。
+            {!hasMore && nextCursor && (
+              <div style={{ fontSize: 12, color: textSec }}>已经到底了</div>
+            )}
+            {paginationModel === 'single' && (
+              <div style={{ fontSize: 12, color: textSec, textAlign: 'center', lineHeight: 1.6 }}>
+                <div>
+                  {getPlatformInfo(platform).label}单次最多返回
+                  {singlePageMax || '约 18'} 条（平台限制），已全部显示。
+                </div>
+                <div>需要更多内容请换关键词，或用上方「去官网搜」在浏览器里翻。</div>
               </div>
-              <div>
-                需要更多内容请换关键词，或用上方「去官网搜」在浏览器里翻。
-              </div>
-            </div>
+            )}
           </div>
         )}
       </Card>
