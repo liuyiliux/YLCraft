@@ -420,16 +420,24 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
     ],
     defaultSearchType: 'note',
   },
-  // ⚠️⚠️ Telegram 的 searchTypes **不是"内容类型"，而是三个数据源** ——
+  // ⚠️⚠️ Telegram 的 searchTypes **不是"内容类型"，而是几个数据源** ——
   // 因为它的输入语义完全不同（频道名 vs 关键词 vs 无需输入），
   // 硬塞进一个搜索框会让用户困惑"我该填什么"。
   //
-  // 实测能力边界（2026-10-01，含调研修正）：
+  // 实测能力边界（2026-10-01 调研修正，2026-10-03 补 saved）：
   //   · 频道消息   → t.me/s/<频道>，**免登录**；
   //                  填「频道名 关键词」可做**频道内搜索**（`?q=`）
   //   · 已加入搜索 → MTProto messages.SearchGlobal，**需登录**；
   //                  ⚠️ 只覆盖**你已加入的会话**，不是全网！
   //   · 我的频道   → MTProto messages.GetDialogs，**需登录**
+  //                  （我加入的**频道/群组**，跳过私聊）
+  //   · 我的收藏   → MTProto get_messages('me')，**需登录**
+  //                  （客户端那个固定的 **Saved Messages**，= 你与自己的对话）
+  //
+  // ⚠️ 「我的频道」与「我的收藏」是**两件不同的事**（2026-10-03 用户澄清）：
+  //    收藏夹在 MTProto 里是 `InputPeerSelf`（你自己），
+  //    而 `list_dialogs` **显式跳过 User（私聊）** ——
+  //    所以收藏夹永远不会出现在「我的频道」列表里，这符合预期，两者都要有。
   //
   // ⚠️ **不要写"全网搜索"** —— 真正搜所有公开频道要 channels.SearchPosts，
   // 需要 Premium 且按 Stars 计费，本项目不做（属于过度承诺）。
@@ -453,6 +461,12 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
         sortOptions: [],
         defaultSort: '',
         placeholder: '无需输入 —— 直接点搜索列出你加入的频道',
+      },
+      {
+        value: 'saved', label: '我的收藏', icon: <StarOutlined />,
+        sortOptions: [],
+        defaultSort: '',
+        placeholder: '无需输入 —— 点搜索看收藏夹（Saved Messages）',
       },
     ],
     defaultSearchType: 'channel',
@@ -1856,10 +1870,14 @@ export default function CrawlerPage() {
 
   // ===== 搜索 =====
   const handleSearch = async (page: number = currentPage) => {
-    // ⚠️ Telegram 的「我的频道」tab **不需要关键词**（它列的是你加入的频道），
+    // ⚠️ Telegram 有两个 tab **不需要关键词**（2026-10-03 补 saved）：
+    //   · 「我的频道」dialogs → 列出我加入的频道/群组
+    //   · 「我的收藏」saved   → 客户端那个固定的 Saved Messages
+    // 它们列的是"我的东西"而不是"按关键词搜出来的结果"，
     // 所以不能走"必须先输关键词"的通用校验（否则用户点搜索会被拦住）。
-    const telegramDialogs = platform === 'telegram' && searchType === 'dialogs'
-    if (!telegramDialogs && !keyword.trim()) {
+    const telegramNoKeyword =
+      platform === 'telegram' && (searchType === 'dialogs' || searchType === 'saved')
+    if (!telegramNoKeyword && !keyword.trim()) {
       message.warning(
         platform === 'telegram' && searchType === 'channel'
           ? '请输入频道名（如 durov），或「频道名 关键词」'

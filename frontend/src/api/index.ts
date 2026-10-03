@@ -1576,6 +1576,27 @@ export const getTelegramChannels = (limit = 100) =>
     }>
   }>
 
+/** 我的收藏夹 Saved Messages（需登录；未登录返回 401）
+ *
+ * ⚠️ 与 `getTelegramChannels`（我的频道）是**两件不同的事**：
+ *   · 我的频道 = 我加入的频道/群组（`iter_dialogs`）
+ *   · 我的收藏 = 客户端里那个固定的 Saved Messages 对话（`get_messages('me')`）
+ * 收藏夹不是你加入的频道，所以不会出现在频道列表里 —— 两者都要有。
+ */
+export const getTelegramSaved = (limit = 50, keyword = '') =>
+  request(
+    `/telegram/saved?limit=${limit}&keyword=${encodeURIComponent(keyword)}`,
+  ) as Promise<{
+    success: boolean
+    total: number
+    keyword: string
+    messages: Array<{
+      id: string; text: string; html: string; date: string
+      views: number; images: string[]; video: string
+      is_saved: boolean; url: string
+    }>
+  }>
+
 /** 公开频道信息 + 消息（免登录） */
 export const getTelegramChannel = (channel: string, limit = 20, keyword = '') =>
   request(

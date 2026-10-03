@@ -139,6 +139,14 @@ class TelegramClient(BasePlatformClient):
             return await self._search_joined(keyword, want)
         if st in ("dialogs", "channels", "my"):
             return await self._list_dialogs(want)
+        if st == "saved":
+            # ⚠️ **我的收藏**与**我的频道**是两件不同的事（2026-10-03 澄清）：
+            #   · 我的频道 = 我加入的频道/群组（`iter_dialogs`，跳过私聊）
+            #   · 我的收藏 = 客户端那个固定的 **Saved Messages**
+            #     （`get_messages('me')` = 你与自己的对话，`InputPeerSelf`）
+            # 所以**不能**复用 `_list_dialogs` —— 那里显式跳过 `User`，
+            # 收藏夹正好是 `User`，用它永远拿不到。
+            return await self._list_saved(want)
         # 默认：频道消息（免登录）
         return await self._search_channel(keyword, want)
 
@@ -264,6 +272,47 @@ class TelegramClient(BasePlatformClient):
         out = [_to_search_result(m) for m in msgs]
         if out:
             out[0].raw_data["_total"] = len(out)
+        return out
+
+    async def _list_saved(self, want: int) -> List[SearchResult]:
+        """**我的收藏**（Saved Messages，需登录）。
+
+        ⚠️ 与 `_list_dialogs`（我的频道）的区别（2026-10-03 用户澄清）：
+
+            我的频道 → `iter_dialogs` → `Channel`/`Chat`（群组、频道）
+            我的收藏 → `get_messages('me')` → **你自己**（`InputPeerSelf`）
+
+        收藏夹是客户端里那个固定的 Saved Messages 对话，
+        你把任何消息/链接/文件转发进去就是收藏。
+        它是**私有数据**，`t.me/s` 那条免登录路径拿不到。
+
+        `type="saved"` 让前端渲染成"收藏"而不是频道条目。
+        """
+        from .mtproto import get_authorized_client
+        from .mtproto_data import list_saved_messages
+
+        client = await get_authorized_client()
+        try:
+            msgs = await list_saved_messages(client, limit=max(want, 20))
+        finally:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+
+        out: List[SearchResult] = []
+        for m in msgs[:want]:
+            r = _to_search_result(m)
+            # 覆盖成"收藏"语义（channel 字段固定为 saved）
+            r.type = "saved"
+            r.channel = "saved"
+            r.channel_title = "我的收藏"
+            r.url = ""
+            r.raw_data["is_saved"] = True
+            out.append(r)
+        if out:
+            out[0].raw_data["_total"] = len(out)
+            out[0].raw_data["_has_more"] = len(out) >= want
         return out
 
     async def _list_dialogs(self, want: int) -> List[SearchResult]:

@@ -175,6 +175,68 @@ async def my_channels(limit: int = Query(100, ge=1, le=500)):
     }
 
 
+@router.get("/saved", summary="我的收藏夹 Saved Messages（需登录）")
+async def my_saved(
+    limit: int = Query(50, ge=1, le=200),
+    keyword: str = Query("", description="在**收藏夹内**按关键词过滤"),
+):
+    """读取 **收藏夹**（客户端里那个固定的 Saved Messages 对话）。
+
+    ## ⚠️ 与 `/channels`（我的频道）是两件不同的事
+
+    | 端点 | 内容 | MTProto |
+    |---|---|---|
+    | `/channels` | 我加入的**频道/群组** | `iter_dialogs` |
+    | **`/saved`** | 客户端的**收藏夹** | `get_messages('me')` |
+
+    收藏夹在 MTProto 里是"你自己与自己的对话历史"（`InputPeerSelf`），
+    所以它**不会**出现在 `/channels` 里 —— 那里显式跳过 `User`（私聊）。
+    两个都要有，所以分成两个端点。
+
+    需要登录：收藏夹是**私有数据**，`t.me/s` 那种免登录路径拿不到。
+    """
+    from app.services.platforms.telegram.mtproto import get_authorized_client
+    from app.services.platforms.telegram.mtproto_data import list_saved_messages
+
+    client = None
+    try:
+        client = await get_authorized_client()
+        msgs = await list_saved_messages(client, limit=limit, query=keyword)
+    except RuntimeError as exc:
+        # 未登录 / FloodWait —— 都是"去登录或等一会"，不是服务端故障
+        raise HTTPException(status_code=401, detail=str(exc))
+    except Exception as exc:
+        logger.error("[telegram] saved 异常：%s", exc)
+        raise HTTPException(status_code=500, detail=f"读取收藏夹失败: {str(exc)[:200]}")
+    finally:
+        if client is not None:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+
+    return {
+        "success": True,
+        "total": len(msgs),
+        "keyword": keyword,
+        "messages": [
+            {
+                "id": m.id,
+                "text": m.text,
+                "html": m.html,
+                "date": m.date,
+                "views": m.views,
+                "images": m.images,
+                "video": m.video,
+                "is_saved": True,
+                # 收藏的消息来自各种来源，url 不一定能拼出 t.me 链接
+                "url": m.url if getattr(m, "url", "") else "",
+            }
+            for m in msgs
+        ],
+    }
+
+
 @router.get("/channel", summary="公开频道信息 + 消息（免登录）")
 async def public_channel(
     channel: str = Query(..., description="频道 username 或链接，如 durov"),

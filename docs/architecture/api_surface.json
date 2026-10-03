@@ -5134,7 +5134,7 @@
       "summary": "批量获取无水印资源",
       "function": "fetch_no_watermark",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 769,
+      "line": 785,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5166,7 +5166,7 @@
       "summary": "获取笔记详情（无水印）",
       "function": "get_note_detail",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 660,
+      "line": 676,
       "response_model": "NoteDetailResponse",
       "include_in_schema": true
     },
@@ -10958,7 +10958,7 @@
       "summary": "公开频道信息 + 消息（免登录）",
       "function": "public_channel",
       "file": "backend/app/api/v1/telegram.py",
-      "line": 179,
+      "line": 241,
       "response_model": "",
       "include_in_schema": true
     },
@@ -10975,6 +10975,22 @@
       "function": "my_channels",
       "file": "backend/app/api/v1/telegram.py",
       "line": 135,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/telegram/saved",
+      "router": "telegram",
+      "prefix": "/api/v1/telegram",
+      "local_path": "/saved",
+      "tags": [
+        "Telegram"
+      ],
+      "summary": "我的收藏夹 Saved Messages（需登录）",
+      "function": "my_saved",
+      "file": "backend/app/api/v1/telegram.py",
+      "line": 179,
       "response_model": "",
       "include_in_schema": true
     },
