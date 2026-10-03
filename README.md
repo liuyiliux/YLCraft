@@ -200,26 +200,55 @@ ipconfig | findstr IPv4        # 找到 WLAN 那行的 192.168.x.x
    以及手机和电脑是否真的在同一网段（注意访客网络/AP 隔离会阻断）。
 3. 页面能开但接口报 502 → vite 代理拿不到后端，同第 1 条。
 
-### 6. 浏览器登录 profile 会越跑越大（可安全清理缓存）
+### 6. 浏览器登录 profile 会越跑越大（在「账号中心」清理）
 
 采集用的 Chromium profile 在 `backend/data/browser_profiles/<平台>/`，
-每跑一次 Patchright 都会增长 —— 实测 9 个平台合计 **1.2 GB**，
-但**其中约 1.15 GB 是 Chromium 缓存，不是 cookie**：
+是**持久化 profile**（每次采集复用同一份磁盘目录，只增不减，没有任何东西
+会回收它）。实测 9 个平台合计 **724 MB**，其中约 **94% 是可丢弃的加速副本**，
+真正的登录态加起来只有 **208 KB**。
 
-| 内容 | 小红书单平台实测 | 能否删 |
-|------|-----------------|--------|
-| `Default/Cache` | 377 MB（单文件 `data_3` 就 108 MB） | **可随时删** |
-| `Default/Code Cache` | 27 MB | **可随时删** |
-| `Default/Network/Cookies` | < 0.1 MB | ❌ **删了要重新登录** |
-| `Default/Local Storage`、`Sessions` | 很小 | ❌ **删了要重新登录** |
+**推荐做法：账号中心页面底部的「采集浏览器缓存」卡片**（支持按平台或全部清理，
+会显示每个平台可释放多少、哪些目录因被占用没清掉）。
 
-PowerShell 清理（**先关掉后端**，否则文件被占用）：
+**缓存里到底存了什么**（xhs 419 MB / 4521 个文件，按文件头统计）：
+
+| 类型 | 数量 | 体积 | 是什么 |
+|------|------|------|--------|
+| `RIFF…WEBP` | 4097 个 | 241.7 MB | **封面图等图片** |
+| `JPEG` | 373 个 | 8.3 MB | 图片 |
+| `gzip` | 43 个 | 4.5 MB | JS bundle（解压后是 webpack chunk） |
+| SimpleCache block | 4 个 | 122.5 MB | 超大对象段（单文件 `data_3` 就 108 MB） |
+
+也就是说，**这些缓存确实让"同一张图重复加载"不用再走网络**（每个 URL 一个
+文件，再次请求直接读本地）。但它是 **LRU 有界**的，涨到上限会自动淘汰最久未用的，
+所以 377 MB 是"历史上抓过很多大图"，不是"一张图存了 377 MB"。
+
+**会删 / 不会动**：
+
+| 会删（加速副本） | 不会动（身份与功能） |
+|---|---|
+| `Default/Cache`（HTTP 响应缓存） | `Default/Network`（Cookies / HSTS）|
+| `Default/Code Cache`（V8 字节码） | `Default/Local Storage`、`IndexedDB`、`Sessions` |
+| `GPUCache`、各类 Shader/Dawn 缓存 | **`Default/Service Worker`** |
+| `component_crx_cache`、`CertificateRevocation` | |
+
+⚠️ **`Service Worker` 刻意不删** —— `app/services/crawler/service.py` 里记录：
+微博采集**必须**有 Service Worker 上下文（由它代理请求并注入 httpx 复现不了的
+上下文，实测直连一律 `ok=-100`）。删掉它等于让微博采集直接失效。
+
+⚠️ **删不掉是常事**：浏览器正占用 profile 时 Windows 会锁文件。此时接口会把
+失败的目录连同原因放在 `skipped` 里返回，UI 如实列出 —— 不会假装清完了。
+
+手工清理（**先关掉后端**，否则大量文件被占用）：
 
 ```powershell
 Get-ChildItem backend\data\browser_profiles -Recurse -Directory |
   Where-Object { $_.Name -in 'Cache','Code Cache','GPUCache','DawnGraphiteCache','DawnWebGPUCache' } |
   ForEach-Object { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
 ```
+
+⚠️ 手工命令**不要**加入 `Service Worker` / `Network` / `Local Storage` /
+`IndexedDB` / `Sessions` —— 那会掉登录态（微博会直接不可用）。
 
 ⚠️ 这些目录已被 `.gitignore` 忽略（`backend/data/`），**不要提交**：
 `Default/Network/Cookies` 是各平台的登录态，泄漏等于账号被直接冒用。

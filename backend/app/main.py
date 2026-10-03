@@ -603,6 +603,22 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load platform_stats router: {e}")
 
+    # **采集浏览器 profile 缓存占用 / 清理**（2026-10-03）
+    #
+    # 持久化 profile 只增不减，实测 9 平台合计 1.2GB，其中约 98% 是可丢弃的
+    # HTTP 响应缓存（241MB WebP 封面 + 4.5MB gzip JS + V8 Code Cache）。
+    # 单独开接口而不是塞进 accounts：它管的是**磁盘占用**，
+    # 与"账号是否可用"是两件事。
+    try:
+        from app.api.v1 import browser_profile_cache
+        app.include_router(
+            browser_profile_cache.router,
+            prefix="/api/v1/browser-profiles",
+            tags=["Browser Profiles"],
+        )
+    except Exception as e:
+        logger.warning(f"Could not load browser_profile_cache router: {e}")
+
     # **统一**平台体检（所有平台一个入口）
     #
     # 原来体检是各平台各写一份（B站/抖音/小红书），结果**前端只接了 B站那个**

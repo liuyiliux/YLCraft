@@ -59,6 +59,53 @@ export const logoutUser = () => request('/auth/logout', { method: 'POST' }) as P
 
 export const getCurrentUser = () => request('/auth/me') as Promise<{ success: boolean; data: AuthUser }>
 
+// ===== 采集浏览器 profile 缓存（2026-10-03）=====
+//
+// 持久化 profile 只增不减，实测 9 平台合计 1.2GB，其中约 94% 是可丢弃的
+// HTTP 响应缓存（实测 xhs 377MB 里 241MB 是 WebP 封面、4.5MB 是 gzip 的
+// JS bundle）。清缓存**不影响登录态**（Cookies 动辄只有几十 KB）。
+
+export type BrowserProfileCacheItem = {
+  platform: string
+  cache_mb: number
+  total_mb: number
+  cookie_bytes: number
+  cache_ratio: number
+  by_dir_mb: Record<string, number>
+  dir_labels: Record<string, string>
+}
+
+export type BrowserProfileCacheList = {
+  platforms: BrowserProfileCacheItem[]
+  total_cache_mb: number
+  total_disk_mb: number
+  preserved: string
+  dir_labels: Record<string, string>
+}
+
+export type BrowserProfileClearResult = {
+  results: Array<{
+    platform: string
+    freed_mb: number
+    removed: string[]
+    /** 删不掉的目录 + 原因（如浏览器占用）。**为空不代表失败，为空即全部成功** */
+    skipped: Record<string, string>
+    ok: boolean
+  }>
+  total_freed_mb: number
+  remaining_cache_mb: number
+  preserved: string
+}
+
+export const getBrowserProfileCaches = () =>
+  request('/browser-profiles/caches') as Promise<BrowserProfileCacheList>
+
+export const clearBrowserProfileCache = (platform: string) =>
+  request(`/browser-profiles/caches/${encodeURIComponent(platform)}`, { method: 'DELETE' }) as Promise<BrowserProfileClearResult>
+
+export const clearAllBrowserProfileCaches = () =>
+  request('/browser-profiles/caches/clear-all', { method: 'POST' }) as Promise<BrowserProfileClearResult>
+
 // ===== Characters =====
 
 export const listCharacters = (params?: Record<string, any>) => {

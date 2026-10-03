@@ -417,6 +417,14 @@
       ]
     },
     {
+      "name": "browser_profile_cache",
+      "file": "backend/app/api/v1/browser_profile_cache.py",
+      "prefix": "/api/v1/browser-profiles",
+      "tags": [
+        "Browser Profiles"
+      ]
+    },
+    {
       "name": "health_routes",
       "file": "backend/app/services/platforms/health_routes.py",
       "prefix": "/api/v1/platforms",
@@ -3675,6 +3683,54 @@
       "include_in_schema": true
     },
     {
+      "method": "GET",
+      "path": "/api/v1/browser-profiles/caches",
+      "router": "browser_profile_cache",
+      "prefix": "/api/v1/browser-profiles",
+      "local_path": "/caches",
+      "tags": [
+        "Browser Profiles"
+      ],
+      "summary": "列出各平台采集 profile 的缓存占用",
+      "function": "list_caches",
+      "file": "backend/app/api/v1/browser_profile_cache.py",
+      "line": 88,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/browser-profiles/caches/clear-all",
+      "router": "browser_profile_cache",
+      "prefix": "/api/v1/browser-profiles",
+      "local_path": "/caches/clear-all",
+      "tags": [
+        "Browser Profiles"
+      ],
+      "summary": "清理所有平台的采集缓存",
+      "function": "clear_all",
+      "file": "backend/app/api/v1/browser_profile_cache.py",
+      "line": 141,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/browser-profiles/caches/{platform}",
+      "router": "browser_profile_cache",
+      "prefix": "/api/v1/browser-profiles",
+      "local_path": "/caches/{platform}",
+      "tags": [
+        "Browser Profiles"
+      ],
+      "summary": "清理指定平台的采集缓存",
+      "function": "clear_cache",
+      "file": "backend/app/api/v1/browser_profile_cache.py",
+      "line": 115,
+      "response_model": "",
+      "include_in_schema": true
+    },
+    {
       "method": "POST",
       "path": "/api/v1/canvas/assets/image",
       "router": "canvas",
@@ -5062,7 +5118,7 @@
       "summary": "获取评论（统一入口）",
       "function": "get_comments",
       "file": "backend/app/api/v1/comments.py",
-      "line": 349,
+      "line": 357,
       "response_model": "CommentsResponse",
       "include_in_schema": true
     },
@@ -5078,7 +5134,7 @@
       "summary": "批量获取无水印资源",
       "function": "fetch_no_watermark",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 731,
+      "line": 755,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5110,7 +5166,7 @@
       "summary": "获取笔记详情（无水印）",
       "function": "get_note_detail",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 622,
+      "line": 646,
       "response_model": "NoteDetailResponse",
       "include_in_schema": true
     },
@@ -6550,7 +6606,7 @@
       "summary": "封面图代理（弃用，请使用 /api/v1/proxy/image）",
       "function": "cover_proxy",
       "file": "backend/app/api/v1/download.py",
-      "line": 2072,
+      "line": 2081,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6582,7 +6638,7 @@
       "summary": "下载图集图片到本地",
       "function": "download_images",
       "file": "backend/app/api/v1/download.py",
-      "line": 2103,
+      "line": 2112,
       "response_model": "DownloadImagesResponse",
       "include_in_schema": true
     },
@@ -6598,7 +6654,7 @@
       "summary": "打开文件夹并选中文件（Windows）",
       "function": "open_folder",
       "file": "backend/app/api/v1/download.py",
-      "line": 2061,
+      "line": 2070,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6662,7 +6718,7 @@
       "summary": "创建下载任务（后台，后台轮询）",
       "function": "create_download_task",
       "file": "backend/app/api/v1/download.py",
-      "line": 2005,
+      "line": 2014,
       "response_model": "",
       "include_in_schema": true
     },
@@ -6678,7 +6734,7 @@
       "summary": "查询下载任务状态",
       "function": "get_download_task",
       "file": "backend/app/api/v1/download.py",
-      "line": 2037,
+      "line": 2046,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9254,7 +9310,7 @@
       "summary": "列出所有平台连接",
       "function": "list_connections",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 130,
+      "line": 141,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9270,7 +9326,7 @@
       "summary": "创建平台连接",
       "function": "create_connection",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 158,
+      "line": 169,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9286,7 +9342,7 @@
       "summary": "获取支持的平台列表",
       "function": "get_supported_platforms",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 105,
+      "line": 116,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9302,7 +9358,7 @@
       "summary": "获取连接详情",
       "function": "get_connection",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 143,
+      "line": 154,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9318,7 +9374,7 @@
       "summary": "更新平台连接",
       "function": "update_connection",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 175,
+      "line": 186,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9334,7 +9390,7 @@
       "summary": "删除平台连接",
       "function": "delete_connection",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 192,
+      "line": 203,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9350,7 +9406,7 @@
       "summary": "获取 Netscape 格式 Cookie",
       "function": "get_cookie_content",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 410,
+      "line": 421,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9366,7 +9422,7 @@
       "summary": "保存 Netscape 格式 Cookie",
       "function": "save_cookie_content",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 436,
+      "line": 447,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9382,7 +9438,7 @@
       "summary": "停用连接（风控冷却等）",
       "function": "disable_connection",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 207,
+      "line": 218,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9398,7 +9454,7 @@
       "summary": "启用连接（恢复使用）",
       "function": "enable_connection",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 264,
+      "line": 275,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9414,7 +9470,7 @@
       "summary": "通过指定平台连接发布内容",
       "function": "publish_content",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 352,
+      "line": 363,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9430,7 +9486,7 @@
       "summary": "测试连接有效性",
       "function": "test_connection",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 297,
+      "line": 308,
       "response_model": "",
       "include_in_schema": true
     },
@@ -9446,7 +9502,7 @@
       "summary": "标记为已使用",
       "function": "mark_used",
       "file": "backend/app/api/v1/platforms.py",
-      "line": 311,
+      "line": 322,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11238,7 +11294,7 @@
       "summary": "创作者中心：账号总览（仅号主可见的运营数据）",
       "function": "get_creator_overview",
       "file": "backend/app/api/v1/users.py",
-      "line": 399,
+      "line": 432,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11254,7 +11310,7 @@
       "summary": "创作者中心：作品列表（含完播率等深度指标）",
       "function": "get_creator_works",
       "file": "backend/app/api/v1/users.py",
-      "line": 524,
+      "line": 557,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11270,7 +11326,7 @@
       "summary": "小红书创作服务平台：粉丝数据",
       "function": "get_xhs_creator_fans",
       "file": "backend/app/api/v1/users.py",
-      "line": 501,
+      "line": 534,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11286,7 +11342,7 @@
       "summary": "小红书创作服务平台：账号总览",
       "function": "get_xhs_creator_overview",
       "file": "backend/app/api/v1/users.py",
-      "line": 458,
+      "line": 491,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11302,7 +11358,7 @@
       "summary": "获取自己账号的资料（抖音/小红书）",
       "function": "get_self_profile",
       "file": "backend/app/api/v1/users.py",
-      "line": 349,
+      "line": 358,
       "response_model": "UserProfileResponse",
       "include_in_schema": true
     },
@@ -11318,7 +11374,7 @@
       "summary": "获取用户资料（抖音/小红书）",
       "function": "get_user_profile",
       "file": "backend/app/api/v1/users.py",
-      "line": 567,
+      "line": 600,
       "response_model": "UserProfileResponse",
       "include_in_schema": true
     },
@@ -11334,7 +11390,7 @@
       "summary": "搜索用户（抖音/小红书）",
       "function": "search_users",
       "file": "backend/app/api/v1/users.py",
-      "line": 315,
+      "line": 324,
       "response_model": "UserSearchResponse",
       "include_in_schema": true
     },
@@ -11350,7 +11406,7 @@
       "summary": "获取用户作品列表（抖音/小红书/微博/X/B站）",
       "function": "get_user_videos",
       "file": "backend/app/api/v1/users.py",
-      "line": 604,
+      "line": 637,
       "response_model": "UserVideosResponse",
       "include_in_schema": true
     },
