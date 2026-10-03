@@ -48,6 +48,8 @@ from app.services.platforms.types import (
     PlatformError,
     RiskControlError,
 )
+# 翻页模型（前端据此选分页器 / 加载更多）—— 声明在 platforms/<平台>/meta.py
+from app.services.platforms.meta import pagination_info
 # 平台侧拒绝（风控/UA/空 body）—— 详情路由要把它映射成 429（可重试），
 # 而不是被 service 层吞成 {} → 404"笔记不存在"（2026-10-01）
 from app.services.platforms.douyin.client import PlatformUnavailableError
@@ -198,6 +200,17 @@ class SearchResponse(BaseModel):
     has_more: bool = False
     message: str = ""
     using: str = ""  # 使用的搜索引擎
+    # ⚠️ 翻页模型（2026-10-03 加）
+    #
+    #     {"model": "paged",  "single_page_max": 0}    前端用页码分页器
+    #     {"model": "single", "single_page_max": 18}   前端用「加载更多」
+    #
+    # 为什么要透出：不是所有平台都能翻页。抖音实测 `offset>0` 服务端返空，
+    # 点"第 2 页"必然失败 —— 前端必须知道该换成"加载更多"。
+    #
+    # 声明在 `platforms/<平台>/meta.py`（单一事实来源），
+    # 实测依据见 `platforms/meta.py` 里 `pagination` 字段的注释。
+    pagination: dict = Field(default_factory=dict)
 
 
 class ImportRequest(BaseModel):
@@ -521,6 +534,7 @@ async def search_enhanced(req: SearchEnhancedRequest):
             has_more=has_more,
             message=f"找到 {total} 条结果",
             using=using,
+            pagination=pagination_info(req.platform),
         )
     except Exception as e:
         # ⚠️ **登录态/风控类错误要给可读状态码，不是笼统的 500**（2026-09-29）

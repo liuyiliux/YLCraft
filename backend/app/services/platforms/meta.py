@@ -65,6 +65,18 @@ logger = logging.getLogger("ylcraft.platforms.meta")
 _PLATFORMS_DIR = Path(__file__).resolve().parent
 
 
+# =============================================================================
+# 翻页模型
+# =============================================================================
+
+#: 支持翻页 —— 前端用页码分页器
+PAGED = "paged"
+#: 固定只返回一页 —— 前端用「加载更多」往下追加
+SINGLE = "single"
+
+PAGINATION_MODELS = frozenset({PAGED, SINGLE})
+
+
 @dataclass(frozen=True)
 class PlatformMeta:
     """一个平台的元数据（**由平台自己声明**）。"""
@@ -92,6 +104,31 @@ class PlatformMeta:
     capabilities: FrozenSet[str] = frozenset()
     # 该平台在「博主中心」是否可用（前端配置参考）
     user_dimension: bool = True
+    # 该平台搜索的**翻页模型**（前端据此选分页器 / 加载更多）
+    #
+    # ⚠️ 不是所有平台都支持翻页（2026-10-03 实测）——
+    # 用同一个分页器套所有平台，会让"翻不过去"的平台
+    # 出现"显示只有 1 页 / 点下一页报错 / 重复数据"。
+    #
+    #     PAGED     支持翻页 → 前端用页码分页器
+    #     SINGLE    固定只返回一页 → 前端用「加载更多」往下追加
+    #
+    # 每页 20 条、连续翻 4 页的实测（2026-10-03，关键词「沈阳」）：
+    #
+    #     平台      p1  p2  p3  p4  累计唯一  结论
+    #     bili      20  20  20  20   77      PAGED（total=1000 真实总数）
+    #     weibo     20  17  20  20   52      PAGED
+    #     kuaishou  20  20  20  20   65      PAGED
+    #     twitter   20  20  20  20   77      PAGED
+    #     youtube   20  20  20  20   74      PAGED
+    #     douyin     0   0   0   0    0      SINGLE（offset>0 服务端返空）
+    #
+    # ⚠️ 平台行为会变（抖音 09-27 还能翻页、09-28 就不行了），
+    #    所以下面每条都标了实测日期，改之前先复验。
+    pagination: str = PAGED
+    # 单页型平台**一次最多给多少条**（用于前端显示"单次上限"提示）。
+    # 抖音实测 17~18 条（count 上限 20，抖音自己少给 2 条）。
+    single_page_max: int = 0
 
     @property
     def all_names(self) -> Set[str]:
@@ -148,6 +185,8 @@ def _discover() -> None:
                 probe_keyword=raw.get("probe_keyword") or "",
                 capabilities=frozenset(raw.get("capabilities") or []),
                 user_dimension=bool(raw.get("user_dimension", True)),
+                pagination=raw.get("pagination") or PAGED,
+                single_page_max=int(raw.get("single_page_max") or 0),
             )
         except KeyError as exc:
             logger.warning("[meta] %s/meta.py 缺字段 %s", entry.name, exc)
@@ -217,6 +256,45 @@ def supports_any(capability: str) -> Set[str]:
 def no_login_platforms() -> Set[str]:
     """免登录平台（正式名集合）。"""
     return {m.name for m in all_metas() if m.no_login}
+
+
+def supports_pagination(platform: str) -> bool:
+    """该平台是否**支持翻页**（True → 分页器；False → 「加载更多」）。
+
+        supports_pagination("bili")     → True
+        supports_pagination("douyin")   → False（单次上限 18 条）
+
+    未知平台按**保守**处理（返回 True）：大多数平台都支持翻页，
+    猜错的后果只是"多一个分页器"，而反过来猜会让能用分页的平台
+    退化成"一直点加载更多"。
+    """
+    meta = get_meta(platform)
+    if not meta:
+        return True
+    return meta.pagination != SINGLE
+
+
+def single_page_platforms() -> Set[str]:
+    """固定只返回一页的平台（正式名集合）。
+
+    这些平台前端**必须**用「加载更多」而不是页码分页器：
+    抖音实测 offset>0 返回空数据，点"第 2 页"必然失败。
+    """
+    return {m.name for m in all_metas() if m.pagination == SINGLE}
+
+
+def pagination_info(platform: str) -> Dict[str, Any]:
+    """给 API 层/前端用的翻页信息。
+
+    ```json
+    {"model": "paged", "single_page_max": 0}
+    {"model": "single", "single_page_max": 18}
+    ```
+    """
+    meta = get_meta(platform)
+    if not meta:
+        return {"model": PAGED, "single_page_max": 0}
+    return {"model": meta.pagination, "single_page_max": meta.single_page_max}
 
 
 def probe_config() -> Dict[str, Dict[str, str]]:
