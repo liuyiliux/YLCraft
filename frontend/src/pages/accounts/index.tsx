@@ -79,6 +79,11 @@ import {
   wechatMpLoginStatus,
 } from '../../api'
 import type { PlatformConnectionResponse, AcquisitionWSMessage } from '../../api'
+// ⚠️ Telegram 的登录态**不在** `platform_connections` 表里 ——
+//    它走 MTProto，会话存在 `data/telegram/account.session`。
+//    所以要单独问一次 `/telegram/status`，否则登录了也会被
+//    `inactivePlatforms` 判成"未配置"（假状态）。
+import { getTelegramStatus, type TelegramStatusResponse } from '../../api'
 
 const { Title, Text, Paragraph } = Typography
 const { TextArea } = Input
@@ -1521,11 +1526,45 @@ export default function PlatformsPage() {
 
   const groups = groupedConnections()
 
+  // ⚠️ **Telegram 的登录态在别处**（2026-10-03 修）
+  //
+  // 其它平台的"是否已配置"看 `platform_connections` 表，而 Telegram 走
+  // **MTProto 登录**，会话在 `backend/data/telegram/account.session`，
+  // **不会**出现在那张表里。
+  //
+  // 于是登录成功后它仍被判为 `inactivePlatforms`（"其他平台 — 点击快速添加"），
+  // 用户看到的是**登录了却显示没登录**（假状态）。
+  //
+  // 修法：单独问 `/telegram/status`，把它当成"已配置"。
+  const [tgStatus, setTgStatus] = useState<TelegramStatusResponse | null>(null)
+  const loadTgStatus = useCallback(async () => {
+    try {
+      setTgStatus(await getTelegramStatus())
+    } catch {
+      // 未配置凭据是正常状态（不该弹错误），保持 null
+      setTgStatus(null)
+    }
+  }, [])
+  useEffect(() => { loadTgStatus() }, [loadTgStatus])
+
+  const tgLoggedIn = !!tgStatus?.logged_in
+
   // 有连接的平台
+  //
+  // ⚠️ Telegram 单独处理：它登录后**没有** `platform_connections` 行
+  // （状态在 `data/telegram/account.session`），所以 `groups['telegram']` 为空。
+  // 这里**不**把它塞进 activePlatforms —— 否则下面会用空的 connections
+  // 渲染出一张空卡片，而它真正的卡片在后面（显示登录账号）。
   const activePlatforms = PLATFORM_METAS.filter(pm => groups[pm.value] && groups[pm.value].length > 0)
 
   // 没有连接的平台
-  const inactivePlatforms = PLATFORM_METAS.filter(pm => !groups[pm.value] || groups[pm.value].length === 0)
+  //
+  // ⚠️ Telegram 已登录时要**从这一组里排除**（它由 /telegram/status 单独渲染），
+  // 否则会同时出现在「已配置」和「点击快速添加」两处 —— 登录了还让人再加一次。
+  const inactivePlatforms = PLATFORM_METAS.filter(
+    pm => !activePlatforms.includes(pm)
+      && !(pm.value === 'telegram' && tgLoggedIn),
+  )
 
   // ===== 统计 =====
   const activeCount = connections.filter(c => c.status === 'active').length
@@ -1704,6 +1743,59 @@ export default function PlatformsPage() {
           onOpenAddDrawer={onOpenAddDrawer}
         />
       ))}
+
+      {/* ===== Telegram 单独一张卡（2026-10-03）=====
+          它的登录态**不在** `platform_connections` 里（走 MTProto，会话文件在
+          `backend/data/telegram/account.session`），所以上面的
+          `PlatformGroupCard` 拿不到连接行、会渲染成空卡片。
+          这里按 `/telegram/status` 的真实结果显示"谁登录了"。 */}
+      {tgLoggedIn && (
+        <Card
+          title={
+            <Space size={8}>
+              <SendOutlined style={{ color: '#0088cc' }} />
+              <span>Telegram</span>
+              <Tag color="success" style={{ marginInlineEnd: 0 }}>已登录</Tag>
+            </Space>
+          }
+          extra={
+            <Space>
+              <Button size="small" onClick={loadTgStatus} icon={<ReloadOutlined />}>
+                刷新
+              </Button>
+              <Button
+                size="small"
+                onClick={() => navigate('/telegram-login')}
+              >
+                管理登录
+              </Button>
+            </Space>
+          }
+          style={{ background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 12 }}
+          styles={{ body: { padding: 16 } }}
+        >
+          <Space direction="vertical" size={6} style={{ width: '100%' }}>
+            <Space size={8} wrap>
+              <Text type="secondary" style={{ fontSize: 12 }}>账号</Text>
+              <Text style={{ fontSize: 13 }}>
+                {tgStatus?.display_name || tgStatus?.username || '（未设置昵称）'}
+              </Text>
+              {tgStatus?.username ? (
+                <Text type="secondary" style={{ fontSize: 12 }}>@{tgStatus.username}</Text>
+              ) : null}
+            </Space>
+            <Space size={8} wrap>
+              <Text type="secondary" style={{ fontSize: 12 }}>api_id</Text>
+              <Text code style={{ fontSize: 12 }}>{tgStatus?.api_id || '—'}</Text>
+            </Space>
+            <Text type="secondary" style={{ fontSize: 12, lineHeight: 1.6 }}>
+              Telegram 走 <Text strong>MTProto</Text> 登录（不是 cookie/扫码）。
+              登录后可用：「已加入搜索」、「我的频道」、「我的收藏」，
+              以及在「采集」页读私有频道。
+            </Text>
+          </Space>
+        </Card>
+      )}
 
       {/* 未配置的平台 — 紧凑网格 */}
       {inactivePlatforms.length > 0 && (
