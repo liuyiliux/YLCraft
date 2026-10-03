@@ -50,7 +50,7 @@ import httpx
 
 from .models import TelegramChannel, TelegramMessage
 from .parser import detect_structure_change, parse_channel_page
-from ..types import NetworkError, RiskControlError
+from ..types import NetworkError, PlatformError, RiskControlError
 
 logger = logging.getLogger("ylcraft.platforms.telegram")
 
@@ -93,7 +93,7 @@ def _proxy_from_env() -> Optional[str]:
     return None
 
 
-class TelegramPublicError(RiskControlError):
+class TelegramPublicError(PlatformError):
     """公开预览页抓取失败（可读原因）。
 
     与"频道没有消息"区分：这里是"拿不到 / 结构变了"。
@@ -108,6 +108,38 @@ class TelegramPublicError(RiskControlError):
     超时/连不上时会改抛 `NetworkError`（可重试、可降级），
     见那里的实现 —— 否则"VPN 断了"会被当成"频道不存在"，
     用户会去反复检查用户名（明明没拼错）。
+
+    ## ⚠️⚠️ 2026-10-03：分类**不再等于**风控，API 层别再套"平台侧拒绝"
+
+    实测（用户截图）：搜 `@kshelfs` 时前端弹出
+
+        这个频道**存在**，但 Telegram **没有开放网页端的消息列表**。…
+        **这是**平台侧拒绝**（触发风控或人机验证），不是「没搜到」。可尝试：
+          1. 稍等一会儿再试（风控常是临时性的）
+          2. 到「账号中心」重新获取该平台登录态
+          3. 用搜索框旁的「去官网搜」在浏览器里手动搜索
+
+    前半句和后半句**互相矛盾**：既然说了"频道存在、只是没开放"，
+    那"触发风控"、"稍等一会儿再试"、"重新获取登录态"就**全都不对**
+    —— 会把用户引去做三件没用的事。
+
+    根因：`api/v1/crawler.py` 按**异常类型**套文案，
+    而 `TelegramPublicError` 继承了 `RiskControlError`，
+    于是"频道不存在/未开放/用户名错了"全被当成"风控"。
+
+    实测这四类**都不是风控**（见 parser.detect_structure_change）：
+        · 频道不存在（`Contact @xxx`）
+        · 输入的是频道标题而非 username（中文）
+        · 频道存在但 Telegram 未开放网页端（`kshelfs`）
+        · Telegram 改了页面结构（唯一勉强算"平台侧变化"的）
+
+    修法：**不再继承 `RiskControlError`**，改挂到 `PlatformError` 之下。
+    这样 API 层 `isinstance(e, RiskControlError)` 分支就不会命中，
+    也就不会给"频道不存在/未开放/用户名错了"套上"触发风控、
+    稍等一会儿再试、重新获取登录态"这些**方向完全错误**的建议。
+
+    状态码随之落到 `except PlatformError`（400「无法完成该操作」+ 原因），
+    原因里 `parser.detect_structure_change` 已经把四类情况说清楚了。
     """
 
 

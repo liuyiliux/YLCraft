@@ -652,6 +652,22 @@ async def search_enhanced(req: SearchEnhancedRequest):
                     "这是**网络问题**（不是「没搜到」）。请检查网络/代理后重试。"
                 ),
             )
+        if isinstance(e, PlatformError):
+            # ⚠️ 兜底但**不掩盖**：已知语义的类型都已在上面单独处理
+            # （LoginExpired→401 / NotImplemented→501 / ContentNotFound→404
+            #   / RiskControl→429 / Network→503）。
+            # 走到这里的都是"平台侧明确说了原因、但没给 HTTP 语义"的情况
+            # （如 Telegram 的频道不存在 / 未开放网页端），它们**不是服务端故障**，
+            # 所以给 400（请求本身有问题）+ 平台给的原因，
+            # **不能落到 500** —— 那会让用户以为是应用崩了。
+            logger.warning(
+                "[search_enhanced] %s 平台侧失败（非风控/非登录/非网络）：%s",
+                req.platform, msg[:140],
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=f"{msg}\n\n（这是**平台侧无法完成该操作**（不是「没搜到」，也不是服务端故障）。）",
+            )
         logger.error(f"[search_enhanced] Error: {e}")
         raise HTTPException(status_code=500, detail=f"搜索失败: {str(e)}")
 
