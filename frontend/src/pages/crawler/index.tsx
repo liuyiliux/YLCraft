@@ -987,6 +987,19 @@ export default function CrawlerPage() {
   const [searchedKeyword, setSearchedKeyword] = useState('')
   const [error, setError] = useState('')
 
+  // ⚠️ 翻页模型（2026-10-03）—— **平台能力差异，不能一套分页器打天下**
+  //
+  //   'paged'  平台支持翻页 → 用页码分页器（B站/微博/快手/X/YouTube 实测可用）
+  //   'single' 平台固定只返回一页 → 用「加载更多」（抖音实测 offset>0 返空）
+  //
+  // 值由后端按 `platforms/<平台>/meta.py` 的 `pagination` 声明给出，
+  // 前端不自己判断（判断了就会和后端漂移）。
+  const [paginationModel, setPaginationModel] = useState<'paged' | 'single'>('paged')
+  // 单页型平台一次最多给多少条（抖音实测 18）—— 用于显示"单次上限"提示
+  const [singlePageMax, setSinglePageMax] = useState(0)
+  // 「加载更多」模式下已加载的条数（单页型平台往下追加用）
+  const [loadedMore, setLoadedMore] = useState(false)
+
   // 选择/导入
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [selectedRows, setSelectedRows] = useState<CrawlerResult[]>([])
@@ -1891,15 +1904,89 @@ export default function CrawlerPage() {
       const rows = (data.results || []) as CrawlerResult[]
       setResults(rows)
       setTotal(data.total || 0)
+      setLoadedMore(false)
       // ⚠️ **空页 = 到底了**（2026-09-29）
       //
       // 平台不给真实总数时只能靠 `has_more` 一路翻。若某页返回 0 条，
       // 即使后端说 has_more 也该停 —— 否则分页器会无限往后长，
       // 用户能一直点下一页却永远看不到内容。
       setHasMore(Boolean((data as any).has_more) && rows.length > 0)
+      // 翻页模型（后端按 platforms/<平台>/meta.py 的声明给出）
+      //
+      // ⚠️ 不是所有平台都能翻页：抖音实测 `offset>0` 服务端返空，
+      // 点"第 2 页"必然失败。所以要按模型切换分页器 vs 加载更多。
+      const pg = (data as any).pagination
+      if (pg) {
+        setPaginationModel(pg.model || 'paged')
+        setSinglePageMax(Number(pg.single_page_max) || 0)
+      }
       setSearchedKeyword(keyword.trim())
     } catch (e: any) {
       const msg = e?.response?.data?.detail || e?.message || '搜索失败'
+      setError(msg)
+      message.error(msg)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  /**
+   * 「加载更多」—— 单页型平台（抖音）用
+   *
+   * ## 为什么单页型平台要"追加"而不是"翻页"
+   *
+   * 抖音实测 `offset>0` 服务端返回空（`data=[]` / 429），
+   * 所以"第 2 页"这个概念在抖音上**不成立** —— 点它必然失败。
+   *
+   * 但用户确实想要更多内容，可行的只有两条路：
+   *   1. 一次把单页取满（`max_results` 拉到 20）—— 已由 handleSearch 覆盖
+   *   2. **换关键词**重新搜，或用「去官网搜」在浏览器里翻
+   *
+   * 所以这里"加载更多"的语义不是"取第 2 页"，而是：
+   * **用更大的 max_results 再搜一次，并把结果追加到现有列表下面**。
+   *
+   * ⚠️ 若平台恢复分页能力（抖音 09-27 还行），后端会把 `pagination.model`
+   *    改回 `paged`，前端自动切回页码分页器 —— 不需要改前端代码。
+   */
+  const loadMore = async () => {
+    if (loading || !keyword.trim()) return
+    setLoading(true)
+    setError('')
+    try {
+      // 拉更大的一页（抖音单次上限 18，给再多也没有）
+      const bigger = Math.min((maxResults || 10) * 2, 50)
+      const data = await searchEnhanced({
+        platform,
+        keyword: keyword.trim(),
+        search_type: searchType,
+        max_results: bigger,
+        sort_by: sortBy,
+        filters,
+        page: 1,
+        conn_id: platform === 'bili' ? selectedBiliConn : selectedSearchConn,
+      })
+      const rows = (data.results || []) as CrawlerResult[]
+      if (rows.length === 0) {
+        message.info('没有更多内容了')
+        setHasMore(false)
+        return
+      }
+      // 按 id 去重后**追加**（服务端可能返回与已有重复的）
+      const seen = new Set(results.map(r => r.id || r.url || r.title))
+      const fresh = rows.filter(r => !seen.has(r.id || r.url || r.title))
+      if (fresh.length === 0) {
+        message.info('没有更多内容了')
+        setHasMore(false)
+        return
+      }
+      setResults(prev => [...prev, ...fresh])
+      setTotal((prev) => prev + fresh.length)
+      setLoadedMore(true)
+      if (fresh.length < rows.length) {
+        message.info(`追加了 ${fresh.length} 条（其余与已有内容重复）`)
+      }
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || e?.message || '加载更多失败'
       setError(msg)
       message.error(msg)
     } finally {
@@ -3153,7 +3240,7 @@ export default function CrawlerPage() {
             columns={columns}
             dataSource={results}
             loading={loading}
-            pagination={{
+            pagination={paginationModel === 'single' ? false : {
               current: currentPage,
               pageSize: maxResults,
               // ⚠️ 分页器要"能翻到下一页"（2026-09-29 修）
@@ -3208,6 +3295,35 @@ export default function CrawlerPage() {
           <div style={{ textAlign: 'center', padding: '40px 0' }}>
             <Spin indicator={<LoadingOutlined style={{ fontSize: 32 }} />} />
             <div style={{ marginTop: 12, color: textSec }}>搜索中...</div>
+          </div>
+        )}
+
+        {/* ===== 单页型平台的「加载更多」=====
+            抖音实测 `offset>0` 服务端返空，点「第 2 页」必然失败，
+            所以这类平台不给页码分页器（上面 `pagination={false}`），
+            改成往下追加。值由后端 `pagination.model` 决定。 */}
+        {results.length > 0 && paginationModel === 'single' && (
+          <div style={{
+            marginTop: 12, paddingTop: 12,
+            borderTop: `1px solid ${borderColor}`,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+          }}>
+            <Button
+              onClick={loadMore}
+              loading={loading}
+              icon={<ReloadOutlined />}
+            >
+              {loadedMore ? '再加载一些' : '加载更多'}
+            </Button>
+            <div style={{ fontSize: 12, color: textSec, textAlign: 'center', lineHeight: 1.6 }}>
+              <div>
+                {getPlatformInfo(platform).label}单次最多返回
+                {singlePageMax || '约 18'} 条（平台限制），已全部显示。
+              </div>
+              <div>
+                需要更多内容请换关键词，或用上方「去官网搜」在浏览器里翻。
+              </div>
+            </div>
           </div>
         )}
       </Card>

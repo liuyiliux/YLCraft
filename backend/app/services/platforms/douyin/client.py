@@ -280,8 +280,25 @@ class DouyinClient(BasePlatformClient):
         channel = resolve_search_channel(params.search_type)
         want = max(1, params.max_results or 10)
 
-        # 单页上限 20（实测；请求更多也不会多给）
-        page_size = min(want, SINGLE_PAGE_MAX)
+        # ⚠️ `count` 必须给**平台的分页粒度**，不能给用户选的"每页条数"
+        # （2026-10-03 修）
+        #
+        # 原来：`page_size = min(want, SINGLE_PAGE_MAX)`
+        #   每页选 10 → 发 `count=10` → 抖音**只给 10 条**（实际 9），
+        #   而抖音手里其实有 18 条 —— 是我们自己只要了 10 条。
+        #   实测对照（关键词「沈阳」）：
+        #
+        #       每页 10 条 ->  9 条
+        #       每页 20 条 -> 17 条
+        #       每页 50 条 -> 17 条   ← 加到 50 也没多给
+        #
+        # 于是"每页条数"这个设置在抖音上**只起了截断作用，没起到分页作用**：
+        # 用户永远只能看到 9~18 条，而且拿不到的那部分是我们自己丢掉的。
+        #
+        # 现在：恒发 `count=SINGLE_PAGE_MAX`（20），一次把这一页取满，
+        # 再按 want 截断。`want=10` 时仍只显示 10 条，但**总条数与 has_more
+        # 反映的是真实的 17~18 条**，前端可以据此提示"还有更多"。
+        page_size = SINGLE_PAGE_MAX
 
         # ⚠️ 必须把 `page` 换算成 offset（2026-09-28 修）
         #
@@ -297,6 +314,20 @@ class DouyinClient(BasePlatformClient):
         seen: set[str] = set()
         # page 模式只取"这一页"；不传 page（=1）时按 want 连续翻页
         max_pages = max(1, math.ceil(want / page_size))
+        # ⚠️ 记录**首次成功响应**的 has_more / cursor（2026-10-03 修）
+        #
+        # 原来在循环外直接用 `data`（循环最后一次的响应）算 `_has_more`，
+        # 于是"第 2 次翻页请求返回空"会**覆盖掉首页的真实判断**：
+        #
+        #     首页  -> has_more=1, cursor=20   （抖音说"还有更多"）
+        #     第2次 -> data=[]                  （我们对 offset>0 拿不到）
+        #     → 循环 break
+        #     → 用第2次的 has_more=0 覆盖 → 前端显示"没有下一页"
+        #
+        # 症状：用户看到 9 条且无下一页，而抖音首页明明给了 18 条。
+        # 根因不是"抖音没数据"，而是**用失败的请求推翻了成功的请求**。
+        first_has_more: Optional[bool] = None
+        first_cursor: Any = None
 
         for page_idx in range(max_pages):
             query = build_search_params(
@@ -324,7 +355,22 @@ class DouyinClient(BasePlatformClient):
             if not items:
                 if page_idx == 0:
                     await self._raise_if_environment_degraded()
-                break  # 后续页为空 = 到底了
+                # 后续页为空 = 到顶了（或该路径已失效）。
+                # **不改写 first_has_more** —— 首页的判断才是可信的那个。
+                logger.info(
+                    "[douyin] 第 %d 次翻页返回空（已取 %d 条），停止",
+                    page_idx + 1, len(collected),
+                )
+                break
+
+            # 首次拿到数据时，把服务端的真实判断**冻住**
+            if first_has_more is None:
+                first_has_more = bool(data.get("has_more"))
+                first_cursor = data.get("cursor")
+                logger.info(
+                    "[douyin] 首页取到 %d 条，服务端 has_more=%s cursor=%s",
+                    len(items), data.get("has_more"), first_cursor,
+                )
 
             for item in items:
                 parsed = parse_search_item(item)
@@ -348,17 +394,22 @@ class DouyinClient(BasePlatformClient):
                 len(collected), want, offset,
             )
 
-        # ⚠️ **给前端 `_has_more`**（2026-09-29 补）
+        # ⚠️ **给前端 `_has_more`**（2026-09-29 补，2026-10-03 修语义）
         #
-        # 原来不设 → 前端**没有「下一页」入口**（用户反映"搜索没有更多页"）。
+        # 必须用**首次成功响应**的 has_more，不能用最后一次的 ——
+        # 最后一次往往是失败的空响应（见上面的注释）。
         #
-        # 但抖音这里要**如实**：实测 offset 翻页服务端已失效
-        # （见方法 docstring：offset=20 返回 0 条，浏览器里也一样）。
-        # 所以只有"本页拿满且有 cursor"时才说还有更多 —— 不编造。
-        if collected and len(collected) >= page_size:
-            collected[0].raw_data["_has_more"] = bool(data.get("has_more"))
-        elif collected:
-            collected[0].raw_data["_has_more"] = False
+        # 另外如实反映"我们总共能取到多少"：抖音实测单次上限 18 条
+        # （`count=20` 拿 17~18），且 `offset>0` 服务端不给数据。
+        # 所以前端应按"共 N 条"展示，而不是编造"共 M 页"。
+        if collected:
+            server_has_more = bool(first_has_more)
+            # 我们自己确实拿不到更多时，明确告诉前端"别再翻"，
+            # 否则它会显示一个点了就报错的「下一页」按钮。
+            reachable_more = server_has_more and bool(first_cursor)
+            collected[0].raw_data["_has_more"] = reachable_more
+            # 抖音实际可达总数：单页上限（17~18 条），不是 want
+            collected[0].raw_data["_total"] = len(collected)
 
         return collected[:want]
 
