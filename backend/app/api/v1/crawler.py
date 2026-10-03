@@ -211,6 +211,13 @@ class SearchResponse(BaseModel):
     # 声明在 `platforms/<平台>/meta.py`（单一事实来源），
     # 实测依据见 `platforms/meta.py` 里 `pagination` 字段的注释。
     pagination: dict = Field(default_factory=dict)
+    # ⚠️ **游标翻页**（Telegram 的 dialogs / saved 用，不用页码）
+    #
+    # 语义：原样回传为 `filters.offset_id`，后端就会取"比它更旧的"。
+    # 取值是**本次结果的最后一条** —— 传第一条会把它自己也包含进来
+    # （实测重叠 4 条；传最后一条 → 重叠 0）。
+    # 为空 = 没有更多了，或该平台用页码翻页（不看这个字段）。
+    next_cursor: str = ""
 
 
 class ImportRequest(BaseModel):
@@ -502,11 +509,22 @@ async def search_enhanced(req: SearchEnhancedRequest):
         # 所以额外透出 `has_more`，让前端能表达"还有更多"。
         total = len(results)
         has_more = False
+        # ⚠️ **游标翻页的数据源**（2026-10-03）
+        #
+        # `dialogs`（我的频道）/ `saved`（我的收藏）**不用页码翻页** ——
+        # 它们是"我的东西"，MTProto 用游标 `offset_id`（"取比它更旧的"）。
+        # 所以要把**可继续翻的起点**告诉前端：取**最后一条**的 cursor_id。
+        # （传第一条会把它自己也包含回来，实测重叠 4 条。）
+        next_cursor = ""
         if results:
             rd = results[0].raw_data or {}
             if rd.get("_total"):
                 total = rd["_total"]
             has_more = bool(rd.get("_has_more"))
+            if req.platform == "telegram" and req.search_type in ("saved", "dialogs", "channels", "my"):
+                cands = [r.raw_data.get("cursor_id") for r in results if r.raw_data.get("cursor_id")]
+                if cands:
+                    next_cursor = str(cands[-1])
 
         # 记一条健康度事件（**best-effort**，失败不影响搜索）
         #
@@ -535,6 +553,7 @@ async def search_enhanced(req: SearchEnhancedRequest):
             message=f"找到 {total} 条结果",
             using=using,
             pagination=pagination_info(req.platform),
+            next_cursor=next_cursor,
         )
     except Exception as e:
         # ⚠️ **登录态/风控类错误要给可读状态码，不是笼统的 500**（2026-09-29）

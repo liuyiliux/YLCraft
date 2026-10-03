@@ -281,12 +281,38 @@ class SearchParams:
 
     @classmethod
     def from_string(cls, keyword: str, max_results: int = 20, search_type_str: str = "note", sort_by: str = "", page: int = 1, extra: Dict[str, Any] = None):
-        """从字符串创建 SearchParams，支持自定义 search_type"""
-        # 尝试匹配枚举，否则使用 NOTE
+        """从字符串创建 SearchParams，支持自定义 search_type。
+
+        ## ⚠️ 未知值**不再静默降级**（2026-10-03 修）
+
+        原来是：
+            try:
+                st = SearchType(search_type_str)
+            except ValueError:
+                st = SearchType.NOTE      # ← 静默改成"笔记"
+
+        而 Telegram 的三个数据源**都不在枚举里**：
+            channel（频道消息） / dialogs（我的频道） / saved（我的收藏）
+            joined（已加入搜索）也不是枚举值。
+
+        于是 `search_type="saved"` 被悄悄改成 `NOTE`，
+        `TelegramClient.search` 走默认分支 `_search_channel("")`，
+        报「请填写频道 username」—— 用户看到的是
+        **"我的收藏需要填频道名"**，完全摸不着头脑。
+
+        这正是本仓库反复记录的"假支持"：参数看起来传了、没报错，
+        实际走的是另一条完全不同的路径。
+
+        修法：枚举不认识的值**原样保留**成字符串，让平台自己决定怎么处理
+        （Telegram 的 `client.search` 就是按字符串分派的）。
+        真的非法值由平台自己报 —— 那才是**它该报的错**。
+        """
         try:
             st = SearchType(search_type_str)
         except ValueError:
-            st = SearchType.NOTE
+            # ⚠️ 不再降级成 NOTE —— 平台的自定义 search_type 会被静默改写，
+            # 导致走错分支（实测 Telegram 的 saved/dialogs 全中招）。
+            st = search_type_str or SearchType.NOTE
         return cls(
             keyword=keyword,
             max_results=max_results,

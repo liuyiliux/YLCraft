@@ -5134,7 +5134,7 @@
       "summary": "批量获取无水印资源",
       "function": "fetch_no_watermark",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 785,
+      "line": 804,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5150,7 +5150,7 @@
       "summary": "导入到素材库",
       "function": "import_to_assets",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 372,
+      "line": 379,
       "response_model": "ImportResponse",
       "include_in_schema": true
     },
@@ -5166,7 +5166,7 @@
       "summary": "获取笔记详情（无水印）",
       "function": "get_note_detail",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 676,
+      "line": 695,
       "response_model": "NoteDetailResponse",
       "include_in_schema": true
     },
@@ -5182,7 +5182,7 @@
       "summary": "获取采集配置选项",
       "function": "get_options",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 270,
+      "line": 277,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5198,7 +5198,7 @@
       "summary": "获取支持的平台列表",
       "function": "get_platforms",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 264,
+      "line": 271,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5214,7 +5214,7 @@
       "summary": "搜索视频/图文素材",
       "function": "search_materials",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 279,
+      "line": 286,
       "response_model": "SearchResponse",
       "include_in_schema": true
     },
@@ -5230,7 +5230,7 @@
       "summary": "增强搜索（支持笔记/用户）",
       "function": "search_enhanced",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 433,
+      "line": 440,
       "response_model": "SearchResponse",
       "include_in_schema": true
     },
@@ -5246,7 +5246,7 @@
       "summary": "查询采集任务状态",
       "function": "get_task_status",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 418,
+      "line": 425,
       "response_model": "",
       "include_in_schema": true
     },
