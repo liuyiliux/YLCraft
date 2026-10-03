@@ -157,7 +157,7 @@ class TelegramClient(BasePlatformClient):
         if st in ("joined", "global", "search", "keyword"):
             return await self._search_joined(keyword, want)
         if st in ("dialogs", "channels", "my"):
-            return await self._list_dialogs(want, cursor=cursor)
+            return await self._list_dialogs(want, keyword=keyword, cursor=cursor)
         if st == "saved":
             # ⚠️ **我的收藏**与**我的频道**是两件不同的事（2026-10-03 澄清）：
             #   · 我的频道 = 我加入的频道/群组（`iter_dialogs`，跳过私聊）
@@ -165,7 +165,7 @@ class TelegramClient(BasePlatformClient):
             #     （`get_messages('me')` = 你与自己的对话，`InputPeerSelf`）
             # 所以**不能**复用 `_list_dialogs` —— 那里显式跳过 `User`，
             # 收藏夹正好是 `User`，用它永远拿不到。
-            return await self._list_saved(want, cursor=cursor)
+            return await self._list_saved(want, keyword=keyword, cursor=cursor)
         # 默认：频道消息（免登录）
         return await self._search_channel(keyword, want)
 
@@ -293,7 +293,9 @@ class TelegramClient(BasePlatformClient):
             out[0].raw_data["_total"] = len(out)
         return out
 
-    async def _list_saved(self, want: int, cursor: int = 0) -> List[SearchResult]:
+    async def _list_saved(
+        self, want: int, keyword: str = "", cursor: int = 0
+    ) -> List[SearchResult]:
         """**我的收藏**（Saved Messages，需登录）。
 
         ⚠️ 与 `_list_dialogs`（我的频道）的区别（2026-10-03 用户澄清）：
@@ -323,8 +325,13 @@ class TelegramClient(BasePlatformClient):
             # 实测两页重叠 9 条（假翻页）。
             #
             # 正确：取多少就返回多少，游标才能真正往下走。
+            #
+            # ⚠️ `query` 也要传（2026-10-03 补）—— 原来**没传**，
+            # 于是输入关键词后结果与不输入**完全一样**（实测 `鱼`/`视频`
+            # 返回的都是同一批未过滤消息）＝ 搜索完全没生效。
+            # 交互是：**不输入 = 列出收藏；输入 = 在收藏里搜**。
             msgs = await list_saved_messages(
-                client, limit=want, offset_id=cursor
+                client, limit=want, query=keyword, offset_id=cursor
             )
         finally:
             try:
@@ -354,11 +361,20 @@ class TelegramClient(BasePlatformClient):
             out[0].raw_data["_has_more"] = len(msgs) >= want
         return out
 
-    async def _list_dialogs(self, want: int) -> List[SearchResult]:
+    async def _list_dialogs(
+        self, want: int, keyword: str = "", cursor: int = 0
+    ) -> List[SearchResult]:
         """列出我加入的频道（需登录）。
 
         返回的是**频道列表**（不是消息）—— 复用 SearchResult 形状，
         `type="channel"`，前端识别后渲染成频道条目。
+
+        ## 交互：**不输入 = 列出全部；输入 = 按名字筛**（2026-10-03）
+
+        与小红书/微信/浏览器书签一致：空态先给全量，让用户看到有什么，
+        再决定要不要筛。**不是**逼用户先想好关键词。
+
+        `keyword` 匹配 `title` 或 `username`（大小写不敏感）。
         """
         from .mtproto import get_authorized_client
         from .mtproto_data import list_dialogs
@@ -371,6 +387,14 @@ class TelegramClient(BasePlatformClient):
                 await client.disconnect()
             except Exception:
                 pass
+
+        # ⚠️ 输入了关键词就**本地筛**（频道数不多，没必要让服务端再请求一次）
+        kw = (keyword or "").strip().lower()
+        if kw:
+            chans = [
+                c for c in chans
+                if kw in (c.title or "").lower() or kw in (c.username or "").lower()
+            ]
 
         out: List[SearchResult] = []
         for c in chans[:want]:

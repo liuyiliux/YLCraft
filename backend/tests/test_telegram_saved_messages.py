@@ -102,10 +102,14 @@ def test_client_dispatches_saved_separately():
 
 
 def test_saved_results_marked_as_saved_type():
-    """收藏项要标 `type="saved"`，前端才能渲染成「收藏」而不是频道条目。"""
+    """收藏项要标 `type="saved"`，前端才能渲染成「收藏」而不是频道条目。
+
+    ⚠️ 窗口给足（3000）：`_list_saved` 里堆了不少实测注释，
+    固定 1500 会随注释增删而失效（踩过一次）。
+    """
     src = _src(CLIENT)
     i = src.find("async def _list_saved")
-    seg = src[i:i + 1500]
+    seg = src[i:i + 3000]
     assert 'r.type = "saved"' in seg, "收藏项未标记 type='saved'"
     assert 'r.channel = "saved"' in seg, "收藏项 channel 应固定为 saved"
 
