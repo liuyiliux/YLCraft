@@ -91,8 +91,18 @@ def test_crawler_does_not_force_browser_for_twitter():
         assert name not in line, (
             f"twitter 别名 {name} 不该在 BROWSER_ONLY 里（会让浏览器白起）"
         )
-    # 小红书/微博仍必须走浏览器
-    assert "xhs" in line and "weibo" in line, "小红书/微博仍应走浏览器"
+    # 小红书也**不在**里了 —— 2026-09-29 实测已改纯 HTTP：
+    #     POST edith.xiaohongshu.com/api/sns/web/v1/search/notes
+    #     → 200, success=True, 每项自带 xsec_token，分页/排序都可用
+    #     **单次 0.2~0.5 秒**（浏览器路径要 ~15 秒）
+    # 之前"端点已迁移"的结论是错的 —— 300011 是缺 X-s/X-t 签名被风控，
+    # 不是端点废弃。装上 xhshow（纯 Python 签名）后就通了。
+    assert "xhs" not in line, (
+        "小红书已改纯 HTTP（2026-09-29 实测 0.2~0.5s），不该在 BROWSER_ONLY"
+    )
+    # 微博**仍必须**走浏览器：它需要 Service Worker 上下文，
+    # 实测 httpx 直连一律 ok=-100，与签名无关。
+    assert "weibo" in line, "微博仍应走浏览器（需要 Service Worker）"
 
 
 # =============================================================================
@@ -691,11 +701,26 @@ def test_collect_users_matches_both_shapes():
 
 
 def test_self_profile_does_not_invent_viewer_query():
-    """**回归**：不要臆造 Viewer queryId。
+    """**回归**：不要臆造 Viewer queryId；且"我的资料"现在**纯 HTTP**。
 
-    调研穷尽核对 twscrape 全部 OP_* 常量 + Scweet manifest ——
-    **没有 Viewer，也没有 me()**。所以"我的数据"只能靠浏览器读 handle，
-    再走 UserByScreenName。
+    两部分断言都对应**已实测**的事实：
+
+    ① 调研穷尽核对 twscrape 全部 OP_* 常量 + Scweet manifest ——
+       **没有 Viewer，也没有 me()**。所以不能编一个 Viewer queryId。
+
+    ② 2026-09-29 修正：原来这条断言要求"走浏览器取 handle"。
+       那个结论**不完整** —— 实测有现成的 REST 端点：
+
+           GET https://x.com/i/api/1.1/account/settings.json
+           → {"screen_name": "308YYtGer5EWPqj", ...}      ← 自己的 handle
+
+       实测昵称「6」@308YYtGer5EWPqj，粉丝 10 / 关注 366 / 推文 15。
+
+       ⚠️ 而且走浏览器那条路**本来就不通**：`/users/me` 是 api 模式不开浏览器，
+       所以永远拿不到 → 用户看到"登录态已失效"，但 cookie 其实是好的
+       （用户原话："微博和x是有效的，我搜索能搜到东西啊"）。
+
+       这次红不是回归 —— 是断言落后于 2026-09-29 的修复。
     """
     from app.services.platforms.twitter import apis
 
@@ -705,8 +730,12 @@ def test_self_profile_does_not_invent_viewer_query():
     from app.services.platforms.twitter import client as tw_client
 
     csrc = inspect.getsource(tw_client.TwitterClient.get_self_profile)
-    assert "fetch_self_handle_via_browser" in csrc, "应走浏览器取 handle"
-    assert "get_user_profile" in csrc, "再用 handle 取资料"
+    # ✅ 纯 HTTP 取（settings.json → handle → UserByScreenName）
+    assert "get_self_profile_via_http" in csrc, "应走 HTTP 取自己的资料"
+    # ❌ 不得再依赖浏览器（那条路在 api 模式下永远拿不到）
+    assert "fetch_self_handle_via_browser" not in csrc, (
+        "不应依赖浏览器取 handle：/users/me 是 api 模式不开浏览器，永远失败"
+    )
 
 
 def test_self_handle_only_from_account_menu():

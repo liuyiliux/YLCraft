@@ -130,12 +130,24 @@ def test_cookie_domain_uses_alias():
     """**回归**：`netscape_to_header` 的 domain 要用它认识的别名。
 
     实测传 `xhs` 返回 **0 字符**，传 `xiaohongshu` 才返回 998 字符。
+
+    ⚠️ 2026-10-04：原来这里断言字面量 `'"xhs": "xiaohongshu"'`。
+    2026-10-03 为了修 X 的同类 bug（漏了 `twitter` 本身），
+    映射改成**逐个候选试**的元组形式，所以字面量不再存在。
+    锁的是**行为**（xhs 必须能解析到 xiaohongshu 这个域），不是写法。
     """
     from app.services.crawler import service as crawler_service
 
     src = inspect.getsource(crawler_service.CrawlerService._resolve_cookie_for)
-    assert '"xhs": "xiaohongshu"' in src, "应做平台名归一"
     assert "netscape_to_header" in src
+    # xhs → 首选 xiaohongshu（注释里记着：`netscape_to_header(raw,"xhs")` → 0 字符）
+    assert '"xhs": ("xiaohongshu"' in src, (
+        'xhs 必须优先试 "xiaohongshu" 域（实测 "xhs" 域返回 0 字符）'
+    )
+    # X 同理：真实域是 .x.com，必须排在 twitter.com 前面
+    assert '"twitter": ("x.com"' in src, (
+        'X 的 cookie 域是 .x.com，必须优先于 twitter.com'
+    )
 
 
 def test_cookie_resolver_uses_resolve_connection():

@@ -332,13 +332,22 @@ def test_patchright_module_exists_with_pool():
 
 
 def test_patchright_waits_for_service_worker():
-    """要等 SW 注册完成（太短会让搜索仍走无 SW 路径 → ok=-100）。"""
+    """要等 SW 注册完成（太短会让搜索仍走无 SW 路径 → ok=-100）。
+
+    ⚠️ 2026-10-04：原来断言 `inspect.getsource(sp._get_session)` 里有
+    `wait_for_timeout` + `9000`。等待逻辑**没被删**，是被提取到
+    `_warm_up()` 了（`_get_session` 只管建/借会话）。
+    断言跟着搬了家 —— 这就是源码文本断言的固有毛病：
+    行为没变，重构一下就红，红了容易被误当成"功能坏了"而去改产品代码。
+    """
     from app.services.platforms.weibo import search_patchright as sp
 
-    src = inspect.getsource(sp._get_session)
+    src = inspect.getsource(sp._warm_up)
     assert "wait_for_timeout" in src, "应有等待"
     # 实测需要 ~9s
     assert "9000" in src, "等待时间不应短于实测所需的 9s"
+    # 确认 _get_session 确实会走 _warm_up（否则等待等于没接上）
+    assert "_warm_up" in inspect.getsource(sp._get_session)
 
 
 def test_page2_failure_does_not_abort_search():

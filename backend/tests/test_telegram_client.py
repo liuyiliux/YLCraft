@@ -166,15 +166,35 @@ def _crawler_src() -> str:
 
 
 def test_frontend_telegram_tabs():
-    """前端要有 Telegram 的三个 tab（数据源），且文案不得夸大。"""
+    """前端要有 Telegram 的数据源 tab，且文案不得夸大。
+
+    ⚠️ 2026-10-04：这里原来是"三个 tab" + 只截 1500 字符。
+    两个问题都被后来的改动踩中了：
+      1. 2026-10-03 加了「搜频道」和「我的收藏」→ 变成 5 个 tab
+      2. 每个 tab 带 placeholder 和注释 → 1500 字符**装不下**，
+         `channel`/`dialogs` 落到窗口外 → 误报"缺 search_type"
+    所以：改成**不截断**，并且把五个 tab 都列全（少一个就红）。
+    """
     src = _crawler_src()
-    i = src.find("telegram: {")
-    assert i != -1, "搜索页缺 telegram 配置"
-    seg = src[i:i + 1500]
-    for st in ("channel", "joined", "dialogs"):
-        assert f"'{st}'" in seg, f"缺 search_type={st}"
-    # ⚠️ 不得出现"全网搜索"这种过度承诺
-    assert "全网搜索" not in seg, "不能写'全网搜索'（做不到，属过度承诺）"
+    # ⚠️ 必须用 `"telegram: {\n"` 定位 —— 文件里有**两处** `telegram: `：
+    #     1. 平台下拉项 `telegram: {},`        （没有 searchTypes）
+    #     2. searchTypes 配置 `telegram: {` + 换行 + searchTypes 数组
+    # 只找 `"telegram: {"` 会先命中第 1 处（它是前缀），
+    # 于是断言全在**空对象**里找 → 永远报"缺 search_type"。
+    # 2026-10-04 实测：这就是它长期红的原因（不是 tab 真的缺了）。
+    i = src.find("telegram: {\n")
+    assert i != -1, "搜索页缺 telegram searchTypes 配置"
+    j = src.find("searchTypes", i)
+    assert j != -1, "缺 searchTypes"
+    end = src.find("defaultSearchType", j)
+    seg = src[i:end if end != -1 else i + 6000]
+    for st in ("find", "channel", "joined", "dialogs", "saved"):
+        assert f"value: '{st}'" in seg, f"缺 search_type={st}"
+    # ⚠️ 不得出现"全网搜索"这种过度承诺（只查**用户可见文案**，不含注释）
+    visible = "\n".join(
+        ln for ln in seg.splitlines() if not ln.strip().startswith("//")
+    )
+    assert "全网搜索" not in visible, "不能写'全网搜索'（做不到，属过度承诺）"
     # 要标明"已加入"
     assert "已加入" in seg, "joined tab 要写明搜索范围是'已加入的'"
 
