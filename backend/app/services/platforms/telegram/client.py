@@ -158,6 +158,8 @@ class TelegramClient(BasePlatformClient):
             return await self._search_joined(keyword, want)
         if st in ("dialogs", "channels", "my"):
             return await self._list_dialogs(want, keyword=keyword, cursor=cursor)
+        if st in ("find", "find_channel", "channel_search", "search_channel"):
+            return await self._search_channel_names(keyword, want)
         if st == "saved":
             # ⚠️ **我的收藏**与**我的频道**是两件不同的事（2026-10-03 澄清）：
             #   · 我的频道 = 我加入的频道/群组（`iter_dialogs`，跳过私聊）
@@ -292,6 +294,66 @@ class TelegramClient(BasePlatformClient):
         if out:
             out[0].raw_data["_total"] = len(out)
         return out
+
+    async def _search_channel_names(self, keyword: str, want: int) -> List[SearchResult]:
+        """**按中文标题搜频道**（需登录）—— 对应客户端里"搜频道"。
+
+        ## 为什么需要（2026-10-03 实测）
+
+        `t.me/s/<username>` **搜不了频道** —— 它只认 username。
+        而客户端里输中文能搜到频道，因为它按**标题**匹配，
+        走的是 `contacts.Search` 这条另一条路径。
+
+        所以「频道消息」tab 输中文必然失败 —— 那不是 bug，是路径不同。
+
+        ⚠️ 搜的是**频道实体**（名字/标题），不是频道里的**内容**。
+        真正搜全网内容要 `channels.SearchPosts`（需 Premium + Stars 计费），
+        本项目不做 —— 那属于过度承诺。
+        """
+        kw = (keyword or "").strip()
+        if not kw:
+            raise TelegramPublicError(
+                "请输入频道名或频道标题。\n"
+                "⚠️ 这里搜的是**频道本身**（支持中文），不是频道里的内容。\n"
+                "要找某个频道的**消息**，请用「频道消息」tab 填它的 username。"
+            )
+        from .mtproto import get_authorized_client
+        from .mtproto_data import search_channels
+
+        client = await get_authorized_client()
+        try:
+            chans = await search_channels(client, kw, limit=want)
+        finally:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+
+        return [
+            SearchResult(
+                id=c.username or c.id,
+                platform="telegram",
+                type="channel",
+                title=c.title,
+                desc=c.description,
+                cover=c.avatar,
+                author=c.title,
+                author_id=c.username or c.id,
+                followers=c.subscribers,
+                url=f"https://t.me/{c.username}" if c.username else "",
+                raw_data={
+                    "_channel": {
+                        "title": c.title,
+                        "username": c.username,
+                        "subscribers": c.subscribers,
+                        "is_channel": c.raw_data.get("is_channel", False),
+                        "is_group": c.raw_data.get("is_group", False),
+                    },
+                    "_has_more": False,
+                },
+            )
+            for c in chans[:want]
+        ]
 
     async def _list_saved(
         self, want: int, keyword: str = "", cursor: int = 0

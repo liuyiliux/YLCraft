@@ -38,6 +38,7 @@ import {
   getDanmaku, downloadDanmaku, getBiliStats, getBiliComments, sendBiliComment, getBiliVideoInfo,
   getBiliLoginHealth, getPlatformHealth, getPlatformStats, getComments, disablePlatformConnection, enablePlatformConnection, createDownloadBatch, listDownloadBatches, resumeDownloadBatch, deleteDownloadBatch, wechatMpGetArticles, wechatMpDownloadSingle, wechatMpDownloadBatch, wechatMpImportAssets,
   wechatMpExportEpub, openFolder,
+  getTelegramStatus,
 } from '../../api'
 import type { CrawlerResult, PlatformConnectionResponse, PlatformHealthCheck, PlatformHealthResponse } from '../../api'
 import { formatNum, parseCreateTime, formatTime } from '../../utils/format'
@@ -444,14 +445,25 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
   telegram: {
     searchTypes: [
       {
+        // ⚠️ **这是"搜频道"**（2026-10-03 新增）
+        // 与「频道消息」是两个不同方向的操作：
+        //   · 搜频道   = 我只知道频道叫什么 → 找出它的 username（**可中文**）
+        //   · 频道消息 = 我已经知道 username → 读它的消息
+        // 之前只有后者，所以输中文必然失败（t.me/s 只认 username）。
+        value: 'find', label: '搜频道', icon: <SearchOutlined />,
+        sortOptions: [],
+        defaultSort: '',
+        placeholder: '频道名或标题，支持中文（如 财经 / 新闻）',
+      },
+      {
         value: 'channel', label: '频道消息', icon: <SendOutlined />,
         sortOptions: [],
         defaultSort: '',
         // 输入提示：这个 tab 的输入是"频道名（可加关键词）"，与其它平台不同
-        placeholder: '频道名，如 durov；也可「durov AI」在频道内搜 AI',
+        placeholder: '频道 username，如 durov；也可「durov AI」在频道内搜 AI',
       },
       {
-        value: 'joined', label: '已加入搜索', icon: <SearchOutlined />,
+        value: 'joined', label: '已加入搜索', icon: <MessageOutlined />,
         sortOptions: [],
         defaultSort: '',
         placeholder: '关键词（搜你已加入的频道/群组）',
@@ -473,7 +485,7 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
         placeholder: '直接点搜索列出收藏；也可输入关键词在收藏里搜',
       },
     ],
-    defaultSearchType: 'channel',
+    defaultSearchType: 'find',
   },
   twitter: {
     // ⚠️ 排序用 **tab（search_type → X 的 product）**，不用 sortBy —— 实测依据：
@@ -926,6 +938,29 @@ export default function CrawlerPage() {
   })
   const [sortBy, setSortBy] = useState<string>('')
   const [filters, setFilters] = useState<Record<string, string>>({})
+
+  // ⚠️ **Telegram 的登录态**（2026-10-03）
+  //
+  // 它走 MTProto，登录状态存在 `data/telegram/account.session`，
+  // **不在** `platform_connections` 里 —— 所以连接下拉框看不到它。
+  //
+  // 界面上原来一律写「Telegram 无需登录」，而这**只对「频道消息」tab 成立**；
+  // 「已加入搜索 / 我的频道 / 我的收藏」都必须登录。
+  // 不显示真实状态 → 用户在那三个 tab 上撞 401 却不知道要登录。
+  const [tgLoggedIn, setTgLoggedIn] = useState(false)
+  const [tgDisplayName, setTgDisplayName] = useState('')
+  useEffect(() => {
+    if (platform !== 'telegram') return
+    let cancelled = false
+    getTelegramStatus()
+      .then((s) => {
+        if (cancelled) return
+        setTgLoggedIn(!!s.logged_in)
+        setTgDisplayName(s.display_name || s.username || '')
+      })
+      .catch(() => { /* 未配置凭据是正常状态，不打扰用户 */ })
+    return () => { cancelled = true }
+  }, [platform])
   const [maxResults, setMaxResults] = useState(() => {
     const saved = localStorage.getItem('ylcraft_crawler_max_results')
     return saved ? parseInt(saved, 10) : 10
@@ -1764,9 +1799,40 @@ export default function CrawlerPage() {
                 />
               </Space>
             ) : isNoLogin ? (
-              <Text style={{ fontSize: 12, color: BILI_COLORS.success }}>
-                {pf.label} 无需登录 —— 直接搜索即可（取公开数据）
-              </Text>
+              // ⚠️ Telegram 的「免登录」只对**「频道消息」tab**成立
+              // （读 `t.me/s/<频道>` 公开预览页）。
+              // 其它三个 tab（已加入搜索 / 我的频道 / 我的收藏）
+              // **必须登录**（走 MTProto）—— 所以不能一概写"无需登录"，
+              // 否则用户会在那些 tab 上一直撞 401。
+              //
+              // 这里按真实登录态显示：登录了就说明"公开频道免登录，
+              // 但登录后还能用另外三个"，并给出去登录的入口。
+              tgLoggedIn ? (
+                <Space size={8} wrap style={{ fontSize: 12 }}>
+                  <Text style={{ color: BILI_COLORS.success }}>
+                    ✓ 已登录
+                    {tgDisplayName ? `（${tgDisplayName}）` : ''}
+                  </Text>
+                  <Text type="secondary">
+                    「频道消息」免登录可用；登录后还能用「已加入搜索 / 我的频道 / 我的收藏」
+                  </Text>
+                  <Button size="small" type="link" onClick={() => navigate('/telegram-login')}>
+                    管理登录
+                  </Button>
+                </Space>
+              ) : (
+                <Space size={8} wrap style={{ fontSize: 12 }}>
+                  <Text style={{ color: BILI_COLORS.success }}>
+                    {pf.label}「频道消息」无需登录 —— 直接搜频道名即可
+                  </Text>
+                  <Text type="secondary">
+                    「已加入搜索 / 我的频道 / 我的收藏」需要登录
+                  </Text>
+                  <Button size="small" type="link" onClick={() => navigate('/telegram-login')}>
+                    去登录
+                  </Button>
+                </Space>
+              )
             ) : (
               <Text style={{ fontSize: 12, color: '#f59e0b' }}>
                 {/* ⚠️ "未找到连接"这个说法在两种情况下是**误导**：
@@ -1888,7 +1954,9 @@ export default function CrawlerPage() {
       message.warning(
         platform === 'telegram' && searchType === 'channel'
           ? '请输入频道名（如 durov），或「频道名 关键词」'
-          : '请输入关键词',
+          : platform === 'telegram' && searchType === 'find'
+            ? '请输入频道名或标题（支持中文，如 财经）'
+            : '请输入关键词',
       )
       return
     }
