@@ -193,6 +193,78 @@ async def list_dialogs(client, limit: int = 100) -> List[TelegramChannel]:
     return out
 
 
+async def search_channels(
+    client,
+    keyword: str,
+    limit: int = 30,
+) -> List[TelegramChannel]:
+    """**按标题/用户名搜频道**（需登录）—— 这才是"在客户端里搜频道"。
+
+    ## 为什么必须有这个（2026-10-03 实测）
+
+    `t.me/s/<username>` 路径**搜不了频道**：它只认 username，
+    而客户端里输入中文能搜到频道 —— 客户端走的是**另一条路径**：
+    服务端按**标题**匹配。所以「频道消息」tab 无论怎么输中文都失败。
+
+    MTProto 的 `contacts.Search` 正是这条路径：
+
+        contacts.SearchRequest(q=<关键词>, limit=N, broadcasts=True)
+
+    `broadcasts=True` = 只要**频道/超级群**（不要私聊用户）。
+
+    ## ⚠️ 与 `channels.SearchPosts` 的区别（不要混）
+
+    真正"搜所有公开频道的**内容**"要用 `channels.SearchPosts`，
+    它要 **Premium 且按 Stars 计费** —— 本项目**不做**（属于过度承诺）。
+
+    本函数搜的是**频道实体**（名字/标题），不搜内容、不收费。
+
+    ## 返回
+
+    `TelegramChannel` 列表（title / username / subscribers），
+    前端渲染成可点击的频道条目 → 点进去用「频道消息」读它的消息。
+    """
+    from telethon.tl.functions.contacts import SearchRequest
+
+    kw = (keyword or "").strip()
+    if not kw:
+        return []
+
+    out: List[TelegramChannel] = []
+    try:
+        found = await client(SearchRequest(
+            q=kw, limit=max(1, min(limit, 100)), broadcasts=True,
+        ))
+        for ent in (getattr(found, "chats", None) or [])[:limit]:
+            kind = type(ent).__name__
+            if kind not in ("Channel", "Chat", "ChannelForbidden", "ChatForbidden"):
+                continue
+            username = getattr(ent, "username", "") or ""
+            out.append(TelegramChannel(
+                id=str(getattr(ent, "id", "")),
+                username=username,
+                title=getattr(ent, "title", "") or "",
+                description=getattr(ent, "about", "") or "",
+                subscribers=int(getattr(ent, "participants_count", 0) or 0),
+                source="mtproto",
+                raw_data={
+                    "is_channel": bool(getattr(ent, "broadcast", False)),
+                    "is_group": bool(getattr(ent, "megagroup", False)),
+                },
+            ))
+    except Exception as exc:
+        hint = _flood_wait_message(exc)
+        if hint:
+            raise RuntimeError(hint) from exc
+        raise RuntimeError(
+            f"[telegram] 搜频道失败：{type(exc).__name__}: {str(exc)[:150]}"
+        ) from exc
+
+    # 频道排前面，其次按订阅数
+    out.sort(key=lambda c: (not c.raw_data.get("is_channel"), -c.subscribers))
+    return out
+
+
 async def list_saved_messages(
     client,
     limit: int = 50,
