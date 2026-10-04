@@ -72,12 +72,38 @@ logger = logging.getLogger("ylcraft.platforms.youtube")
 #     player_skip   = webpage          → 跳过 HTML 直连 innertube，仍失败
 #                     js,webpage,html   → 仍失败
 #     cookiesfrombrowser = edge        → cookie 读得到，仍失败
+#     **PO Token**（bgutil 2.0.1）      → **也无效**，见下
+#
+# ⚠️ PO Token 是 2025 年后 YouTube 反爬的真正开关，按 client 类型签发。
+# 本项目**真的装了测**（git clone + npm ci + npx tsc + 起了 HTTP server，
+# /ping 返回 `{"version":"2.0.1"}`），两种模式都试了：
+#
+#     bgutil:script-node  失败视频 仍 not a bot；dQw4w9WgXcQ 变成 no formats
+#     bgutil:http         失败视频 仍 not a bot；dQw4w9WgXcQ 变成 no formats
+#
+# 官方文档原话（提前说过）："Providing a PO token does **not** guarantee
+# bypassing 403 errors or bot checks, but it _may_ help" —— 实测确认。
+# 配 `player_client=web` 时它**反而把能用的视频也弄坏**（少 format）。
 #
 # ⚠️ `web_embedded` / `mweb` **有副作用**：它们会把本来能用的
 # dQw4w9WgXcQ 也弄坏（`Requested format is not available`）。
 # 所以它们**不能**当后备方案 —— 这条也写进 meta，别再上。
 #
-# 结论：这是 YouTube 对当前出口 IP 的人机校验，**只能靠等 / 换 IP 缓解**。
+# ## 精确定位（直连 watch 页看 HTML，2026-10-04）
+#
+# 同一 IP、同一分钟、同一个 urllib 请求：
+#
+#     dQw4w9WgXcQ   HTTP 200  1,298,628 字节   playabilityStatus = **OK**
+#                   含 'not a bot' = False
+#     njK0eebUsQw   HTTP 200  1,228,029 字节   playabilityStatus = **LOGIN_REQUIRED**
+#                   含 'not a bot' = **True**
+#
+# 两个都是 **HTTP 200**、都带 `videoDetails` 和 `ytInitialData` ——
+# 也就是说**页面拿全了，是 YouTube 在页面里把这条视频标成 LOGIN_REQUIRED**。
+# 所以不是"连不上""被重定向""cookie 没带对"，而是**服务端按视频做的判定**。
+# 没有可绕的客户端侧开关。
+#
+# 结论：只能靠**等 / 换出口 IP / 在浏览器里打开那条视频完成人机校验**。
 # 所以按 `RiskControlError` 抛（→ 上层 429），而不是裸 RuntimeError（→ 500）：
 # 500 在语义上是"我们坏了"，429 才是"平台侧拒绝，等一等或换 IP"。
 
@@ -91,6 +117,10 @@ BOT_CHECK_FACTS = {
     "client_variants_tried": 7,
     "skip_webpage": "无效",
     "cookies_from_browser": "无效（edge cookie 可读）",
+    # 实测装了 bgutil 2.0.1（HTTP server + script 两种模式）→ 仍失败
+    "po_token": "无效（bgutil 2.0.1，两种模式实测）",
+    "http_status": 200,
+    "playability": "LOGIN_REQUIRED",
     "remedy": "等待 / 更换出口 IP / 在浏览器打开该视频完成人机校验",
 }
 
@@ -110,15 +140,27 @@ def _is_bot_check(msg: str) -> bool:
 
 
 def _bot_check_error(vid: str, action: str) -> RiskControlError:
-    """构造人机校验异常（搜索 / 详情 / 评论共用同一段事实，避免各写各的）。"""
+    """构造人机校验异常（搜索 / 详情 / 评论共用同一段事实，避免各写各的）。
+
+    ⚠️ 文案要**说真话**：不能写"请重新登录"（实测不需要登录就能取），
+    也不能只丢一句英文（用户看不懂、也不知道下一步干什么）。
+    所以带上"同一 IP 下别的视频能取"这个反证 + 具体处置办法。
+    """
     f = BOT_CHECK_FACTS
     return RiskControlError(
         f"[youtube] {action}被 YouTube 人机校验拦截（视频 {vid}）。\n"
         f"这不是「视频不存在」，也不是「必须登录才能看」——"
         f"同一 IP 下其它视频能正常{action}"
-        f"（{f['measured_on']} 实测 {f['watch_ok']}），是 YouTube 按视频加严。\n"
+        f"（{f['measured_on']} 实测 {f['watch_ok']}）。\n"
+        f"YouTube 在返回的页面里把这条视频标成了 "
+        f"playabilityStatus={f['playability']}（HTTP {f['http_status']}，"
+        f"页面本身是全的），所以是**按视频**判的，客户端侧没有开关可绕。\n"
         f"已试过且无效：{f['client_variants_tried']} 种 player_client、"
-        f"跳过网页直连 API、读本机浏览器 cookie。\n"
+        f"跳过网页直连 API、读本机浏览器 cookie、"
+        # ⚠️ 下面**不**直接插 f['po_token']：那条值自带括号
+        # （"无效（bgutil 2.0.1，…）"），嵌进来会变成
+        # "（无效（…））"。用户看到的是错误信息，不能让它难读。
+        f"**PO Token**（bgutil 2.0.1 两种模式实测，仍失败）。\n"
         f"可行的办法：{f['remedy']}。"
     )
 
