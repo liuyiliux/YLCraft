@@ -77,13 +77,30 @@ def test_kuaishou_reply_uses_int_root_id():
 
 
 def test_api_supports_parent_id():
-    """统一接口要有 `parent_id` 参数（取子回复）。"""
+    """统一接口要有 `parent_id` 参数（取子回复）。
+
+    ⚠️ 2026-10-04 更新：原来这里断言注释里含「B站的子回复」，
+    那句话是"**B站没有**独立子回复接口"的说明。**这个结论当时就是错的**，
+    2026-10-04 复测发现 B站 老接口 `/x/v2/reply/main?root=` **能取到**
+    （WBI 版 `wbi/main?mode=3` 只给 `rcount`，不给 `replies` 数组）。
+    已补 `get_replies` + `meta.capabilities += "replies"`，
+    并**删掉了**那句误导性注释 —— 所以这条断言跟着改。
+
+    现在的契约是：
+      · `parent_id` 存在                → 子回复走它
+      · 平台没声明 `replies` 能力        → 501 + 平台给的原因（不是空列表）
+      · 声明了但取不到                    → 501 + **具体**原因
+    """
     from app.api.v1 import comments
 
     src = inspect.getsource(comments.get_comments)
     assert "parent_id" in src
-    # B站没有独立子回复接口 —— 要**如实说明**，不是返回空
-    assert "B站的子回复" in src or "随顶层评论" in src
+    # 能力由 meta 声明，不再对平台逐一写死说明
+    assert '_supports(p, "replies")' in src, "应按 meta.capabilities 判定子回复能力"
+    # 不得回退成"B站没有子回复"的旧说法
+    assert "B站没有独立子回复接口" not in src, (
+        "B站已支持子回复（老接口 /x/v2/reply/main?root=），别再写'没有'"
+    )
 
 
 def test_api_replies_501_for_unsupported():

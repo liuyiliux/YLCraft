@@ -64,12 +64,42 @@ def test_endpoint_imports_httpx():
 
 
 def test_endpoint_sets_referer_for_anti_hotlink():
-    """图床有防盗链，必须带 Referer，否则 403。"""
+    """图床有防盗链，必须带 Referer，否则 403。
+
+    ⚠️ 2026-10-04 更新：原来断言 `download_images` 源码里含
+    `douyin.com` 和 `xiaohongshu.com`。映射已**提取**到
+    `proxy._guess_referer`（2026-09-29），因为各平台要的 Referer
+    **方向相反**，一张内联表不够用：
+
+        微博图片   **必须带** weibo 的 Referer
+        X 图片     **不能带** Referer（带了 403）
+        抖音/X 视频 见 proxy._NO_REFERER_HOSTS
+
+    当时不提取的后果：兜底把未知域名一律当**抖音**的 Referer，
+    实测微博图片直接 403（`wx1.sinaimg.cn` → HTTPStatusError 403）。
+    """
     from app.api.v1 import download as dl
+    from app.api.v1 import proxy as px
 
     src = inspect.getsource(dl.download_images)
+    # 调用点：要带 Referer，且要**按域名**判断（不是只看 req.platform）
     assert "Referer" in src
-    assert "douyin.com" in src and "xiaohongshu.com" in src
+    assert "_guess_referer" in src, "应走共享的按域名判断"
+    assert "_NO_REFERER_HOSTS" in src, "要排除不能带 Referer 的域名（X）"
+
+    # 映射表本身要覆盖这些平台（按域名，不是按 platform 参数）
+    # ⚠️ 微博图床是 sinaimg.cn（不是 weibo.com）—— 实测过，
+    #    漏了它就是 403：wx1.sinaimg.cn → HTTPStatusError 403
+    for dom in ("douyin.com", "xiaohongshu.com", "sinaimg.cn", "bilibili.com"):
+        assert dom in px._REFERER_MAP, (
+            f"{dom} 的 Referer 缺失（2026-09-29 微博 403 就是这么来的）"
+        )
+    # 微博图床必须指向微博（不能落到抖音的 Referer 上）
+    assert px._guess_referer("https://wx1.sinaimg.cn/large/x.jpg") == (
+        "https://weibo.com"
+    ), "微博图床的 Referer 必须是 weibo.com"
+    # X 的图**不能**带 Referer
+    assert "twimg.com" in px._NO_REFERER_HOSTS
 
 
 def test_endpoint_sanitizes_title_for_path():

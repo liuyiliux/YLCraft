@@ -1,4 +1,4 @@
-﻿"""能力层校验 + has_more 修复的回归测试（2026-09-29）。
+"""能力层校验 + has_more 修复的回归测试（2026-09-29）。
 
 ## 起因
 
@@ -66,19 +66,40 @@ def test_douyin_sets_has_more():
     assert "data.get(\"has_more\")" in src or "data.get('has_more')" in src
 
 
-def test_weibo_sets_has_more_false():
-    """**回归**：微博要固定 False（平台侧确实没有第 2 页）。
+def test_weibo_sets_has_more_from_real_paging():
+    """**回归**：微博的 `_has_more` 要按**实际能不能翻**给。
 
-    实测：`page=2` 返回 **173 字节 HTML 错误页**；
-    真翻页依赖 `since_id`，而 `cardlistInfo.since_id` 是 `None`。
+    ⚠️ **2026-10-04 推翻了这条测试原来锁的东西。**
 
-    **不编造"还有更多"** —— 否则前端显示翻页按钮但点了没反应。
+    原来它锁 `_has_more = False`，理由是 2026-09-29 的实测：
+        page=2 返回 173 字节 HTML 错误页，`cardlistInfo.since_id` 为 None
+    → 于是"平台没有第 2 页"被当结论固化进测试。
+
+    但 2026-10-03 复测**推翻**了这个结论 —— 微博搜索能翻页：
+
+        page=1  10 条  ['5344437661075159', '5344073515796857', ...]
+        page=2  10 条  ['5349942244934068', '5349941822098505', ...]
+        page=3  10 条
+        page1 ∩ page2 = **0 个**  ← 真实翻页，不是重复数据
+
+    现在代码按"是否取满 want"给 `_has_more`（与 kuaishou/twitter 一致）。
+
+    教训同本文件开头：**注释记的是"当时"的实测，不是永久事实**。
+    写死"平台没有 X"之前必须复验，且要连测试一起改 ——
+    只改代码不改测试，等于把旧结论换个地方继续活。
     """
     from app.services.platforms.weibo import search_patchright as wb
 
     src = inspect.getsource(wb.search_via_patchright)
     assert "_has_more" in src
-    assert "_has_more\"] = False" in src or "_has_more'] = False" in src
+    # 按"取满 want"判断，而不是写死 False
+    assert "_has_more\"] = len(out) >= want" in src, (
+        "微博应按是否取满判断 has_more（2026-10-03 实测能翻页）"
+    )
+    # 不得回退成写死 False（那是已被推翻的旧结论）
+    assert "_has_more\"] = False" not in src, (
+        "不要写死 _has_more=False —— 2026-10-03 实测微博能翻页"
+    )
 
 
 def test_x_sets_has_more_from_cursor():

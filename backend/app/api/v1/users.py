@@ -88,6 +88,16 @@ class _SupportedTable:
     def get(self, key, default=None):
         return self._table().get(key, default)
 
+    def __getitem__(self, key):
+        # ⚠️ 这个方法**必须**有 —— 没有它 `SUPPORTED["kuaishou"]` 会抛
+        # `TypeError: '_SupportedTable' object is not subscriptable`，
+        # 而"用起来像普通 dict"正是这个类的全部意义。
+        # 2026-10-04：`test_kuaishou_search.py::test_route_supports_kuaishou`
+        # 就是这么红的（它写 `SUPPORTED["kuaishou"]["conn_platform"]`）。
+        # 下面是紧挨着的 `_ClientAlias` **一直有**这个方法 ——
+        # 说明当初收敛时漏抄了。
+        return self._table()[key]
+
     def __contains__(self, key) -> bool:
         return key in self._table()
 

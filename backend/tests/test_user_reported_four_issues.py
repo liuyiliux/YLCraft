@@ -162,10 +162,18 @@ def test_video_url_reads_multiple_shapes():
 
 
 def test_video_error_is_actionable():
-    """播不了要给**可操作**提示（不静默黑屏）。"""
+    """播不了要给**可操作**提示（不静默黑屏）。
+
+    ⚠️ 2026-10-04：窗口从 900 放宽到 2500。原来 900 装不下 ——
+    `<video` 上面那段"必须走后端代理"的实测注释（X 的 CDN 带 Referer
+    就 403）有 12 行，把 `onError` 顶到了 900 字符之外 → 误报"没有错误处理"。
+
+    这是**源码文本断言**的固有毛病：行为没变，加个注释就红。
+    真红了很容易被误当成"功能坏了"，然后去改本来正确的产品代码。
+    """
     src = _read("pages/crawler/index.tsx")
     i = src.find("<video")
     assert i != -1
-    seg = src[i:i + 900]
+    seg = src[i:i + 2500]
     assert "onError" in seg, "要有错误处理"
     assert "打开原文" in seg, "提示用户可打开原文"
