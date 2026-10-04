@@ -142,7 +142,7 @@ def test_comments_capability_matches_implementation():
 def test_replies_capability_matches_implementation():
     """同理：声明 `replies` 的必须有实现。
 
-    ⚠️ 微博**没有** `replies` 能力（实测楼中楼拿不到）——
+    ⚠️ 微博**没有** `replies` 能力（2026-10-04 复验：仍未验到样本）——
     所以它不该被断言。
     """
     import importlib
@@ -153,13 +153,30 @@ def test_replies_capability_matches_implementation():
     for m in all_metas():
         if "replies" not in m.capabilities:
             continue
-        mod = importlib.import_module(f"app.services.platforms.{m.name}.client")
+        # ⚠️ 模块目录名**不一定等于平台名**（2026-10-04 修）：
+        #    平台名 `bili` → 目录 `bilibili`；`x`/`tw` → `twitter`。
+        #    原来用 `m.name` 拼路径，B站一声明 replies 就
+        #    `ModuleNotFoundError: app.services.platforms.bili`。
+        mod = None
+        for cand in (m.name, *sorted(m.aliases or []),
+                     {"bili": "bilibili"}.get(m.name, "")):
+            if not cand:
+                continue
+            try:
+                mod = importlib.import_module(
+                    f"app.services.platforms.{cand}.client")
+                break
+            except ModuleNotFoundError:
+                continue
+        assert mod is not None, f"找不到 {m.name} 的 client 模块（试过 {m.aliases}）"
+
         cls = None
         for n, o in vars(mod).items():
             if (inspect.isclass(o) and issubclass(o, BasePlatformClient)
                     and o is not BasePlatformClient):
                 cls = o
                 break
+        assert cls is not None, f"{m.name} 的 client 里没找到平台类"
         src = inspect.getsource(cls.get_replies)
         assert "NotImplementedError" not in src, (
             f"{m.name} 声明了 replies 能力，但还没实现"
@@ -169,8 +186,11 @@ def test_replies_capability_matches_implementation():
 def test_weibo_does_not_claim_replies():
     """**回归**：微博不能声明 `replies` 能力。
 
-    实测：顶层评论的 `comments` 字段 20 条里 0 条带，
-    `/comments/hotFlowChild` 返回 ok=0。所以微博是**如实报错**。
+    2026-10-01 实测：顶层评论的 `comments` 字段 20 条里 0 条带，
+    `/comments/hotFlowChild` 返回 ok=0。
+    ⚠️ 2026-10-04 复验：抽样仍未找到样本，但**不能据此断言"平台没有"**
+    —— 同轮实测证明快手 `reply_count` 全 0 却能取到数据。
+    微博要下"平台没有"的结论，必须**直接打接口**验过。
     如果哪天有人给微博加了 replies 能力，必须先有实测证据。
     """
     from app.services.platforms.meta import supports
@@ -179,16 +199,28 @@ def test_weibo_does_not_claim_replies():
     assert not supports("wb", "replies")
 
 
-def test_bili_has_paged_but_not_replies():
-    """B站：有 `comments_paged`（更完整的分页），但**没有** `replies`。
+def test_bili_has_paged_and_now_replies():
+    """B站：有 `comments_paged`，**且现在有** `replies`。
 
-    B站的子回复随顶层评论的 `replies` 字段返回，没有独立接口。
+    ⚠️ 2026-10-04 修正：原来断言 `not supports("bili", "replies")`，
+    依据是「B站的子回复随顶层评论的 `replies` 字段返回，没有独立接口」。
+
+    **那条结论是错的**（又是一个"当时也实测过"的注释）：
+      · 实测 20 条顶层评论，6~7 条带 reply_count，但 replies 数组**全空**
+        —— 因为项目走 WBI 接口 `mode=3`，它不内嵌（那是老接口 mode=1 的行为）
+      · 老接口 `/x/v2/reply/main?root=<rpid>` → **20 条真实数据** ✅
+
+    已补 `BilibiliClient.get_replies`（走老接口），实测
+    `/comments?parent_id=319481921680` 返回 200 + 20 条真实楼中楼。
     """
     from app.services.platforms.meta import supports
 
     assert supports("bili", "comments")
     assert supports("bili", "comments_paged")
-    assert not supports("bili", "replies")
+    assert supports("bili", "replies"), (
+        "B站子回复已补（老接口 root=，实测 20 条真实数据）—— "
+        "不要再相信『随顶层返回』那句旧注释"
+    )
 
 
 # =============================================================================

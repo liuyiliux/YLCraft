@@ -24,7 +24,20 @@ PLATFORM_META = {
         "search", "detail", "search_users", "user_profile", "user_videos",
         "self_profile",
         "comments",          # TweetDetail GraphQL
-        "replies",           # 二级回复在同一棵树里，靠父 id 筛
+        # ⚠️ 2026-10-04 实测：声明了，但**常常取不到** ——
+        #    二级回复虽然在同一棵 TweetDetail 树里（靠
+        #    `in_reply_to_status_id_str` == 父评论 id 筛），
+        #    但 X **不一定把它下发给客户端**。
+        #    实测（tweet 2104992402851422363）：顶层 9 条里 3 条 `reply_count=1`，
+        #    打 parent_id → 200 但 0 条；加诊断日志确认
+        #    **原始树里被引用 0 次** —— 数据压根没来，不是我们过滤掉了。
+        #    （已删 / 折叠 / 需额外请求展开，都可能）
+        #
+        #    所以：代码保留（X 改了就能用），但**当前不能对外宣称支持**。
+        #    ⚠️ 抽样教训：不能用「这页有没有 reply_count>0」来判断
+        #       平台支不支持 —— 快手实测 reply_count 全 0，
+        #       直接打接口却返回了真实数据。**字段是提示，接口才是事实。**
+        "replies",           # 二级回复在同一棵树里，靠父 id 筛（但 X 未必下发）
         "download",          # 有专用下载器
     ],
 }
