@@ -20,13 +20,37 @@ health_routes.py / platform_stats.py），共 58 项内联映射：
 
 from __future__ import annotations
 
+import ast
 import inspect
+import textwrap
 from pathlib import Path
 
 import pytest
 
 BACKEND = Path(__file__).resolve().parents[1]
 PLATFORMS = BACKEND / "app" / "services" / "platforms"
+
+
+def _strip_docstring(src: str) -> str:
+    """去掉 docstring，返回**可执行代码**部分。
+
+    ⚠️ 为什么需要：平台 client 的 docstring 里**故意**保留了被推翻的
+    历史结论（"这里原来写着…"），那是给人看的现场记录。
+    直接对源码做字符串断言会匹配到自己的说明文字（踩过两次）。
+    """
+    try:
+        tree = ast.parse(textwrap.dedent(src))
+    except SyntaxError:
+        return src
+    fn = tree.body[0] if tree.body else None
+    if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return src
+    # 删掉第一个语句（docstring）
+    if (fn.body and isinstance(fn.body[0], ast.Expr)
+            and isinstance(fn.body[0].value, ast.Constant)):
+        fn.body = fn.body[1:]
+    return ast.unparse(fn)
+
 
 
 # =============================================================================
@@ -178,25 +202,49 @@ def test_replies_capability_matches_implementation():
                 break
         assert cls is not None, f"{m.name} 的 client 里没找到平台类"
         src = inspect.getsource(cls.get_replies)
-        assert "NotImplementedError" not in src, (
-            f"{m.name} 声明了 replies 能力，但还没实现"
+        # ⚠️ 2026-10-04：不能**一看到** `NotImplementedError` 就判"没实现"。
+        #
+        # 微博的 `get_replies` 里就有一个**正当的** NotImplementedError：
+        # 顶层翻页用尽仍未找到目标评论时，抛它并说明"是没翻到，不是没有回复"。
+        # 那是铁律要求的（不能返回空列表冒充"没人回复"），不是"没实现"。
+        #
+        # 所以这里只查**"不支持"这个结论**是否还在可执行代码里，
+        # 而 docstring 里可以保留历史说明（"这里原来写着…"）。
+        code_only = _strip_docstring(src)
+        for banned in ("不支持单独取子回复", "暂不支持单独取子回复"):
+            assert banned not in code_only, (
+                f"{m.name} 声明了 replies 能力，代码里却还在说「{banned}」"
+            )
+        # 真的没实现的话，应该整个函数体就是一句 raise
+        assert "raise NotImplementedError" not in code_only or \
+            len(code_only.strip()) > 200, (
+            f"{m.name} 声明了 replies 能力，但函数体只有一句 raise —— 那是没实现"
         )
 
 
-def test_weibo_does_not_claim_replies():
-    """**回归**：微博不能声明 `replies` 能力。
+def test_weibo_now_claims_replies():
+    """微博**能**取楼中楼 —— 2026-10-04 实测推翻了原来的"不能"。
 
-    2026-10-01 实测：顶层评论的 `comments` 字段 20 条里 0 条带，
-    `/comments/hotFlowChild` 返回 ok=0。
-    ⚠️ 2026-10-04 复验：抽样仍未找到样本，但**不能据此断言"平台没有"**
-    —— 同轮实测证明快手 `reply_count` 全 0 却能取到数据。
-    微博要下"平台没有"的结论，必须**直接打接口**验过。
-    如果哪天有人给微博加了 replies 能力，必须先有实测证据。
+    这个测试**曾经断言相反的事**（`does_not_claim_replies`），
+    依据是"实测 20 条里 0 条带 `comments`"。那句话本身当时就该被怀疑：
+    它是**抽样**结果，不是"平台没有"的证据。
+
+    2026-10-04 用户直接给了确定有楼中楼的样本
+    （https://m.weibo.cn/detail/5336295257679240），实测：
+
+        顶层 20 条 → **20/20 都有 replies**，共 32 条，rootid 零串号
+        样本与微博 App 截图完全对应（博主回复粉丝那条）
+
+    已补 `WeiboClient.get_replies` + `meta.capabilities += "replies"`。
+
+    教训（同一个坑第三次）：快手（`reply_count=0` → "取不到"）、
+    B站（信文档 → 数组全空）、微博（抽样没抽到）。
+    **验"平台有没有某能力"必须先拿到确定有该特征的样本。**
     """
     from app.services.platforms.meta import supports
 
-    assert not supports("weibo", "replies")
-    assert not supports("wb", "replies")
+    assert supports("weibo", "replies")
+    assert supports("wb", "replies")
 
 
 def test_bili_has_paged_and_now_replies():

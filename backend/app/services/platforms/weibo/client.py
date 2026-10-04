@@ -257,30 +257,115 @@ class WeiboClient(BasePlatformClient):
     ) -> Dict[str, Any]:
         """取某条微博评论的子回复（楼中楼）。
 
-        ## ⚠️ 微博的楼中楼**拿不到**（2026-10-01 实测 + 交叉验证）
+        ## ⚠️⚠️ 这里原来写着"微博不支持单独取子回复"——**那个结论是错的**
+        ## （2026-10-04 实测推翻，第二次）
 
-        实测两条路都不行：
+        当时的理由是"实测 20 条评论里 0 条带 `comments`"，
+        并拿 MediaCrawler（★66k）"也只读 comment.comments、且默认开关关着"
+        做交叉验证。
 
-            ① 顶层评论的 `comments` 字段（楼中楼就放这儿）
-               实测 20 条评论里 **0 条**带 `comments`
-            ② `/comments/hotFlowChild`（PC 端楼中楼端点）
-               实测返回 `ok=0`（不是 `ok=1`），需要额外参数
+        **两处都不成立**：
 
-        **交叉验证**：MediaCrawler（★66k）的
-        `get_comments_all_sub_comments()` 同样只是读 `comment.get("comments")`，
-        而且它用 `ENABLE_GET_SUB_COMMENTS` 开关**默认关着** ——
-        说明这条路本来就不稳。
+          ① 那批"0 条带 comments"是**抽样**抽到的另一批内容。
+             换成确定有楼中楼的样本（用户给的 5336295257679240），
+             顶层 20 条**全部**带 `comments`（共 32 条），`rootid` 零串号。
+          ② 「别人也没实现」**不能**证明「平台没有这个数据」——
+             MediaCrawler 可能是没做，而不是做不了。
 
-        所以这里**如实抛错**（可操作提示），
-        **不返回空列表** —— 后者会让用户以为"这条评论没人回复"。
+        这是同一个坑的第三次：快手（`reply_count=0` → 写"取不到"）、
+        B站（信了文档说"随顶层返回"，实际数组全空）、微博（抽样没抽到）。
+        **字段是提示，接口才是事实；抽样碰不到 ≠ 平台没有。**
+
+        ## 实现
+
+        子回复**就在顶层响应的 `comments` 字段里**，不需要额外端点 ——
+        所以这里走顶层接口再按 id 筛，而不是调 `/comments/hotFlowChild`
+        （那个端点实测 `ok=0`，本次也没再试它 —— 顶层已经够用）。
+
+        ⚠️ 顶层接口**分页**（`max_id`），所以要把顶层翻完才能保证找得到
+        目标评论；这里最多翻 `MAX_TOP_PAGES` 页，超了如实报错而不是
+        假装"没有回复"（那会让用户以为没人回）。
         """
-        raise NotImplementedError(
-            "[weibo] 微博不支持单独取子回复（楼中楼）。\n"
-            "实测：顶层评论接口的 `comments` 字段实测为空，"
-            "`/comments/hotFlowChild` 返回 ok=0 需要额外参数。\n"
-            "⚠️ 这不是「这条评论没有回复」—— 是微博没有开放这个数据。\n"
-            "（顶层评论仍可用：去掉 parent_id 参数即可。）"
-        )
+        mid = str(item_id or "").strip()
+        cid = str(comment_id or "").strip()
+        if not mid or not cid:
+            return {"comments": [], "has_more": False, "next_cursor": "", "total": 0}
+
+        max_pages = 6          # 顶层翻页上限（找不到就不编造）
+        cursor_id: Any = 0
+        found: Optional[Dict[str, Any]] = None
+        exhausted = False     # 是不是翻到最后一页了（区分"没找到"vs"没翻到"）
+
+        for _ in range(max_pages):
+            resp = await self._call("/comments/hotflow", {
+                "id": mid, "mid": mid, "max_id_type": 0,
+                **({"max_id": cursor_id} if cursor_id else {}),
+            })
+            data = (resp or {}).get("data") or {}
+            if not isinstance(data, dict):
+                break
+            # ⚠️ 顶层列表在 `data.data`（不是 data.comments）—— 与
+            # get_comments_page 读的是同一层，别写错
+            for c in data.get("data") or []:
+                if isinstance(c, dict) and str(c.get("id") or "") == cid:
+                    found = c
+                    break
+            if found is not None:
+                break
+            cursor_id = data.get("max_id") or 0
+            if not cursor_id or str(cursor_id) == "0":
+                exhausted = True
+                break
+        else:
+            exhausted = False    # 翻页用尽（for-else）
+
+        if found is None:
+            if exhausted:
+                # 已翻到最后一页还是没这条 → 内容确实不在
+                return {"comments": [], "has_more": False,
+                        "next_cursor": "", "total": 0}
+            # ⚠️ 翻页用尽仍没找到 → **明说**，不返回空列表冒充"没人回复"
+            raise NotImplementedError(
+                f"[weibo] 在前 {max_pages} 页顶层评论里没找到 id={cid}。\n"
+                f"这条评论可能在更靠后的页（微博热门评论会按热度重排）。\n"
+                f"⚠️ 这不是「没有回复」—— 是**没翻到**。\n"
+                f"（顶层评论仍可用：去掉 parent_id 参数。）"
+            )
+
+        subs = found.get("comments") or []
+        subs = [s for s in subs if isinstance(s, dict)]
+        want = max(1, int(max_results or 20))
+        out: List[Dict[str, Any]] = []
+        for s in subs[:want]:
+            u = s.get("user") or {}
+            out.append({
+                "id": str(s.get("id") or ""),
+                "content": _strip_html(s.get("text") or ""),
+                "author": u.get("screen_name") or "",
+                "author_id": str(u.get("id") or ""),
+                "avatar": u.get("profile_image_url") or "",
+                "likes": int(s.get("like_count") or 0),
+                "create_time": _rfc2822_to_ts(s.get("created_at") or ""),
+                # ⚠️ 子回复**自己没有**子回复（微博只两层）→ 0 是**真的 0**
+                "reply_count": 0,
+                "location": (s.get("source") or "").replace("来自", "").strip(),
+                "reply_to": _strip_html(s.get("reply_to_text") or ""),
+                # 博主本人回复（实测 is_mblog_author=True）—— 前端可据此标记
+                "is_author_reply": bool(s.get("is_mblog_author")),
+                "images": [],
+                "replies": [],
+            })
+
+        nxt = cursor_id
+        has_more = bool(nxt) and str(nxt) not in ("", "0") and len(subs) > want
+        return {
+            "comments": out,
+            "has_more": has_more,
+            "next_cursor": str(nxt) if has_more else "",
+            # ⚠️ 不编造：微博**不给**子回复总数（顶层 reply_count 恒 0），
+            # 这里给"本页实际条数"，不拿视频总评论数冒充
+            "total": len(out),
+        }
 
     async def get_comments_page(
         self,
@@ -327,6 +412,18 @@ class WeiboClient(BasePlatformClient):
                         images.append(large["url"])
             elif pic.get("large", {}).get("url"):
                 images.append(pic["large"]["url"])
+            # ⚠️⚠️ `reply_count` 原来**写死 0**，而下一行 `replies` 却有真实数据
+            #
+            # 实测（2026-10-04，样本 5336295257679240）：顶层 20 条评论
+            # **20/20 都有子回复**（共 32 条），而微博接口给我们的
+            # `reply_count` 字段**全是 0** —— 只能自己数。
+            #
+            # 这个 bug 的后果很隐蔽：前端判断"要不要显示楼中楼入口"用的是
+            #     (c.reply_count ?? c.rcount) > 0
+            # 写死 0 ⇒ **用户永远看不到回复入口**，哪怕数据就在手里。
+            # 数据明明抓到了，却因为一个数不显示 —— 这比"取不到"更难查。
+            _reps = c.get("comments") or []
+            _reps = _reps if isinstance(_reps, list) else []
             out.append({
                 "id": cid,
                 "content": _strip_html(c.get("text") or ""),
@@ -335,10 +432,11 @@ class WeiboClient(BasePlatformClient):
                 "avatar": u.get("profile_image_url") or "",
                 "likes": int(c.get("like_count") or 0),
                 "create_time": _rfc2822_to_ts(c.get("created_at") or ""),
-                "reply_count": 0,
+                # 微博自己给的 reply_count 恒为 0（实测 20/20）→ 只能数
+                "reply_count": len(_reps),
                 "location": (c.get("source") or "").replace("来自", "").strip(),
                 "images": images,
-                "replies": c.get("comments") or [],
+                "replies": _reps,
             })
 
         nxt = data.get("max_id")

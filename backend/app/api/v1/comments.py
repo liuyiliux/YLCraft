@@ -386,6 +386,11 @@ def _normalize_generic_comment(raw: Dict[str, Any]) -> Dict[str, Any]:
         "images": raw.get("images") or [],
         # 子回复里"回复给谁"（抖音 reply_to / 快手 replyToUserName / X in_reply_to_screen_name）
         "reply_to": raw.get("reply_to") or "",
+        # ⚠️ 微博子回复里有 `is_mblog_author`（博主本人回复，实测 True）——
+        #    这个归一化函数是**白名单式**的：没列出来的字段会**被丢掉**。
+        #    所以 platform 采集到了、前端想用，却因为这里没写而消失。
+        #    （教训：加字段要同时看"采集端产出"和"归一化白名单"两处。）
+        "is_author_reply": bool(raw.get("is_author_reply")),
     }
 
 
