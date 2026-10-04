@@ -2390,6 +2390,111 @@ class BilibiliClient(BasePlatformClient):
             self._log(f"Get comments error: {e}", "error")
             return {"total": 0, "page": page, "page_size": page_size, "comments": [], "cursor": {}, "next_offset": "", "has_more": False}
 
+    async def _resolve_aid(self, bvid: str) -> int:
+        """BV 号 → aid（评论接口的 `oid` 要的是 aid，不是 cid）。
+
+        实测参考：`get_comments_paged` 里也是这么换的
+        （见 `Using aid=... for comment API`），抽出来给 `get_replies` 复用。
+        """
+        view = await self.request("GET", f"{BASE_URL}/x/web-interface/view?bvid={bvid}")
+        if not (isinstance(view, dict) and view.get("code") == 0):
+            raise RuntimeError(f"[bili] 取 aid 失败：{bvid} 拿不到视频信息")
+        aid = (view.get("data") or {}).get("aid")
+        if not aid:
+            raise RuntimeError(f"[bili] 取 aid 失败：{view.get('data', {})} 里没有 aid")
+        return int(aid)
+
+    async def get_replies(
+        self,
+        item_id: str,
+        root: str,
+        max_results: int = 20,
+        cursor: str = "",
+    ) -> Dict[str, Any]:
+        """取某条主楼下的**子回复**（楼中楼）。
+
+        ## 为什么不用 WBI 接口（2026-10-04 实测）
+
+        项目取顶层评论走的是 **WBI 新接口**
+        `x/v2/reply/wbi/main?mode=3` —— 它**不内嵌** `replies` 数组，
+        每条只给 `rcount`（数量）。所以"子回复随顶层一起返回"这句话
+        对当前实现**是错的**（那是老接口 `mode=1` 的行为）。
+
+        实测两条路：
+
+            WBI + root    → code=-403「访问权限不足」  ❌
+            老接口 + root  → code=0，20 条            ✅
+
+        所以这里用**老接口** `/x/v2/reply/main?root=<rpid>`，
+        它同时支持 `type=1&oid=<aid>&root=<主楼rpid>` 直接取子回复。
+
+        ## 另外：顶层返回的内嵌 replies 是**预览，不是全部**
+
+        实测 rcount=7 的主楼，内嵌 `replies` 只有 **2** 条。
+        所以即便顶层带了内嵌数据，也不能当"全部子回复"用 ——
+        仍需按需单独取（本方法）。
+
+        Args:
+            item_id: BV 号（内部会换成 aid）
+            root:     主楼的 rpid
+        """
+        oid = await self._resolve_aid(item_id)
+        # ⚠️ 上游（`comments.py`）传的是 **cursor**，B站老接口按 `pn` 页码翻
+        #    —— 两种都认：纯数字游标当页号，否则回第 1 页。
+        pn = 1
+        if cursor:
+            s = str(cursor).strip()
+            pn = int(s) if s.isdigit() else 1
+        params = {
+            "type": 1,
+            "oid": oid,
+            "root": str(root),
+            "pn": max(1, pn),
+            "ps": min(50, max(1, int(max_results or 20))),
+        }
+        qs = urlencode(params)
+        self._log(f"[bili] 取子回复 root={root} oid={oid} pn={params['pn']}")
+
+        resp = await self.request("GET", f"{BASE_URL}/x/v2/reply/main?{qs}")
+        if not isinstance(resp, dict) or resp.get("code") != 0:
+            code = resp.get("code") if isinstance(resp, dict) else "N/A"
+            msg = resp.get("message", "") if isinstance(resp, dict) else ""
+            self._log(f"[bili] 取子回复失败 code={code} msg={msg}", "warning")
+            raise RuntimeError(
+                f"[bili] 取子回复失败：code={code} msg={msg or '未知错误'}"
+            )
+
+        data = resp.get("data") or {}
+        out: List[Dict[str, Any]] = []
+        for r in (data.get("replies") or [])[:max_results]:
+            member = r.get("member") or {}
+            content = r.get("content") or {}
+            out.append({
+                "id": r.get("rpid"),
+                "author": member.get("uname", ""),
+                "author_id": member.get("mid", ""),
+                "avatar": member.get("avatar", ""),
+                "content": content.get("message", ""),
+                "likes": r.get("like_count", 0),
+                "create_time": r.get("ctime", ""),
+                "location": (content.get("reply_control") or {}).get("location", ""),
+                # 子回复里再嵌套（第三层）也要标出来，否则前端不知道还有没有楼中楼
+                "reply_count": r.get("rcount", 0),
+                "reply_to": r.get("parent", root),
+            })
+        self._log(f"[bili] 子回复 {len(out)} 条")
+        return {
+            "comments": out,
+            # ⚠️ **不用** `cursor.all_count` —— 实测带 `root=` 时它返回的是
+            # **整个视频的评论总数**（1944），不是这条主楼的子回复数（16）。
+            # 那是老接口的语义：`all_count` 恒等于顶层总数。
+            # 顶层评论的 `rcount` 才是这条主楼的真实子回复数，
+            # 但它不在本次响应里，所以这里**不编造总数**，用实际取到的条数。
+            "total": len(out),
+            "next_cursor": "" if len(out) < max_results else str(params["pn"] + 1),
+            "has_more": len(out) >= max_results,
+        }
+
     async def send_comment(
         self,
         bvid: str,

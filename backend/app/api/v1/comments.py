@@ -455,9 +455,12 @@ async def get_comments(
                         detail=(
                             f"{meta.name} 不支持单独取子回复。\n"
                             + (
-                                # B站：回复就在顶层评论里，**不需要**单独取
-                                "它的子回复**随顶层评论一起返回**（在每条评论的 "
-                                "`replies` 字段里）—— 直接看顶层返回即可。"
+                                # B站：2026-10-04 已补 `get_replies`（走老接口
+                                # `/x/v2/reply/main?root=`）。到不了这里 ——
+                                # meta 已声明 `replies`，下面的分支不会命中。
+                                # 保留这段只为兜住"meta 声明了但实现缺失"的情况。
+                                f"{meta.name} 声明了子回复能力，但本次请求没能取到 —— "
+                                "请检查该平台 client 是否实现了 get_replies。"
                                 if meta.name == "bili" else
                                 # 微博：平台就没开放这个数据（实测过）
                                 "⚠️ 这不是「这条评论没有回复」—— "
