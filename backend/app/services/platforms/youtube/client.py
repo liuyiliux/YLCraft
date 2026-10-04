@@ -35,6 +35,7 @@ from ..types import (
     LoginExpiredError,
     NetworkError,
     NoteDetail,
+    RiskControlError,
     SearchParams,
     SearchResult,
     UserProfile,
@@ -42,6 +43,84 @@ from ..types import (
 from .apis import DURATION_BOUNDS, build_search_url, parse_video_id
 
 logger = logging.getLogger("ylcraft.platforms.youtube")
+
+
+# -----------------------------------------------------------------------------
+# 人机校验（"Sign in to confirm you're not a bot"）
+# -----------------------------------------------------------------------------
+#
+# ⚠️⚠️ **这不是我们代码的问题，也不是"平台不支持评论"**（2026-10-04 实测澄清）
+#
+# 错误信息直译是"登录以确认你不是机器人"，容易误判成"必须登录才能看评论"。
+# 实测结论是**反的**：不需要登录就能拿到评论，只要那个视频没被拦。
+#
+# 同一 IP、同一分钟、同一份代码（yt-dlp 默认 client、无 cookie）：
+#
+#     搜索        njK0eebUsQw ✅16  dQw4w9WgXcQ ✅299
+#                 9bZkp7q19f0 ✅257  BaW_jenozKc ✅7
+#     watch 页    dQw4w9WgXcQ ✅ 2,400,000 条评论
+#                 njK0eebUsQw / 9bZkp7q19f0 ❌ not a bot
+#
+# → 搜索 4/4 全通说明**不是**全局 IP 封禁；失败是**按视频**的。
+# 扩大到 8 个视频（含 Despacito / Adele Hello / Happy 这类顶流）：
+# 成功 **1/8**，唯一成功的是 240 万播放的那条。
+#
+# 已逐个试过、能想到的技术手段，**全部无效**（所以不要让后来人再试一遍）：
+#
+#     player_client = web / web_safari / web_embedded / android / ios /
+#                     tv / mweb        → 7 个全试过，失败视频一律失败
+#     player_skip   = webpage          → 跳过 HTML 直连 innertube，仍失败
+#                     js,webpage,html   → 仍失败
+#     cookiesfrombrowser = edge        → cookie 读得到，仍失败
+#
+# ⚠️ `web_embedded` / `mweb` **有副作用**：它们会把本来能用的
+# dQw4w9WgXcQ 也弄坏（`Requested format is not available`）。
+# 所以它们**不能**当后备方案 —— 这条也写进 meta，别再上。
+#
+# 结论：这是 YouTube 对当前出口 IP 的人机校验，**只能靠等 / 换 IP 缓解**。
+# 所以按 `RiskControlError` 抛（→ 上层 429），而不是裸 RuntimeError（→ 500）：
+# 500 在语义上是"我们坏了"，429 才是"平台侧拒绝，等一等或换 IP"。
+
+_BOT_CHECK_MARK = "not a bot"
+
+#: 供 meta / 文档引用的实测结论（单条，不重复写）
+BOT_CHECK_FACTS = {
+    "measured_on": "2026-10-04",
+    "search_ok": "4/4",
+    "watch_ok": "1/8",
+    "client_variants_tried": 7,
+    "skip_webpage": "无效",
+    "cookies_from_browser": "无效（edge cookie 可读）",
+    "remedy": "等待 / 更换出口 IP / 在浏览器打开该视频完成人机校验",
+}
+
+
+def _is_bot_check(msg: str) -> bool:
+    """判断 yt-dlp 的错误是不是人机校验。
+
+    ⚠️ 匹配必须**紧**。yt-dlp 会在这句话后面拼一大段 cookie 教程
+    （`Use --cookies-from-browser or --cookies for the authentication`），
+    且不同版本的措辞有差异（`You're` / `you’re` 的弯引号）。
+    所以只认 "not a bot" 这个稳定片段，**不要**去匹配整句 ——
+    否则 `Sign in to confirm your age`（年龄限制）会误判成机器人校验，
+    而这两者的处置完全相反（换 IP 没用 vs 需要登录/成人验证）。
+    """
+    low = (msg or "").lower()
+    return _BOT_CHECK_MARK in low
+
+
+def _bot_check_error(vid: str, action: str) -> RiskControlError:
+    """构造人机校验异常（搜索 / 详情 / 评论共用同一段事实，避免各写各的）。"""
+    f = BOT_CHECK_FACTS
+    return RiskControlError(
+        f"[youtube] {action}被 YouTube 人机校验拦截（视频 {vid}）。\n"
+        f"这不是「视频不存在」，也不是「必须登录才能看」——"
+        f"同一 IP 下其它视频能正常{action}"
+        f"（{f['measured_on']} 实测 {f['watch_ok']}），是 YouTube 按视频加严。\n"
+        f"已试过且无效：{f['client_variants_tried']} 种 player_client、"
+        f"跳过网页直连 API、读本机浏览器 cookie。\n"
+        f"可行的办法：{f['remedy']}。"
+    )
 
 
 def _ydl_opts(flat: bool = True) -> Dict[str, Any]:
@@ -267,6 +346,12 @@ class YoutubeClient(BasePlatformClient):
                     f"[youtube] 取评论时无法连接（{type(exc).__name__}）。"
                     "请确认 VPN 已开启。"
                 ) from exc
+            # ⚠️ 顺序要紧：人机校验**必须排在** NetworkError 之后 ——
+            # 它的提示语里含 "authentication"/"cookies"，但不含
+            # "timed out"/"connect"，实际不会撞；这里写明顺序是为了
+            # 以后有人往 _run 里加重试参数时不会踩。
+            if _is_bot_check(msg):
+                raise _bot_check_error(vid, "取评论") from exc
             raise RuntimeError(f"[youtube] 取评论失败: {msg[:200]}") from exc
 
         if not info:
@@ -375,6 +460,10 @@ class YoutubeClient(BasePlatformClient):
                     "请确认 VPN 已开启且模式为全局/TUN（PAC 模式下 python 进程"
                     "可能不走代理）。"
                 ) from exc
+            # 搜索页也会被拦（实测当时 4/4 能过，但换 IP / 换时段不保证）。
+            # 这里同样按风控抛 —— 别让用户以为是"搜不到这个词"（静默空结果）。
+            if _is_bot_check(msg):
+                raise _bot_check_error("搜索结果", "搜索") from exc
             raise RuntimeError(f"[youtube] 搜索失败: {msg[:200]}") from exc
 
         if not info:
@@ -415,6 +504,11 @@ class YoutubeClient(BasePlatformClient):
                 raise ContentNotFoundError(
                     f"[youtube] 视频不可用或已删除（id={vid}）"
                 ) from exc
+            # ⚠️ 必须排在 unavailable 之后：yt-dlp 对同一个视频可能同时
+            # 报两者，但"视频被删了"和"被风控拦截"给用户的处置完全不同
+            # （前者没救，后者换 IP 有救）。
+            if _is_bot_check(msg):
+                raise _bot_check_error(vid, "取详情") from exc
             raise RuntimeError(f"[youtube] 详情获取失败: {msg[:200]}") from exc
 
         if not info:

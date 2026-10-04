@@ -168,15 +168,83 @@ B站那个 bug 让我意识到：**「平台限制」类结论可能早就过时
 | X | 3 | 2 | 2 | ✅ **诚实** —— 见下 |
 | 抖音 | 51192 | 51192 | 16 | ✅ 真实总数 |
 | 快手 | 0 | 173 | 18 | ✅ 接口 total 更准（内容侧为 0 是它自己没填）|
-| YouTube | 0 | — | — | ⚠️ 500 `Sign in to confirm you're not a bot`（匿名 yt-dlp 被拦）|
+| YouTube | 0 | 2400000 | 3 | ✅ **可用但不稳定** —— 见 一之六 |
 
 **X 的 3 vs 2 不是 bug**：`search_http.py:564` 明确写了
 「X 是 cursor 分页，**没有 total 可给 —— 不编造**」。
 所以 `total=2` 是**本页实际取到的条数**，而内容自称的 3 来自 X 的
 `reply_count`（可能含已删除的回复）。**宁可少报也不编数字** —— 保持。
 
-YouTube 的 500 是**平台侧限制**（匿名 yt-dlp 触发 Google 的
-"not a bot" 校验），不是代码问题。
+## 一之六：YouTube 评论 500 的真实原因（2026-10-04 复测，结论已被推翻）
+
+原记录（见上一版表格）写的是「匿名 yt-dlp 被拦 / 平台侧限制」。
+**这个结论是错的**，本节是推翻过程 + 现状。
+
+### 症状
+
+`GET /api/v1/comments?platform=youtube&item_id=njK0eebUsQw` → **500**
+`Sign in to confirm you're not a bot`
+
+### 第一直觉（错的）
+
+这句话直译是「登录以确认你不是机器人」→ 容易得出两个错误结论：
+
+1. 「YouTube 评论区必须登录」→ 去加 cookie / 加登录态
+2. 「平台限制，我们做不到」→ 文档记一笔就完事
+
+### 复测数据
+
+**同一 IP、同一分钟、同一份代码**（yt-dlp 默认 client，无 cookie）：
+
+| | njK0eebUsQw | dQw4w9WgXcQ | 9bZkp7q19f0 | BaW_jenozKc |
+|---|---|---|---|---|
+| 搜索 | ✅ 16 条 | ✅ 299 条 | ✅ 257 条 | ✅ 7 条 |
+| watch 页 | ❌ not a bot | ✅ **2,400,000 条评论** | ❌ not a bot | ❌ 已下架 |
+| 取评论 | ❌ | ✅ 3 条 | ❌ | ❌ |
+
+**搜索 4/4 全通 → 不是全局 IP 封禁。** 失败是**按视频**的。
+
+扩大到 8 个视频（含 Despacito / Adele Hello / Happy 等顶流）：
+成功 **1/8**，唯一成功的是 240 万播放的那条。
+
+### 试过且**全部无效**的手段
+
+| 手段 | 结果 |
+|---|---|
+| `player_client` = web / web_safari / android / ios / tv / mweb | 6 个，失败视频一律失败 |
+| `player_client` = web_embedded | ❌ 失败视频仍失败，**且把能用的 dQw4w9WgXcQ 也弄坏** |
+| `player_skip` = webpage | 跳过 HTML 直连 innertube API → 仍失败 |
+| `player_skip` = js,webpage,html | 仍失败 |
+| `cookiesfrombrowser` = edge | cookie 读得到（说明账号正常）→ 仍失败 |
+| `cookiesfrombrowser` = chrome | ⚠️ 本机 Chrome cookie 库被锁，**未能测出结论** |
+
+⚠️ `web_embedded` / `mweb` 的**副作用**是本次实测最有价值的发现之一：
+它们不是"更宽松的后备 client"，而是**会把本来能用的视频也弄坏**
+（`Requested format is not available`）。所以**不能**拿来做 fallback。
+
+### 真实结论
+
+这是 YouTube 对**当前出口 IP** 的人机校验，**只能靠等 / 换 IP 缓解**。
+既不是代码缺陷，也不是"必须登录"，更不是"平台不支持评论"。
+
+### 已做的改动
+
+- `get_comments` / `get_detail` / 搜索 三处都识别该错误 →
+  抛 `RiskControlError` → 接口层 **429**（原来 500）。
+  500 语义是"我们坏了"，会把排查方向误导到服务端。
+- 错误文案带**实测事实**（1/8、已试 7 种 client 均无效）和**可操作办法**，
+  不再只丢一句英文。
+- ⚠️ **详情页和评论页是同一个失败**（都走 `extract_info(watch)`）——
+  所以搜出结果点进去一样 500，不只是评论的问题。
+- 保留 `comments` 能力标注（实测能取到），但注明**不稳定**。
+
+### 教训（和本文件 一之四 同一个）
+
+**别把"这一条视频失败"推广成"这个平台不支持"。** 上一次的错误结论
+就是这么来的。`reply_count` 那种"字段看着像有就调 API 验一下"的规矩，
+在能力层面同样适用。
+
+测试：`backend/tests/test_youtube_bot_check.py`（17 个，含运行时验证）。
 
 ## 二、前端入口矩阵（扫各页面 PLATFORMS 数组）
 
