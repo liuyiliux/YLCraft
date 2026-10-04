@@ -28,6 +28,9 @@ import {
   ClockCircleOutlined, SwapOutlined,
   // ⚠️ 手机端筛选区的折叠入口图标（2026-10-02 移动端适配）
   SlidersOutlined,
+  // ⚠️ 429「平台侧拒绝」面板的图标（2026-10-04）
+  // 用 ⚠ 而不是 Message —— 501（没实现）才用"不支持"的中性语气。
+  WarningOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
 import { useResizableColumns } from '../../hooks/useResizableColumns'
@@ -117,6 +120,37 @@ const PLATFORMS: PlatformInfo[] = [
 ]
 
 const PLATFORM_MAP = Object.fromEntries(PLATFORMS.map(p => [p.value, p]))
+
+// ===== 错误消息：给用户看的摘要 =====
+//
+// ⚠️ **不要** `String(detail).slice(0, 90)`（2026-10-04 实测踩到）
+//
+// 原来评论失败时这么截，结果：后端 382 字符的说明只剩 90 字符，
+// 里面**没有一句是用户能照做的** ——
+//
+//     [youtube] 取评论被 YouTube 人机校验拦截（视频 njK0eebUsQw）。
+//     这不是「视频不存在」，也不是「必须登录才能看」——同一 IP 下其它视频能正常取评论（
+//     ↑ 断在这里；「可行的办法：等待 / 更换出口 IP / …」全没了
+//
+// 平台错误消息的结构是"解释 + 处置办法"多行式，**处置办法总在最后**，
+// 按字数从**头**截就正好把它切掉 —— 后端刚修好的 `_brief()` 保尾规则
+// 在这里被前端又抵消了。
+//
+// 所以这里**同样保尾**，与后端 `api/v1/comments.py::_brief` 规则一致：
+//   1. 超限保尾（结论在尾部）
+//   2. 截断处补 `…`，让用户知道内容被省了
+//   3. 尽量按整行取舍，不切出半个词
+export function readableError(detail: unknown, limit = 220): string {
+  const text = String(detail ?? '').trim()
+  if (!text) return ''
+  if (text.length <= limit) return text
+  let tail = text.slice(-limit)
+  const nl = tail.indexOf('\n')
+  // 后半段还够长才从行首切，避免只留下最后几个字的碎片
+  if (nl !== -1 && tail.length - nl - 1 > 40) tail = tail.slice(nl + 1)
+  return '…\n' + tail.trim()
+}
+
 
 // ===== 平台搜索配置（不同平台不同搜索能力） =====
 interface SearchTypeConfig {
@@ -2349,6 +2383,10 @@ export default function CrawlerPage() {
   //     前端要**显示这个原因**，而不是当成"获取失败"
   //     （"没实现"和"失败了"对用户是完全不同的两件事）
   const [commentUnsupported, setCommentUnsupported] = useState<string>('')
+  // ⚠️ 429 = **平台侧拒绝**（风控/人机验证），与 501"平台没实现"是两件事。
+  //   两者都要**在面板里显示原因**，不能只弹一下 toast 就没了 ——
+  //   后端给的处置办法（等一等 / 换 IP）是用户唯一能做的事。
+  const [commentBlocked, setCommentBlocked] = useState<string>('')
 
   const fetchComments = async (itemId: string, page = 1, sort?: number, offset?: string) => {
     setCommentLoading(true)
@@ -2376,6 +2414,9 @@ export default function CrawlerPage() {
         setCommentNextOffset(res.data?.next_offset || '')
         setCommentHasMore(res.data?.has_more || false)
         setCommentUnsupported('')
+        // ⚠️ 成功后必须清掉"被拦"状态 —— 否则风控解除、重新取到评论了，
+        // 面板还挂着上次那句"平台侧拒绝"，用户会以为还在被拦。
+        setCommentBlocked('')
       } else {
         message.error(res?.detail || res?.message || '获取评论失败')
         if (page === 1) {
@@ -2383,14 +2424,25 @@ export default function CrawlerPage() {
         }
       }
     } catch (err: any) {
-      // ⚠️ 501 = **平台未实现**（不是"获取失败"）——
-      // 把原因存起来给 UI 显示，不弹错误提示
-      if (err?.response?.status === 501) {
-        setCommentUnsupported(String(err?.response?.data?.detail || '该平台暂不支持评论采集'))
+      // ⚠️ 按状态码分流，**不要**都走 message.error：
+      //   501 = 平台**没实现**（不是失败）
+      //   429 = 平台**拒绝了**（风控/人机验证，等一等或换 IP 有救）
+      // 两者都要**在面板里显示后端给的原因**，不能只弹一下 toast ——
+      // 后端写的处置办法是用户唯一能做的事，toast 3 秒就没了。
+      const status = err?.response?.status
+      const detail = err?.response?.data?.detail
+      if (status === 501) {
+        setCommentBlocked('')
+        setCommentUnsupported(String(detail || '该平台暂不支持评论采集'))
+      } else if (status === 429) {
+        setCommentUnsupported('')
+        setCommentBlocked(String(detail || '平台侧拒绝了这次请求（风控/人机验证），请稍后重试或更换网络'))
+        // 同时给一个轻提示，但**不再截断**（完整原因在面板里）
+        message.warning(`${PLATFORM_MAP[detailNote?.platform || platform]?.label || platform}：平台侧拒绝（风控/人机验证）`)
       } else {
-        const detail = err?.response?.data?.detail
+        setCommentBlocked('')
         message.error(
-          (detail && String(detail).slice(0, 90))
+          (detail && readableError(detail))
           || (detailNote?.platform === 'bili' ? getBiliHealthIssue('comments') : '')
           || err?.message
           || '获取评论失败',
@@ -2502,6 +2554,9 @@ export default function CrawlerPage() {
     // 否则打开一条不支持评论的内容后，再打开支持的内容，
     // 会残留上一条的"XX暂不支持评论采集"（张冠李戴）。
     setCommentUnsupported('')
+    // ⚠️ 同理清掉"被风控拦截"（2026-10-04 补）—— 否则被拦的那条会
+    // 张冠李戴到下一条上。这是上一条那个 bug 的同一个根因。
+    setCommentBlocked('')
     setCommentTotal(0)
     setBiliStats(null)
     setBiliVideoInfo(null)
@@ -4314,8 +4369,37 @@ export default function CrawlerPage() {
                       </div>
                     </div>
                   )}
+                  {/* ⚠️ 429 = **平台侧拒绝**（风控/人机验证）。
+                      与上面的 501 区别很大：501 是"平台没这个功能"，
+                      429 是"**等一等 / 换 IP 有救**"—— 所以标题不能写
+                      "暂不支持"（张冠李戴，且让用户以为永久失效）。
+                      后端给的消息里有实测结论 + 具体做法，完整显示。 */}
+                  {commentBlocked && (
+                    <div style={{ textAlign: 'center', padding: '28px 16px' }}>
+                      <WarningOutlined style={{ fontSize: 40, color: '#faad14', opacity: 0.75 }} />
+                      <div style={{ marginTop: 12, color: textPri, fontWeight: 600, fontSize: 14 }}>
+                        平台侧拒绝了这次请求
+                      </div>
+                      <div style={{
+                        marginTop: 8, color: textSec, fontSize: 12,
+                        lineHeight: 1.7, whiteSpace: 'pre-wrap',
+                        textAlign: 'left',
+                        maxWidth: 520, margin: '8px auto 0',
+                        background: 'rgba(250,173,20,0.06)',
+                        border: '1px solid rgba(250,173,20,0.25)',
+                        borderRadius: 6, padding: '10px 12px',
+                      }}>
+                        {commentBlocked}
+                      </div>
+                      <div style={{ marginTop: 10 }}>
+                        <Button size="small" onClick={() => fetchComments(detailNote.id, 1)}>
+                          重新加载
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                   {/* 发评论 */}
-                  {!commentUnsupported && biliConnections.length > 0 && detailNote.platform === 'bili' && (
+                  {!commentUnsupported && !commentBlocked && biliConnections.length > 0 && detailNote.platform === 'bili' && (
                     <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
                       <Input.TextArea
                         placeholder="发送评论（需登录态）..."
@@ -4337,7 +4421,7 @@ export default function CrawlerPage() {
                     </div>
                   )}
                   {/* 非 B站平台（或没登录态）：不发评论框 */}
-                  {!commentUnsupported && detailNote.platform === 'bili' && biliConnections.length === 0 && (
+                  {!commentUnsupported && !commentBlocked && detailNote.platform === 'bili' && biliConnections.length === 0 && (
                     <div style={{ textAlign: 'center', padding: '12px 16px', background: `${BILI_COLORS.warning}15`, borderRadius: 8, marginBottom: 12 }}>
                       <div style={{ color: textSec, fontSize: 13 }}>评论功能需要登录态</div>
                       <Button size="small" type="link"
@@ -4380,9 +4464,25 @@ export default function CrawlerPage() {
                       </Button>
                     </Space>
                   </div>
-                  <Tag color="orange" style={{ marginBottom: 12 }}>共 {commentTotal || comments.length} 条评论</Tag>
+                  {/* ⚠️ 被拦/未实现时**不显示**"共 0 条评论" ——
+                      那是在编一个没测到的数字（铁律：不编造）。
+                      用户看到的是"取不到"这个事实，不是"这条没有评论"。 */}
+                  {!commentUnsupported && !commentBlocked && (
+                    <Tag color="orange" style={{ marginBottom: 12 }}>
+                      共 {commentTotal || comments.length} 条评论
+                    </Tag>
+                  )}
+                  {/* ⚠️ 守卫**必须同时**排除 commentUnsupported 和 commentBlocked。
+                      少了后者：被风控拦截时 comments 是 []，下面那个
+                      "暂无评论" 会照常渲染 —— 于是面板写着"平台侧拒绝"，
+                      下面又写"暂无评论"，等于告诉用户"这条视频没有评论"。
+                      那正是本仓库最忌讳的**把失败伪装成"本来就没有"**
+                      （和当年快手搜索静默返回空是同一个病）。 */}
                   {commentLoading ? (
                     <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
+                  ) : commentBlocked || commentUnsupported ? (
+                    // 已经有专门的说明面板了，这里不要再显示"暂无评论"
+                    <div />
                   ) : comments.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: 40, color: textSec }}>
                       <MessageOutlined style={{ fontSize: 40, opacity: 0.3 }} />
