@@ -57,19 +57,38 @@ def _meta(name: str) -> str:
 
 
 # =============================================================================
-# 微博：未验到（**不是**"已确认取不到"）
+# 微博：**已验到能取**（2026-10-04 下午，之前是"未验到"）
 # =============================================================================
 
-def test_weibo_not_claimed_but_reason_recorded():
-    """微博实测 30+ 个内容都没抽到带 reply_count 的评论。
+def test_weibo_now_claimed_after_real_sample():
+    """微博**能取**子回复 —— 这个测试曾断言相反的事。
 
-    ⚠️ 快手那一轮证明了**抽样不能定论**（它 reply_count 全 0，
-    但直接打接口就返回了数据）。所以微博这里只能说"**未验到**"，
-    不能说"确认取不到" —— 保持这个措辞的诚实。
+    原来写的是 `supports("weibo", "replies") is False`，
+    理由是"实测 30+ 个内容都没抽到带楼中楼的评论"。
+
+    ⚠️ 那句话本身**当时就该被怀疑**：它是**抽样**。
+    这个文件自己的快手用例就写着「抽样不能定论」——
+    结果同一个文件里，微博又栽在同一件事上（同一个坑第三次）。
+
+    2026-10-04 用户给了确定有楼中楼的样本
+    （https://m.weibo.cn/detail/5336295257679240），实测：
+
+        顶层 20 条 → **20/20 都有 replies**，共 32 条，rootid 零串号
+
+    已补 `WeiboClient.get_replies` + meta 声明。
     """
     from app.services.platforms.meta import supports
-    assert supports("weibo", "replies") is False, (
-        "微博仍未验到子回复，不应宣称支持"
+    assert supports("weibo", "replies") is True, (
+        "微博实测能取子回复（样本 5336295257679240，20/20 全有），应宣称支持"
+    )
+
+
+def test_weibo_meta_records_the_sampling_lesson():
+    """meta 里要留下"抽样不够"这个教训，别让下一个人再抽样一次。"""
+    src = _meta("weibo")
+    assert "抽样" in src, (
+        "微博 meta 必须写明：'20 条里 0 条带 comments' 是抽样结果，"
+        "不是平台没有 —— 否则会有人照着那个错结论再拒一次"
     )
 
 
