@@ -217,10 +217,70 @@ B站那个 bug 让我意识到：**「平台限制」类结论可能早就过时
 | `player_skip` = js,webpage,html | 仍失败 |
 | `cookiesfrombrowser` = edge | cookie 读得到（说明账号正常）→ 仍失败 |
 | `cookiesfrombrowser` = chrome | ⚠️ 本机 Chrome cookie 库被锁，**未能测出结论** |
+| **PO Token**（bgutil-ytdlp-pot-provider 2.0.1） | ❌ **也无效** —— 见下 |
 
 ⚠️ `web_embedded` / `mweb` 的**副作用**是本次实测最有价值的发现之一：
 它们不是"更宽松的后备 client"，而是**会把本来能用的视频也弄坏**
 （`Requested format is not available`）。所以**不能**拿来做 fallback。
+
+### PO Token 也无效（最值得记的一条）
+
+PO Token 是 2025 年后 YouTube 反爬的**真正开关**，本来最有希望。
+不是查文档下结论 —— **真的装了测**：
+
+    pip install bgutil-ytdlp-pot-provider      # 2.0.1（只装插件）
+    git clone --branch 2.0.1 …/bgutil-ytdlp-pot-provider
+    cd server && npm ci && npx tsc            # 装 317 个包
+    node build/main.js -p 4416 -H 127.0.0.1    # /ping → {"version":"2.0.1"}
+
+两种模式都试了：
+
+| 模式 | 失败视频 | 原本能用的 dQw4w9WgXcQ |
+|---|---|---|
+| `bgutil:script-node` | ❌ 仍 not a bot | ❌ **变成 no formats**（32.6s）|
+| `bgutil:http` | ❌ 仍 not a bot | ❌ **变成 no formats** |
+| `bgutil:http` + 默认 client | ❌ 仍 not a bot | ✅ 正常（31 formats）|
+
+官方文档其实提前说过：*"Providing a PO token does **not** guarantee
+bypassing 403 errors or bot checks"* —— 实测确认，而且**有副作用**。
+
+### 精确定位：不是"连不上"，是页面里被标成 LOGIN_REQUIRED
+
+直连 watch 页看 HTML，同 IP、同一分钟、同一个 urllib 请求：
+
+| 视频 | HTTP | 大小 | `playabilityStatus` | 含 `not a bot` |
+|---|---|---|---|---|
+| dQw4w9WgXcQ | 200 | 1,298,628 | **OK** | False |
+| njK0eebUsQw | 200 | 1,228,029 | **LOGIN_REQUIRED** | **True** |
+
+**两个都是 HTTP 200、都带 `videoDetails` 和 `ytInitialData`** ——
+页面是完整拿到的，是 YouTube **在页面里把这条视频标成 LOGIN_REQUIRED**。
+所以不是连不上、不是被重定向、不是 cookie 没带对，
+而是**服务端按视频的判定**，客户端侧没有可绕的开关。
+
+### 顺带修掉的一个通用 bug：错误消息被截断在结论前面
+
+改完上面这些之后，**实测接口返回**才发现消息在出口被切了：
+
+    HTTP 429
+    …已试过且无效：7 种 player_client、…、**PO Token**（…）。
+    可                                        ← 断在这里
+
+原因：`comments.py` 用 `str(exc)[:300]` 硬截。而平台错误消息是
+"解释 + 处置办法"的多行结构，**处置办法总在最后一行**，
+按字数硬截正好把它切没 —— 用户看到的是「可」，等于什么都没说。
+
+⚠️ 这个 bug **不只影响 YouTube**，是所有平台长错误消息的通病。
+已改成 `_brief(exc, N)`：**保尾**（结论在尾部）、截断处补 `…` 让用户知道
+内容被省了、尽量按整行取舍。日志仍打**未截断**的原文，排查不受影响。
+
+教训：写完错误消息**要真的看接口返回的字节**，不能只看异常对象 ——
+异常对象是完整的，截断发生在出口。本轮就差点误判成"控制台乱码"。
+
+测试：`backend/tests/test_error_message_not_truncated.py`（7 个）。
+其中那个"扫源码禁止裸切片"的测试**第一版有洞**（变异测试发现）：
+正则只匹配字面量 `str(exc)[:300]`，把 `_brief(exc)` 换回去竟然全绿。
+改成 AST 结构化判定后同一个变异能抓住。
 
 ### 真实结论
 

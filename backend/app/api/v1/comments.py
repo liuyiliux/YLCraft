@@ -102,6 +102,42 @@ def _comment_platforms() -> set:
     return out
 
 
+#: 错误消息给用户看的长度上限
+_MSG_LIMIT = 600
+
+
+def _brief(exc: Exception, limit: int = _MSG_LIMIT) -> str:
+    """把平台异常压成**给用户看的**短消息，且**不切掉结论**。
+
+    ⚠️ 为什么不能 `str(exc)[:300]`（2026-10-04 实测踩到）：
+
+        平台错误消息是"解释 + 处置办法"的多行结构，最后一行才是
+        用户真正需要的东西。硬截 300 会**正好切掉那一行**——
+        实测 YouTube 人机校验断在「可行的办法：等待 / 更换出口 IP / …」
+        的**第一个字**上，用户只看到一个「可」。
+
+    规则：
+        1. 超限时**保尾**（处置办法在尾部），不保头；
+        2. 截断处补 `…`，明确表示"还有内容被省了"，
+           不让半句话看起来像完整消息；
+        3. 逐行判断，尽量**按整行取舍**，避免切出半个词。
+
+    注意：这只改**长度**，不删信息 —— 完整内容仍可在日志里查到
+    （下面的 `logger.error` 打的是未截断的 `exc`）。
+    """
+    text = str(exc).strip()
+    if len(text) <= limit:
+        return text
+
+    # 保留尾部：处置办法总在最后
+    tail = text[-limit:]
+    # 尽量从行首开始（丢掉被切开的半行）
+    nl = tail.find("\n")
+    if nl != -1 and len(tail) - nl - 1 > 40:
+        tail = tail[nl + 1:]
+    return "…\n" + tail.strip()
+
+
 # ⚠️ 用**函数**而不是模块级常量：元数据是懒加载的
 # （`_discover()` 在首次调用时才扫目录），模块导入时还不一定有。
 # 保留 `COMMENTS_SUPPORTED` 这个名字是为了兼容已有测试与调用方。
@@ -543,37 +579,35 @@ async def get_comments(
     except HTTPException:
         raise
     except Exception as exc:
-        # ⚠️ **按类型映射**（2026-10-02 补）
+        # ⚠️ 截断要**按行**、且**保留结尾**（2026-10-04）
         #
-        # 原来是无差别 500 —— 于是"登录态失效"和"网络断了"对用户
-        # 长得一模一样，500 在语义上还是"服务端故障"。
+        # 原来是无差别 `str(exc)[:300]`。问题：平台错误消息常是
+        # "解释 + 处置办法"的多行结构，硬截 300 会**把最该给用户看的
+        # 那行切掉**。实测 YouTube 人机校验消息就断在
+        # 「可行的办法：等待 / 更换出口 IP / …」的**第一个字**上 ——
+        # 用户看到的是「可」，等于什么都没说。
         #
-        # 现在与 `crawler.py` 的映射表保持一致：
-        #   LoginExpiredError    → 401（去账号中心重新登录）
-        #   RiskControlError     → 429（风控，等一会/换 IP）
-        #   ContentNotFoundError → 404（内容不存在）
-        #   NetworkError         → 503（网络问题，稍后重试）
-        #
-        # ⚠️ 这正是"守卫只加在一个入口"的补齐（crawler.py 早就有）
+        # 改成：优先给完整的**最后一行**（处置办法），前面只留摘要。
         if isinstance(exc, LoginExpiredError):
             raise HTTPException(
                 status_code=401,
-                detail=f"{str(exc)[:300]}\n\n请到「账号中心」重新获取该平台登录态。",
+                detail=f"{_brief(exc)}\n\n请到「账号中心」重新获取该平台登录态。",
             )
         if isinstance(exc, RiskControlError):
             raise HTTPException(
-                status_code=429,
-                detail=f"{str(exc)[:300]}\n\n这是**平台侧拒绝**（风控/人机验证），"
-                       "可尝试稍等一会儿、换 IP，或重新获取登录态。",
+                status_code=429, detail=f"{_brief(exc)}\n\n这是**平台侧拒绝**"
+                                       "（风控/人机验证），可尝试稍等一会儿、换 IP，"
+                                       "或重新获取登录态。",
             )
         if isinstance(exc, ContentNotFoundError):
             raise HTTPException(
-                status_code=404, detail=f"{str(exc)[:200]}"
+                status_code=404, detail=_brief(exc, 200)
             )
         if isinstance(exc, NetworkError):
             raise HTTPException(
                 status_code=503,
-                detail=f"{str(exc)[:200]}\n\n这是**网络问题**（不是平台故障），稍后重试。",
+                detail=f"{_brief(exc, 200)}\n\n这是**网络问题**（不是平台故障），稍后重试。",
             )
+        # ⚠️ 日志打**未截断**的 exc —— 用户看的是摘要，排查要靠完整信息
         logger.error("[comments] %s/%s 失败：%s", p, item, exc)
-        raise HTTPException(status_code=500, detail=f"获取评论失败: {str(exc)[:200]}")
+        raise HTTPException(status_code=500, detail=f"获取评论失败: {_brief(exc, 200)}")

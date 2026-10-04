@@ -84,6 +84,24 @@ class TestBotCheckDetection(unittest.TestCase):
         self.assertEqual(BOT_CHECK_FACTS["client_variants_tried"], 7)
         self.assertIn("等待", BOT_CHECK_FACTS["remedy"])
 
+    def test_po_token_recorded_as_tried_and_failed(self):
+        """**PO Token 装过、测过、无效** —— 这条最贵，别让下一个人再装一遍。
+
+        2026-10-04 真的装了 bgutil 2.0.1（git clone + npm ci + npx tsc，
+        317 个包，起 HTTP server 确认 /ping 返回 2.0.1），两种模式都试：
+
+            bgutil:script-node  失败视频仍 not a bot；能用的变成 no formats
+            bgutil:http         失败视频仍 not a bot；能用的变成 no formats
+
+        所以必须记下来，否则下一个人看到 "not a bot" 会理所当然地
+        以为"装个 PO token 就行"，白花 10 分钟和一台 Node 环境。
+        """
+        self.assertIn("po_token", BOT_CHECK_FACTS)
+        self.assertIn("无效", BOT_CHECK_FACTS["po_token"])
+        # 实测定位到的状态码/状态也要记着
+        self.assertEqual(BOT_CHECK_FACTS["http_status"], 200)
+        self.assertEqual(BOT_CHECK_FACTS["playability"], "LOGIN_REQUIRED")
+
 
 class TestBotCheckErrorType(unittest.TestCase):
     def test_is_risk_control_not_bare_runtimeerror(self):
@@ -107,6 +125,10 @@ class TestBotCheckErrorType(unittest.TestCase):
         # 明确排除两种误读
         self.assertIn("不是\u300c视频不存在\u300d", msg)
         self.assertIn("不是\u300c必须登录才能看\u300d", msg)
+        # 带上精确定位（HTTP 200 + LOGIN_REQUIRED）→ 说明不是连不上
+        self.assertIn("LOGIN_REQUIRED", msg)
+        # 带上"已试过无效"的清单，含 PO Token
+        self.assertIn("PO Token", msg)
         # 给了可操作办法，而不是"未实现"
         self.assertIn("可行的办法", msg)
         # 不该出现的措辞
@@ -179,6 +201,19 @@ class TestMetaHonest(unittest.TestCase):
         self.assertIn("副作用", META_SRC)
         # 必须写明详情页同样受影响
         self.assertIn("详情页", META_SRC)
+
+    def test_meta_records_po_token_failed(self):
+        """meta 也要记 PO Token 无效（meta 是下一个人第一眼看的地方）。"""
+        self.assertIn("PO Token", META_SRC)
+        self.assertIn("2.0.1", META_SRC)
+
+    def test_meta_records_playability_diagnosis(self):
+        """精确定位（HTTP 200 + LOGIN_REQUIRED）必须留档。
+
+        这解释了**为什么不用再查连接/重定向/cookie** —— 页面是全的。
+        """
+        self.assertIn("LOGIN_REQUIRED", META_SRC)
+        self.assertIn("1,298,628", META_SRC)   # 能取到的那个视频的实测大小
 
 
 class TestRuntimeWiring(unittest.TestCase):
