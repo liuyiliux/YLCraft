@@ -134,6 +134,59 @@ class TestBlockedStateIsVisible(unittest.TestCase):
         )
 
 
+class TestDetailErrorKeepsReason(unittest.TestCase):
+    """**详情**接口也要说真话 —— 截图实测发现它还在丢。
+
+    2026-10-04 用真实浏览器验证评论面板时，截图顶部出现：
+
+        ⚠ 详情加载失败，保留搜索结果
+
+    而那个详情接口**同样返回 429 + 382 字符的真实原因**。
+    原因在 `openDetail` 的 `catch {}`：**无参 catch 把异常整段丢掉**，
+    换了一句笼统文案。
+
+    这与评论那次（`slice(0,90)` 截断）是**同一个病的两种长法**：
+    丢弃"为什么失败 + 该怎么办"。所以两处必须一起修。
+    """
+
+    def test_no_bare_catch_in_open_detail(self):
+        """`catch {` 不带参数 → 拿不到 err.response，真实原因必丢。"""
+        i = SRC.index("const openDetail")
+        seg = SRC[i: i + 6000]
+        self.assertNotIn(
+            "} catch {", seg,
+            "openDetail 里不能有无参 catch —— 后端返回的 429/404 原因会被丢掉",
+        )
+        self.assertIn(
+            "} catch (err: any) {", seg,
+            "openDetail 的 catch 要接住 err，读 err.response.data.detail",
+        )
+
+    def test_detail_error_uses_readable_error(self):
+        i = SRC.index("const openDetail")
+        seg = SRC[i: i + 6000]
+        self.assertIn("setDetailError(readableError(detail)", seg,
+                      "详情失败也要用 readableError（保尾），别再丢原因")
+
+    def test_detail_429_has_own_branch(self):
+        i = SRC.index("const openDetail")
+        seg = SRC[i: i + 6000]
+        self.assertIn("status === 429", seg,
+                      "429 要单独处理（等一等/换 IP 有救，与 404 不同）")
+        self.assertIn("status === 404", seg,
+                      "404 要单独处理（内容没了，重试无用）")
+
+    def test_vague_message_only_as_last_resort(self):
+        """「详情加载失败」只能当**兜底**，不能在有 detail 时优先用。"""
+        i = SRC.index("const openDetail")
+        seg = SRC[i: i + 6000]
+        # 出现是对的（兜底），但不能是唯一分支
+        self.assertIn("详情加载失败，保留搜索结果", seg)
+        self.assertIn("readableError(detail)", seg,
+                      "有 detail 时必须优先用它")
+
+
+
 class TestFailureNotShownAsEmpty(unittest.TestCase):
     """**最关键**：取不到 ≠ 本来就没有。"""
 
