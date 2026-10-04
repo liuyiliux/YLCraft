@@ -2609,8 +2609,31 @@ export default function CrawlerPage() {
         fetchBiliStats(record.id)
         fetchBiliVideoInfo(record.id)
       }
-    } catch {
-      setDetailError('详情加载失败，保留搜索结果')
+    } catch (err: any) {
+      // ⚠️⚠️ 原来是无参 `catch {}`，把后端给的**真实原因整段丢掉**，
+      // 换成一句笼统的「详情加载失败，保留搜索结果」。
+      //
+      // 实测（2026-10-04，YouTube 人机校验）：详情接口和评论接口
+      // **返回 429 + 382 字符的原因**（"已试过且无效：…"、"可行的办法：等待 /
+      // 更换出口 IP / …"），前端却只显示一句"加载失败"。
+      // 用户完全不知道该等、该换 IP、还是该重新登录。
+      //
+      // 这与评论那次（`slice(0,90)` 截断）是同一个病的两种长法：
+      // **把"为什么失败 + 该怎么办"弄丢了**。
+      const status = err?.response?.status
+      const detail = err?.response?.data?.detail
+      if (status === 429) {
+        // 平台侧拒绝（风控/人机验证）—— 等一等 / 换 IP 有救
+        setDetailError(readableError(detail)
+          || '平台侧拒绝了这次请求（风控/人机验证），请稍后重试或更换网络')
+      } else if (status === 404) {
+        setDetailError(readableError(detail) || '内容不存在或已删除')
+      } else {
+        setDetailError(
+          (detail && readableError(detail))
+          || '详情加载失败，保留搜索结果',
+        )
+      }
     } finally {
       setDetailLoading(false)
     }
