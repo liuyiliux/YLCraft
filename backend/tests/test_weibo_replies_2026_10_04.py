@@ -381,5 +381,51 @@ class TestCommentCountConsistency(unittest.TestCase):
                         "先用内嵌数据、早退，之后才是请求兜底")
 
 
+class TestEndOfListIsHonest(unittest.TestCase):
+    """翻到底时**不能说"已加载全部"** —— 数字对不上就是在撒谎。
+
+    用户实测截图（微博）：
+        标签「共 24 条评论」/ 列表 6 条 / 底部「已加载全部评论 (6 条)」
+
+    "全部"是骗人的：还有 18 条没列出来。
+
+    实测根因：微博 `total_number` 报的是**这条微博的总评论数**，
+    而 `hotflow` 热门接口**只放一部分出来**。同一条实测：
+
+        total=2349，一页 20 条（`page_size=50` 也只给 20）
+        翻 8 页一共只拿到 **153** 条
+
+    热门池远小于 total，`has_more=False` 时是真的取不到更多了
+    （**不是我们漏翻**）。
+    """
+
+    FE2 = (Path(__file__).resolve().parents[2]
+           / "frontend" / "src" / "pages" / "crawler" / "index.tsx").read_text(
+        encoding="utf-8")
+
+    def _seg(self) -> str:
+        i = self.FE2.index("!commentHasMore && comments.length > 0")
+        return self.FE2[i: i + 1400]
+
+    def test_all_wording_guarded_by_count(self):
+        """"已加载全部"**必须**先确认两个数字对得上。"""
+        seg = self._seg()
+        self.assertIn("commentCountShown > comments.length", seg,
+                      "要说'只加载了一部分'，必须**先判断**两数是否相等")
+        self.assertIn("已加载全部评论", seg, "数字对得上时才可以说'全部'")
+        self.assertIn("只开放部分热门评论", seg,
+                      "数字对不上时要说清原因（不能假装全部）")
+
+    def test_never_unconditionally_says_all(self):
+        import re
+        code = re.sub(r"/\*.*?\*/", "", self._seg(), flags=re.S)
+        code = "\n".join(ln for ln in code.splitlines()
+                         if not ln.strip().startswith("//"))
+        self.assertNotIn(
+            "— 已加载全部评论", code,
+            "还在无条件写'已加载全部'（数字对不上时是撒谎）",
+        )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

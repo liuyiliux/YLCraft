@@ -4767,7 +4767,24 @@ export default function CrawlerPage() {
                       )}
                       {!commentHasMore && comments.length > 0 && (
                         <div style={{ textAlign: 'center', padding: '16px 0', color: textSec, fontSize: 13 }}>
-                          — 已加载全部评论 ({comments.length} 条) —
+                          {/* ⚠️ **不能写"已加载全部"**（2026-10-04 改）
+
+                              用户实测截图：标签写「共 24 条评论」，
+                              底部写「已加载全部评论 (6 条)」——
+                              **"全部"是骗人的**：还有 18 条没列出来。
+
+                              根因（实测）：微博 `total_number` 报的是
+                              **这条微博的总评论数**，而 `hotflow` 热门接口
+                              **只放一部分出来** —— 实测同一条：
+                                  total=2349，一页 20 条，翻 8 页才 153 条
+                              热门池远小于 total，翻到 `has_more=False`
+                              就真的取不到更多了（不是我们漏翻）。
+
+                              改法：只说**已加载多少**（那是真话），
+                              拿不到更多时**说明原因**，不假装"全部"。 */}
+                          {commentCountShown > comments.length
+                            ? `已加载 ${comments.length} 条（该内容共 ${commentCountShown} 条评论，平台只开放部分热门评论）`
+                            : `已加载全部评论（${comments.length} 条）`}
                         </div>
                       )}
                     </>
