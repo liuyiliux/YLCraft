@@ -316,30 +316,36 @@ class TestCommentCountConsistency(unittest.TestCase):
     def test_single_computed_value_exists(self):
         self.assertIn("const commentCountShown", self.FE,
                       "必须有一个统一算出来的显示值")
-        self.assertIn("const commentRemaining", self.FE, "剩余数也要统一算")
+
+    def test_remaining_not_shown_to_user(self):
+        """「N 条剩余」不显示 —— 那个数字永远对不上（实测微博）。"""
+        self.assertNotIn("commentRemaining", self.FE,
+                         "剩余数变量已不用（后端 total 与实际可取量不符）")
 
     def test_all_three_sites_use_it(self):
         code = self._code_only(self.FE)
         self.assertIn("badge: commentCountShown", code,
                       "tab 徽标要用统一值")
-        self.assertIn("（{commentRemaining} 条剩余）", code,
-                      "加载更多按钮要用统一剩余数")
+        # ⚠️ "加载更多"**不再显示**「N 条剩余」（2026-10-04 去掉）
+        # 实测微博 total=2349 但一页最多 20 条 → 那个数字永远对不上
+        self.assertNotIn("条剩余", code,
+                         "「N 条剩余」是编的数字（后端 total 与实际可取量不符）")
         # 计数标签：从"评论列表"标题往后找（页面里有很多 <Tag color="orange">，
-        # 直接 index 会命中前面批量下载那块的"微信接口限制"）。
-        # ⚠️ 窗口要够大 —— 中间隔着整个排序控件（Segmented）。
+        # 直接 index 会命中前面批量下载那块的"微信接口限制"）
         i = code.index("评论列表")
         seg = code[i: i + 3000]
         self.assertIn('style={{ marginBottom: 12 }}', seg,
                       "没找到评论计数那个 Tag（锚点失效了？）")
-        self.assertIn("{commentCountShown}", seg, "计数标签要用统一值")
+        self.assertIn("共 {commentCountShown} 条评论", seg,
+                      "计数标签要用统一值，且**保留'共…条评论'文案**"
+                      "（2026-10-04 一次改成了光秃秃的数字，标签失去含义）")
         self.assertNotIn("commentTotal", seg,
                          "计数标签还在用后端原值（三处数字对不上的根源）")
 
-    def test_remaining_never_negative(self):
-        self.assertIn("Math.max(0, commentCountShown - comments.length)",
-                      self.FE, "剩余数不能为负（总数比已加载的还少时）")
+    def test_count_never_less_than_loaded(self):
+        """总数不能小于已加载条数（那会让界面显示"共 5 条"却列出 20 条）。"""
         self.assertIn("Math.max(commentTotal || 0, comments.length)", self.FE,
-                      "总数不能小于已加载条数（后端按热度重排会导致）")
+                      "总数必须取 max(后端报的, 已加载的)")
 
     @staticmethod
     def _code_only(fe: str) -> str:
