@@ -4617,7 +4617,11 @@ export default function CrawlerPage() {
                                           })
                                           const replies = res?.data?.comments || []
                                           if (replies.length === 0) {
-                                            message.info('这条评论暂无子回复')
+                                            // ⚠️ 这里说"暂无子回复"要谨慎：
+                                            // 后端在**翻页用尽**时会抛 501「没翻到」，
+                                            // 能走到这个 0 条分支说明后端**确实翻到底了**，
+                                            // 所以"确实没有"是准确的 —— 不是把失败说成空。
+                                            message.info('这条评论确实没有回复')
                                           } else {
                                             setComments(prev => prev.map((x: any) =>
                                               (x.id || x.rpid) === (c.id || c.rpid)
@@ -4625,8 +4629,16 @@ export default function CrawlerPage() {
                                             ))
                                           }
                                         } catch (e: any) {
+                                          // ⚠️ 原来 `String(...).slice(0, 100)` —— 与评论、详情
+                                          // 那两处**同一个病**（第三次）：
+                                          // 平台错误是"解释 + 处置办法"多行式，处置办法在**尾部**，
+                                          // 按字数从**头**截正好把它切没。
+                                          // 「微博没翻到这条评论」这种"哪一步没成"的提示会被切掉。
+                                          const d = e?.response?.data?.detail
                                           message.error(
-                                            String(e?.response?.data?.detail || e?.message || '取回复失败').slice(0, 100)
+                                            (d && readableError(d, 160))
+                                            || e?.message
+                                            || '取回复失败',
                                           )
                                         } finally {
                                           setCommentLoading(false)
@@ -4644,11 +4656,26 @@ export default function CrawlerPage() {
                                     borderLeft: `2px solid ${borderColor}`,
                                   }}>
                                     {(c as any)._replies.map((r: any) => (
-                                      <div key={r.id} style={{ marginBottom: 6 }}>
-                                        <Text style={{ fontSize: 12, color: textPri, fontWeight: 600 }}>
-                                          {r.author}
-                                        </Text>
-                                        <Text style={{ fontSize: 12, color: textPri, marginLeft: 6 }}>
+                                      <div key={r.id} style={{ marginBottom: 8 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                                          <Text style={{ fontSize: 12, color: textPri, fontWeight: 600 }}>
+                                            {r.author}
+                                          </Text>
+                                          {/* ⚠️ 博主本人回复（微博实测 is_mblog_author=True）——
+                                              不标出来用户分不清"作者在回我"还是"路人在回" */}
+                                          {r.is_author_reply && (
+                                            <Tag color="blue" style={{ fontSize: 10, lineHeight: '14px' }}>
+                                              作者
+                                            </Tag>
+                                          )}
+                                          <Text style={{ fontSize: 11, color: textSec }}>
+                                            {formatTime(r.create_time)}
+                                            {typeof r.likes === 'number' && ` · ${r.likes} 赞`}
+                                          </Text>
+                                        </div>
+                                        <Text style={{ fontSize: 12, color: textPri }}>
+                                          {/* "回复给谁"（实测微博内容里自带「回复@xxx:」，
+                                              已在后端 _strip_html 保留，这里不再重复前缀） */}
                                           {r.content}
                                         </Text>
                                       </div>
