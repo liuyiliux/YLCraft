@@ -1140,6 +1140,24 @@ export default function CrawlerPage() {
   const [commentNextOffset, setCommentNextOffset] = useState('')
   const [commentHasMore, setCommentHasMore] = useState(true)
 
+  // ⚠️⚠️ 评论总数**只在这里算一次**，三处显示共用（2026-10-04 修）
+  //
+  // 原来三处各算各的：
+  //     tab 徽标   → commentTotal
+  //     计数标签   → commentTotal || comments.length
+  //     加载更多   → commentTotal - comments.length
+  //
+  // 实测翻过页的微博：标签"共 46 条"、tab 徽标"45"、按钮"27 条剩余"
+  // —— **三个数互相矛盾**。根因：`commentTotal` 是后端**每次响应**里报的，
+  // 而微博热门评论会**按热度重排** → 翻页过程中这个数会变。
+  //
+  // 规则：**已经加载出来的条数是唯一可信的事实**（我们亲眼看到的），
+  // 后端报的总数只是"它此刻认为的" —— 所以：
+  //   · 总数取 max(后端 total, 已加载条数)  ← 不能比已加载的还少
+  //   · 剩余 = 总数 - 已加载，且**不许为负**
+  const commentCountShown = Math.max(commentTotal || 0, comments.length)
+  const commentRemaining = Math.max(0, commentCountShown - comments.length)
+
   const [biliStats, setBiliStats] = useState<any>(null)
   const [biliVideoInfo, setBiliVideoInfo] = useState<any>(null)
   const [statsLoading, setStatsLoading] = useState(false)
@@ -3600,8 +3618,10 @@ export default function CrawlerPage() {
               // ⚠️ **支持评论的平台**（与后端 COMMENTS_SUPPORTED 对齐）
               if (PLATFORM_TABS[detailNote.platform]?.comments) {
                 tabs.push({
+                  // ⚠️ 用 `commentCountShown`（与计数标签、加载更多同一个值）——
+                  // 原来这里直接用 commentTotal，会和另外两处对不上
                   key: 'comments', label: '评论',
-                  icon: <MessageOutlined />, badge: commentTotal,
+                  icon: <MessageOutlined />, badge: commentCountShown,
                 });
               }
               if (detailNote.platform === 'bili') {
@@ -4492,7 +4512,17 @@ export default function CrawlerPage() {
                       用户看到的是"取不到"这个事实，不是"这条没有评论"。 */}
                   {!commentUnsupported && !commentBlocked && (
                     <Tag color="orange" style={{ marginBottom: 12 }}>
-                      共 {commentTotal || comments.length} 条评论
+                      {/* ⚠️ 用**同一个**数（`commentCountShown`）——
+                          原来这里写 `commentTotal || comments.length`，
+                          而下面"加载更多"写 `commentTotal - comments.length`，
+                          tab 徽标写 `commentTotal`，三处各算各的。
+
+                          实测翻过页的微博：标签"共 46 条"、tab 徽标 45、
+                          按钮"27 条剩余" —— **三个数互相矛盾**。
+                          原因是 `commentTotal` 是后端每次返回的总数，
+                          微博热门评论会按热度重排 → 翻页时总数会变。
+                          现在统一成一个计算值，见 `commentCountShown`。 */}
+                      {commentCountShown}
                     </Tag>
                   )}
                   {/* ⚠️ 守卫**必须同时**排除 commentUnsupported 和 commentBlocked。
@@ -4552,9 +4582,10 @@ export default function CrawlerPage() {
                                   <Text style={{ color: textPri, fontSize: 13, fontWeight: 600 }}>
                                     {c.author || c.user_name}
                                   </Text>
-                                  {(c.reply_count ?? c.rcount) > 0 && (
-                                    <Tag style={{ fontSize: 11 }}>{c.reply_count ?? c.rcount} 回复</Tag>
-                                  )}
+                                  {/* ⚠️ 这里原来有个「{N} 回复」Tag —— 已删。
+                                      同一条评论下方已经有「查看 N 条回复」链接
+                                      （用户实测截图里两条并排，看着像重复信息）。
+                                      保留一处即可，数字以链接为准。 */}
                                 </div>
                                 <Text style={{ color: textPri, fontSize: 13 }}>
                                   {/* 子回复里"回复给谁"（抖音/快手/X 都可能有） */}
@@ -4606,6 +4637,27 @@ export default function CrawlerPage() {
                                     <a
                                       style={{ marginLeft: 8, color: BILI_COLORS.primary, cursor: 'pointer' }}
                                       onClick={async () => {
+                                        // ⚠️ 先看**列表里已有的数据**（2026-10-04）
+                                        //
+                                        // 微博顶层响应内嵌 `replies`，现在已是完整
+                                        // （content/author/create_time/likes 都齐 ——
+                                        //  之前是全 null，因为原样透传了微博原始结构）。
+                                        // 所以**大多数情况不用再发一次请求**：
+                                        //   · 已有 → 直接展开（秒开）
+                                        //   · 没有 → 才调 parent_id 接口兜底
+                                        //
+                                        // 少一次请求 = 评论列表翻页时快很多
+                                        // （20 条评论 = 20 次请求 → 0 次）。
+                                        const inline = Array.isArray(c.replies)
+                                          ? c.replies.filter((r: any) => r && r.content)
+                                          : []
+                                        if (inline.length > 0) {
+                                          setComments(prev => prev.map((x: any) =>
+                                            (x.id || x.rpid) === (c.id || c.rpid)
+                                              ? { ...x, _replies: inline } : x
+                                          ))
+                                          return
+                                        }
                                         setCommentLoading(true)
                                         try {
                                           const res: any = await getComments({
@@ -4698,7 +4750,7 @@ export default function CrawlerPage() {
                               fetchComments(detailNote.id, commentPage + 1, commentSort, commentNextOffset)
                             }}
                           >
-                            加载更多评论 ({commentTotal - comments.length} 条剩余)
+                            加载更多评论（{commentRemaining} 条剩余）
                           </Button>
                         </div>
                       )}

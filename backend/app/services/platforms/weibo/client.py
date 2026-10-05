@@ -332,32 +332,15 @@ class WeiboClient(BasePlatformClient):
                 f"（顶层评论仍可用：去掉 parent_id 参数。）"
             )
 
-        subs = found.get("comments") or []
-        subs = [s for s in subs if isinstance(s, dict)]
+        # ⚠️ 用 `_norm_reply`（单一事实来源）—— 顶层内嵌和这里给前端的数据
+        # 必须一致，否则"直接展开"和"点开加载"会显示不同内容。
+        all_subs = [_norm_reply(s) for s in (found.get("comments") or [])]
+        all_subs = [s for s in all_subs if s]
         want = max(1, int(max_results or 20))
-        out: List[Dict[str, Any]] = []
-        for s in subs[:want]:
-            u = s.get("user") or {}
-            out.append({
-                "id": str(s.get("id") or ""),
-                "content": _strip_html(s.get("text") or ""),
-                "author": u.get("screen_name") or "",
-                "author_id": str(u.get("id") or ""),
-                "avatar": u.get("profile_image_url") or "",
-                "likes": int(s.get("like_count") or 0),
-                "create_time": _rfc2822_to_ts(s.get("created_at") or ""),
-                # ⚠️ 子回复**自己没有**子回复（微博只两层）→ 0 是**真的 0**
-                "reply_count": 0,
-                "location": (s.get("source") or "").replace("来自", "").strip(),
-                "reply_to": _strip_html(s.get("reply_to_text") or ""),
-                # 博主本人回复（实测 is_mblog_author=True）—— 前端可据此标记
-                "is_author_reply": bool(s.get("is_mblog_author")),
-                "images": [],
-                "replies": [],
-            })
+        out = all_subs[:want]
 
         nxt = cursor_id
-        has_more = bool(nxt) and str(nxt) not in ("", "0") and len(subs) > want
+        has_more = bool(nxt) and str(nxt) not in ("", "0") and len(all_subs) > want
         return {
             "comments": out,
             "has_more": has_more,
@@ -422,8 +405,21 @@ class WeiboClient(BasePlatformClient):
             #     (c.reply_count ?? c.rcount) > 0
             # 写死 0 ⇒ **用户永远看不到回复入口**，哪怕数据就在手里。
             # 数据明明抓到了，却因为一个数不显示 —— 这比"取不到"更难查。
-            _reps = c.get("comments") or []
-            _reps = _reps if isinstance(_reps, list) else []
+            _raw_reps = c.get("comments") or []
+            _raw_reps = _raw_reps if isinstance(_raw_reps, list) else []
+            # ⚠️⚠️ 原来这里直接 `"replies": _reps` —— **原样透传微博的原始结构**，
+            # 而那个结构里内容在 `text` / 作者在 `user.screen_name`，
+            # **没有** `content` / `author` 字段。
+            # 前端拿到的是 `content: null` / `author: null` → 展开后是一片空白。
+            #
+            # 实测（2026-10-04 用户实测截图确认）：展开后有内容，
+            # 是因为那条数据来自 **`/comments?parent_id=` 独立取**（那条路已统一形状），
+            # 不是来自这里。所以这个 bug 之前**没被发现** ——
+            # 只要前端没读过顶层内嵌的 replies 字段就看不出。
+            #
+            # 现在统一转成前端形状，两条路给的数据就一致了。
+            _reps = [_norm_reply(r) for r in _raw_reps]
+            _reps = [r for r in _reps if r]
             out.append({
                 "id": cid,
                 "content": _strip_html(c.get("text") or ""),
@@ -922,6 +918,60 @@ def parse_user(u: Dict[str, Any]) -> Optional[UserProfile]:
             "user": u,
         },
     )
+
+
+def _norm_reply(s: Any) -> Optional[Dict[str, Any]]:
+    """把微博**原始**的子回复转成前端统一形状。
+
+    ## 为什么需要（2026-10-04 实测踩到）
+
+    微博原始子回复的结构是：
+
+        { "text": "…", "user": {"screen_name": "…"}, "like_count": "74", … }
+
+    **没有** `content` / `author` 字段。顶层 `get_comments_page` 原来
+    直接 `"replies": <原始 dict>` 透传，于是前端拿到的每条子回复都是
+    `content: null` / `author: null` —— 展开后是一片空白。
+
+    ## 为什么之前没被发现
+
+    因为前端点「查看 N 条回复」走的是**另一条路**
+    （`/comments?parent_id=` → `get_replies`），那条路已经转好了，
+    所以用户实测截图里**能正常显示内容**。
+    顶层内嵌这份空壳只是"没人读"而已 —— 一旦前端改用内嵌数据
+    （少发一次请求，更快），就会立刻暴露。
+
+    ## 单一事实来源
+
+    `get_replies` 也调这个函数 —— 两条路给前端的数据必须一致，
+    否则"从顶层展开"和"点开加载"会显示不同内容。
+    """
+    if not isinstance(s, dict):
+        return None
+    u = s.get("user") or {}
+    text = _strip_html(s.get("text") or "")
+    author = u.get("screen_name") or ""
+    if not text and not author:
+        return None      # 空壳（既没内容也没作者）→ 不给前端
+    return {
+        "id": str(s.get("id") or ""),
+        "content": text,
+        "author": author,
+        "author_id": str(u.get("id") or ""),
+        "avatar": u.get("profile_image_url") or "",
+        "likes": int(s.get("like_count") or 0),
+        "create_time": _rfc2822_to_ts(s.get("created_at") or ""),
+        # ⚠️ 子回复**自己没有**子回复（微博只两层）→ 0 是**真的 0**
+        "reply_count": 0,
+        "location": (s.get("source") or "").replace("来自", "").strip(),
+        # "回复给谁"：微博**不给**独立字段，它就写在 text 里
+        # （"回复@某某:"）—— 所以这里留空，前端不要再加前缀（会重复）
+        "reply_to": "",
+        # 博主本人回复（实测 is_mblog_author=True）—— 前端可据此标记
+        "is_author_reply": bool(s.get("is_mblog_author")),
+        "images": [],
+        "replies": [],
+    }
 
 
 def _strip_html(html: str) -> str:

@@ -234,5 +234,146 @@ class TestNotFakingWhenNotFound(unittest.TestCase):
         self.assertIn("没翻到", str(cm.exception))
 
 
+class TestInlineRepliesAreNormalized(unittest.TestCase):
+    """顶层内嵌的 `replies` **不能原样透传**。
+
+    2026-10-04 用户实测截图后发现的：展开能显示内容，是因为前端走的是
+    `parent_id` 那条路（已转好形状）。而**顶层内嵌**那份实测下来
+    每个字段都是 `null` —— 原来 `"replies": c["comments"]` 直接把
+    微博原始 dict 透传，而那个结构里内容在 `text`、作者在
+    `user.screen_name`，**没有** `content` / `author` 字段。
+
+    之前没人发现，是因为前端从不读这份内嵌数据
+    （点击展开会重新请求）。一旦前端改用内嵌数据（少发一次请求），
+    立刻就会露出空白。
+    """
+
+    def test_norm_reply_exists_and_converts(self):
+        from app.services.platforms.weibo.client import _norm_reply
+        out = _norm_reply(REAL_SUB_REPLY)
+        self.assertIsNotNone(out)
+        self.assertEqual("你居然看过", out["content"])
+        self.assertEqual("钴噜球", out["author"])
+        self.assertEqual(74, out["likes"])
+        self.assertTrue(out["is_author_reply"])
+
+    def test_rejects_empty_shell(self):
+        """既没内容也没作者 → 不给前端（宁可不显示，别给空行）。"""
+        from app.services.platforms.weibo.client import _norm_reply
+        self.assertIsNone(_norm_reply({"id": 1, "text": "", "user": {}}))
+        self.assertIsNone(_norm_reply("not a dict"))
+
+    def test_both_paths_use_same_normalizer(self):
+        """单一事实来源：顶层内嵌和 parent_id 必须给前端一样的数据。
+
+        否则"直接展开"和"点开加载"会显示不同内容 —— 很难查。
+        """
+        from app.services.platforms.weibo import client as wc
+        src = inspect.getsource(wc)
+        self.assertNotIn('"replies": _raw_reps', src,
+                         "顶层不能原样透传微博原始 replies（字段名对不上）")
+        self.assertIn("_norm_reply(r)", src, "顶层要过 _norm_reply")
+        gr = inspect.getsource(wc.WeiboClient.get_replies)
+        self.assertIn("_norm_reply", gr,
+                      "get_replies 必须用同一个 _norm_reply（否则两条路不一致）")
+
+    def test_inline_replies_have_real_content(self):
+        """运行时：顶层返回的 replies 必须**带内容**（不是 null）。"""
+        with patch.object(
+            WeiboClient, "_call",
+            new=AsyncMock(return_value={
+                "data": {"data": [REAL_PARENT], "max_id": 0},
+            }),
+        ):
+            c = WeiboClient.__new__(WeiboClient)
+            c.config = type("C", (), {"conn_id": "", "cookie": ""})()
+            out = TestGetRepliesRuntime()._run(
+                c.get_comments_page("5336295257679240"))
+        top = out["comments"][0]
+        self.assertEqual(1, len(top["replies"]))
+        rep = top["replies"][0]
+        self.assertTrue(rep["content"], "顶层内嵌的回复内容不能是空的")
+        self.assertTrue(rep["author"], "顶层内嵌的回复作者不能是空的")
+        # 关键：不能再是微博原始字段名
+        self.assertNotIn("text", rep)
+        self.assertNotIn("user", rep)
+
+
+class TestCommentCountConsistency(unittest.TestCase):
+    """评论总数**三处显示**必须用同一个数（2026-10-04 用户截图发现）。
+
+    用户实测翻过页的微博：标签「共 46 条」、tab 徽标「45」、
+    按钮「27 条剩余」—— **三个数互相矛盾**。
+
+    根因：`commentTotal` 是后端**每次响应**里报的，而微博热门评论
+    会**按热度重排** → 翻页过程中这个数会变。三处各算各的就对不上。
+    """
+
+    FE = (Path(__file__).resolve().parents[2]
+          / "frontend" / "src" / "pages" / "crawler" / "index.tsx").read_text(
+        encoding="utf-8")
+
+    def test_single_computed_value_exists(self):
+        self.assertIn("const commentCountShown", self.FE,
+                      "必须有一个统一算出来的显示值")
+        self.assertIn("const commentRemaining", self.FE, "剩余数也要统一算")
+
+    def test_all_three_sites_use_it(self):
+        code = self._code_only(self.FE)
+        self.assertIn("badge: commentCountShown", code,
+                      "tab 徽标要用统一值")
+        self.assertIn("（{commentRemaining} 条剩余）", code,
+                      "加载更多按钮要用统一剩余数")
+        # 计数标签：从"评论列表"标题往后找（页面里有很多 <Tag color="orange">，
+        # 直接 index 会命中前面批量下载那块的"微信接口限制"）。
+        # ⚠️ 窗口要够大 —— 中间隔着整个排序控件（Segmented）。
+        i = code.index("评论列表")
+        seg = code[i: i + 3000]
+        self.assertIn('style={{ marginBottom: 12 }}', seg,
+                      "没找到评论计数那个 Tag（锚点失效了？）")
+        self.assertIn("{commentCountShown}", seg, "计数标签要用统一值")
+        self.assertNotIn("commentTotal", seg,
+                         "计数标签还在用后端原值（三处数字对不上的根源）")
+
+    def test_remaining_never_negative(self):
+        self.assertIn("Math.max(0, commentCountShown - comments.length)",
+                      self.FE, "剩余数不能为负（总数比已加载的还少时）")
+        self.assertIn("Math.max(commentTotal || 0, comments.length)", self.FE,
+                      "总数不能小于已加载条数（后端按热度重排会导致）")
+
+    @staticmethod
+    def _code_only(fe: str) -> str:
+        """剥掉注释（`//` 行注释 + `/* */` 块注释）后返回可执行代码。
+
+        ⚠️ 只剥 `//` 不够 —— 解释这个 bug 的 `{/* ... */}` 块注释里
+        也写着 `commentTotal - comments.length`（"原来这里是…"），
+        不剥就会匹配到自己。第三次踩"源码文本断言不可信"这个坑了。
+        """
+        import re as _re
+        fe = _re.sub(r"/\*.*?\*/", "", fe, flags=_re.S)
+        return "\n".join(ln for ln in fe.splitlines()
+                         if not ln.strip().startswith("//")
+                         and not ln.strip().startswith("*")
+                         and "/*" not in ln)
+
+    def test_no_direct_subtraction_left(self):
+        code = self._code_only(self.FE)
+        self.assertNotIn(
+            "commentTotal - comments.length", code,
+            "还有地方在直接相减（那正是三个数矛盾的来源）",
+        )
+
+    def test_frontend_uses_inline_replies_first(self):
+        """顶层内嵌已有数据时**不该再发请求**（20 条评论省 20 次请求）。"""
+        self.assertIn("const inline = Array.isArray(c.replies)", self.FE,
+                      "点开时应先看列表里已有的 replies")
+        i = self.FE.index("const inline = Array.isArray(c.replies)")
+        seg = self.FE[i: i + 900]
+        # 先用内嵌 → 早退，不进 setCommentLoading 分支
+        self.assertIn("_replies: inline", seg, "内嵌数据要直接展开")
+        self.assertLess(seg.index("_replies: inline"), seg.index("setCommentLoading"),
+                        "先用内嵌数据、早退，之后才是请求兜底")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
