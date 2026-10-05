@@ -1140,23 +1140,23 @@ export default function CrawlerPage() {
   const [commentNextOffset, setCommentNextOffset] = useState('')
   const [commentHasMore, setCommentHasMore] = useState(true)
 
-  // ⚠️⚠️ 评论总数**只在这里算一次**，三处显示共用（2026-10-04 修）
+  // ⚠️⚠️ 评论总数**只在这里算一次**，两处显示共用（2026-10-04 修）
   //
   // 原来三处各算各的：
   //     tab 徽标   → commentTotal
   //     计数标签   → commentTotal || comments.length
   //     加载更多   → commentTotal - comments.length
   //
-  // 实测翻过页的微博：标签"共 46 条"、tab 徽标"45"、按钮"27 条剩余"
-  // —— **三个数互相矛盾**。根因：`commentTotal` 是后端**每次响应**里报的，
-  // 而微博热门评论会**按热度重排** → 翻页过程中这个数会变。
+  // 用户实测翻过页的微博：标签「共 46 条」、tab 徽标「45」、
+  // 按钮「27 条剩余」—— **三个数互相矛盾**。
   //
-  // 规则：**已经加载出来的条数是唯一可信的事实**（我们亲眼看到的），
-  // 后端报的总数只是"它此刻认为的" —— 所以：
-  //   · 总数取 max(后端 total, 已加载条数)  ← 不能比已加载的还少
-  //   · 剩余 = 总数 - 已加载，且**不许为负**
+  // 根因：`commentTotal` 是后端**每次响应**里报的，而微博热门评论
+  // 会**按热度重排** → 翻页过程中这个数会变。
+  //
+  // 现在统一成 `Math.max(后端报的, 已加载的)` ——
+  // **已加载条数是唯一可信的事实**（我们亲眼看到的），
+  // 后端总数不能比它还小（那会让界面显示"共 5 条"却列出 20 条）。
   const commentCountShown = Math.max(commentTotal || 0, comments.length)
-  const commentRemaining = Math.max(0, commentCountShown - comments.length)
 
   const [biliStats, setBiliStats] = useState<any>(null)
   const [biliVideoInfo, setBiliVideoInfo] = useState<any>(null)
@@ -4522,7 +4522,7 @@ export default function CrawlerPage() {
                           原因是 `commentTotal` 是后端每次返回的总数，
                           微博热门评论会按热度重排 → 翻页时总数会变。
                           现在统一成一个计算值，见 `commentCountShown`。 */}
-                      {commentCountShown}
+                      共 {commentCountShown} 条评论
                     </Tag>
                   )}
                   {/* ⚠️ 守卫**必须同时**排除 commentUnsupported 和 commentBlocked。
@@ -4750,7 +4750,18 @@ export default function CrawlerPage() {
                               fetchComments(detailNote.id, commentPage + 1, commentSort, commentNextOffset)
                             }}
                           >
-                            加载更多评论（{commentRemaining} 条剩余）
+                            加载更多评论
+                            {/* ⚠️ **不显示"N 条剩余"**（2026-10-04 去掉）
+                                原来写 `commentTotal - comments.length`，
+                                实测微博：后端报 total=2349，但
+                                `page_size=50` 也只给 20 条（平台限死一页 20）
+                                → 页面写"还有 2329 条剩余"，
+                                而用户点一次实际只多 18~20 条。
+
+                                那个数字**永远对不上**，用户点几次后发现不减，
+                                会以为坏了 —— 比不显示更糟（铁律：不编数字）。
+                                底部"已加载全部评论 (N 条)"用**实际加载数**，
+                                那是真话。 */}
                           </Button>
                         </div>
                       )}
