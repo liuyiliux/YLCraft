@@ -15,6 +15,20 @@ This repository is developed by multiple AI agents across multiple machines. Bef
 
 - Do not revert or overwrite unrelated dirty files.
 - Prefer small, verifiable changes with focused tests.
+- **Test scope must match the change（2026-10-04 加）** ——
+  run the tests for what you touched, not the whole suite.
+  The full suite (`backend/tests`, ~2600 tests, ~10 分钟) is for a **batch** of
+  changes before merge, **not** after every edit.
+  2026-10-04 an agent ran it 6 次 in one day and burned an hour of pure waiting
+  —— 时间花在等上，不是在做事上。
+
+  | 改了什么 | 跑什么 |
+  | --- | --- |
+  | 一个函数 / 一个 helper | 那个测试文件（秒级） |
+  | 某个平台客户端 | 那个平台的测试 |
+  | 共用层（`comments.py` / `users.py` / `meta.py`） | 挑一个受影响的平台做冒烟 |
+  | 一批改动收尾 | 跑**一次**全量 |
+
 - When changing APIs, database schema, agent tools, or UI workflows, update the architecture/API docs or OpenSpec tasks in the same turn.
 - API work is not done until `docs/architecture/API_SURFACE.md` and `docs/architecture/api_surface.json` match the routes, and any semantic/module impact is reflected in `docs/architecture/YLCRAFT_SYSTEM_ARCHITECTURE.md` or the owning domain doc.
 - Agent tools and Skills are treated as internal APIs: update their schema/spec docs and tests when inputs, outputs, risk level, or routing behavior changes.
