@@ -229,5 +229,54 @@ class TestBackendFrontendRulesMatch(unittest.TestCase):
         self.assertIn("def _brief(", p.read_text(encoding="utf-8"))
 
 
+class TestSubReplyRenderingComplete(unittest.TestCase):
+    """展开的楼中楼**不能只显示"作者 + 内容"**。
+
+    2026-10-04 补：微博实测数据里有 `create_time` / `like_count` /
+    `is_mblog_author`，而展开区域只渲染了 `author` 和 `content`
+    —— 时间、赞数、博主标记**全丢**。
+    """
+
+    def _seg(self) -> str:
+        i = SRC.index("Array.isArray((c as any)._replies)")
+        return SRC[i: i + 1700]
+
+    def test_expanded_reply_shows_time(self):
+        self.assertIn("formatTime(r.create_time)", self._seg(),
+                      "展开的回复要显示时间（原来只显示作者+内容）")
+
+    def test_expanded_reply_shows_likes(self):
+        self.assertIn("r.likes", self._seg(), "展开的回复要显示点赞数")
+
+    def test_author_reply_marked(self):
+        """微博实测 `is_mblog_author=True`（博主本人回复）。
+
+        不标出来用户分不清"作者在回我"和"路人在回"。
+        """
+        seg = self._seg()
+        self.assertIn("is_author_reply", seg, "博主回复要有标记")
+        self.assertIn("作者", seg, "标记文案")
+
+    def test_no_head_truncation_in_reply_fetch(self):
+        """取子回复失败时的报错 —— **第三个** `slice(0, N)` 截断点。
+
+        与评论、详情那两处同一个病（2026-10-04 第三次发现）：
+        平台错误是"解释 + 处置办法"多行式，处置办法在**尾部**，
+        按字数从**头**截正好切掉。
+
+        ⚠️ 第四次踩同一个坑：先剥掉注释行再扫。
+        解释"为什么不能用 slice(0, 100)"的注释里必然含这个字面量，
+        不剥就会匹配到自己。
+        """
+        i = SRC.index("parent_id: c.id || c.rpid")
+        seg = SRC[i: i + 2400]
+        code = "\n".join(ln for ln in seg.splitlines()
+                         if not ln.strip().startswith("//"))
+        self.assertNotIn(".slice(0, 100)", code,
+                         "取回复失败的消息被按头截断了（处置办法会丢）")
+        self.assertIn("readableError", code,
+                      "要用 readableError（保尾），与其它两处一致")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

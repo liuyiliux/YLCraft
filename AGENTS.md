@@ -20,3 +20,14 @@ This repository is developed by multiple AI agents across multiple machines. Bef
 - Agent tools and Skills are treated as internal APIs: update their schema/spec docs and tests when inputs, outputs, risk level, or routing behavior changes.
 - Use `docs/devlog/` for historical handoff notes only; it is not the default source of truth.
 - For YLCraft-specific takeover or handoff work, use the `.agents/skills/ylcraft-ai-handoff` skill.
+
+## Reporting Rules
+
+- **每次给用户的回复，结尾必须用大白话讲清两件事：「现在到哪了」和「下一步做什么」。**
+  只列技术细节（改了哪个文件、跑了几个测试）**不算数** —— 用户看不懂"修好了"和"能用了吗"的区别。
+- 说"修好了"之前，先说清**用户能看见的变化**是什么。例如："你点某个视频看评论，以前是空白，现在会告诉他该等还是该换网。"
+- 没做完的事要写出来，并说清**为什么没做完**（缺什么、卡在哪、需要用户提供什么）。
+- 不确定的事就说不确定。**测过**的才写"已验证"；没测的写"未验证"，不要含糊过去。
+- 这条规则写在这里，是因为**对话上下文会被压缩、会丢**：2026-10-04 发生过一次
+  用户明确要求过、但压缩后 AI 忘了，只能靠本文件留住。
+
