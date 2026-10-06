@@ -356,10 +356,13 @@ def test_later_page_login_failure_does_not_abort_search():
     2026-10-06 改走桌面版后，"翻页被踢到登录页"由
     `DesktopLoginRequired` 表示 —— 第 1 页已有结果时必须保留它、
     停止翻页，不能让"取不到更多"变成"什么都取不到"。
+
+    ⚠️ 这段逻辑现在在 `_search_via_browser`（**兜底路径**）里 ——
+    `search_via_patchright` 本身只负责"先直连、失败才开浏览器"。
     """
     from app.services.platforms.weibo import search_patchright as sp
 
-    src = inspect.getsource(sp.search_via_patchright)
+    src = inspect.getsource(sp._search_via_browser)
     idx = src.find("except DesktopLoginRequired")
     assert idx != -1, "要单独接住'被踢到登录页'"
     seg = src[idx:idx + 400]
@@ -371,12 +374,16 @@ def test_one_page_by_default():
     """翻页页数由「要多少条 ÷ 每页 10 条」算出来，不再写死 1。
 
     ⚠️ 2026-10-04 定的「默认只取第 1 页」已被推翻：桌面版实测能翻 50 页。
+
+    ⚠️ 2026-06 起主路径是**直连 HTTP**，翻页逻辑在 `_search_http` 里。
     """
     from app.services.platforms.weibo import search_patchright as sp
 
-    src = inspect.getsource(sp.search_via_patchright)
-    assert "pages_to_try" in src
-    assert "pages_to_try = 1" not in src, "不能再写死只取第 1 页"
+    for fn in (sp._search_http, sp._search_via_browser):
+        src = inspect.getsource(fn)
+        assert "pages_to_try" in src, f"{fn.__name__} 缺少翻页计算"
+        assert "pages_to_try = 1" not in src, \
+            f"{fn.__name__} 不能再写死只取第 1 页"
 
 
 def test_search_type_enum_value_extracted():

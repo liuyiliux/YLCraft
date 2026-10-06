@@ -380,9 +380,26 @@ class CrawlerService:
             # 详情同理（`POST /api/sns/web/v1/feed`，~3 秒）。
             # 所以小红书**不再**放进 BROWSER_ONLY。
             #
-            # 保留在 BROWSER_ONLY 的只有微博 —— 它需要 **Service Worker
-            # 上下文**（实测 httpx 直连一律 ok=-100，与签名无关）。
-            BROWSER_ONLY = ("weibo", "wb")
+            # ⚠️⚠️ 微博**不再**是 BROWSER_ONLY（2026-10-06 实测）
+            #
+            # 原来这里写死 `BROWSER_ONLY = ("weibo", "wb")`，注释说
+            # "它需要 Service Worker 上下文"。**那个结论是错的** ——
+            # 起因是我给网页请求加了接口用的头
+            # `'x-requested-with': XMLHttpRequest`，被微博拒了
+            # （`pagenotfound/retcode=6102`），我就以为直连不行。
+            #
+            # 去掉那个头之后实测（**全程不开浏览器**）：
+            #
+            #     page=1/2/3/10/50  全都有内容，页与页零重叠
+            #     0.4~1 秒/页      （浏览器路径是 15 秒 + 250MB 内存）
+            #
+            # ⇒ 现在 `mode="api"`，让 `WeiboClient.search` 先试直连；
+            #   直连失败时它**内部**自动退回浏览器（兜底），功能不挂。
+            #
+            # ⚠️ 这里**必须**让 mode=api。否则 BasePlatformClient 会在
+            #    `search()` 之前就为注入 cookie 而**启动浏览器**
+            #    （实测看到 9 个 chrome 进程白起），而直连根本不需要它。
+            BROWSER_ONLY = ()          # 现在没有平台被强制走浏览器
             mode = "patchright" if platform in BROWSER_ONLY else "api"
             logger.info(
                 "[_search_via_platforms] platform=%s mode=%s keyword=%s",

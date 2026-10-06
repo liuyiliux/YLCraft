@@ -428,7 +428,7 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/comments` | 获取评论（统一入口） | `get_comments` | `backend/app/api/v1/comments.py:357` |
+| `GET` | `/api/v1/comments` | 获取评论（统一入口） | `get_comments` | `backend/app/api/v1/comments.py:398` |
 
 ### Cookie Acquisition
 
@@ -453,7 +453,7 @@
 | `GET` | `/api/v1/crawler/options` | 获取采集配置选项 | `get_options` | `backend/app/api/v1/crawler.py:277` |
 | `GET` | `/api/v1/crawler/platforms` | 获取支持的平台列表 | `get_platforms` | `backend/app/api/v1/crawler.py:271` |
 | `POST` | `/api/v1/crawler/search` | 搜索视频/图文素材 | `search_materials` | `backend/app/api/v1/crawler.py:286` |
-| `POST` | `/api/v1/crawler/search-enhanced` | 增强搜索（支持笔记/用户） | `search_enhanced` | `backend/app/api/v1/crawler.py:440` |
+| `POST` | `/api/v1/crawler/search-enhanced` | 增强搜索（支持笔记/用户）。响应 `SearchResponse` 多一个 `total_pages`：**平台明确说出**的总页数（微博「共50页」实测）；`null` = 平台没说，前端应说"不知道"而**不要猜** | `search_enhanced` | `backend/app/api/v1/crawler.py:441` |
 | `GET` | `/api/v1/crawler/tasks/{task_id}` | 查询采集任务状态 | `get_task_status` | `backend/app/api/v1/crawler.py:425` |
 
 ### Crawler — Bilibili
@@ -694,18 +694,18 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/images/backends` | 可用图像后端列表 | `list_backends` | `backend/app/api/v1/images.py:498` |
-| `POST` | `/api/v1/images/generate` | 生成图片 | `generate_image` | `backend/app/api/v1/images.py:640` |
-| `POST` | `/api/v1/images/generate-batch` | 批量生成多平台图片 | `batch_generate_endpoint` | `backend/app/api/v1/images.py:1623` |
-| `POST` | `/api/v1/images/generate-batch/retry` | 单张图片重生成 | `batch_retry_endpoint` | `backend/app/api/v1/images.py:1554` |
-| `POST` | `/api/v1/images/generate-batch/topics` | 多主题批量生成 | `batch_topics_generate_endpoint` | `backend/app/api/v1/images.py:1660` |
-| `POST` | `/api/v1/images/generate-outline` | 多平台大纲生成 | `generate_outline_endpoint` | `backend/app/api/v1/images.py:1490` |
-| `POST` | `/api/v1/images/optimize-prompt` | 用 LLM 优化生图提示词 | `optimize_prompt` | `backend/app/api/v1/images.py:613` |
-| `GET` | `/api/v1/images/platform-templates` | 可用平台/Prompt 模板列表 | `list_platform_templates` | `backend/app/api/v1/images.py:1361` |
-| `POST` | `/api/v1/images/platform-templates` | 新增平台模板 | `create_platform_template` | `backend/app/api/v1/images.py:1392` |
-| `PUT` | `/api/v1/images/platform-templates/{template_id}` | 更新平台模板 | `update_platform_template` | `backend/app/api/v1/images.py:1422` |
-| `DELETE` | `/api/v1/images/platform-templates/{template_id}` | 删除平台模板 | `delete_platform_template` | `backend/app/api/v1/images.py:1460` |
-| `GET` | `/api/v1/images/tasks/{task_id}` | 轮询图像生成任务 | `poll_image_task` | `backend/app/api/v1/images.py:904` |
+| `GET` | `/api/v1/images/backends` | 可用图像后端列表 | `list_backends` | `backend/app/api/v1/images.py:519` |
+| `POST` | `/api/v1/images/generate` | 生成图片 | `generate_image` | `backend/app/api/v1/images.py:661` |
+| `POST` | `/api/v1/images/generate-batch` | 批量生成多平台图片 | `batch_generate_endpoint` | `backend/app/api/v1/images.py:1684` |
+| `POST` | `/api/v1/images/generate-batch/retry` | 单张图片重生成 | `batch_retry_endpoint` | `backend/app/api/v1/images.py:1615` |
+| `POST` | `/api/v1/images/generate-batch/topics` | 多主题批量生成 | `batch_topics_generate_endpoint` | `backend/app/api/v1/images.py:1721` |
+| `POST` | `/api/v1/images/generate-outline` | 多平台大纲生成 | `generate_outline_endpoint` | `backend/app/api/v1/images.py:1551` |
+| `POST` | `/api/v1/images/optimize-prompt` | 用 LLM 优化生图提示词 | `optimize_prompt` | `backend/app/api/v1/images.py:634` |
+| `GET` | `/api/v1/images/platform-templates` | 可用平台/Prompt 模板列表 | `list_platform_templates` | `backend/app/api/v1/images.py:1422` |
+| `POST` | `/api/v1/images/platform-templates` | 新增平台模板 | `create_platform_template` | `backend/app/api/v1/images.py:1453` |
+| `PUT` | `/api/v1/images/platform-templates/{template_id}` | 更新平台模板 | `update_platform_template` | `backend/app/api/v1/images.py:1483` |
+| `DELETE` | `/api/v1/images/platform-templates/{template_id}` | 删除平台模板 | `delete_platform_template` | `backend/app/api/v1/images.py:1521` |
+| `GET` | `/api/v1/images/tasks/{task_id}` | 轮询图像生成任务 | `poll_image_task` | `backend/app/api/v1/images.py:965` |
 
 ### JianYing
 
@@ -1078,14 +1078,14 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/users/creator/overview` | 创作者中心：账号总览（仅号主可见的运营数据） | `get_creator_overview` | `backend/app/api/v1/users.py:432` |
-| `GET` | `/api/v1/users/creator/works` | 创作者中心：作品列表（含完播率等深度指标） | `get_creator_works` | `backend/app/api/v1/users.py:557` |
-| `GET` | `/api/v1/users/creator/xhs/fans` | 小红书创作服务平台：粉丝数据 | `get_xhs_creator_fans` | `backend/app/api/v1/users.py:534` |
-| `GET` | `/api/v1/users/creator/xhs/overview` | 小红书创作服务平台：账号总览 | `get_xhs_creator_overview` | `backend/app/api/v1/users.py:491` |
-| `GET` | `/api/v1/users/me` | 获取自己账号的资料（抖音/小红书） | `get_self_profile` | `backend/app/api/v1/users.py:358` |
-| `GET` | `/api/v1/users/profile` | 获取用户资料（抖音/小红书） | `get_user_profile` | `backend/app/api/v1/users.py:600` |
-| `GET` | `/api/v1/users/search` | 搜索用户（抖音/小红书） | `search_users` | `backend/app/api/v1/users.py:324` |
-| `GET` | `/api/v1/users/videos` | 获取用户作品列表（抖音/小红书/微博/X/B站） | `get_user_videos` | `backend/app/api/v1/users.py:637` |
+| `GET` | `/api/v1/users/creator/overview` | 创作者中心：账号总览（仅号主可见的运营数据） | `get_creator_overview` | `backend/app/api/v1/users.py:442` |
+| `GET` | `/api/v1/users/creator/works` | 创作者中心：作品列表（含完播率等深度指标） | `get_creator_works` | `backend/app/api/v1/users.py:567` |
+| `GET` | `/api/v1/users/creator/xhs/fans` | 小红书创作服务平台：粉丝数据 | `get_xhs_creator_fans` | `backend/app/api/v1/users.py:544` |
+| `GET` | `/api/v1/users/creator/xhs/overview` | 小红书创作服务平台：账号总览 | `get_xhs_creator_overview` | `backend/app/api/v1/users.py:501` |
+| `GET` | `/api/v1/users/me` | 获取自己账号的资料（抖音/小红书） | `get_self_profile` | `backend/app/api/v1/users.py:368` |
+| `GET` | `/api/v1/users/profile` | 获取用户资料（抖音/小红书） | `get_user_profile` | `backend/app/api/v1/users.py:610` |
+| `GET` | `/api/v1/users/search` | 搜索用户（抖音/小红书） | `search_users` | `backend/app/api/v1/users.py:334` |
+| `GET` | `/api/v1/users/videos` | 获取用户作品列表（抖音/小红书/微博/X/B站） | `get_user_videos` | `backend/app/api/v1/users.py:647` |
 
 ### Videos
 

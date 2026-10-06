@@ -198,6 +198,11 @@ class SearchResponse(BaseModel):
     # 平台是否明确表示"还有下一页"。
     # 前端据此显示"还有更多"，而不是把 `total` 当总数说成"共 N 条"。
     has_more: bool = False
+    # ⭐ 平台**明确说出**的总页数（微博「共50页」实测）。
+    #
+    # ⚠️ `None` = 平台没告诉我们有几页，前端应当说"不知道"，
+    #    **不要**猜一个数字出来（编数字比不知道更坏）。
+    total_pages: Optional[int] = None
     message: str = ""
     using: str = ""  # 使用的搜索引擎
     # ⚠️ 翻页模型（2026-10-03 加）
@@ -509,6 +514,15 @@ async def search_enhanced(req: SearchEnhancedRequest):
         # 所以额外透出 `has_more`，让前端能表达"还有更多"。
         total = len(results)
         has_more = False
+        # ⭐ 平台**明确说出**的总页数（2026-06 加，微博用）
+        #
+        # 微博页面 HTML 里写着「共50页」。以前我们只能"翻到空页"才知道
+        # 到头了 —— 用户看到的就是"点了没反应"。
+        # 有了它前端可以直接显示"共 50 页"。
+        #
+        # ⚠️ 只有平台**真的给了**才填；没给就是 `None`，
+        #    前端据此说"不知道"，**不猜**（编一个数字比不知道更坏）。
+        total_pages: Optional[int] = None
         # ⚠️ **游标翻页的数据源**（2026-10-03）
         #
         # `dialogs`（我的频道）/ `saved`（我的收藏）**不用页码翻页** ——
@@ -521,6 +535,11 @@ async def search_enhanced(req: SearchEnhancedRequest):
             if rd.get("_total"):
                 total = rd["_total"]
             has_more = bool(rd.get("_has_more"))
+            if rd.get("_total_pages"):
+                try:
+                    total_pages = int(rd["_total_pages"])
+                except (TypeError, ValueError):
+                    total_pages = None
             if req.platform == "telegram" and req.search_type in ("saved", "dialogs", "channels", "my"):
                 cands = [r.raw_data.get("cursor_id") for r in results if r.raw_data.get("cursor_id")]
                 if cands:
@@ -550,6 +569,7 @@ async def search_enhanced(req: SearchEnhancedRequest):
             results=results,
             total=total,
             has_more=has_more,
+            total_pages=total_pages,
             message=f"找到 {total} 条结果",
             using=using,
             pagination=pagination_info(req.platform),
