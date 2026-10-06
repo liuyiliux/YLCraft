@@ -82,22 +82,36 @@ def test_weibo_sets_has_more_from_real_paging():
         page=3  10 条
         page1 ∩ page2 = **0 个**  ← 真实翻页，不是重复数据
 
-    现在代码按"是否取满 want"给 `_has_more`（与 kuaishou/twitter 一致）。
+    现在代码按"**翻页循环怎么退出的**"给 `_has_more`：
 
-    教训同本文件开头：**注释记的是"当时"的实测，不是永久事实**。
-    写死"平台没有 X"之前必须复验，且要连测试一起改 ——
-    只改代码不改测试，等于把旧结论换个地方继续活。
+    · 被 want 截断（`_stopped_by_want`）→ 后面还有
+    · 真的翻完了（某页没新内容 / 要求登录）→ 到底
+
+    ⚠️⚠️ **2026-10-04 第二次修正**：
+    原来这里锁的是 `len(out) >= want`，那个判据在微博上是**错的** ——
+    微博一页给 **9~10 条不固定**，用户选「每页 10 条」时第 1 页给 9 条，
+    `9 >= 10` 为 False → `has_more=False` → **前端不给翻页**，
+    而第 2 页确实有内容（用户翻页截图证实）。
+
+    教训（本文件开头那句话的升级版）：
+    **注释记的是"当时"的实测，不是永久事实**；而**测试锁的判据也可能是错的** ——
+    写死"平台没有 X"或写死某个判据之前必须复验，且要连测试一起改。
+    同一个 bug 改了两次（10-03 改 False→按取满，10-04 改按取满→按退出原因），
+    说明"看起来对"的判据也得拿真实数据验。
     """
     from app.services.platforms.weibo import search_patchright as wb
 
     src = inspect.getsource(wb.search_via_patchright)
     assert "_has_more" in src
-    # 按"取满 want"判断，而不是写死 False
-    assert "_has_more\"] = len(out) >= want" in src, (
-        "微博应按是否取满判断 has_more（2026-10-03 实测能翻页）"
+    assert "_stopped_by_want" in src, (
+        "has_more 要用 _stopped_by_want（区分'被 want 截断'与'翻完了'）—— "
+        "微博一页 9~10 条不固定，用 len(out) >= want 会在 want=10 时误判成'到底了'"
     )
-    # 不得回退成写死 False（那是已被推翻的旧结论）
-    assert "_has_more\"] = False" not in src, (
+    # 不得回退成这两个（都是已被实测推翻的判据）
+    assert '"_has_more"] = len(out) >= want' not in src, (
+        "不要退回 len(out) >= want（9/10 那个坑就是它造成的）"
+    )
+    assert '"_has_more"] = False' not in src, (
         "不要写死 _has_more=False —— 2026-10-03 实测微博能翻页"
     )
 
