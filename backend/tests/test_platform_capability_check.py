@@ -87,29 +87,38 @@ def test_weibo_sets_has_more_from_real_paging():
     · 被 want 截断（`_stopped_by_want`）→ 后面还有
     · 真的翻完了（某页没新内容 / 要求登录）→ 到底
 
-    ⚠️⚠️ **2026-10-04 第二次修正**：
-    原来这里锁的是 `len(out) >= want`，那个判据在微博上是**错的** ——
-    微博一页给 **9~10 条不固定**，用户选「每页 10 条」时第 1 页给 9 条，
-    `9 >= 10` 为 False → `has_more=False` → **前端不给翻页**，
-    而第 2 页确实有内容（用户翻页截图证实）。
+    ⚠️⚠️ **2026-10-07 第三次修正（推翻整条测试的前提）**
 
-    教训（本文件开头那句话的升级版）：
-    **注释记的是"当时"的实测，不是永久事实**；而**测试锁的判据也可能是错的** ——
-    写死"平台没有 X"或写死某个判据之前必须复验，且要连测试一起改。
-    同一个 bug 改了两次（10-03 改 False→按取满，10-04 改按取满→按退出原因），
-    说明"看起来对"的判据也得拿真实数据验。
+    上面写的两种判据（`_stopped_by_want` / `len(out) >= want`）都建立在
+    一个**已经不成立**的前提上：**搜索函数自己去翻页**。
+
+    现在的语义是「**取第 N 页，就只取第 N 页**」——
+    `max_results` 是"这一页的上限"，不是"总共要攒多少"。
+
+    以前把这两个混为一谈，导致 `max_results=30, page=2` 会**接着往后翻**，
+    攒够 30 条才停 ⇒ 返回的是第 2、3、4 页的混合（实测 23 条），
+    而且**第 1 页那 10 条不见了** —— 用户翻页看到的是残缺的一页。
+
+    ⇒ 现在 `has_more` 的判据换成**平台自己说的总页数**：
+
+        有「共50页」→ has_more = (page < 50)      准确
+        平台没说   → has_more = 这一页有没有内容   保守，不编
     """
     from app.services.platforms.weibo import search_patchright as wb
 
     src = inspect.getsource(wb.search_via_patchright)
     assert "_has_more" in src
-    assert "_stopped_by_want" in src, (
-        "has_more 要用 _stopped_by_want（区分'被 want 截断'与'翻完了'）—— "
-        "微博一页 9~10 条不固定，用 len(out) >= want 会在 want=10 时误判成'到底了'"
+    # 现在按「平台说的总页数」判断，不再靠翻页循环的退出原因
+    assert "_total_pages" in src, (
+        "has_more 应该用平台自己说的总页数（共50页）判断，而不是猜"
     )
     # 不得回退成这两个（都是已被实测推翻的判据）
+    assert '_stopped_by_want' not in src, (
+        "不要用 _stopped_by_want —— 它假设'搜索函数自己翻页攒数据'，"
+        "而现在取第 N 页就只取第 N 页"
+    )
     assert '"_has_more"] = len(out) >= want' not in src, (
-        "不要退回 len(out) >= want（9/10 那个坑就是它造成的）"
+        "不要退回 len(out) >= want（微博一页 9~10 条不固定，会误判成'到底了'）"
     )
     assert '"_has_more"] = False' not in src, (
         "不要写死 _has_more=False —— 2026-10-03 实测微博能翻页"

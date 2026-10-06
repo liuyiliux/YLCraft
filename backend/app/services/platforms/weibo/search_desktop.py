@@ -328,9 +328,11 @@ def _uid_from_href(href: str) -> str:
 def parse_desktop_card(card: Dict[str, Any]) -> Any:
     """把一张桌面版卡片转成统一的 `SearchResult`。
 
-    ⚠️ 桌面卡片**没有** `create_time` 的原始值，只有 "43分钟前" 这种相对时间，
-    这里**如实留空**而不是编一个时间戳。详情页（`parse_mblog_detail`）
-    才有精确的 `created_at`。
+    ⚠️ 桌面卡片**没有**精确的 `created_at` 原始值，只有 "10月06日 15:50"
+    这种相对时间 —— 直连路径（`search_http`）已经把它换算成时间戳放进
+    `create_time`；**浏览器路径只能拿到相对文本，这里如实留空**
+    而不是编一个时间戳（留空时前端显示 `-`，编一个会显示错年份）。
+    详情页（`parse_mblog_detail`）才有精确的 `created_at`。
     """
     from ..types import SearchResult
 
@@ -365,6 +367,6 @@ def parse_desktop_card(card: Dict[str, Any]) -> Any:
         likes=like,
         comments=comment,
         shares=repost,
-        create_time="",
+        create_time=str(card.get("create_time") or ""),
         raw_data=raw,
     )
