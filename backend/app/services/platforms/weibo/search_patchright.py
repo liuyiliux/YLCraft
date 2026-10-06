@@ -48,6 +48,15 @@ from ..types import SearchParams, SearchResult, UserProfile
 from .apis import build_search_params
 from .client import parse_user
 from .client import parse_mblog
+from .search_desktop import (
+    DESKTOP_MAX_PAGE,
+    DESKTOP_NO_REALTIME,
+    DESKTOP_PAGE_SIZE,
+    DESKTOP_XSORT,
+    DesktopLoginRequired,
+    fetch_desktop_page,
+    parse_desktop_card,
+)
 
 logger = logging.getLogger("ylcraft.platforms.weibo.patchright")
 
@@ -238,272 +247,141 @@ async def search_via_patchright(
 ) -> List[SearchResult]:
     """在浏览器里搜微博。
 
-    ## ⚠️⚠️ 翻页：**只能可靠地取第 1 页**（2026-10-04 实测，**已确认登录态**）
+    ## ⚠️⚠️ 这里翻过三次车，三个结论互相矛盾（页码式 → 游标式 → 单页式）
 
-    ### ⚠️ 先确认登录态，否则结论作废
+    完整复盘写在 `search_desktop.py` 的模块 docstring 里，这里只留结论：
 
-    我在这个功能上翻过两次车，都是因为**没先验登录态**：
+    ### 移动版 `m.weibo.cn` 的 `page` 参数翻不动
 
-      ① 手工测试脚本**没加载 `.env`** → `database.py:26` 的 localhost 兜底生效
-         → 注入 cookie 失败 → **访客态** → 测出"page=2 返回 ok=-100"
-         → 我把"访客没权限"当成"平台没数据"
-      ② 判据也看错位置：`/api/config` 的 `login`/`uid` 在 **`data`** 里，
-         不在顶层 → 打出"login=None"误判成未登录
+        page=1 → 9 条     page=2 → **0 条**（ok=1，正常受理，就是没内容）
+
+    ⚠️⚠️ **但这不等于"微博只能搜一页"**（2026-10-06 实测推翻）：
+
+    打开**真实**搜索页滚到底，页面**自己**发的是
+
+        /api/container/getIndex?containerid=...&q=沈阳&page=2
+
+    页面上卡片 18 → 28 → 40 → 50 —— **它翻到了第 4 页。**
+    ⇒ 之前的"只有一页"是我**取法**的问题，不是平台限制。
+
+    把页面那条请求原样抄回来（URL / `page_type` / `x-xsrf-token` /
+    `referer` / `type=1|60|61|64` **逐项单独测过**）—— 还是 0 条。
+    走 fetch 抄请求这条路已到头，原因**未查明**，不当结论写。
+
+    ### ⇒ 搜索改走桌面版 `s.weibo.com`（实测 50 页、页与页零重叠）
+
+        https://s.weibo.com/weibo?q={关键词}&page={N}
+
+        page=1  20 个 mid
+        page=2  10 个，与 page=1 **重叠 0** → 真翻页
+        page=50 仍有 10 个 → 最多 50 页 = 500 条
+
+    桌面版是**服务端渲染**，在登录浏览器里取（cookie 由 `_get_session` 注入）。
+    **用 httpx 直连会被踢到 `passport.weibo.com/visitor/visitor`**（实测）。
+
+    ### 仍然要**先确认登录态**，否则结论作废
+
+    我在这个功能上栽过两次，都是同一类错误：
+
+      ① 手工脚本**没加载 `.env`** → 走 localhost 兜底 → 注入失败 → **访客态**
+      ② 判据看错位置：`/api/config` 的 `login` 在 **`data`** 里不在顶层
 
     **正确验法**（`JS_CHECK_LOGIN`，项目里已有）：
 
         {"data":{"login":true,"uid":"7628413874", ...}, "ok":1}
                             ↑ 在 data 里，不在顶层
 
-    本次实测：login=**true**、uid=**7628413874**、cookie 注入 3776 字符、
-    页面里的 uid 与之一致 ⇒ **真登录态**。
+    ### ⚠️ 详情仍走原来的 `m.weibo.cn`
 
-    ### 访客态 vs 登录态：**完全是两回事**
-
-    |            | `page=2` 返回                                   |
-    | ---------- | ----------------------------------------------- |
-    | 访客态     | `ok=-100` + `passport.weibo.com/sso/signin` URL  |
-    | **登录态** | **`ok=1`** + **0 条**（正常受理，只是没内容）    |
-
-    ⚠️ 混在一起看必然误判 —— 这就是我出错的根源。
-
-    ### 登录态下的实测（3 关键词 × page 1/2/3）
-
-        营口   page=1: 14 条     page=2: ok=1  0 条
-        沈阳   page=1:  9 条     page=2: ok=1  0 条
-        美食   page=1:  9 条     page=2: ok=1  0 条
-
-    ⇒ **微博搜索只有 1 页。** 想要更多，上层用**更大的 `max_results`
-    重新搜一次**（前端「加载更多」，与抖音同款）。**不是**页码翻页。
-
-    ### 一页给 9~14 条，不固定
-
-    所以"每页 10 条"可能给 9 条、给 14 条 —— **不是 bug**，是平台行为。
+    搜索只取"列表"（标题/作者/计数/封面/mid），字段够用就不多发请求。
+    用户点进详情时仍走 `parse_mblog_detail` —— 那条实测字段最全，没动它。
 
     ### `has_more` 的含义
 
-    **"调大每页条数能不能拿到更多"** —— 不是"有没有第 2 页"。
-    判据靠**实际试**：循环是否因"取满 want"而提前结束
-    （`_stopped_by_want`）。取满了 → 可能还有；少于 want → 平台到顶。
-
-    ## ⚠️ 与 `meta.py` 的 `weibo → PAGED` **矛盾**（原因未定）
-
-    `meta.py` 那条基于 2026-10-03 实测（p2 有 17~20 条），
-    今天登录态、访客态都测不出 —— **三个结论互不相同**。
-
-    可能原因（**未验证，不当结论写**）：微博侧变更、时段限流。
-    **没查清前不改架构** —— 宁可少给，不给"点了没反应"的翻页按钮。
-    想改的话先复验 `meta.py` 里那张实测表。
-
-    ### `ok=-100` 的防御（将来若恢复翻页仍需要）
-
-    实测（访客态）：
-        page=1 → ok=1     160KB 真实数据
-        page=2 → ok=-100  {"url": "passport.weibo.com/sso/signin"}
-
-    此时必须**保留第 1 页结果、停止翻页**，不能整体抛错 ——
-    否则每次搜索都会失败，连有效的第 1 页都看不到。
+    **"还有没有下一页"** —— 桌面版有明确页码上限（50），能算准，
+    不再像移动版那样只能靠"取满了 want 就猜还有"。
     """
     want = max(1, params.max_results or 20)
+
     # ⚠️ `SearchParams.search_type` 是 **SearchType 枚举**（默认 NOTE），
-    # 直接 str() 会得到 "SearchType.NOTE" 而不是 "note"。
-    # 这里取 `.value` 再交给 resolve_search_type。
+    # 直接 str() 会得到 "SearchType.NOTE" 而不是 "note" —— 要先取 `.value`。
     raw_st = getattr(params, "search_type", "") or "note"
-    search_type = str(getattr(raw_st, "value", raw_st))
+    st_key = str(getattr(raw_st, "value", raw_st)).strip().lower()
+    xsort = DESKTOP_XSORT.get(st_key, "")
+    if st_key == DESKTOP_NO_REALTIME:
+        # ⚠️ 桌面版**没有「实时」这个分类**（页面上只有 综合 / 热门）。
+        # 静默当综合处理 = 给用户一份标着"实时"的数据，其实是综合 —— 撒谎。
+        # 所以明说，让人知道自己在看什么。
+        logger.info("[weibo] 桌面版没有「实时」分类（实测：只有综合/热门），回退到综合")
 
     session = await _get_session(conn_key, client=client)
     out: List[SearchResult] = []
     seen: set[str] = set()
-
-    # ⚠️⚠️ 翻页：**只取第 1 页**（2026-10-04 实测，**已确认登录态**）
-    #
-    # ## 实测前提（这一步之前漏了，导致结论作废过一轮）
-    #
-    #     /api/config → **login=true, uid=7628413874**
-    #     注入 cookie 成功（3776 字符），页面 uid 与之一致
-    #     ⇒ 测的是**真登录态**，不是访客态
-    #
-    # ## 实测（登录态下，3 个关键词 × page 1/2/3）
-    #
-    #     营口   page=1: ok=1  14 条     page=2: **ok=1**  0 条
-    #     沈阳   page=1: ok=1   9 条     page=2: **ok=1**  0 条
-    #     美食   page=1: ok=1   9 条     page=2: **ok=1**  0 条
-    #
-    # ⚠️ 关键细节：`ok=1`（**不是** `ok=-100`）—— 请求被**正常受理**了，
-    # 只是那一页真的没有内容。
-    #
-    # ⚠️ 与访客态**完全是两回事**：
-    #     访客态  page=2 → ok=-100 + passport 登录页 URL
-    #     登录态  page=2 → ok=1    + 0 条
-    # 混在一起看，会把"访客没权限"误当成"平台没数据" ——
-    # 我就这么归因错过一次（访客态测的 0 条，被我当成平台限制）。
-    #
-    # ## 另外两个事实
-    #
-    #   · 给多少由 **`max_results`** 决定，不是 `page`
-    #     （page=1，max 从 10 → 20，条数 10 → 14）
-    #   · `since_id` 游标自己翻 → **不稳定**，实测反而变少
-    #     营口 5/10/15/**14**   沈阳 5/10/**9**/**9**（调大反而少）
-    #     游标页与第 1 页有重叠 —— 不可用。
-    #
-    # ⇒ 微博搜索**只有 1 页**。想要更多，上层用**更大的 `max_results`
-    #   重新搜一次**（前端「加载更多」那条路，与抖音同款）。
-    #
-    # ⚠️ `meta.py` 里 `weibo → PAGED` 与此**矛盾**
-    #   （那条基于 2026-10-03 实测 p2 有 17~20 条）。
-    #   今天登录态、访客态都测不出 —— **三个结论互不相同**，
-    #   在查清前不改架构：宁可少给，不给"点了没反应"的翻页按钮。
-    pages_to_try = 1
-    _stopped_by_want = False
     pages_fetched = 0
-    _since_id: Any = None
-    _best = 0
+    last_page_had_items = False
+
+    # 一页 10 条（实测）。要够 `want` 条 ⇒ 至少翻 ⌈want/10⌉ 页。
+    # `max_pages` 是调用方的上限，`DESKTOP_MAX_PAGE` 是平台的上限。
+    need_pages = max(1, (want + DESKTOP_PAGE_SIZE - 1) // DESKTOP_PAGE_SIZE)
+    pages_to_try = min(max(1, int(max_pages or 1)), max(need_pages, 1),
+                       DESKTOP_MAX_PAGE)
+    # ⚠️ 平台只有 50 页：用户选"每页 50 条"时要翻 5 页，选 500 条要翻 50 页。
+    # 少于页数不给够就说清楚，不假装"就这些了"。
+    pages_to_try = min(pages_to_try, DESKTOP_MAX_PAGE)
 
     for i in range(pages_to_try):
-        qp = build_search_params(
-            keyword=params.keyword,
-            page=1,
-            since_id=_since_id,
-            search_type=search_type,
-        )
+        pn = page + i
         try:
-            raw = await session.page.evaluate(JS_SEARCH, {"params": qp})
+            cards = await fetch_desktop_page(
+                session, params.keyword, pn, xsort=xsort
+            )
+        except DesktopLoginRequired as exc:
+            # ⚠️ 已有结果就**保留**并停下 —— 不能把"取不到更多"变成"什么都取不到"
+            if out:
+                logger.info("[weibo] 桌面版第 %d 页要求登录，已有 %d 条，停止翻页",
+                            pn, len(out))
+                break
+            raise LoginExpiredError(
+                "[weibo] 桌面搜索要求登录。请在「账号中心」重新保存微博登录态后重试。\n"
+                "（微博搜索走已登录的浏览器会话，未登录时拿不到搜索结果。）"
+            ) from exc
         except Exception as exc:
-            logger.warning("[weibo] 搜索页 evaluate 失败（第 %d 页）：%s", page + i, exc)
+            logger.warning("[weibo] 桌面版搜索第 %d 页失败：%s", pn, exc)
             break
 
         pages_fetched = i + 1
+        last_page_had_items = bool(cards)
 
-        try:
-            data = json.loads(raw) if isinstance(raw, str) else (raw or {})
-        except (TypeError, ValueError) as exc:
-            logger.warning("[weibo] 搜索响应解析失败：%s", exc)
-            break
-
-        # ⚠️ 翻页拿不到有效 JSON 时**不能整体报错**。
-        #
-        # 实测：`page=1` 返回 173KB 真实数据，`page=2` 返回 173 字节的
-        # HTML 错误页（微博的搜索翻页实际依赖 `since_id` 游标，
-        # 不是纯 `page`）。此时第 1 页的结果是**有效的**，
-        # 直接抛错会让用户连第一页都看不到。
-        #
-        # 所以在**已有结果**时静默停止翻页；一页都没有才报错。
-        if isinstance(data, dict) and data.get("_error"):
-            if out:
-                logger.info(
-                    "[weibo] 第 %d 页无有效数据（%s），已有 %d 条，停止翻页",
-                    page + i, data.get("_error"), len(out),
-                )
-                break
-            raise RuntimeError(
-                f"[weibo] 搜索返回非 JSON（{data.get('_error')}，HTTP {data.get('http')}）。"
-                f"响应开头：{str(data.get('head'))[:80]}。"
-                "通常是 Service Worker 未就绪或登录态失效 —— "
-                "请到「账号中心」重新保存微博登录态。"
-            )
-
-        ok = data.get("ok") if isinstance(data, dict) else None
-        if ok == -100:
-            # ⚠️⚠️ **已有第 1 页结果时，这里必须停而不是抛错**（2026-10-04 改）
-            #
-            # 实测（访客态 / 登录态失效）：
-            #     page=1 → ok=1   160KB 真实数据（9~10 条）
-            #     page=2 → ok=-100  {"url":"passport.weibo.com/sso/signin"}
-            #
-            # 原来无条件 `raise` → 上面刚改成"要试第 2 页"之后，
-            # **每次搜索都会失败**，连本来有效的第 1 页都看不到。
-            # 那是把"取不到更多"变成"什么都取不到"，比原来更糟。
-            #
-            # 正确处置：第 1 页有效就**保留它**，停止翻页，
-            # 并**如实告诉用户**"翻页需要登录"（不是假装"就这些了"）。
-            if out:
-                logger.info(
-                    "[weibo] 第 %d 页要求登录（ok=-100），已有 %d 条，停止翻页",
-                    page + i, len(out),
-                )
-                break
-            raise RuntimeError(
-                "[weibo] 未登录（ok=-100）。请在「账号中心」保存微博登录态后重试。"
-            )
-
-        cards = ((data.get("data") or {}).get("cards") or []) if isinstance(data, dict) else []
-        mblogs = [
-            c.get("mblog") for c in cards
-            if isinstance(c, dict) and c.get("card_type") == 9
-            and isinstance(c.get("mblog"), dict)
-        ]
-        if not mblogs:
-            break
-
-        # ⚠️ **抓 since_id 游标**（2026-10-04 实测：微博搜索翻页靠它，
-        # `page` 参数无效 —— page=2 恒返回 0 条）
-        #
-        # 优先用响应给的 `data.cardlistInfo.since_id`；
-        # 拿不到就用**本页最后一条的 mid** 兜底（微博游标就是 id 序列）。
-        _card_info = ((data.get("data") or {}).get("cardlistInfo") or {}) \
-            if isinstance(data, dict) else {}
-        _since_id = _card_info.get("since_id") or _card_info.get("sinceId")
-        if not _since_id:
-            _last = (mblogs[-1] or {}).get("mid") or (mblogs[-1] or {}).get("id")
-            _since_id = str(_last) if _last else None
-
-        for mb in mblogs:
-            parsed = parse_mblog(mb)
+        added = 0
+        for card in cards:
+            parsed = parse_desktop_card(card)
             if parsed is None or parsed.id in seen:
                 continue
             seen.add(parsed.id)
             out.append(parsed)
-        if len(out) >= want:
-            # 被 want 截断 —— 说明**后面可能还有**
-            # （has_more 要靠这个标记，不能用 `len(out) >= want` 反推）
-            _stopped_by_want = True
-            break
-        if not _since_id:
-            break        # 没有游标 = 翻不动了
-        # ⚠️ "结果不许变少"保护（实测游标翻页会回退，见上方注释）
-        if len(out) <= _best:
-            logger.info("[weibo] 游标翻页未带来新条目（%d → %d），回滚并停止",
-                        _best, len(out))
-            out = out[:_best]
-            break
-        _best = len(out)
+            added += 1
 
-    # ⚠️ **给前端 `_has_more`**（2026-09-29 补，2026-10-03 修）
-    #
-    # 原来**写死 False**，理由是 2026-09-29 的实测：
-    #     page=2 返回 173 字节 HTML 错误页，cardlistInfo.since_id 为 None
-    # 于是"平台没有第 2 页"被当成结论固化进了代码。
-    #
-    # ⚠️ **但那个结论今天（2026-10-03）实测已不成立** —— 微博搜索**能翻页**：
-    #
-    #     page=1  10 条  ['5344437661075159', '5344073515796857', ...]
-    #     page=2  10 条  ['5349942244934068', '5349941822098505', ...]
-    #     page=3  10 条
-    #     page1 ∩ page2 = **0 个**   ← 真实翻页，不是重复数据
-    #
-    # ⚠️⚠️ **但 2026-10-04 又实测推翻了一次**（见上方 docstring）：
-    #     page=2 恒返回 **0 条**，page 参数对微博搜索**无效**；
-    #     真正决定给多少的是 `max_results`，且有平台上限。
-    #     所以现在只取第 1 页（pages_to_try = 1）。
-    #
-    # ## `has_more` 现在的含义：**调大"每页条数"能不能拿到更多**
-    #
-    # 判据（实测得出，不是猜）：
-    #     拿到的条数 == want  → 可能还有（用户调大每页条数能再要）
-    #     拿到的条数 <  want  → 平台就到顶了
-    #
-    # 为什么不用 `len(out) >= want` 直接算 —— 那正是这个：
-    # 一页给 9~10 条不固定，want=10 时第 1 页给 9 条 → `9 >= 10` False
-    # → has_more=False → 前端不给"加载更多"，而调大条数其实能多拿。
-    # 与其拿条数去猜，**直接试**才知道 —— 所以 `_stopped_by_want`
-    # 记录的是"循环是否因取满 want 而提前结束"。
+        # 这一页**一条都没有** ⇒ 平台到顶了（或者关键词真没内容）
+        if not cards:
+            break
+        if len(out) >= want:
+            break
+
+    # ⚠️ `has_more` 现在是**算出来的**，不是猜的：
+    #   · 还没取满 want            → 肯定还有（平台只给了 10 条/页，我们没翻够）
+    #   · 翻到了第 50 页上限       → 没有
+    #   · 最后一页是空的           → 没有
+    #   · 刚好取满 want 但没翻到头 → 可能有（`has_more=True` 也不保证真有，
+    #     但前端据此决定要不要给「加载更多」，宁可多给一次机会）
+    has_more = bool(out) and not (
+        last_page_had_items is False or pages_fetched >= DESKTOP_MAX_PAGE
+    )
     if out:
-        out[0].raw_data["_has_more"] = _stopped_by_want
+        out[0].raw_data["_has_more"] = has_more
 
     logger.info(
-        "[weibo] 搜索 %r -> %d 条（patchright，翻了 %d/%d 页，has_more=%s）",
-        params.keyword, len(out), pages_fetched, pages_to_try,
-        out[0].raw_data.get("_has_more") if out else False,
+        "[weibo] 搜索 %r -> %d 条（桌面版 s.weibo.com，翻了 %d 页，has_more=%s）",
+        params.keyword, len(out), pages_fetched, has_more,
     )
     return out[:want]
 

@@ -50,6 +50,7 @@ from ..types import (
 from .apis import (
     MOBILE_HOST,
 )
+from .search_desktop import DESKTOP_MAX_PAGE
 
 logger = logging.getLogger("ylcraft.platforms.weibo")
 
@@ -143,6 +144,12 @@ class WeiboClient(BasePlatformClient):
             conn_key=self.config.conn_id or "",
             client=self,
             page=max(1, int(getattr(params, "page", 1) or 1)),
+            # ⚠️ 必须**放宽到平台上限**（10-06 实测：桌面版有 50 页），
+            #    不能用默认的 3 —— 否则用户选「每页 50 条」只拿到 30 条，
+            #    而且页面上不会有任何提示说"被截断了"。
+            #    函数内部会按 `want` 算够几页就停，取满即止，
+            #    所以给 50 不会导致每次都翻 50 页。
+            max_pages=DESKTOP_MAX_PAGE,
         )
 
     async def get_detail(self, item_id: str, **kwargs) -> NoteDetail:
