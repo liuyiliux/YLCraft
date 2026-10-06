@@ -238,15 +238,33 @@ async def search_via_patchright(
 ) -> List[SearchResult]:
     """在浏览器里搜微博。
 
-    ## 翻页限制（实测 2026-09-27）
+    ## 翻页（2026-10-04 按实测重写）
 
-    微博搜索的 `page=1` 正常（约 9 条正文），但 **`page=2` 返回
-    173 字节的 HTML 错误页** —— 它的真翻页依赖 `since_id` 游标，
-    不是纯 `page`。所以这里默认**只取第 1 页**（约 9-12 条），
-    并在日志里说明取不满的原因，而不是假装翻页成功。
+    ### 一页给 **9~10 条，不固定**
 
-    如果 `max_results` 明显大于一页，仍会尝试第 2 页；
-    拿不到就停（不报错——第 1 页的数据是有效的）。
+    用户实测：选「每页 10 条」搜"沈阳"→ 拿到 **9 条**。
+    同一关键词不同时候可能是 9 条也可能是 10 条。
+
+    ### 能翻页，但要**实际去试**才知道有没有
+
+    2026-10-03 实测（旧结论已推翻）：
+
+        page=1  10 条  ['5344437661075159', '5344073515796857', ...]
+        page=2  10 条  ['5349942244934068', '5349941822098505', ...]
+        page=3  10 条
+        page1 ∩ page2 = **0 个**   ← 真实翻页，不是重复数据
+
+    ⚠️ 2026-09-27 那条"page=2 返回 173 字节 HTML 错误页 → 只取第 1 页"
+    的结论**已不成立**，别再照着它只翻 1 页。
+
+    ### 但第 2 页**可能要求登录**
+
+    实测（访客态 / 登录态失效）：
+        page=1 → ok=1     160KB 真实数据
+        page=2 → ok=-100  {"url": "passport.weibo.com/sso/signin"}
+
+    所以翻到第 2 页报 `ok=-100` 时：**保留第 1 页结果、停止翻页**，
+    **不能整体抛错** —— 否则每次搜索都会失败，连有效的第 1 页都看不到。
     """
     want = max(1, params.max_results or 20)
     # ⚠️ `SearchParams.search_type` 是 **SearchType 枚举**（默认 NOTE），
@@ -259,8 +277,25 @@ async def search_via_patchright(
     out: List[SearchResult] = []
     seen: set[str] = set()
 
-    # 一页约 9 条正文；要更多才去翻第 2 页（实测多半拿不到）
-    pages_to_try = 1 if want <= 12 else min(2, max(1, max_pages))
+    # ⚠️⚠️ 翻多少页：**按"一页实际给几条"反推**，不再看 want（2026-10-04 改）
+    #
+    # 原来：`pages_to_try = 1 if want <= 12 else min(2, max_pages)`
+    # 用户实测：选「每页 10 条」→ 只显示 9 条且**没有翻页按钮**（可第 2 页有内容）。
+    #
+    # 根因两层：
+    #   ① want=10 ≤ 12 → 只试第 1 页。微博一页给 **9~10 条不固定**
+    #      （同一关键词有时 9 条有时 10 条）。
+    #   ② 拿到 9 条后用 `len(out) >= want`（9 >= 10 → False）判定
+    #      "没有下一页" → 前端不给翻页。**而第 2 页其实有内容**
+    #      （用户翻页截图证实：第 2 页是"看看这阳光"等新条目）。
+    #
+    # 所以：不管 want 多小，**都得实际去试第 2 页**才知道有没有更多。
+    # 一页按 9 条估：(want + 8) // 9 = 需要的页数。
+    pages_to_try = max(1, min(max(1, max_pages), (want + 8) // 9))
+
+    # 区分"翻完了"和"被 want 截断了" —— has_more 靠它判断（见函数末尾）
+    _stopped_by_want = False
+    pages_fetched = 0
 
     for i in range(pages_to_try):
         qp = build_search_params(
@@ -273,6 +308,8 @@ async def search_via_patchright(
         except Exception as exc:
             logger.warning("[weibo] 搜索页 evaluate 失败（第 %d 页）：%s", page + i, exc)
             break
+
+        pages_fetched = i + 1
 
         try:
             data = json.loads(raw) if isinstance(raw, str) else (raw or {})
@@ -304,6 +341,24 @@ async def search_via_patchright(
 
         ok = data.get("ok") if isinstance(data, dict) else None
         if ok == -100:
+            # ⚠️⚠️ **已有第 1 页结果时，这里必须停而不是抛错**（2026-10-04 改）
+            #
+            # 实测（访客态 / 登录态失效）：
+            #     page=1 → ok=1   160KB 真实数据（9~10 条）
+            #     page=2 → ok=-100  {"url":"passport.weibo.com/sso/signin"}
+            #
+            # 原来无条件 `raise` → 上面刚改成"要试第 2 页"之后，
+            # **每次搜索都会失败**，连本来有效的第 1 页都看不到。
+            # 那是把"取不到更多"变成"什么都取不到"，比原来更糟。
+            #
+            # 正确处置：第 1 页有效就**保留它**，停止翻页，
+            # 并**如实告诉用户**"翻页需要登录"（不是假装"就这些了"）。
+            if out:
+                logger.info(
+                    "[weibo] 第 %d 页要求登录（ok=-100），已有 %d 条，停止翻页",
+                    page + i, len(out),
+                )
+                break
             raise RuntimeError(
                 "[weibo] 未登录（ok=-100）。请在「账号中心」保存微博登录态后重试。"
             )
@@ -322,6 +377,9 @@ async def search_via_patchright(
             seen.add(parsed.id)
             out.append(parsed)
         if len(out) >= want:
+            # 被 want 截断 —— 说明**后面可能还有**
+            # （has_more 要靠这个标记，不能用 `len(out) >= want` 反推）
+            _stopped_by_want = True
             break
 
     # ⚠️ **给前端 `_has_more`**（2026-09-29 补，2026-10-03 修）
@@ -341,12 +399,27 @@ async def search_via_patchright(
     # "能翻"变成"只有第一页"又变），而我们的注释记的是**当时**的实测，
     # 没人回头复验 —— 于是"平台限制"被写成了永久事实。
     #
-    # 现在按**实际取满**判断：拿满 want 就说明还有下一页。
-    # 这与 kuaishou/twitter/xiaohongshu 的做法一致（都基于"是否取满"）。
+    # 现在按**最后一页是不是取满**判断（2026-10-04 改）。
+    #
+    # ⚠️ 原来用 `len(out) >= want` —— **这在微博上是错的**：
+    # 一页给 **9~10 条不固定**，用户选「每页 10 条」时第 1 页给 9 条，
+    # `9 >= 10` 为 False → `has_more=False` → **前端不给翻页**，
+    # 而第 2 页其实有内容（用户翻页截图证实）。
+    #
+    # 正确判据：**翻页循环是"取满就停"还是"翻完了才停"**。
+    #  · 循环因 `len(out) >= want` 提前 break → 说明是**被 want 截断**的
+    #    → 后面还有（用户可以调大每页条数，或后端继续翻）
+    #  · 循环因某页没有新内容 / 要求登录而 break → 真的到底了
+    #
+    # 所以用一个标记区分这两种退出，而不是拿条数去猜。
     if out:
-        out[0].raw_data["_has_more"] = len(out) >= want
+        out[0].raw_data["_has_more"] = _stopped_by_want
 
-    logger.info("[weibo] 搜索 %r -> %d 条（patchright）", params.keyword, len(out))
+    logger.info(
+        "[weibo] 搜索 %r -> %d 条（patchright，翻了 %d/%d 页，has_more=%s）",
+        params.keyword, len(out), pages_fetched, pages_to_try,
+        out[0].raw_data.get("_has_more") if out else False,
+    )
     return out[:want]
 
 
