@@ -5118,7 +5118,7 @@
       "summary": "获取评论（统一入口）",
       "function": "get_comments",
       "file": "backend/app/api/v1/comments.py",
-      "line": 357,
+      "line": 398,
       "response_model": "CommentsResponse",
       "include_in_schema": true
     },
@@ -5230,9 +5230,10 @@
       "summary": "增强搜索（支持笔记/用户）",
       "function": "search_enhanced",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 440,
+      "line": 441,
       "response_model": "SearchResponse",
-      "include_in_schema": true
+      "include_in_schema": true,
+      "note": "SearchResponse.total_pages = platform-stated page count (weibo 共50页, measured); null = platform did not say, frontend must say unknown rather than guess"
     },
     {
       "method": "GET",
@@ -7390,7 +7391,7 @@
       "summary": "可用图像后端列表",
       "function": "list_backends",
       "file": "backend/app/api/v1/images.py",
-      "line": 498,
+      "line": 519,
       "response_model": "ImageBackendsResponse",
       "include_in_schema": true
     },
@@ -7406,7 +7407,7 @@
       "summary": "生成图片",
       "function": "generate_image",
       "file": "backend/app/api/v1/images.py",
-      "line": 640,
+      "line": 661,
       "response_model": "ImageResponse",
       "include_in_schema": true
     },
@@ -7422,7 +7423,7 @@
       "summary": "批量生成多平台图片",
       "function": "batch_generate_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 1623,
+      "line": 1684,
       "response_model": "BatchGenerateResponse",
       "include_in_schema": true
     },
@@ -7438,7 +7439,7 @@
       "summary": "单张图片重生成",
       "function": "batch_retry_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 1554,
+      "line": 1615,
       "response_model": "BatchRetryResponse",
       "include_in_schema": true
     },
@@ -7454,7 +7455,7 @@
       "summary": "多主题批量生成",
       "function": "batch_topics_generate_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 1660,
+      "line": 1721,
       "response_model": "BatchTopicGenerateResponse",
       "include_in_schema": true
     },
@@ -7470,7 +7471,7 @@
       "summary": "多平台大纲生成",
       "function": "generate_outline_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 1490,
+      "line": 1551,
       "response_model": "GenerateOutlineResponse",
       "include_in_schema": true
     },
@@ -7486,7 +7487,7 @@
       "summary": "用 LLM 优化生图提示词",
       "function": "optimize_prompt",
       "file": "backend/app/api/v1/images.py",
-      "line": 613,
+      "line": 634,
       "response_model": "ImagePromptOptimizeResponse",
       "include_in_schema": true
     },
@@ -7502,7 +7503,7 @@
       "summary": "可用平台/Prompt 模板列表",
       "function": "list_platform_templates",
       "file": "backend/app/api/v1/images.py",
-      "line": 1361,
+      "line": 1422,
       "response_model": "dict",
       "include_in_schema": true
     },
@@ -7518,7 +7519,7 @@
       "summary": "新增平台模板",
       "function": "create_platform_template",
       "file": "backend/app/api/v1/images.py",
-      "line": 1392,
+      "line": 1453,
       "response_model": "dict",
       "include_in_schema": true
     },
@@ -7534,7 +7535,7 @@
       "summary": "更新平台模板",
       "function": "update_platform_template",
       "file": "backend/app/api/v1/images.py",
-      "line": 1422,
+      "line": 1483,
       "response_model": "dict",
       "include_in_schema": true
     },
@@ -7550,7 +7551,7 @@
       "summary": "删除平台模板",
       "function": "delete_platform_template",
       "file": "backend/app/api/v1/images.py",
-      "line": 1460,
+      "line": 1521,
       "response_model": "dict",
       "include_in_schema": true
     },
@@ -7566,7 +7567,7 @@
       "summary": "轮询图像生成任务",
       "function": "poll_image_task",
       "file": "backend/app/api/v1/images.py",
-      "line": 904,
+      "line": 965,
       "response_model": "ImageResponse",
       "include_in_schema": true
     },
@@ -11310,7 +11311,7 @@
       "summary": "创作者中心：账号总览（仅号主可见的运营数据）",
       "function": "get_creator_overview",
       "file": "backend/app/api/v1/users.py",
-      "line": 432,
+      "line": 442,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11326,7 +11327,7 @@
       "summary": "创作者中心：作品列表（含完播率等深度指标）",
       "function": "get_creator_works",
       "file": "backend/app/api/v1/users.py",
-      "line": 557,
+      "line": 567,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11342,7 +11343,7 @@
       "summary": "小红书创作服务平台：粉丝数据",
       "function": "get_xhs_creator_fans",
       "file": "backend/app/api/v1/users.py",
-      "line": 534,
+      "line": 544,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11358,7 +11359,7 @@
       "summary": "小红书创作服务平台：账号总览",
       "function": "get_xhs_creator_overview",
       "file": "backend/app/api/v1/users.py",
-      "line": 491,
+      "line": 501,
       "response_model": "",
       "include_in_schema": true
     },
@@ -11374,7 +11375,7 @@
       "summary": "获取自己账号的资料（抖音/小红书）",
       "function": "get_self_profile",
       "file": "backend/app/api/v1/users.py",
-      "line": 358,
+      "line": 368,
       "response_model": "UserProfileResponse",
       "include_in_schema": true
     },
@@ -11390,7 +11391,7 @@
       "summary": "获取用户资料（抖音/小红书）",
       "function": "get_user_profile",
       "file": "backend/app/api/v1/users.py",
-      "line": 600,
+      "line": 610,
       "response_model": "UserProfileResponse",
       "include_in_schema": true
     },
@@ -11406,7 +11407,7 @@
       "summary": "搜索用户（抖音/小红书）",
       "function": "search_users",
       "file": "backend/app/api/v1/users.py",
-      "line": 324,
+      "line": 334,
       "response_model": "UserSearchResponse",
       "include_in_schema": true
     },
@@ -11422,7 +11423,7 @@
       "summary": "获取用户作品列表（抖音/小红书/微博/X/B站）",
       "function": "get_user_videos",
       "file": "backend/app/api/v1/users.py",
-      "line": 637,
+      "line": 647,
       "response_model": "UserVideosResponse",
       "include_in_schema": true
     },

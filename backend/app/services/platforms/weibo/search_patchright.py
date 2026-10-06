@@ -57,6 +57,16 @@ from .search_desktop import (
     fetch_desktop_page,
     parse_desktop_card,
 )
+# ⚠️ 直连 HTTP 是**主路径**（0.4~1 秒），浏览器只是兜底（15 秒）。
+#    见本模块 `search_via_patchright` 的 docstring —— 名字骗人，但路是对的。
+from .search_http import (
+    MAX_PAGE,
+    PAGE_SIZE,
+    WeiboLoginRequired as HttpLoginRequired,
+    _resolve_cookie as _http_cookie,
+    fetch_page,
+    to_search_result,
+)
 
 logger = logging.getLogger("ylcraft.platforms.weibo.patchright")
 
@@ -245,142 +255,252 @@ async def search_via_patchright(
     page: int = 1,
     max_pages: int = 3,
 ) -> List[SearchResult]:
-    """在浏览器里搜微博。
+    """在微博里搜内容。
 
-    ## ⚠️⚠️ 这里翻过三次车，三个结论互相矛盾（页码式 → 游标式 → 单页式）
+    ## ⚠️ 名字骗人：这条路**优先不走浏览器**（2026-10-06）
 
-    完整复盘写在 `search_desktop.py` 的模块 docstring 里，这里只留结论：
+    函数名还叫 `_patchright`，但实际是**先直连 HTTP**：
 
-    ### 移动版 `m.weibo.cn` 的 `page` 参数翻不动
+    | 路径 | 实测耗时 | 什么时候走                       |
+    | ---- | -------- | ------------------------------ |
+    | **直连（httpx）** | **0.4~1 秒** | 绝大多数情况（默认） |
+    | 浏览器兜底        | 15 秒       | 直连失败/被限流/改版 |
 
-        page=1 → 9 条     page=2 → **0 条**（ok=1，正常受理，就是没内容）
+    ⚠️ 直连实测：page 1/2/3/10/50 全都有内容，页与页**零重叠**。
 
-    ⚠️⚠️ **但这不等于"微博只能搜一页"**（2026-10-06 实测推翻）：
+    ## 为什么曾经以为"必须开浏览器"——两次都是我的错
 
-    打开**真实**搜索页滚到底，页面**自己**发的是
+    **① 10-04**：我用的是移动版 `m.weibo.cn` 的 JSON 接口，它的 `page`
+    参数翻不动（`page=2` 恒 0 条）。**那是我选错了端点**，不是平台限制。
+    打开真实页面滚到底才发现：**页面自己会发 `page=2/3/4`**，能翻。
 
-        /api/container/getIndex?containerid=...&q=沈阳&page=2
+    **② 10-06**：我给 `s.weibo.com` 的**网页请求**加了接口用的头：
 
-    页面上卡片 18 → 28 → 40 → 50 —— **它翻到了第 4 页。**
-    ⇒ 之前的"只有一页"是我**取法**的问题，不是平台限制。
+        'x-requested-with': 'XMLHttpRequest'      ← 就是这个
 
-    把页面那条请求原样抄回来（URL / `page_type` / `x-xsrf-token` /
-    `referer` / `type=1|60|61|64` **逐项单独测过**）—— 还是 0 条。
-    走 fetch 抄请求这条路已到头，原因**未查明**，不当结论写。
+    带上它，微博直接返回"页面不存在"（`retcode=6102`），我拿这个被踢的
+    结果下了结论"直连不行"，**还写进了代码注释当实测结论**，
+    于是白开了几天浏览器（每次 15 秒 + 250MB 内存）。
 
-    ### ⇒ 搜索改走桌面版 `s.weibo.com`（实测 50 页、页与页零重叠）
+    ⇒ **网页请求不能带 `x-requested-with`。** 去掉就好。
 
-        https://s.weibo.com/weibo?q={关键词}&page={N}
+    ## 总页数
 
-        page=1  20 个 mid
-        page=2  10 个，与 page=1 **重叠 0** → 真翻页
-        page=50 仍有 10 个 → 最多 50 页 = 500 条
+    页面 HTML 里写着 **「共50页」**，实测是**真的上限**（不是模板文字）：
+    换词仍是 50、请求 `page=51` 会被**弹回第 1 页**。
 
-    桌面版是**服务端渲染**，在登录浏览器里取（cookie 由 `_get_session` 注入）。
-    **用 httpx 直连会被踢到 `passport.weibo.com/visitor/visitor`**（实测）。
+    ⇒ 直接告诉用户"共 50 页"，不用再翻到空页才发现。
 
-    ### 仍然要**先确认登录态**，否则结论作废
+    ## 仍然要**先确认登录态**，否则结论作废
 
-    我在这个功能上栽过两次，都是同一类错误：
-
-      ① 手工脚本**没加载 `.env`** → 走 localhost 兜底 → 注入失败 → **访客态**
-      ② 判据看错位置：`/api/config` 的 `login` 在 **`data`** 里不在顶层
-
-    **正确验法**（`JS_CHECK_LOGIN`，项目里已有）：
-
-        {"data":{"login":true,"uid":"7628413874", ...}, "ok":1}
-                            ↑ 在 data 里，不在顶层
-
-    ### ⚠️ 详情仍走原来的 `m.weibo.cn`
-
-    搜索只取"列表"（标题/作者/计数/封面/mid），字段够用就不多发请求。
-    用户点进详情时仍走 `parse_mblog_detail` —— 那条实测字段最全，没动它。
-
-    ### `has_more` 的含义
-
-    **"还有没有下一页"** —— 桌面版有明确页码上限（50），能算准，
-    不再像移动版那样只能靠"取满了 want 就猜还有"。
+    我在这个功能上栽过两次：手工脚本**没加载 `.env`** → 访客态；
+    判据看错位置 —— `/api/config` 的 `login` 在 **`data`** 里不在顶层。
     """
     want = max(1, params.max_results or 20)
 
-    # ⚠️ `SearchParams.search_type` 是 **SearchType 枚举**（默认 NOTE），
-    # 直接 str() 会得到 "SearchType.NOTE" 而不是 "note" —— 要先取 `.value`。
+    # ⚠️ `params.search_type` 是 **SearchType 枚举**（默认 NOTE），
+    # 直接 str() 会得到 "SearchType.NOTE" —— 要先取 `.value`。
     raw_st = getattr(params, "search_type", "") or "note"
     st_key = str(getattr(raw_st, "value", raw_st)).strip().lower()
     xsort = DESKTOP_XSORT.get(st_key, "")
     if st_key == DESKTOP_NO_REALTIME:
-        # ⚠️ 桌面版**没有「实时」这个分类**（页面上只有 综合 / 热门）。
-        # 静默当综合处理 = 给用户一份标着"实时"的数据，其实是综合 —— 撒谎。
-        # 所以明说，让人知道自己在看什么。
+        # ⚠️ 桌面版**没有「实时」分类**（页面上只有 综合 / 热门）。
+        # 静默当综合 = 给用户一份标着"实时"的数据，其实是综合 —— 撒谎。
         logger.info("[weibo] 桌面版没有「实时」分类（实测：只有综合/热门），回退到综合")
 
+    # ===== ① 先试直连 =====
+    # ⚠️ 用 `raised` 记录"直连是**失败**了"还是"直连**成功但没内容**"。
+    #    两者对"要不要开浏览器"的含义完全不同（见下）。
+    _http_raised: Optional[str] = None
+    try:
+        results = await _search_http(
+            params.keyword, want=want, page=page,
+            max_pages=max_pages, xsort=xsort, conn_key=conn_key,
+        )
+        if results:
+            logger.info(
+                "[weibo] 搜索 %r -> %d 条（直连 s.weibo.com，has_more=%s，共%s页）",
+                params.keyword, len(results),
+                results[0].raw_data.get("_has_more"),
+                results[0].raw_data.get("_total_pages"),
+            )
+            return results
+
+        # ⚠️⚠️ **直连成功、但这一页真的没有内容** —— 不要开浏览器。
+        #
+        # 实测：搜一个不存在的词，直连返回 0 条（这是**正确答案**），
+        # 但旧逻辑看到 0 条就以为"直连不行"，又去开浏览器白跑一趟 ——
+        # 于是"搜不到"要等 18.7 秒，而真的搜到了只要 2.8 秒。
+        #
+        # ⚠️ 只有**异常/网络失败**才需要浏览器兜底；
+        #    "平台确实没有这个内容"不该触发兜底。
+        #
+        # 第 1 页为空 ⇒ 关键词真没内容（实测：不存在的词第 2~N 页也是空）
+        if page <= 1:
+            logger.info(
+                "[weibo] 搜索 %r -> 0 条（直连正常返回，平台没有这个内容）",
+                params.keyword,
+            )
+            return []
+
+    except HttpLoginRequired as exc:
+        # 一条都没拿到 + 明确要登录 ⇒ 直接报，不要开浏览器白跑一趟
+        raise LoginExpiredError(str(exc)) from exc
+    except Exception as exc:
+        _http_raised = f"{type(exc).__name__}: {exc}"
+        # ⚠️⚠️ 用 **warning** 不用 info —— 兜底是**异常情况**，不是常态。
+        #    我第一版用 info，结果直连因为一个 ImportError 静默失败、
+        #    悄悄回退到浏览器，表现为"改了没效果、还是 15 秒"，
+        #    而日志里只有一行不起眼的 info。
+        logger.warning(
+            "[weibo] 直连失败（%s）→ 回退到浏览器路径（慢 15 秒）。"
+            "若是 ImportError/AttributeError，说明代码有错，不是网络问题。",
+            _http_raised,
+        )
+
+    # ===== ② 直连真的不行才开浏览器（兜底，不是主路）=====
+    return await _search_via_browser(
+        params, conn_key=conn_key, client=client,
+        page=page, max_pages=max_pages, xsort=xsort, want=want,
+    )
+
+
+async def _search_http(
+    keyword: str,
+    *,
+    want: int,
+    page: int,
+    max_pages: int,
+    xsort: str,
+    conn_key: str,
+) -> List[SearchResult]:
+    """直连 `s.weibo.com` 取结果（主路径）。"""
+    cookie = _http_cookie(conn_key)
+    if not cookie:
+        raise RuntimeError("没有可用的微博 cookie")
+
+    # 一页 10 条（实测）。要够 want 条 ⇒ 至少翻 ⌈want/10⌉ 页。
+    need = max(1, (want + PAGE_SIZE - 1) // PAGE_SIZE)
+    pages_to_try = min(max(1, int(max_pages or 1)), need, MAX_PAGE)
+
+    out: List[SearchResult] = []
+    seen: set[str] = set()
+    total_pages: Optional[int] = None
+    pages_fetched = 0
+
+    for i in range(pages_to_try):
+        pn = page + i
+        try:
+            cards, tp = await fetch_page(
+                keyword, pn, cookie_header=cookie, xsort=xsort)
+        except WeiboHttpLoginRequired:
+            raise HttpLoginRequired(
+                "[weibo] 微博搜索需要登录。请在「账号中心」重新保存微博登录态后重试。"
+            )
+        except Exception as exc:
+            logger.info("[weibo] 直连第 %d 页失败：%s: %s", pn, type(exc).__name__, exc)
+            break
+
+        pages_fetched = i + 1
+        if tp:
+            total_pages = tp          # 平台直接说了有几页，比猜准
+        if not cards:
+            break
+
+        for c in cards:
+            parsed = to_search_result(c)
+            if parsed is None or parsed.id in seen:
+                continue
+            seen.add(parsed.id)
+            out.append(parsed)
+
+        if len(out) >= want:
+            break
+
+    if not out:
+        return []
+
+    # ⚠️ has_more **算出来**，不猜：
+    #   · 平台说了总页数（实测「共50页」）→ 按它算，不用翻到空页
+    #   · 没说                 → 用"这页是不是空的"判断
+    #   · 已到总页数           → 没有更多了
+    last_page_empty = pages_fetched > 0 and not cards
+    if total_pages:
+        has_more = (page + pages_fetched - 1) < total_pages
+    else:
+        has_more = not last_page_empty and pages_fetched < MAX_PAGE
+
+    out[0].raw_data["_has_more"] = bool(has_more)
+    # ⭐ 总页数透给前端 —— 用户能看见"共 50 页"，不用自己翻到头
+    out[0].raw_data["_total_pages"] = total_pages
+    return out[:want]
+
+
+async def _search_via_browser(
+    params: SearchParams,
+    *,
+    conn_key: str,
+    client,
+    page: int,
+    max_pages: int,
+    xsort: str,
+    want: int,
+) -> List[SearchResult]:
+    """浏览器路径（**兜底**）—— 直连被限流/改版时才走。
+
+    ⚠️ 慢（15 秒），但能跑。直连与它读的是同一批结果，
+    所以两者拿到的 mid 集合应该一致 —— 测试钉住了这一点。
+    """
     session = await _get_session(conn_key, client=client)
     out: List[SearchResult] = []
     seen: set[str] = set()
     pages_fetched = 0
     last_page_had_items = False
 
-    # 一页 10 条（实测）。要够 `want` 条 ⇒ 至少翻 ⌈want/10⌉ 页。
-    # `max_pages` 是调用方的上限，`DESKTOP_MAX_PAGE` 是平台的上限。
     need_pages = max(1, (want + DESKTOP_PAGE_SIZE - 1) // DESKTOP_PAGE_SIZE)
-    pages_to_try = min(max(1, int(max_pages or 1)), max(need_pages, 1),
-                       DESKTOP_MAX_PAGE)
-    # ⚠️ 平台只有 50 页：用户选"每页 50 条"时要翻 5 页，选 500 条要翻 50 页。
-    # 少于页数不给够就说清楚，不假装"就这些了"。
-    pages_to_try = min(pages_to_try, DESKTOP_MAX_PAGE)
+    pages_to_try = min(max(1, int(max_pages or 1)), need_pages, DESKTOP_MAX_PAGE)
 
     for i in range(pages_to_try):
         pn = page + i
         try:
-            cards = await fetch_desktop_page(
-                session, params.keyword, pn, xsort=xsort
-            )
+            cards = await fetch_desktop_page(session, params.keyword, pn, xsort=xsort)
         except DesktopLoginRequired as exc:
-            # ⚠️ 已有结果就**保留**并停下 —— 不能把"取不到更多"变成"什么都取不到"
             if out:
-                logger.info("[weibo] 桌面版第 %d 页要求登录，已有 %d 条，停止翻页",
+                logger.info("[weibo] 浏览器路径第 %d 页要求登录，已有 %d 条，停止",
                             pn, len(out))
                 break
             raise LoginExpiredError(
-                "[weibo] 桌面搜索要求登录。请在「账号中心」重新保存微博登录态后重试。\n"
-                "（微博搜索走已登录的浏览器会话，未登录时拿不到搜索结果。）"
+                "[weibo] 微博搜索需要登录。请在「账号中心」重新保存微博登录态后重试。"
             ) from exc
         except Exception as exc:
-            logger.warning("[weibo] 桌面版搜索第 %d 页失败：%s", pn, exc)
+            logger.warning("[weibo] 浏览器路径第 %d 页失败：%s", pn, exc)
             break
 
         pages_fetched = i + 1
         last_page_had_items = bool(cards)
 
-        added = 0
         for card in cards:
             parsed = parse_desktop_card(card)
             if parsed is None or parsed.id in seen:
                 continue
             seen.add(parsed.id)
             out.append(parsed)
-            added += 1
 
-        # 这一页**一条都没有** ⇒ 平台到顶了（或者关键词真没内容）
-        if not cards:
-            break
-        if len(out) >= want:
+        if not cards or len(out) >= want:
             break
 
-    # ⚠️ `has_more` 现在是**算出来的**，不是猜的：
-    #   · 还没取满 want            → 肯定还有（平台只给了 10 条/页，我们没翻够）
-    #   · 翻到了第 50 页上限       → 没有
-    #   · 最后一页是空的           → 没有
-    #   · 刚好取满 want 但没翻到头 → 可能有（`has_more=True` 也不保证真有，
-    #     但前端据此决定要不要给「加载更多」，宁可多给一次机会）
+    if not out:
+        return []
+
     has_more = bool(out) and not (
         last_page_had_items is False or pages_fetched >= DESKTOP_MAX_PAGE
     )
-    if out:
-        out[0].raw_data["_has_more"] = has_more
+    out[0].raw_data["_has_more"] = has_more
+    # 浏览器路径拿不到总页数 —— 如实给 None，不编
+    out[0].raw_data["_total_pages"] = None
 
     logger.info(
-        "[weibo] 搜索 %r -> %d 条（桌面版 s.weibo.com，翻了 %d 页，has_more=%s）",
+        "[weibo] 搜索 %r -> %d 条（浏览器兜底，翻了 %d 页，has_more=%s）",
         params.keyword, len(out), pages_fetched, has_more,
     )
     return out[:want]

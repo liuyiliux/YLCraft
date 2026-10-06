@@ -55,11 +55,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.services.platforms.weibo import search_desktop as sd  # noqa: E402
+from app.services.platforms.weibo import search_http as sh  # noqa: E402
 from app.services.platforms.weibo import search_patchright as sp  # noqa: E402
 from app.services.platforms.weibo.apis import build_search_params  # noqa: E402
 
 SRC = inspect.getsource(sp.search_via_patchright)
 DESK_SRC = inspect.getsource(sd)
+HTTP_SRC = inspect.getsource(sh)
 
 
 def _code(obj=sp.search_via_patchright) -> str:
@@ -78,41 +80,72 @@ def _code(obj=sp.search_via_patchright) -> str:
 
 
 class TestDesktopPagingActuallyHappens(unittest.TestCase):
-    """搜索**真的要翻页** —— 这是这次改动的全部意义。"""
+    """搜索**真的要翻页** —— 这是这次改动的全部意义。
+
+    ⚠️ 2026-10-06 起翻页有两处实现（**直连是主路**）：
+      · `_search_http`         → httpx 直连 `s.weibo.com`（0.4~1 秒）**主路径**
+      · `_search_via_browser`  → 浏览器兜底（15 秒）
+    两边的翻页逻辑都要成立，所以这里**两个都查**。
+    """
+
+    def _http_code(self):
+        return _code(sp._search_http)
+
+    def _browser_code(self):
+        return _code(sp._search_via_browser)
 
     def test_pages_to_try_not_hardcoded_one(self):
-        code = _code()
-        self.assertNotIn(
-            "pages_to_try = 1", code,
-            "2026-10-04 定的「只取第 1 页」已被推翻："
-            "桌面版实测能翻 50 页，且页与页零重叠。"
-            "再写死 1 就是退回那个错的结论。",
-        )
+        for name, code in (("直连", self._http_code()),
+                           ("浏览器兜底", self._browser_code())):
+            with self.subTest(path=name):
+                self.assertNotIn(
+                    "pages_to_try = 1", code,
+                    "2026-10-04 定的「只取第 1 页」已被推翻："
+                    "实测能翻 50 页，且页与页零重叠。",
+                )
 
     def test_page_advances_with_loop(self):
         """循环里必须用 `page + i`，不能恒定 page=1。"""
-        code = _code()
-        self.assertIn("pn = page + i", code,
-                      "第 2 页起必须请求 page+1（桌面版 page 参数有效）")
+        for name, code in (("直连", self._http_code()),
+                           ("浏览器兜底", self._browser_code())):
+            with self.subTest(path=name):
+                self.assertIn("pn = page + i", code,
+                              "第 2 页起必须请求 page+1（桌面版 page 参数有效）")
 
-    def test_uses_desktop_fetcher(self):
-        code = _code()
+    def test_http_uses_fetch_page_not_browser(self):
+        code = self._http_code()
+        self.assertIn("fetch_page", code, "直连路径用 httpx 的 fetch_page")
+        self.assertNotIn("fetch_desktop_page", code,
+                         "直连路径不该碰浏览器")
+
+    def test_browser_fallback_uses_desktop_fetcher(self):
+        code = self._browser_code()
         self.assertIn("fetch_desktop_page", code,
-                      "应该走桌面版 s.weibo.com，而不是 m.weibo.cn 的 getIndex")
+                      "浏览器兜底路径用 fetch_desktop_page")
         self.assertNotIn("JS_SEARCH", code,
                          "移动版 JS_SEARCH 已不再用于搜索（实测翻不动）")
 
     def test_stops_when_want_satisfied(self):
-        code = _code()
-        self.assertIn("if len(out) >= want", code,
-                      "取够 want 条要停（不然每次搜索都翻 50 页，慢死）")
+        for name, code in (("直连", self._http_code()),
+                           ("浏览器兜底", self._browser_code())):
+            with self.subTest(path=name):
+                self.assertIn(
+                    ">= want", code,
+                    "取够 want 条要停（不然每次都翻 50 页，慢死）")
 
     def test_stops_on_empty_page(self):
-        """翻到空页必须停 —— 否则会白翻 40 次 goto（每次 3 秒）。"""
-        code = _code()
-        i = code.index("if not cards:")
-        self.assertIn("break", code[i: i + 80],
-                      "空页 = 平台到顶，要立刻停")
+        """翻到空页必须停 —— 否则会白翻 40 次请求。"""
+        for name, code in (("直连", self._http_code()),
+                           ("浏览器兜底", self._browser_code())):
+            with self.subTest(path=name):
+                self.assertIn(
+                    "not cards", code,
+                    "空页 = 平台到顶，要立刻停（不能继续翻）")
+                # 两种写法都算：`if not cards: break` 或 `if not cards or ...: break`
+                i = code.index("not cards")
+                self.assertIn(
+                    "break", code[i: i + 60],
+                    "空页之后必须 break")
 
     def test_client_passes_platform_page_cap(self):
         """⚠️ 客户端必须把 `max_pages` 放宽到平台上限。
@@ -131,20 +164,42 @@ class TestDesktopPagingActuallyHappens(unittest.TestCase):
 class TestHasMoreIsComputed(unittest.TestCase):
     """`has_more` 要**算出来**，不能写死 False、也不能靠"取满了就猜"。"""
 
+    def _http_code(self):
+        return _code(sp._search_http)
+
+    def _browser_code(self):
+        return _code(sp._search_via_browser)
+
     def test_has_more_not_hardcoded(self):
-        code = _code()
-        self.assertNotIn('_has_more"] = False', code,
-                         "不能写死 False（2026-09-29 那个写死让「加载更多」永远消失）")
+        for name, code in (("直连", self._http_code()),
+                           ("浏览器兜底", self._browser_code())):
+            with self.subTest(path=name):
+                self.assertNotIn(
+                    '_has_more"] = False', code,
+                    "不能写死 False（2026-09-29 那个写死让「加载更多」永远消失）")
 
     def test_has_more_accounts_for_platform_page_cap(self):
-        code = _code()
-        self.assertIn("DESKTOP_MAX_PAGE", code,
+        self.assertIn("MAX_PAGE", self._http_code(),
                       "翻到平台 50 页上限时不能再声称还有")
+        self.assertIn("DESKTOP_MAX_PAGE", self._browser_code())
 
     def test_has_more_false_when_no_results(self):
-        code = _code()
-        self.assertIn("has_more = bool(out)", code,
-                      "一条都没拿到时不能声称还有更多")
+        """⚠️ 一条都没拿到就 `return []` —— 压根不该走到写 `_has_more` 那步。"""
+        for name, code in (("直连", self._http_code()),
+                           ("浏览器兜底", self._browser_code())):
+            with self.subTest(path=name):
+                i = code.index("if not out:")
+                seg = code[i: i + 80]
+                self.assertIn("return", seg,
+                              "空结果要立刻返回，不能去写 _has_more")
+
+    def test_http_prefers_reported_total_pages(self):
+        """⭐ 平台直接说了「共50页」就按它算，不用翻到空页才发现。"""
+        code = self._http_code()
+        self.assertIn("total_pages", code)
+        i = code.index("if total_pages:")
+        self.assertIn("has_more", code[i: i + 120],
+                      "有总页数时按它算 has_more")
 
 
 class TestLoginRequiredIsDistinct(unittest.TestCase):
@@ -156,7 +211,7 @@ class TestLoginRequiredIsDistinct(unittest.TestCase):
                          "单独一类好让上层精确区分（原来混成 RuntimeError）")
 
     def test_maps_to_login_expired_error(self):
-        code = _code()
+        code = _code(sp.search_via_patchright)
         self.assertIn("LoginExpiredError", code,
                       "被踢到登录页要抛 LoginExpiredError —— "
                       "API 层才映射成 401 而不是 500")
@@ -166,7 +221,7 @@ class TestLoginRequiredIsDistinct(unittest.TestCase):
 
         ⚠️ 原来无条件 raise → 把"取不到更多"变成"什么都取不到"，比原来更糟。
         """
-        code = _code()
+        code = _code(sp._search_via_browser)
         i = code.index("except DesktopLoginRequired")
         seg = code[i: i + 400]
         self.assertIn("if out:", seg, "已有结果时应保留并停止翻页")
@@ -327,45 +382,79 @@ class TestBuildParamsSinceId(unittest.TestCase):
 
 
 class TestLessonStaysWritten(unittest.TestCase):
-    """翻过三次车 ⇒ 教训必须留在代码里，不能靠聊天记录（会被压缩掉）。"""
+    """翻过**五次**车 ⇒ 教训必须留在代码里，不能靠聊天记录（会被压缩掉）。
+
+    完整清单见 `search_http` 模块 docstring 与
+    `tests/test_weibo_search_http.py`；这里只钉"不许被悄悄改回去"的那些。
+    """
 
     def test_page2_empty_is_recorded(self):
-        self.assertIn("0 条", SRC, "要写明 m.weibo.cn 的 page=2 实测返回 0 条")
+        """⚠️ 移动版 `m.weibo.cn` 的 `page=2` 恒 0 条 —— 但**那不是**平台限制，
+        是我选错了端点。别再拿它当"微博只能搜一页"的证据。"""
+        for src, name in ((SRC, "search_patchright"),
+                          (DESK_SRC, "search_desktop"),
+                          (HTTP_SRC, "search_http")):
+            with self.subTest(file=name):
+                self.assertIn("page=2", src,
+                              "要写明移动版 page=2 的坑与它的真实原因")
 
     def test_desktop_results_recorded(self):
-        self.assertIn("50", DESK_SRC,
-                      "要写明桌面版实测到第 50 页（页数上限的依据）")
-
-    def test_login_state_recorded(self):
-        """把实测到的登录态记下来（下次可对照）。"""
-        for src, name in ((SRC, "search_patchright"), (DESK_SRC, "search_desktop")):
+        for src, name in ((DESK_SRC, "search_desktop"),
+                          (HTTP_SRC, "search_http")):
             with self.subTest(file=name):
-                self.assertIn("7628413874", src,
-                              "记下实测的 uid（证明那次测的是登录态）")
+                self.assertIn("50", src,
+                              "要写明桌面版实测到第 50 页（页数上限的依据）")
 
     def test_env_hazard_recorded(self):
         """⚠️ 手工测之前必须 `load_dotenv(.env)`，否则是访客态。"""
-        for src, name in ((SRC, "search_patchright"), (DESK_SRC, "search_desktop")):
+        for src, name in ((SRC, "search_patchright"),
+                          (DESK_SRC, "search_desktop")):
             with self.subTest(file=name):
                 self.assertIn(".env", src, "要写明手工测要先加载 .env")
 
     def test_data_field_hazard_recorded(self):
-        """⚠️ `/api/config` 的 `login` 在 **`data`** 里，不在顶层。"""
-        for src, name in ((SRC, "search_patchright"), (DESK_SRC, "search_desktop")):
+        """⚠️ `/api/config` 的 `login` 在 **`data`** 里，不在顶层。
+
+        我看顶层 `cfg.get("login")` → None → 误判"未登录"，白查一轮。
+        """
+        for src, name in ((SRC, "search_patchright"),
+                          (DESK_SRC, "search_desktop")):
             with self.subTest(file=name):
                 self.assertIn("data", src, "要写明字段在 data 里（我因此误判过）")
 
     def test_visitor_vs_login_recorded(self):
         """访客态 `ok=-100` vs 登录态 `ok=1` + 0 条 —— 混在一起必然误判。"""
-        for src, name in ((SRC, "search_patchright"), (DESK_SRC, "search_desktop")):
+        for src, name in ((SRC, "search_patchright"),
+                          (DESK_SRC, "search_desktop")):
             with self.subTest(file=name):
                 self.assertIn("访客", src, "要写明访客态与登录态返回不同")
 
     def test_page_itself_can_paginate_recorded(self):
-        """⭐ 最关键的一条：页面**自己**能翻到第 4 页。"""
-        self.assertIn("页面自己", DESK_SRC,
-                      "要写明'页面自己能翻页'这个决定性证据 —— "
-                      "没有它，下一个人会再得出'只有一页'")
+        """⭐ 最关键的一条：页面**自己**能翻到第 4 页。
+
+        没有它，下一个人会再得出"只有一页"。
+        """
+        for src, name in ((SRC, "search_patchright"),
+                          (DESK_SRC, "search_desktop")):
+            with self.subTest(file=name):
+                self.assertIn("页面自己", src,
+                              "要写明'页面自己能翻页'这个决定性证据")
+
+    def test_xhr_header_mistake_recorded(self):
+        """⭐⭐ 让人白开好几天浏览器的那个头，必须留在代码里。
+
+        加了 `x-requested-with` → 微博返回 pagenotfound →
+        我据此断言"直连不行" → 每次搜索白开浏览器 15 秒。
+        """
+        self.assertIn("x-requested-with", HTTP_SRC,
+                      "要写明'网页请求不能带 x-requested-with'这个坑")
+        self.assertIn("retcode=6102", HTTP_SRC,
+                      "要记下被拒时的真实返回，别只说'失败'")
+
+    def test_login_state_recorded(self):
+        """把实测到的登录态记下来（下次可对照）。"""
+        self.assertIn("7628413874", DESK_SRC,
+                      "记下实测的 uid（证明那次测的是登录态）")
 
 
 class TestExtractionUsesDomNotRegex(unittest.TestCase):
