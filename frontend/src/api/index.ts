@@ -841,6 +841,37 @@ export const optimizeImagePrompt = (data: {
 }) =>
   request('/images/optimize-prompt', { method: 'POST', body: JSON.stringify(data) })
 
+/** 预览生图提示词的一个分块（用于在 UI 上标出哪段是系统自动加的） */
+export interface PromptPreviewBlock {
+  key: 'marked_hint' | 'base' | 'annotations'
+  label: string
+  content: string
+}
+
+export interface ImagePromptPreview {
+  success: boolean
+  /** 真正会发给图像模型的完整提示词 */
+  prompt: string
+  blocks: PromptPreviewBlock[]
+  /** 哪些分块是系统自动追加的（非用户输入） */
+  system_added: string[]
+  /** 当前生效的标注图默认文案，供「恢复默认」使用 */
+  default_hint_text: string
+  error?: string | null
+}
+
+/**
+ * 预览真正会发送的完整生图提示词（含系统自动拼接部分）。
+ * 只拼装，不调模型、不产生费用；与 `generateImage` 共用后端同一份拼装逻辑。
+ */
+export const previewImagePrompt = (data: {
+  prompt?: string
+  annotations?: { comment: string; rectangle: { x1: number; y1: number; x2: number; y2: number } }[]
+  annotation_marked_reference?: boolean
+  annotation_hint_text?: string | null
+}) =>
+  request('/images/prompt-preview', { method: 'POST', body: JSON.stringify(data) })
+
 // ===== Platform Templates（平台模板）=====
 
 export interface PlatformTemplate {
@@ -1324,7 +1355,25 @@ export const searchEnhanced = (params: {
   filters?: Record<string, any>
   page?: number
   conn_id?: string
-}) => request('/crawler/search-enhanced', { method: 'POST', body: JSON.stringify(params) })
+}) => request('/crawler/search-enhanced', { method: 'POST', body: JSON.stringify(params) }) as Promise<{
+  success: boolean
+  results: Array<Record<string, any>>
+  /** **本次返回**的条数（不一定是平台总数 —— 有的平台不给） */
+  total: number
+  /** 平台是否明确表示"还有下一页" */
+  has_more: boolean
+  /**
+   * 平台**明确说出**的总页数（微博实测「共50页」）。
+   *
+   * ⚠️ `null` = 平台没说 —— 前端应显示"还有更多"而**不要猜**一个数字。
+   */
+  total_pages?: number | null
+  message: string
+  using?: string
+  /** 翻页模型，由后端按 `platforms/<平台>/meta.py` 给出 */
+  pagination?: { model: 'paged' | 'single'; single_page_max?: number }
+  next_cursor?: string
+}>
 
 /** 获取笔记详情（无水印） */
 /**

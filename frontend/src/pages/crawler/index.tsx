@@ -1071,6 +1071,14 @@ export default function CrawlerPage() {
   // 平台是否明确表示"还有下一页" —— 用于列表底部的措辞
   // （有的平台不给真实总数，只能说"还有更多"而不是"共 N 条"）
   const [hasMore, setHasMore] = useState(false)
+  // ⭐ 平台**明确说出**的总页数（微博实测「共50页」，2026-10-07 加）
+  //
+  // 后端从页面 HTML 里读到真实上限后透出来。有了它分页器能显示"共 50 页"，
+  // 用户不用一直点"下一页"点到底才知道；也让"还有更多"这件事有确定答案。
+  //
+  // ⚠️ `null` = 平台**没说**（多数平台如此）。这时**不要编一个数字**，
+  //    退回原来的"已翻到的页数 + 1"估算 —— 猜错了比不显示更坏。
+  const [totalPages, setTotalPages] = useState<number | null>(null)
   const [searchedKeyword, setSearchedKeyword] = useState('')
   const [error, setError] = useState('')
 
@@ -2065,6 +2073,9 @@ export default function CrawlerPage() {
       // 即使后端说 has_more 也该停 —— 否则分页器会无限往后长，
       // 用户能一直点下一页却永远看不到内容。
       setHasMore(Boolean((data as any).has_more) && rows.length > 0)
+      // ⭐ 总页数：平台说了就用，没说给 null（**不猜**）
+      const tp = Number((data as any).total_pages)
+      setTotalPages(Number.isFinite(tp) && tp > 0 ? tp : null)
       // 翻页模型（后端按 platforms/<平台>/meta.py 的声明给出）
       //
       // ⚠️ 不是所有平台都能翻页：抖音实测 `offset>0` 服务端返空，
@@ -3464,17 +3475,28 @@ export default function CrawlerPage() {
               // `has_more`，就让分页器的总数随当前页一起增长：
               //     当前在第 N 页 → 至少显示 N+1 页（还有下一页可点）
               // 翻到空页时服务端返回 0 条，用户自然知道到头了。
-              total: hasMore
-                ? Math.max(total, currentPage * maxResults) + maxResults
-                : total,
+              //
+              // ⭐ 2026-10-07：平台**说了**总页数时优先用它（微博「共50页」）。
+              //    那时分页器直接把 50 页都列出来，用户能跳到任意页，
+              //    也不用靠"还有更多"去猜到底还有没有。
+              total: totalPages
+                ? totalPages * maxResults
+                : (hasMore
+                    ? Math.max(total, currentPage * maxResults) + maxResults
+                    : total),
               // 措辞要如实：
-              //   有 hasMore → "N 条（还有更多）"
-              //   否则       → "共 N 条"
-              showTotal: (t) =>
-                hasMore
-                  ? `${total} 条（还有更多）`
-                  : `共 ${t} 条`,
+              //   平台说了总页数 → "N 条（共 50 页）"  ← 有确定答案
+              //   只说 hasMore   → "N 条（还有更多）"
+              //   都不是         → "共 N 条"
+              showTotal: () =>
+                totalPages
+                  ? `${total} 条（共 ${totalPages} 页）`
+                  : hasMore
+                    ? `${total} 条（还有更多）`
+                    : `共 ${total} 条`,
               size: 'small',
+              // 平台给了总页数时允许直接跳页（50 页一页页点太累）
+              showQuickJumper: Boolean(totalPages && totalPages > 10),
               onChange: (page) => {
                 setCurrentPage(page)
                 handleSearch(page)
