@@ -71,6 +71,22 @@ except Exception as _exc:  # 日志文件不可写不影响服务启动
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用启动/关闭时的生命周期管理"""
+    # 0. ⚠️ 端口自检 —— **必须在最前面**（2026-10-06 加）
+    #
+    #    上一轮后端被强杀后留下了半个 --reload 进程树，8000 端口
+    #    "在监听但不应答"，新后端绑上去之后**所有请求都超时**，
+    #    用户看到的是"点第 2 页空白" —— 会误以为功能坏了。
+    #
+    #    这里先把话说清楚：端口坏着就别启动了，省得白等。
+    try:
+        from app.core.win_loop import check_port_is_usable
+
+        check_port_is_usable(8000)
+    except SystemExit:
+        raise
+    except Exception as exc:  # 自检本身出错不能挡住启动
+        logger.warning("端口自检失败（忽略）: %s", exc)
+
     # 1. 先初始化数据库（创建所有表）
     from app.db.database import init_db
     data_dir = Path(__file__).parent.parent / "data"
