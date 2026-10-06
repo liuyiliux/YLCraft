@@ -351,39 +351,46 @@ def test_patchright_waits_for_service_worker():
 
 
 def test_later_page_login_failure_does_not_abort_search():
-    """**回归**：翻页失败不能整体报错。
+    """**回归**：被踢到登录页不能吞成空列表。
 
-    2026-10-06 改走桌面版后，"翻页被踢到登录页"由
-    `DesktopLoginRequired` 表示 —— 第 1 页已有结果时必须保留它、
-    停止翻页，不能让"取不到更多"变成"什么都取不到"。
-
-    ⚠️ 这段逻辑现在在 `_search_via_browser`（**兜底路径**）里 ——
-    `search_via_patchright` 本身只负责"先直连、失败才开浏览器"。
+    ⚠️ 2026-10-07 改语义：现在**只取一页**（`page` 是页码，
+    `max_results` 是这一页的上限）。所以"这一页要登录"是明确的失败信号，
+    必须抛 `LoginExpiredError`（API 层映射 401），
+    **不能** `return []` —— 那会把"要登录"伪装成"没内容"，
+    正是用户搜『营口』得到 0 条的成因。
     """
     from app.services.platforms.weibo import search_patchright as sp
 
     src = inspect.getsource(sp._search_via_browser)
     idx = src.find("except DesktopLoginRequired")
     assert idx != -1, "要单独接住'被踢到登录页'"
-    seg = src[idx:idx + 400]
-    assert "if out:" in seg, "有结果时应停止翻页而非报错"
-    assert "break" in seg, "翻页失败应 break"
+    end = src.find("except Exception", idx)
+    seg = src[idx:end if end != -1 else idx + 400]
+    assert "LoginExpiredError" in seg, "要抛 LoginExpiredError → 401"
+    assert "return []" not in seg, "不能吞成空列表"
 
 
-def test_one_page_by_default():
-    """翻页页数由「要多少条 ÷ 每页 10 条」算出来，不再写死 1。
+def test_page_param_is_honoured():
+    """⭐ `page` 是**页码**，`max_results` 是**这一页的上限** —— 两件事。
 
-    ⚠️ 2026-10-04 定的「默认只取第 1 页」已被推翻：桌面版实测能翻 50 页。
+    ⚠️ 2026-10-07 修：原来把 `max_results` 当成"总共凑够多少条"，
+       于是 `max_results=30, page=2` 会从第 2 页再往后连翻，
+       "第 2 页"返回的其实是"第2~4页的混合"。用户实测：要 30 条只给 23 条，
+       而且**不含**前 10 条。
 
-    ⚠️ 2026-06 起主路径是**直连 HTTP**，翻页逻辑在 `_search_http` 里。
+    ⇒ 正确语义：取第 `page` 页，最多 `max_results` 条；要更多请翻页。
     """
     from app.services.platforms.weibo import search_patchright as sp
 
-    for fn in (sp._search_http, sp._search_via_browser):
-        src = inspect.getsource(fn)
-        assert "pages_to_try" in src, f"{fn.__name__} 缺少翻页计算"
-        assert "pages_to_try = 1" not in src, \
-            f"{fn.__name__} 不能再写死只取第 1 页"
+    http_src = inspect.getsource(sp._search_http)
+    assert "pages_to_try = 1" in http_src, \
+        "直连只取这一页（不能连翻几页凑 max_results）"
+    assert "out[:want]" in http_src, "仍要按 max_results 截断"
+
+    br_src = inspect.getsource(sp._search_via_browser)
+    assert "for i in range(pages_to_try)" not in br_src, \
+        "浏览器兜底也只取一页，不该有翻页循环"
+    assert "params.keyword, page" in br_src, "要请求用户点的那一页"
 
 
 def test_search_type_enum_value_extracted():

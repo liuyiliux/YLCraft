@@ -397,19 +397,39 @@ async def _search_http(
     xsort: str,
     conn_key: str,
 ) -> List[SearchResult]:
-    """直连 `s.weibo.com` 取结果（主路径）。"""
+    """直连 `s.weibo.com` 取结果（主路径）。
+
+    ## ⚠️⚠️ 两种语义要分清（2026-10-07 修，用户实测发现）
+
+    前端有两个参数，含义**完全不同**：
+
+        page         第几页（翻页用）
+        max_results  这一页要多少条
+
+    ⚠️ 我原来把 `max_results` 当成"**总共**要凑够多少条"，
+       于是 `max_results=30` 会从第 1 页开始**连翻 3 页**凑 30 条 ——
+       但那样第 2 页返回的就是"第1~3页的混合"，与"第2页"对不上。
+
+    实测（用户报的）：要 30 条却只给 23 条，而且**不含**前 10 条 ——
+    因为它是从 `page` 开始往后翻、翻到的条数又不齐。
+
+    ⇒ 正确语义：**取第 `page` 页，最多要 `max_results` 条**。
+      要更多内容请**翻页**（前端已经有分页器），不要靠调大条数。
+    """
     cookie = _http_cookie(conn_key)
     if not cookie:
         raise RuntimeError("没有可用的微博 cookie")
 
-    # 一页 10 条（实测）。要够 want 条 ⇒ 至少翻 ⌈want/10⌉ 页。
-    need = max(1, (want + PAGE_SIZE - 1) // PAGE_SIZE)
-    pages_to_try = min(max(1, int(max_pages or 1)), need, MAX_PAGE)
+    # ⚠️ 只取**这一页**。不再往后连翻凑数 ——
+    #    那是"加载更多"的语义，不是"翻页"的语义，混在一起两边都不对。
+    #    一页实测给 9~10 条（不足 10 是平台行为，不是 bug）。
+    pages_to_try = 1
 
     out: List[SearchResult] = []
     seen: set[str] = set()
     total_pages: Optional[int] = None
     pages_fetched = 0
+    cards: List[Dict[str, Any]] = []
 
     for i in range(pages_to_try):
         pn = page + i
@@ -443,21 +463,19 @@ async def _search_http(
             seen.add(parsed.id)
             out.append(parsed)
 
-        if len(out) >= want:
-            break
-
     if not out:
         return []
 
-    # ⚠️ has_more **算出来**，不猜：
+    # ⚠️ `has_more` **算出来**，不猜：
     #   · 平台说了总页数（实测「共50页」）→ 按它算，不用翻到空页
     #   · 没说                 → 用"这页是不是空的"判断
-    #   · 已到总页数           → 没有更多了
-    last_page_empty = pages_fetched > 0 and not cards
+    #
+    # ⚠️ 现在只取一页，所以判据是"**这一页有没有内容**"，
+    #    而不是"翻了几页"。空页 = 到顶了。
     if total_pages:
-        has_more = (page + pages_fetched - 1) < total_pages
+        has_more = int(page) < total_pages
     else:
-        has_more = not last_page_empty and pages_fetched < MAX_PAGE
+        has_more = bool(cards)
 
     out[0].raw_data["_has_more"] = bool(has_more)
     # ⭐ 总页数透给前端 —— 用户能看见"共 50 页"，不用自己翻到头
@@ -479,58 +497,45 @@ async def _search_via_browser(
 
     ⚠️ 慢（15 秒），但能跑。直连与它读的是同一批结果，
     所以两者拿到的 mid 集合应该一致 —— 测试钉住了这一点。
+
+    ⚠️ 与直连路径**同样的语义**：只取第 `page` 页，最多 `max_results` 条。
+       **不要**连翻几页凑数（那会让"第 2 页"变成"第1~3页的混合"）。
     """
     session = await _get_session(conn_key, client=client)
     out: List[SearchResult] = []
     seen: set[str] = set()
-    pages_fetched = 0
-    last_page_had_items = False
+    cards = []
 
-    need_pages = max(1, (want + DESKTOP_PAGE_SIZE - 1) // DESKTOP_PAGE_SIZE)
-    pages_to_try = min(max(1, int(max_pages or 1)), need_pages, DESKTOP_MAX_PAGE)
+    try:
+        cards = await fetch_desktop_page(session, params.keyword, page, xsort=xsort)
+    except DesktopLoginRequired as exc:
+        raise LoginExpiredError(
+            "[weibo] 微博搜索需要登录。请在「账号中心」重新保存微博登录态后重试。"
+        ) from exc
+    except Exception as exc:
+        logger.warning("[weibo] 浏览器路径第 %d 页失败：%s", page, exc)
+        return []
 
-    for i in range(pages_to_try):
-        pn = page + i
-        try:
-            cards = await fetch_desktop_page(session, params.keyword, pn, xsort=xsort)
-        except DesktopLoginRequired as exc:
-            if out:
-                logger.info("[weibo] 浏览器路径第 %d 页要求登录，已有 %d 条，停止",
-                            pn, len(out))
-                break
-            raise LoginExpiredError(
-                "[weibo] 微博搜索需要登录。请在「账号中心」重新保存微博登录态后重试。"
-            ) from exc
-        except Exception as exc:
-            logger.warning("[weibo] 浏览器路径第 %d 页失败：%s", pn, exc)
-            break
-
-        pages_fetched = i + 1
-        last_page_had_items = bool(cards)
-
-        for card in cards:
-            parsed = parse_desktop_card(card)
-            if parsed is None or parsed.id in seen:
-                continue
-            seen.add(parsed.id)
-            out.append(parsed)
-
-        if not cards or len(out) >= want:
-            break
+    for card in cards:
+        parsed = parse_desktop_card(card)
+        if parsed is None or parsed.id in seen:
+            continue
+        seen.add(parsed.id)
+        out.append(parsed)
 
     if not out:
         return []
 
-    has_more = bool(out) and not (
-        last_page_had_items is False or pages_fetched >= DESKTOP_MAX_PAGE
-    )
+    # ⚠️ 只取一页，所以 `has_more` = "这一页有没有内容"
+    #    （空页 = 到顶了）。不再按"翻了几页"算。
+    has_more = bool(cards)
     out[0].raw_data["_has_more"] = has_more
     # 浏览器路径拿不到总页数 —— 如实给 None，不编
     out[0].raw_data["_total_pages"] = None
 
     logger.info(
-        "[weibo] 搜索 %r -> %d 条（浏览器兜底，翻了 %d 页，has_more=%s）",
-        params.keyword, len(out), pages_fetched, has_more,
+        "[weibo] 搜索 %r -> %d 条（浏览器兜底，第 %d 页，has_more=%s）",
+        params.keyword, len(out), page, has_more,
     )
     return out[:want]
 

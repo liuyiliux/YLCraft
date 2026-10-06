@@ -79,13 +79,22 @@ def _code(obj=sp.search_via_patchright) -> str:
     return ast.unparse(fn)
 
 
-class TestDesktopPagingActuallyHappens(unittest.TestCase):
-    """搜索**真的要翻页** —— 这是这次改动的全部意义。
+class TestPageSemantics(unittest.TestCase):
+    """⭐⭐ 「翻页」与「每页条数」是**两件事**，不能混（2026-10-07 修）。
 
-    ⚠️ 2026-10-06 起翻页有两处实现（**直连是主路**）：
-      · `_search_http`         → httpx 直连 `s.weibo.com`（0.4~1 秒）**主路径**
-      · `_search_via_browser`  → 浏览器兜底（15 秒）
-    两边的翻页逻辑都要成立，所以这里**两个都查**。
+    前端有两个参数：
+
+        page         第几页
+        max_results  这一页要多少条
+
+    ⚠️ 我原来把 `max_results` 当成"**总共**凑够多少条"，
+       于是 `max_results=30, page=2` 会从第 2 页**再往后连翻 3 页** ——
+       "第 2 页"返回的其实是"第2~4页的混合"，与用户预期对不上。
+
+    用户实测发现：要 30 条却只给 23 条，而且**不含**前 10 条。
+
+    ⇒ 正确语义：**取第 `page` 页，最多 `max_results` 条**。
+      要更多内容请翻页（前端已有分页器）。
     """
 
     def _http_code(self):
@@ -94,23 +103,24 @@ class TestDesktopPagingActuallyHappens(unittest.TestCase):
     def _browser_code(self):
         return _code(sp._search_via_browser)
 
-    def test_pages_to_try_not_hardcoded_one(self):
-        for name, code in (("直连", self._http_code()),
-                           ("浏览器兜底", self._browser_code())):
-            with self.subTest(path=name):
-                self.assertNotIn(
-                    "pages_to_try = 1", code,
-                    "2026-10-04 定的「只取第 1 页」已被推翻："
-                    "实测能翻 50 页，且页与页零重叠。",
-                )
+    def test_http_fetches_only_one_page(self):
+        code = self._http_code()
+        self.assertIn(
+            "pages_to_try = 1", code,
+            "直连路径只取**这一页** —— 不能连翻几页凑 max_results，"
+            "那会让『第 2 页』变成『第2~4页的混合』")
 
-    def test_page_advances_with_loop(self):
-        """循环里必须用 `page + i`，不能恒定 page=1。"""
-        for name, code in (("直连", self._http_code()),
-                           ("浏览器兜底", self._browser_code())):
-            with self.subTest(path=name):
-                self.assertIn("pn = page + i", code,
-                              "第 2 页起必须请求 page+1（桌面版 page 参数有效）")
+    def test_browser_fetches_only_one_page(self):
+        code = self._browser_code()
+        self.assertNotIn(
+            "for i in range(pages_to_try)", code,
+            "浏览器兜底也只取一页，不该有翻页循环")
+
+    def test_http_uses_the_requested_page(self):
+        """请求的页码必须是 `page` 本身，不是 `page + i` 累计。"""
+        code = self._http_code()
+        self.assertIn("pn = page + i", code,
+                      "循环体里用 page + i（现在只跑一次 = 取 page 本身）")
 
     def test_http_uses_fetch_page_not_browser(self):
         code = self._http_code()
@@ -125,30 +135,22 @@ class TestDesktopPagingActuallyHappens(unittest.TestCase):
         self.assertNotIn("JS_SEARCH", code,
                          "移动版 JS_SEARCH 已不再用于搜索（实测翻不动）")
 
-    def test_stops_when_want_satisfied(self):
+    def test_result_capped_at_max_results(self):
+        """`max_results` 是**上限**，仍然要生效。"""
         for name, code in (("直连", self._http_code()),
                            ("浏览器兜底", self._browser_code())):
             with self.subTest(path=name):
-                self.assertIn(
-                    ">= want", code,
-                    "取够 want 条要停（不然每次都翻 50 页，慢死）")
+                self.assertIn("out[:want]", code,
+                              "最终仍要按 max_results 截断")
 
-    def test_stops_on_empty_page(self):
-        """翻到空页必须停 —— 否则会白翻 40 次请求。"""
-        for name, code in (("直连", self._http_code()),
-                           ("浏览器兜底", self._browser_code())):
-            with self.subTest(path=name):
-                self.assertIn(
-                    "not cards", code,
-                    "空页 = 平台到顶，要立刻停（不能继续翻）")
-                # 两种写法都算：`if not cards: break` 或 `if not cards or ...: break`
-                i = code.index("not cards")
-                self.assertIn(
-                    "break", code[i: i + 60],
-                    "空页之后必须 break")
+    def test_browser_asks_for_the_requested_page(self):
+        code = self._browser_code()
+        self.assertIn("params.keyword, page", code,
+                      "浏览器路径要请求用户点的那一页")
+
 
     def test_client_passes_platform_page_cap(self):
-        """⚠️ 客户端必须把 `max_pages` 放宽到平台上限。
+        """⚠️ 客户端仍要传 `max_pages`（浏览器兜底路径要用它算）。
 
         原来是默认值 3 —— 用户选「每页 50 条」只会拿到 30 条，
         而且页面上**没有任何提示说被截断了**。
@@ -179,9 +181,17 @@ class TestHasMoreIsComputed(unittest.TestCase):
                     "不能写死 False（2026-09-29 那个写死让「加载更多」永远消失）")
 
     def test_has_more_accounts_for_platform_page_cap(self):
-        self.assertIn("MAX_PAGE", self._http_code(),
-                      "翻到平台 50 页上限时不能再声称还有")
-        self.assertIn("DESKTOP_MAX_PAGE", self._browser_code())
+        """直连用平台报的「共N页」算；浏览器路径按"这页有没有内容"。"""
+        http_code = self._http_code()
+        self.assertIn("total_pages", http_code,
+                      "直连应按平台报的总页数算 has_more")
+        # ⚠️ 50 页上限现在由 `search_http.MAX_PAGE` 夹住（parse_total_pages
+        #    里 clamp），`_search_http` 自己不再引用 —— 所以查那个模块。
+        self.assertEqual(50, sh.MAX_PAGE, "平台上限 50 页")
+
+        br_code = self._browser_code()
+        self.assertIn("cards", br_code,
+                      "浏览器路径拿不到总页数 → 按『这页有没有内容』判断")
 
     def test_has_more_false_when_no_results(self):
         """⚠️ 一条都没拿到就 `return []` —— 压根不该走到写 `_has_more` 那步。"""
@@ -216,16 +226,22 @@ class TestLoginRequiredIsDistinct(unittest.TestCase):
                       "被踢到登录页要抛 LoginExpiredError —— "
                       "API 层才映射成 401 而不是 500")
 
-    def test_keeps_results_when_only_later_page_requires_login(self):
-        """第 1 页拿到了、第 2 页要登录 ⇒ **保留第 1 页**。
+    def test_login_error_is_not_swallowed(self):
+        """被踢到登录页必须抛出去，不能当成'这页没内容'返回空。
 
-        ⚠️ 原来无条件 raise → 把"取不到更多"变成"什么都取不到"，比原来更糟。
+        ⚠️ 现在只取一页，所以"这一页要登录"就是明确的失败信号 ——
+        浏览器路径拿到 `DesktopLoginRequired` 要直接抛 `LoginExpiredError`，
+        **不要**再吞成空列表（那正是用户搜『营口』得到 0 条的成因）。
         """
         code = _code(sp._search_via_browser)
         i = code.index("except DesktopLoginRequired")
-        seg = code[i: i + 400]
-        self.assertIn("if out:", seg, "已有结果时应保留并停止翻页")
-        self.assertIn("break", seg)
+        # 只取到下一个 except 之前，别把后面的 `except Exception` 也圈进来
+        j = code.index("except Exception", i)
+        seg = code[i:j]
+        self.assertIn("LoginExpiredError", seg,
+                      "要抛 LoginExpiredError → API 层映射成 401")
+        self.assertNotIn("return []", seg,
+                         "不能吞成空列表 —— 那会把『要登录』伪装成『没内容』")
 
 
 class TestSearchTypeOnDesktop(unittest.TestCase):
