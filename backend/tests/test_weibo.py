@@ -350,40 +350,44 @@ def test_patchright_waits_for_service_worker():
     assert "_warm_up" in inspect.getsource(sp._get_session)
 
 
-def test_page2_failure_does_not_abort_search():
+def test_later_page_login_failure_does_not_abort_search():
     """**回归**：翻页失败不能整体报错。
 
-    实测 page=2 返回 173 字节 HTML 错误页（微博真翻页靠 since_id 游标）。
-    一开始抛错 → 用户连第 1 页都看不到。现在有结果就静默停止。
+    2026-10-06 改走桌面版后，"翻页被踢到登录页"由
+    `DesktopLoginRequired` 表示 —— 第 1 页已有结果时必须保留它、
+    停止翻页，不能让"取不到更多"变成"什么都取不到"。
     """
     from app.services.platforms.weibo import search_patchright as sp
 
     src = inspect.getsource(sp.search_via_patchright)
-    # 出现 _error 时，若已有结果则 break（不是 raise）
-    assert "if out:" in src, "有结果时应停止翻页而非报错"
-    idx = src.find('data.get("_error")')
-    assert idx != -1
+    idx = src.find("except DesktopLoginRequired")
+    assert idx != -1, "要单独接住'被踢到登录页'"
     seg = src[idx:idx + 400]
+    assert "if out:" in seg, "有结果时应停止翻页而非报错"
     assert "break" in seg, "翻页失败应 break"
 
 
 def test_one_page_by_default():
-    """默认只取第 1 页（因为第 2 页实测拿不到）。"""
+    """翻页页数由「要多少条 ÷ 每页 10 条」算出来，不再写死 1。
+
+    ⚠️ 2026-10-04 定的「默认只取第 1 页」已被推翻：桌面版实测能翻 50 页。
+    """
     from app.services.platforms.weibo import search_patchright as sp
 
     src = inspect.getsource(sp.search_via_patchright)
     assert "pages_to_try" in src
+    assert "pages_to_try = 1" not in src, "不能再写死只取第 1 页"
 
 
 def test_search_type_enum_value_extracted():
     """**回归**：`SearchParams.search_type` 是枚举，要取 `.value`。
 
-    直接 str() 会得到 "SearchType.NOTE"，派生出错误的 type 值。
+    直接 str() 会得到 "SearchType.NOTE"，派生出错误的分类值。
     """
     from app.services.platforms.weibo import search_patchright as sp
 
     src = inspect.getsource(sp.search_via_patchright)
-    assert '.value' in src, "应从枚举取 .value"
+    assert "value" in src, "应从枚举取 .value（getattr 的第二个参数）"
 
 
 def test_login_error_is_distinguishable():
