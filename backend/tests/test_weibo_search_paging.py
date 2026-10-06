@@ -1,32 +1,32 @@
 # -*- coding: utf-8 -*-
-"""微博搜索分页（2026-10-04 用户实测截图发现）。
+"""微博搜索能取多少（2026-10-04 实测三次，数据有矛盾，如实记录）。
 
-## 症状
+## 实测过程
 
-用户选「每页 10 条」搜"沈阳"→ **只显示 9 条，且底部没有翻页按钮**。
+**A. `page=2` 拿不到东西**（今天多次）
+    page=1/max=10 → 10 条      page=2/max=10 → **0 条**
+    page=3/max=10 → 0 条
 
-## 根因（两层，都在这一个文件里）
+**B. 给多少由 `max_results` 决定，不是 `page`**
+    page=1/max=20 → 营口 14 / 沈阳 10
+    page=1/max=100 → 同样（平台有上限）
 
-`search_patchright.py` 原来两处都基于"一页给 10 条"的假设：
+**C. `since_id` 游标自己翻 → 不稳定，实测反而变少**
+    营口   5 / 10 / 15 / **14**   ← 调到 30 条反而少 1 条
+    沈阳   5 / 10 / **9** / **9** ← 调到 20 条反而少 1 条
+    美食   5 / 10 / 10 / 10       （唯一正常的）
 
-  ① `pages_to_try = 1 if want <= 12 else ...`
-     want=10 ≤ 12 → **只试第 1 页**，压根没去试第 2 页
+**D. 只取第 1 页但内部按 want 循环游标 → 同样出现 C 的回退**
 
-  ② `out[0].raw_data["_has_more"] = len(out) >= want`
-     微博一页给 **9~10 条不固定**，第 1 页给 9 条 → `9 >= 10` 为 False
-     → `has_more=False` → **前端不给翻页**
+⇒ 只能可靠地取第 1 页。想要更多，上层用**更大的 `max_results` 重搜**
+（前端「加载更多」那条路，与抖音同款）。
 
-而**第 2 页确实有内容**（用户翻页截图证实：第 2 页是"看看这阳光"等新条目）。
+## ⚠️ 与 `meta.py` 的 `weibo → PAGED` 矛盾
 
-## 实测（改完之后，2026-10-04）
+那条记录基于 2026-10-03 的实测（p2 有 17~20 条），今天测不出来。
+**原因未定**（登录态？微博侧变更？时段？）。
 
-    每页 5 条  → 5 条   has_more=True    ← 取不满 → 去翻页
-    每页10条  → 9 条   has_more=False
-    每页20条  → 9 条   has_more=False
-
-`每页 5 条` 那行 `has_more=True` 就是新逻辑：
-不再用"条数够不够 want"猜有没有下一页，而是**记录翻页循环
-是怎么退出的**（被 want 截断 vs 真的翻完了）。
+本组测试的立场：**不假装能翻**。宁可少给，不给一个"点了没反应"的翻页按钮。
 """
 import inspect
 import sys
@@ -36,17 +36,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.services.platforms.weibo import search_patchright as sp  # noqa: E402
+from app.services.platforms.weibo.apis import build_search_params  # noqa: E402
 
 SRC = inspect.getsource(sp.search_via_patchright)
 
 
-def _code_only() -> str:
-    """剥掉 docstring 与注释，只留**可执行代码**。
+def _code() -> str:
+    """剥掉 docstring + 注释，只留可执行代码。
 
-    ⚠️ 不剥就会匹配到我自己写的说明文字 —— 注释里正写着
-    「原来：`pages_to_try = 1 if want <= 12 else ...`」来解释这次改动，
-    而 `inspect.getsource` **包含注释**。
-    同一个坑今天已经踩第四次（后端 docstring、TSX 块注释…），固定处理。
+    ⚠️ 不剥会匹配到我自己写的说明文字（"原来这里用 page+i…"）。
+    同一个坑今天第 6 次了，固定处理。
     """
     import ast
     import textwrap
@@ -54,100 +53,89 @@ def _code_only() -> str:
     fn = tree.body[0]
     if (fn.body and isinstance(fn.body[0], ast.Expr)
             and isinstance(fn.body[0].value, ast.Constant)):
-        fn.body = fn.body[1:]          # 删 docstring
+        fn.body = fn.body[1:]
     return ast.unparse(fn)
 
 
-class TestPagesToTryNotGatedByWant(unittest.TestCase):
-    def test_small_want_still_tries_page_2(self):
-        """want 小于 12 也**必须**去试第 2 页。
+class TestOnlyFirstPageIsReliable(unittest.TestCase):
+    """微博搜索只能可靠取第 1 页（实测三次的结论）。"""
 
-        原来 `1 if want <= 12` → want=10 只试 1 页 → 用户看不到翻页。
-        """
-        code = _code_only()
-        self.assertNotIn("want <= 12", code,
-                         "别再用 want<=12 决定只翻 1 页（第 2 页是有内容的）")
-        # 按"一页约 9 条"反推需要几页
-        self.assertIn("(want + 8) // 9", code,
-                      "应按一页实际条数（约 9）反推页数")
+    def test_pages_to_try_is_one(self):
+        code = _code()
+        self.assertIn("pages_to_try = 1", code,
+                      "只取第 1 页 —— 实测 page=2 拿不到东西，"
+                      "游标翻页又会回退（调到 30 条反而变少）")
 
-    def test_page_size_estimate_is_9(self):
-        """9 这个数是实测的（微博一页 9~10 条不固定），别随手改成 10。"""
-        self.assertIn("(want + 8) // 9", _code_only(),
-                      "一页按 9 条估（实测微博常给 9 条）")
+    def test_page_param_always_one(self):
+        code = _code()
+        # 不能是 page + i（那会让第 2 页去请求 page=2 → 恒空）
+        self.assertNotIn("page=page + i", code,
+                         "翻页不要再用 page+i（实测 page=2 恒返回 0 条）")
+        self.assertIn("page=1", code, "请求页码固定 1")
 
 
-class TestHasMoreUsesLoopExitReason(unittest.TestCase):
-    """`has_more` 不能用"条数够不够 want"来猜。"""
+class TestResultsNeverDecrease(unittest.TestCase):
+    """调大"每页条数"**结果不许变少** —— 那是用户一眼能看出的 bug。"""
 
-    def test_stopped_by_want_flag(self):
-        self.assertIn("_stopped_by_want", SRC,
-                      "必须记录'是不是被 want 截断的'")
+    def test_rollback_guard_present(self):
+        code = _code()
+        self.assertIn("_best", code,
+                      "要记住每轮已有的条数（用于'不许变少'判断）")
+        self.assertIn("out = out[:_best]", code,
+                      "某轮没带来新条目时**回滚**，不能带着更少的结果返回")
 
-    def test_has_more_uses_flag_not_length_compare(self):
-        code = _code_only()
-        # ⚠️ 窗口要**只包住赋值那一句** —— 循环里那个
-        # `if len(out) >= want: _stopped_by_want = True` 是**正确的**
-        # （它正是"被截断"的判定），窗口太宽会把它一起捞进来。
-        i = code.index("raw_data['_has_more']")
-        j = code.index("\n", i)
-        assign = code[i: j]
-        self.assertIn("_stopped_by_want", assign,
-                      "has_more 要用 _stopped_by_want，不能用 len(out) >= want")
-        self.assertNotIn(">= want", assign,
-                         "has_more 不能拿条数比 want（9 >= 10 那个坑）")
-
-    def test_flag_set_only_on_want_truncation(self):
-        code = _code_only()
-        i = code.index("if len(out) >= want:")
-        seg = code[i: i + 200]
-        self.assertIn("_stopped_by_want = True", seg,
-                      "只有'被 want 截断'那条退出路径要置位")
+    def test_guard_triggers_when_no_new_items(self):
+        code = _code()
+        i = code.index("if len(out) <= _best:")
+        self.assertIn("break", code[i: i + 260],
+                      "发现没新条目要停止翻页（继续翻只会更糟）")
 
 
-class TestPage2FailureKeepsPage1(unittest.TestCase):
-    """⚠️ 这条最关键：改完"要试第 2 页"之后必须配套修这里。
+class TestBuildParamsSinceId(unittest.TestCase):
+    """`build_search_params` 要支持 `since_id`（虽然当前只取 1 页，
+    但参数留着 —— 万一微博恢复页码翻页，不用再改函数签名）。"""
 
-    实测（访客态 / 登录态失效）：
-        page=1 → ok=1   160KB 真实数据（9~10 条）
-        page=2 → ok=-100  {"url":"passport.weibo.com/sso/signin"}
+    def test_accepts_since_id(self):
+        a = build_search_params("营口", page=1)
+        self.assertNotIn("since_id", a, "没传就不该出现这个键")
 
-    原来 `ok == -100` 无条件 `raise` → 一旦开始试第 2 页，
-    **每次搜索都会失败**，连本来有效的第 1 页都看不到 ——
-    把"取不到更多"变成"什么都取不到"，比原来更糟。
-    """
+        b = build_search_params("营口", page=1, since_id="5350422397062979")
+        self.assertEqual("5350422397062979", b["since_id"])
 
-    def test_ok_minus_100_keeps_existing_results(self):
-        code = _code_only()
-        i = code.index("if ok == -100:")
-        seg = code[i: i + 400]
-        self.assertIn("if out:", seg,
-                      "ok=-100 时若已有第 1 页结果，必须保留它（不能整体抛错）")
-        self.assertIn("break", seg, "保留已有结果后停止翻页")
+    def test_empty_since_id_omitted(self):
+        for bad in (None, "", "0", 0):
+            p = build_search_params("x", page=1, since_id=bad)
+            self.assertNotIn("since_id", p, f"since_id={bad!r} 时不该下发")
 
-    def test_still_raises_when_nothing_at_all(self):
-        """一页都没有时**仍然要报错** —— 不能静默返回空列表。"""
-        code = _code_only()
-        i = code.index("if ok == -100:")
-        seg = code[i: i + 600]
-        self.assertIn("raise RuntimeError", seg,
-                      "完全没结果时必须报错（空列表会被当成'搜不到'）")
+    def test_containerid_unchanged(self):
+        """⚠️ 关键词是**拼在 containerid 里**的，不是独立 q 参数
+        —— 改这个函数时最容易写错（已写错过一次）。"""
+        p = build_search_params("沈阳", page=2)
+        self.assertIn("q=沈阳", p["containerid"])
 
 
-class TestDocstringNoLongerSaysOnlyOnePage(unittest.TestCase):
-    def test_docstring_updated(self):
-        """docstring 里那条旧结论（只取第 1 页）必须改掉。
+class TestDocstringRecordsContradiction(unittest.TestCase):
+    """矛盾的数据必须**留在文档里**，不能挑一个信。"""
 
-        它是这个 bug 的**源头**：代码按它写，注释里却已有相反的实测。
-        """
+    def test_contradiction_is_written_down(self):
         doc = inspect.getdoc(sp.search_via_patchright)
-        self.assertNotIn(
-            "所以这里默认**只取第 1 页**", doc,
-            "docstring 还在说'只取第 1 页'，而代码已经会翻页 —— "
-            "留着会误导下一个人改回去",
-        )
-        self.assertIn("9~10", doc,
-                      "docstring 要写清'一页 9~10 条不固定'（实测）")
+        self.assertIn("0 条", doc,
+                      "要写明 page=2 实测返回 0 条")
+        self.assertIn("变少", doc,
+                      "要写明游标翻页会出现'调大反而变少'")
+        self.assertIn("矛盾", doc,
+                      "要写明与 meta.py 的 PAGED 记录矛盾（原因未定）")
+
+
+class TestNoFakePagedClaim(unittest.TestCase):
+    """不得宣称能翻页 —— 宁可少给。"""
+
+    def test_does_not_claim_paged(self):
+        code = _code()
+        # pages_to_try 恒为 1 时，任何"翻到第 N 页"的逻辑都是死的
+        self.assertNotIn("min(2, max_pages)", code)
+        self.assertNotIn("for i in range(pages_to_try)", code.split("for i in")[0][-200:],
+                         "循环次数已被固定成 1，不该再有翻页意图的残留")
 
 
 if __name__ == "__main__":

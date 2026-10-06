@@ -119,19 +119,41 @@ def build_search_params(
     keyword: str,
     page: int = 1,
     search_type: str | None = None,
+    since_id: object = None,
 ) -> dict[str, str]:
     """构造搜索查询参数。
 
     `containerid` 的格式是 `100103type={type}&q={关键词}` ——
     注意关键词**直接拼在 containerid 里**，不是独立的 q 参数
     （实测确认，这点很容易写错）。
+
+    ## ⚠️ `since_id` 才是微博搜索翻页的真正方式（2026-10-04 实测）
+
+    用户实测（"营口"/"沈阳"，各试 3 页）：
+
+        page=1, max_results=10  → 10 条   has_more=True
+        page=2, max_results=10  →  **0 条**
+        page=3, max_results=10  →  **0 条**
+        page=1, max_results=20  → **14 条**  ← 同一 page，只换 max_results
+        page=1, max_results=100 → **14 条**  ← 再换还是 14
+
+    ⇒ **`page` 参数对微博搜索无效**（page=2 恒空）。
+      真正起作用的是 `max_results` —— 后端在 `page=1` 内部按游标循环取，
+      取够就停。
+
+    ⇒ 所以我们这边要**始终用 page=1 + since_id 游标**往下翻，
+      自己凑出 want 条。`since_id` 来自上一页响应里的
+      `data.cardlistInfo.since_id`。
     """
     stype = resolve_search_type(search_type)
-    return {
+    out = {
         "containerid": f"{SEARCH_CONTAINER_PREFIX}type={stype}&q={keyword}",
         "page_type": SEARCH_PAGE_TYPE,
         "page": str(page),
     }
+    if since_id not in (None, "", "0", 0):
+        out["since_id"] = str(since_id)
+    return out
 
 
 def build_user_search_params(keyword: str, page: int = 1) -> dict[str, str]:
