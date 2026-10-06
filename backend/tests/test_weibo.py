@@ -278,21 +278,45 @@ def test_parse_text_only_no_crash():
 
 
 # =============================================================================
-# 「必须走浏览器」这个结论要被钉住
+# 搜索的取数路径（2026-10-07 更正：直连是主路，浏览器只兜底）
 # =============================================================================
 
-def test_client_search_uses_patchright():
-    """**回归**：微博搜索必须走 patchright，不能改回 httpx。
+def test_client_search_delegates_to_shared_entry():
+    """`WeiboClient.search` 转交 `search_via_patchright`。
 
-    httpx 会拿 ok=-100（Service Worker 依赖），
-    改回去会让搜索完全不可用。
+    ⚠️ 那个函数名**骗人**（2026-10-07 更正）：它现在是
+    **先直连 HTTP（0.3~1 秒）**，直连异常/被限流才开浏览器兜底。
+
+    这个测试原来叫 `test_client_search_uses_patchright`，docstring 写着
+    "微博搜索必须走 patchright，不能改回 httpx（Service Worker 依赖）" ——
+    **那个结论是错的**：起因是我给网页请求加了接口才用的头
+    `x-requested-with: XMLHttpRequest`，被微博拒（pagenotfound），
+    我据此误判"直连不行"，白开了两天浏览器。
+
+    所以现在只钉"转交给共享入口"，**不**再钉"必须走浏览器"。
     """
     from app.services.platforms.weibo.client import WeiboClient
 
     src = inspect.getsource(WeiboClient.search)
-    assert "search_via_patchright" in src, "应转交 patchright 路径"
-    # 不应在 search 里直接调 httpx 出口（`await self._call(...)`）
-    assert "await self._call(" not in src, "不应直接走 httpx _call"
+    assert "search_via_patchright" in src, "应转交共享入口"
+    assert "await self._call(" not in src, "不应自己直接走 httpx _call"
+
+
+def test_client_does_not_claim_api_is_unavailable():
+    """⚠️ 不得再打「API 直连不可用」这种**说反了**的日志。
+
+    那条日志实际表现（用户实测看到的）：
+
+        [weibo] 该平台 API 直连不可用（Service Worker 依赖），自动转浏览器路径
+        GET s.weibo.com/weibo?q=抚顺&page=2  "HTTP/1.1 200 OK"     ← 走的就是直连
+        [weibo] 搜索 '抚顺' -> 8 条（直连 s.weibo.com）             ← 自相矛盾
+
+    它不造成故障，但**误导排查方向** —— 我看到它就得再查一遍。
+    """
+    from app.services.platforms.weibo.client import WeiboClient
+
+    src = inspect.getsource(WeiboClient.search)
+    assert "API 直连不可用" not in src, "这句是错的，已经不走浏览器了"
 
 
 def test_wb_alias_registered():

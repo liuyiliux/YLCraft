@@ -129,29 +129,35 @@ class WeiboClient(BasePlatformClient):
     async def search(self, params: SearchParams) -> List[SearchResult]:
         """按关键词搜微博。
 
-        ## 必须走浏览器（实测 2026-09-27）
+        ## ⚠️ 微博搜索**走直连 HTTP**，不需要浏览器（2026-10-07 更正）
 
-        httpx 直连**全部失败**（HTTP 432 / ok=-100），原因是微博注册了
-        **Service Worker**（`bsk debug` 捕获显示 `from_service_worker=True`），
-        由它注入 httpx 无法复现的上下文。补 Cookie/请求头/HTTP2 都无效。
+        这个 docstring 原来写着"必须走浏览器（Service Worker 依赖）"，
+        **那是错的**，而且我把它当成实测结论写进了代码。
 
-        而真实浏览器里（**未登录**）同一 URL 返回 `ok=1, total=870`。
+        真正的原因是我给**网页请求**加了接口才用的头：
 
-        所以这里转交 `search_patchright`，与小红书同一套 SessionPool。
-        区别在原因：小红书需要**签名**，微博需要 **Service Worker 上下文**。
+            GET https://s.weibo.com/weibo?q=沈阳
+            -H 'x-requested-with: XMLHttpRequest'      ← 就是这个
+
+        带上它微博返回"页面不存在"（`pagenotfound&retcode=6102`），
+        我拿这个被踢的结果得出"直连不行" —— **白开了两天浏览器**。
+
+        去掉那个头之后实测（登录态，全程不开浏览器）：
+
+            page=1/2/3/10/50  全都有内容，页与页零重叠
+            0.3~1 秒/页       （浏览器那条是 15 秒 + 250MB 内存）
+
+        ⇒ 现在交给 `search_patchright.search_via_patchright`，
+          它**先试直连**，直连异常/被限流时才退回浏览器兜底。
+          函数名还叫 `_patchright` 是历史遗留，别被名字骗了。
 
         ## mode 的影响
 
-        `mode=API` 时仍会走浏览器 —— 因为 API 路径对微博不可用。
-        这是"平台差异"而非配置错误，所以在日志里说明一次。
+        `mode=API` 与 `mode=PATCHRIGHT` 现在**走同一条路**
+        （先直连、失败才浏览器）。保留分支只是为了不改调用方。
         """
         from .search_patchright import search_via_patchright
 
-        if self.config.mode == ClientMode.API:
-            logger.info(
-                "[weibo] 该平台 API 直连不可用（Service Worker 依赖），"
-                "自动转浏览器路径"
-            )
         return await search_via_patchright(
             params,
             conn_key=self.config.conn_id or "",
