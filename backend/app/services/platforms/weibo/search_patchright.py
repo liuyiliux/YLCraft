@@ -312,6 +312,7 @@ async def search_via_patchright(
     # ⚠️ 用 `raised` 记录"直连是**失败**了"还是"直连**成功但没内容**"。
     #    两者对"要不要开浏览器"的含义完全不同（见下）。
     _http_raised: Optional[str] = None
+    _http_login_failed: Optional[str] = None
     try:
         results = await _search_http(
             params.keyword, want=want, page=page,
@@ -344,8 +345,20 @@ async def search_via_patchright(
             return []
 
     except HttpLoginRequired as exc:
-        # 一条都没拿到 + 明确要登录 ⇒ 直接报，不要开浏览器白跑一趟
-        raise LoginExpiredError(str(exc)) from exc
+        # ⚠️⚠️ **登录失败要试浏览器，不能直接放弃**（2026-10-07 修）
+        #
+        # 原来这里无条件 `raise LoginExpiredError` —— 理由是"别开浏览器白跑"。
+        # 但实测：库里那份 cookie 失效、直连被 302 到 `login.sina.com.cn` 时，
+        # **浏览器路径却可能还能用** —— 它读的是持久化 profile 里的登录态，
+        # 与 DB 里那份 cookie 是**两套东西**（见 `persistent_profile`）。
+        #
+        # ⇒ 直接抛错 = 明明有备用登录态却不用，用户看到"搜不到"。
+        #   正确做法：让它走下面的浏览器兜底；浏览器也失败才报错。
+        logger.warning(
+            "[weibo] 直连需要登录（%s）→ 试浏览器路径"
+            "（它用的是 profile 里的登录态，与 DB cookie 是两套）", exc,
+        )
+        _http_login_failed = str(exc)
     except Exception as exc:
         _http_raised = f"{type(exc).__name__}: {exc}"
         # ⚠️⚠️ 用 **warning** 不用 info —— 兜底是**异常情况**，不是常态。
@@ -358,11 +371,21 @@ async def search_via_patchright(
             _http_raised,
         )
 
-    # ===== ② 直连真的不行才开浏览器（兜底，不是主路）=====
-    return await _search_via_browser(
-        params, conn_key=conn_key, client=client,
-        page=page, max_pages=max_pages, xsort=xsort, want=want,
-    )
+    # ===== ② 直连不行才开浏览器（兜底，不是主路）=====
+    try:
+        return await _search_via_browser(
+            params, conn_key=conn_key, client=client,
+            page=page, max_pages=max_pages, xsort=xsort, want=want,
+        )
+    except LoginExpiredError:
+        # 两条路都要登录 ⇒ 这次是真的要用户去补登录态了
+        if _http_login_failed:
+            raise LoginExpiredError(
+                "[weibo] 微博搜索需要登录 —— 直连（DB cookie）与浏览器"
+                "（profile 登录态）**都**被拒。\n"
+                "请在「账号中心」重新保存微博登录态后重试。"
+            ) from None
+        raise
 
 
 async def _search_http(
@@ -393,10 +416,16 @@ async def _search_http(
         try:
             cards, tp = await fetch_page(
                 keyword, pn, cookie_header=cookie, xsort=xsort)
-        except WeiboHttpLoginRequired:
-            raise HttpLoginRequired(
-                "[weibo] 微博搜索需要登录。请在「账号中心」重新保存微博登录态后重试。"
-            )
+        except HttpLoginRequired:
+            # ⚠️ 这里必须 re-raise 成**同一个类型** —— 上层
+            #    `search_via_patchright` 按它决定"要不要试浏览器"。
+            #
+            # ⚠️⚠️ 我第一版在这里写了个不存在的类名 `WeiboHttpLoginRequired`
+            #     → `NameError` → 被下面的 `except Exception` 吃掉 →
+            #     直连每次都"失败"并静默回退浏览器。
+            #     表现就是"改了没效果、还是慢"——和之前那个 ImportError 同一类错。
+            #     ⚠️ 自定义异常**没有**兜底类，拼错就是运行时 NameError。
+            raise
         except Exception as exc:
             logger.info("[weibo] 直连第 %d 页失败：%s: %s", pn, type(exc).__name__, exc)
             break

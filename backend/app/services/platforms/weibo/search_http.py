@@ -284,6 +284,30 @@ def to_search_result(card: Dict[str, Any]) -> Any:
     })
 
 
+def _host_of(url: str) -> str:
+    """取 URL 的 host（取不到就返回空串）。"""
+    try:
+        from urllib.parse import urlparse
+
+        return (urlparse(url or "").hostname or "").lower()
+    except Exception:
+        return ""
+
+
+def _is_search_page(url: str) -> bool:
+    """最终落点**还在不在** `s.weibo.com`。
+
+    ⚠️ 这是"有没有被踢到登录页"的**唯一可靠判据**。
+       别去枚举登录域 —— 我第一版只认 `passport.weibo.com`，
+       而实测 302 的目标是 `login.sina.com.cn`，直接漏过。
+
+    ⚠️ 也**不能**只看状态码：`follow_redirects=True` 之后拿到的是
+       最终页的 200，中间的 302 是看不见的。
+    """
+    host = _host_of(url)
+    return host == "s.weibo.com"
+
+
 def build_search_url(keyword: str, page: int = 1, xsort: str = "") -> str:
     """拼搜索 URL。
 
@@ -330,16 +354,38 @@ async def fetch_page(
     body = r.text or ""
     final = str(r.url)
 
-    # 被踢到登录/访客页 —— 要**区分**于「没搜到」
-    if "passport.weibo.com" in final or "passport.weibo.com" in body[:20000]:
+    # ⚠️⚠️ **被踢到登录页必须在这里拦住**，否则会退化成"0 条结果"，
+    #     用户看到的是"这个词没内容"—— 那是**假阴性**，最难查的一类错。
+    #
+    # 我第一版只认 `passport.weibo.com`，而实测微博把未登录请求 302 到的是
+    # **`login.sina.com.cn`**：
+    #
+    #     GET s.weibo.com/weibo?q=营口  → 302
+    #     GET login.sina.com.cn/sso/login.php?...  → 200
+    #
+    # ⇒ 检查穿过去了 → 解析出 0 张卡片 → 上层把它当"平台没内容" →
+    #   **返回空列表且不回退浏览器**。用户搜"营口"得到 0 条就是这个原因。
+    #
+    # 所以判据改成**"最终落点还在不在 s.weibo.com"** —— 不写死任何一个
+    # 登录域，微博换登录域也不会再骗过我们。
+    if not _is_search_page(final):
         raise WeiboLoginRequired(
-            "[weibo] 微博搜索需要登录。请在「账号中心」重新保存微博登录态后重试。"
+            "[weibo] 微博搜索需要登录（被重定向到 "
+            f"{_host_of(final) or '未知页面'}）。"
+            "请在「账号中心」重新保存微博登录态后重试。"
         )
+
     if "pagenotfound" in final or "retcode=6102" in final:
         # ⚠️ 通常是关键词没编码 —— 明确说出来，别让人以为是平台挂了
         raise RuntimeError(
             f"[weibo] 微博返回「页面不存在」（pagenotfound）。"
             f"常见原因是关键词没有正确编码。URL={url[:120]}"
+        )
+
+    # 正文里若出现登录表单标记，同样按"要登录"处理（兜底，防落点没变但内容变了）
+    if "请先登录" in body[:4000] or "passport.weibo.com/sso/signin" in body[:8000]:
+        raise WeiboLoginRequired(
+            "[weibo] 微博搜索需要登录。请在「账号中心」重新保存微博登录态后重试。"
         )
 
     return parse_cards(body), parse_total_pages(body)

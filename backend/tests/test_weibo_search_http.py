@@ -43,6 +43,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.services.platforms.weibo import search_desktop as sd  # noqa: E402
 from app.services.platforms.weibo import search_http as sh  # noqa: E402
 from app.services.platforms.weibo import search_patchright as sp  # noqa: E402
 
@@ -279,18 +280,20 @@ class TestHttpIsPrimaryPath(unittest.TestCase):
                       "被踢到登录页要抛 LoginExpiredError → 401 而不是 500")
 
     def test_browser_used_as_fallback_only(self):
-        """直连**异常**才开浏览器；直连正常返回 0 条**不该**兜底。
+        """直连**异常**才开浏览器；直连**正常返回 0 条**不该兜底。
 
         ⚠️ 实测踩到：搜一个不存在的词，直连返回 0 条（这是**正确答案**），
         旧逻辑却以为"直连不行"，又去开浏览器白跑一趟 ——
         "搜不到"要等 18.7 秒，而真的搜到只要 2.8 秒。
+
+        ⚠️⚠️ **但"要登录"不在此列** —— 那是异常，必须走兜底
+           （见 `TestLoginFailureFallsBackToBrowser`）。
         """
         code = _code(sp.search_via_patchright)
         i_http = code.index("await _search_http(")
-        i_browser = code.index("await _search_via_browser(")
-
-        # 第 1 页为空 ⇒ 直接返回 []，不能落到浏览器
         i_empty = code.index("if page <= 1:", i_http)
+        i_browser = code.index("await _search_via_browser(")
+        self.assertLess(i_empty, i_browser)
         seg = code[i_empty: i_browser]
         self.assertIn("return []", seg,
                       "直连正常但没内容时要直接返回，不要开浏览器白跑 15 秒")
@@ -316,6 +319,151 @@ class TestHttpIsPrimaryPath(unittest.TestCase):
         code = _code(sh.to_search_result)
         self.assertIn("search_desktop", code,
                       "parse_desktop_card 在 search_desktop，不在 client")
+
+
+class TestLoginRedirectIsNotMistakenForEmpty(unittest.TestCase):
+    """⭐⭐⭐ 2026-10-07 用户实测：搜「营口」返回 0 条，日志却是
+
+        GET s.weibo.com/weibo?q=营口   → 302
+        GET login.sina.com.cn/sso/login.php?...  → 200
+        [weibo] 搜索 '营口' -> 0 条（直连正常返回，平台没有这个内容）
+
+    **被踢到登录页，却被报成"平台没有这个内容"** —— 假阴性。
+
+    根因：我第一版只认 `passport.weibo.com`，而微博 302 到的是
+    **`login.sina.com.cn`**，检查穿过去了 → 解析出 0 张卡片 →
+    上层当成"没内容" → 返回空列表**且不回退浏览器**。
+
+    ⇒ 判据改成"最终落点还在不在 s.weibo.com"，不枚举登录域。
+    """
+
+    def test_login_sina_is_rejected(self):
+        self.assertFalse(sh._is_search_page(
+            "https://login.sina.com.cn/sso/login.php?url=https%3A%2F%2Fs.weibo.com"))
+
+    def test_passport_is_rejected(self):
+        self.assertFalse(sh._is_search_page(
+            "https://passport.weibo.com/visitor/visitor?a=enter"))
+
+    def test_real_search_page_accepted(self):
+        self.assertTrue(sh._is_search_page(
+            "https://s.weibo.com/weibo?q=%E8%90%A5%E5%8F%A3&page=1"))
+
+    def test_other_weibo_hosts_rejected(self):
+        """⚠️ 只认 `s.weibo.com` —— `weibo.com/sorry` 之类也不是结果页。"""
+        self.assertFalse(sh._is_search_page("https://weibo.com/sorry?pagenotfound"))
+        self.assertFalse(sh._is_search_page("https://m.weibo.cn/"))
+
+    def test_empty_and_garbage_rejected(self):
+        for bad in ("", "not a url", "https://evil.com/s.weibo.com"):
+            with self.subTest(value=bad):
+                self.assertFalse(sh._is_search_page(bad))
+
+    def test_host_of_handles_bad_input(self):
+        self.assertEqual("", sh._host_of(""))
+        self.assertEqual("", sh._host_of("垃圾"))
+        self.assertEqual("s.weibo.com", sh._host_of("https://s.weibo.com/x"))
+
+
+class TestLoginFailureFallsBackToBrowser(unittest.TestCase):
+    """⭐ 直连要登录 ≠ 放弃 —— 浏览器用的是**另一套登录态**。
+
+    持久化 profile 里的登录态与 DB 里那份 cookie 是两套东西。
+    实测：DB cookie 失效时直连被 302，但浏览器 profile 可能还能用。
+    直接抛错 = 明明有备用登录态却不用。
+    """
+
+    def test_http_login_failure_tries_browser(self):
+        code = _code(sp.search_via_patchright)
+        i_catch = code.index("except HttpLoginRequired")
+        i_browser = code.index("await _search_via_browser(")
+        self.assertLess(i_catch, i_browser,
+                        "登录失败之后必须还能走到浏览器兜底")
+        # 抛出前必须经过浏览器尝试
+        seg = code[i_catch:i_browser]
+        self.assertNotIn("raise LoginExpiredError", seg,
+                         "登录失败不该直接抛 —— 要先试浏览器路径")
+
+    def test_both_failing_reports_login_required(self):
+        """两条路都被拒才报『要登录』，并且说清是两边都拒了。"""
+        code = _code(sp.search_via_patchright)
+        i_browser = code.index("await _search_via_browser(")
+        seg = code[i_browser:]
+        self.assertIn("LoginExpiredError", seg,
+                      "浏览器也失败时要报『要登录』而不是返回空")
+        self.assertIn("都", seg,
+                      "要说清是直连与浏览器**都**被拒，别让用户猜")
+
+
+class TestNoUndefinedNamesInHotPath(unittest.TestCase):
+    """⭐⭐ 未定义的名字**必须**在测试期暴露，不能在运行时被吞掉。
+
+    今天同一个坑踩了三次：
+
+      ① `from .client import parse_desktop_card`（实际在 search_desktop）
+         → ImportError → 被 `except Exception` 吞 → 静默回退浏览器
+      ② `except WeiboHttpLoginRequired`（不存在的类名）
+         → NameError → 被吞 → 直连每次"失败"
+      ③ 同一个 `to_search_result` 的导入问题复发
+
+    共同点：**自定义异常/函数名写错没有静态保护**，
+    拼错就是运行时 NameError，而外层的 `except Exception` 让症状变成
+    "改了没效果、还是慢"，根本不是报错 —— 最难查的一类。
+
+    ⇒ 用 `compile` + 符号表做一次静态检查，杜绝这一类。
+    """
+
+    def test_module_compiles_without_syntax_errors(self):
+        """语法必须没问题（`compile()` 只编译不入盘，避免临时文件权限问题）。"""
+        for mod in (sh, sp, sd):
+            with self.subTest(module=mod.__name__):
+                src = Path(mod.__file__).read_text(encoding="utf-8")
+                compile(src, mod.__file__, "exec")   # 抛错即失败
+
+    def test_custom_exception_names_resolve(self):
+        """⚠️ 模块里 `except X` 引用的名字必须真的能取到。
+
+        只查**本项目自定义**的异常名（大驼峰且非内建），
+        因为内建异常（ValueError/TypeError…）走内置命名空间，不在模块里。
+        """
+        import ast as _ast
+        import builtins
+
+        custom = {
+            "WeiboLoginRequired", "DesktopLoginRequired", "LoginExpiredError",
+            "WeiboLoginRequiredError",
+        }
+        for mod in (sh, sp):
+            tree = _ast.parse(Path(mod.__file__).read_text(encoding="utf-8"))
+            for node in _ast.walk(tree):
+                if not (isinstance(node, _ast.ExceptHandler) and node.type):
+                    continue
+                names = []
+                if isinstance(node.type, _ast.Name):
+                    names = [node.type.id]
+                elif isinstance(node.type, _ast.Tuple):
+                    names = [e.id for e in node.type.elts
+                             if isinstance(e, _ast.Name)]
+                for n in names:
+                    if n not in custom:
+                        continue
+                    with self.subTest(module=mod.__name__, name=n):
+                        self.assertTrue(
+                            hasattr(mod, n),
+                            f"{mod.__name__} 里 `except {n}` 用了"
+                            f"不存在的名字 —— 运行时会 NameError，"
+                            f"并被外层 except Exception 吞成『静默回退』",
+                        )
+                        self.assertTrue(
+                            issubclass(getattr(mod, n), builtins.Exception),
+                            f"{n} 必须是异常类",
+                        )
+
+    def test_login_error_type_is_shared(self):
+        """直连与上层必须用**同一个**登录异常类型，否则接不住。"""
+        self.assertIs(sh.WeiboLoginRequired, sp.HttpLoginRequired,
+                      "search_patchright 的 HttpLoginRequired 必须是 "
+                      "search_http.WeiboLoginRequired 本身")
 
 
 class TestTotalPagesPlumbedThrough(unittest.TestCase):
