@@ -111,7 +111,20 @@ class WeiboClient(BasePlatformClient):
         return MOBILE_UA
 
     def _get_platform_domain(self) -> str:
-        return ".weibo.cn"
+        # ⚠️⚠️ **必须返回 None，不能只给一个域**（2026-10-06 修，用户实测踩到）
+        #
+        # 原来返回 `.weibo.cn`，于是 `base._set_cookies_to_browser`
+        # 把 cookie **只种到 m 站域**。但微博搜索现在走桌面版
+        # `https://s.weibo.com/weibo?q=...` —— 那是 `.weibo.com`，
+        # **一个 cookie 都收不到**，页面被踢到登录页 → 搜出 0 条。
+        #
+        # ⚠️ 日志当时还打了 `[wb] Cookies set to browser` ——
+        #    那句话在骗人：cookie 种了，但种错了域。
+        #    "无异常"不等于"生效了"。
+        #
+        # 返回 None = 让 `_set_cookies_to_browser` 走
+        # `_get_platform_domains()`，那边会把两个域都给全。
+        return None
 
     async def search(self, params: SearchParams) -> List[SearchResult]:
         """按关键词搜微博。

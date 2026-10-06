@@ -222,6 +222,11 @@ PLATFORM_LOGIN_URLS = {
 }
 
 PLATFORM_DOMAINS = {
+    # ⚠️ 键**不统一**：绝大多数用正式名，小红书用的是别名 `xhs`。
+    #    `base._cookie_domains` 查表前会先归一成正式名，所以这里
+    #    **两种都放**（2026-10-06 修：归一后 `xhs` 曾查不到而空 cookie）。
+    #    新增平台请**至少放正式名那一个**。
+    "xiaohongshu": ".xiaohongshu.com,xhslink.com",
     "xhs": ".xiaohongshu.com,xhslink.com",
     "douyin": ".douyin.com,.iesdouyin.com,v.douyin.com",
     "kuaishou": ".kuaishou.com,.gifshow.com,v.kuaishou.com",
@@ -230,6 +235,11 @@ PLATFORM_DOMAINS = {
     # 搜索/详情/「我的数据」都走 `m.weibo.cn`，它的登录态
     # （`SUB`）与主站 `weibo.com` 是**不同的值**。
     # 只存 `.weibo.com` 会漏掉 m 站的登录 cookie。
+    #
+    # ⚠️⚠️ 2026-10-06：**桌面版搜索也必须要** —— 搜索改走
+    # `https://s.weibo.com/weibo?q=...`，只种 `.weibo.cn` 会一个 cookie
+    # 都收不到 → 搜出 0 条。`passport.weibo.com` 是被踢过去时的落地页，
+    # 种上它能拿到访客态，至少不会白屏。
     "weibo": ".weibo.cn,m.weibo.cn,.weibo.com,passport.weibo.com,t.cn",
     "youtube": ".youtube.com,youtu.be",
     "tiktok": ".tiktok.com",
