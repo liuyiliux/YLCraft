@@ -34,9 +34,72 @@ def profiles_root() -> Path:
     return root
 
 
+# profile 目录名归一：别名 → 正式名（2026-10-06 修）
+#
+# ## 为什么要在这里做（而不是每个调用方各改一遍）
+#
+# 实测故障：用户在前端搜微博，日志显示
+#
+#     [persistent] 启动持久化 profile platform=wb dir=...\browser_profiles\wb
+#     [weibo] 搜索 '沈阳' -> **0 条**（翻了 1 页）
+#
+# 而用正式名搜：
+#
+#     [persistent] 启动持久化 profile platform=weibo dir=...\browser_profiles\weibo
+#     [weibo] 搜索 '沈阳' -> 30 条
+#
+# 根因：前端平台下拉用的值是 **`wb`**（别名），`base.py` 把它直接
+# 当目录名 → 建出 `browser_profiles/wb`。**同一个平台两个目录，
+# 等于没有登录态** —— `wb` 那个目录是空的，登录态在 `weibo` 里。
+#
+# ⚠️ 这个 bug 一直潜伏着。之前没暴露，是因为移动版 `m.weibo.cn`
+# **访客态也能凑出 9 条**，看起来"能搜"；换成桌面版 `s.weibo.com`
+# 之后**必须登录**才能搜，潜伏问题才暴露成"搜不到任何东西"。
+#
+# ## 为什么放在最底层
+#
+# `profile_dir_for` 是**所有** profile 目录的唯一收口点
+# （base / weibo / twitter / kuaishou / cookies 都走它）。
+# 在这里归一 = 改一处，全平台受益；漏掉任何一个调用方的后果是
+# "重新建一个空 profile → 登录态看起来丢了 → 用户以为要重扫码"。
+_ALIAS_TO_CANONICAL = {
+    "wb": "weibo",
+    "xhs": "xiaohongshu",
+    "dy": "douyin",
+    "ks": "kuaishou",
+    "bili": "bilibili",
+    "tw": "twitter",
+    "x": "twitter",
+}
+
+
+def canonical_platform(platform: str) -> str:
+    """把平台别名归一成**正式名**，用于当目录名 / 池 key。
+
+    ⚠️ 未知名字**原样返回**（去掉非法字符），不抛错 ——
+    新增平台时不该在这里被卡住（它只是拼个目录名而已）。
+    """
+    key = (platform or "").strip().lower()
+    return _ALIAS_TO_CANONICAL.get(key, key)
+
+
 def profile_dir_for(platform: str) -> Path:
-    """按平台返回独立 profile 目录。"""
-    safe = "".join(ch for ch in (platform or "default") if ch.isalnum() or ch in "-_")
+    """按平台返回独立 profile 目录。
+
+    ⚠️ **目录名用正式名，不用用户传进来的别名** ——
+    见上面 `_ALIAS_TO_CANONICAL` 的说明（`wb` vs `weibo` 曾导致
+    "同一平台两个目录、登录态各存一半"）。
+
+    ## ⚠️ 历史目录怎么办
+
+    别名目录（如 `browser_profiles/wb`）里可能已经有数据。
+    **不自动改名/合并** —— profile 目录里有 Chromium 的锁文件与
+    缓存，程序运行中改名会损坏它。旧目录留着无害（只是几个 MB 的
+    磁盘占用），用户想清理时手动删即可。
+    """
+    safe = "".join(
+        ch for ch in canonical_platform(platform) if ch.isalnum() or ch in "-_"
+    )
     path = profiles_root() / (safe or "default")
     path.mkdir(parents=True, exist_ok=True)
     return path

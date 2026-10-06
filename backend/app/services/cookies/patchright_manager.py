@@ -114,11 +114,22 @@ class PatchrightAcquisitionManager:
                 await self.ensure_browser(headless)
             session.status = AcquisitionStatus.BROWSER_LAUNCHING
 
+            # ⚠️ **正式名**，别用别名（2026-10-06 修）
+            #
+            # 这里曾直接传 `platform`，于是用 `wb` 采集登录态会存进
+            # `browser_profiles/wb`，而搜索那边用 `weibo` —— 两份登录态
+            # 永远对不上，表现为"明明登录过了却搜不到"。
+            from app.services.browser.persistent_profile import (
+                canonical_platform,
+            )
+
             context = await self._runtime.new_context(
                 headless=headless,
                 viewport={"width": 1280, "height": 800},
                 user_agent=get_user_agent(platform),
-                persistent_platform=platform if use_persistent else None,
+                persistent_platform=(
+                    canonical_platform(platform) if use_persistent else None
+                ),
             )
 
             # ✅ 无需注入 Stealth！Patchright 已内置反检测

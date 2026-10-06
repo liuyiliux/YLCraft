@@ -182,7 +182,19 @@ class BasePlatformClient(abc.ABC):
 
             pool = get_session_pool()
             conn_id = getattr(self.config, "conn_id", "") or ""
-            session_key = f"{self.config.platform}|{conn_id or '-'}"
+            # ⚠️⚠️ **必须用正式名**（2026-10-06 修，用户实测踩到）
+            #
+            # 原来直接用 `self.config.platform`，于是前端传别名 `wb`
+            # 时池 key 是 `wb|<conn>`、正式名时是 `weibo|<conn>` ——
+            # **两个不同的 key 指向同一个 profile 目录**。
+            # 后果：别名那次会另开一个浏览器抢同一个 profile
+            # （Chromium 的 profile 锁会打架），登录态表现随机。
+            # 现在 `profile_dir_for` 与池 key 用同一个归一函数。
+            from app.services.browser.persistent_profile import (
+                canonical_platform,
+            )
+
+            session_key = f"{canonical_platform(self.config.platform)}|{conn_id or '-'}"
 
             session = pool.get(session_key)
             if session is not None:
@@ -217,7 +229,8 @@ class BasePlatformClient(abc.ABC):
                     headless=headless,
                     viewport={"width": 1440, "height": 900},
                     user_agent=self.config.user_agent or self._get_default_user_agent(),
-                    persistent_platform=self.config.platform,
+                    # ⚠️ 传**正式名**，别把别名带进来（见上面 session_key 那条）
+                    persistent_platform=canonical_platform(self.config.platform),
                 )
                 self._patchright_page = await self._patchright_context.new_page()
 
@@ -252,31 +265,89 @@ class BasePlatformClient(abc.ABC):
             raise
     
     async def _set_cookies_to_browser(self):
-        """将 Cookie 字符串设置到浏览器"""
+        """把 Cookie 种进浏览器。
+
+        ## ⚠️⚠️ 必须种到**全部**相关域（2026-10-06 修，用户实测踩到）
+
+        微博原来只种 `.weibo.cn`（`_get_platform_domain()` 返回值），
+        但桌面版搜索是 `s.weibo.com` —— **一个 cookie 都收不到**，
+        页面被踢到登录页 → 搜出 0 条。
+
+        而日志当时还打了 `Cookies set to browser` ——
+        **那句话在骗人**：cookie 种了，但种错了域。
+        "无异常"不等于"生效了"。
+
+        所以现在：
+          · `_get_platform_domain()` 返回 `None` → 走下面的多域分支
+          · 多域从 `cookies.base.PLATFORM_DOMAINS` 取（那边本来就
+            写着 `.weibo.cn,m.weibo.cn,.weibo.com,passport.weibo.com,t.cn`）
+          · ⚠️ 该表**按正式名索引**，所以这里要先归一别名（`wb` → `weibo`）
+        """
         if not self._patchright_context or not self.config.cookie:
             return
-        
+
         # 必须先用公共的规范化结果：`_parse_cookie_string` 只认 `k=v; k2=v2`，
         # 直接喂 Netscape 原文不会报错，但**一个 cookie 都设不上**——浏览器模式会
         # 静默变成未登录。这是同一类"格式假设不一致"的又一处。
         cookies = self._parse_cookie_string(self.header_cookie())
-        
-        # 获取平台域名
-        domain = self._get_platform_domain()
-        
-        # 设置 Cookie
+        if not cookies:
+            return
+
+        domains = self._cookie_domains()
+        if not domains:
+            logger.warning(
+                "[%s] 不知道平台域名，cookie 没能种进浏览器（搜索会搜不到东西）",
+                self.config.platform,
+            )
+            return
+
         for cookie in cookies:
-            try:
-                await self._patchright_context.add_cookies([{
-                    'name': cookie['name'],
-                    'value': cookie['value'],
-                    'domain': domain,
-                    'path': '/',
-                }])
-            except Exception as e:
-                logger.warning(f"[{self.config.platform}] Failed to set cookie {cookie['name']}: {e}")
-        
-        logger.info(f"[{self.config.platform}] Cookies set to browser")
+            for domain in domains:
+                try:
+                    await self._patchright_context.add_cookies([{
+                        'name': cookie['name'],
+                        'value': cookie['value'],
+                        'domain': domain,
+                        'path': '/',
+                    }])
+                except Exception as e:
+                    logger.warning(
+                        "[%s] Failed to set cookie %s on %s: %s",
+                        self.config.platform, cookie['name'], domain, e,
+                    )
+
+        logger.info(
+            "[%s] Cookies set to browser（%d 个 cookie × %d 个域: %s）",
+            self.config.platform, len(cookies), len(domains),
+            ",".join(domains),
+        )
+
+    def _cookie_domains(self) -> List[str]:
+        """这次要把 cookie 种到**哪些域**。
+
+        优先用平台自己声明的 `_get_platform_domain()`；
+        它返回 `None` 时回退到 `cookies.base.PLATFORM_DOMAINS`
+        （那张表本来就为"多域"设计，微博/desktop 场景需要它）。
+        """
+        own = None
+        try:
+            own = self._get_platform_domain()
+        except Exception:
+            own = None
+        if own:
+            return [d.strip() for d in str(own).split(",") if d.strip()]
+
+        from app.services.browser.persistent_profile import canonical_platform
+        from app.services.cookies.platforms import get_platform_domains
+
+        raw = get_platform_domains(canonical_platform(self.config.platform))
+        out, seen = [], set()
+        for d in (raw or "").split(","):
+            d = d.strip()
+            if d and d not in seen:
+                seen.add(d)
+                out.append(d)
+        return out
     
     # =========================================================================
     # 请求方法（自动选择模式）
