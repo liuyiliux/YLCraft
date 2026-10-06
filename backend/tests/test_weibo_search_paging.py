@@ -121,10 +121,20 @@ class TestDocstringRecordsContradiction(unittest.TestCase):
         doc = inspect.getdoc(sp.search_via_patchright)
         self.assertIn("0 条", doc,
                       "要写明 page=2 实测返回 0 条")
-        self.assertIn("变少", doc,
-                      "要写明游标翻页会出现'调大反而变少'")
         self.assertIn("矛盾", doc,
                       "要写明与 meta.py 的 PAGED 记录矛盾（原因未定）")
+
+    def test_cursor_instability_recorded_in_code(self):
+        """游标翻页"反而变少"这条记在**代码注释**里（docstring 没重复）。
+
+        它是"为什么 `pages_to_try = 1`"的直接依据 ——
+        将来有人想改回翻页，必须先看到这条。
+        """
+        # ⚠️ 用 `SRC`（含注释）而不是剥干净的代码 —— 这条**就是要**留痕的
+        self.assertIn("变少", SRC,
+                      "要写明游标翻页会出现'调大反而变少'")
+        self.assertIn("重叠", SRC,
+                      "要写明原因（游标页与第1页重叠）")
 
 
 class TestNoFakePagedClaim(unittest.TestCase):
@@ -136,6 +146,75 @@ class TestNoFakePagedClaim(unittest.TestCase):
         self.assertNotIn("min(2, max_pages)", code)
         self.assertNotIn("for i in range(pages_to_try)", code.split("for i in")[0][-200:],
                          "循环次数已被固定成 1，不该再有翻页意图的残留")
+
+
+class TestLoginStateMustBeCheckedFirst(unittest.TestCase):
+    """⚠️ **测"能不能翻页"之前必须先确认登录态**（我踩了两次）。
+
+    ## 两次都栽在哪
+
+    **① 手工脚本没加载 `.env`**
+        `database.py:26` 的 `os.getenv("DATABASE_URL", "...localhost:5432...")`
+        兜底生效 → 注入 cookie 失败 → **访客态**
+        → 测出 `page=2 → ok=-100` → 我当成"平台没数据"
+
+    **② 判据看错字段位置**
+        `/api/config` 的 `login`/`uid` 在 **`data`** 里，不在顶层：
+
+            {"data":{"login":true,"uid":"7628413874", ...}, "ok":1}
+                                ↑ 在这里
+
+        我看顶层 `cfg.get("login")` → None → 误判"未登录"
+
+    ## 两种状态长得完全不一样
+
+    |            | `page=2` 返回                                  |
+    | ---------- | ---------------------------------------------- |
+    | 访客态     | `ok=-100` + passport 登录页 URL                  |
+    | 登录态     | `ok=1` + 0 条（**正常受理**，只是没内容）          |
+
+    混在一起必然误判。
+    """
+
+    def test_check_login_snippet_reads_data_field(self):
+        """登录检测必须读 `data.login`，不是顶层。"""
+        snip = sp.JS_CHECK_LOGIN
+        self.assertIn("api/config", snip,
+                      "要用 /api/config 这个登录检测端点")
+
+    def test_docs_record_the_two_hazards(self):
+        """这两个坑必须留在文档里，否则下一个人再踩。"""
+        for src, name in ((SRC, "search_patchright"),
+                          (_META_SRC, "meta")):
+            with self.subTest(file=name):
+                self.assertIn(
+                    "api/config", src,
+                    "要写明登录检测用 /api/config")
+                self.assertIn(
+                    "data", src,
+                    "要写明字段在 data 里（我因此误判过）")
+                self.assertIn(
+                    "访客", src,
+                    "要写明访客态和登录态返回不同（ok=-100 vs ok=1）")
+                self.assertIn(
+                    ".env", src,
+                    "要写明手工测要先加载 .env（否则是访客态）")
+
+    def test_measured_login_state_recorded(self):
+        """把实测到的登录态记下来（下次可对照）。"""
+        self.assertIn("7628413874", SRC,
+                      "记下实测的 uid（确认那次测的是登录态）")
+        self.assertIn("login=true", SRC.replace(" ", ""),
+                      "记下实测 login=true")
+
+
+def _meta_src() -> str:
+    p = (Path(__file__).resolve().parents[1]
+         / "app" / "services" / "platforms" / "meta.py")
+    return p.read_text(encoding="utf-8")
+
+
+_META_SRC = _meta_src()
 
 
 if __name__ == "__main__":
