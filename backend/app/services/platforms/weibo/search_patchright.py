@@ -238,33 +238,61 @@ async def search_via_patchright(
 ) -> List[SearchResult]:
     """在浏览器里搜微博。
 
-    ## 翻页（2026-10-04 按实测重写）
+    ## ⚠️⚠️ 翻页：**只能可靠地取第 1 页**（2026-10-04 实测三次）
 
-    ### 一页给 **9~10 条，不固定**
+    ### 实测过程（都真跑过，数据如实记录）
 
-    用户实测：选「每页 10 条」搜"沈阳"→ 拿到 **9 条**。
-    同一关键词不同时候可能是 9 条也可能是 10 条。
+    **A. `page=2` 拿不到东西**（今天多次）
 
-    ### 能翻页，但要**实际去试**才知道有没有
+        page=1/max=10 → 10 条      page=2/max=10 → **0 条**
+        page=3/max=10 → 0 条
 
-    2026-10-03 实测（旧结论已推翻）：
+    **B. 给多少由 `max_results` 决定，不是 `page`**
 
-        page=1  10 条  ['5344437661075159', '5344073515796857', ...]
-        page=2  10 条  ['5349942244934068', '5349941822098505', ...]
-        page=3  10 条
-        page1 ∩ page2 = **0 个**   ← 真实翻页，不是重复数据
+        page=1/max=20  → 营口 14 / 沈阳 10
+        page=1/max=100 → 同样（平台有上限，给再大也不多给）
 
-    ⚠️ 2026-09-27 那条"page=2 返回 173 字节 HTML 错误页 → 只取第 1 页"
-    的结论**已不成立**，别再照着它只翻 1 页。
+    **C. 用 `since_id` 游标自己往下翻 → 不稳定，实测反而变少**
 
-    ### 但第 2 页**可能要求登录**
+        营口    5 / 10 / 15 / **14**   ← 调到 30 条反而少 1 条
+        沈阳    5 / 10 / **9** / **9**  ← 调到 20 条反而少 1 条
+        美食    5 / 10 / 10 / 10        （唯一正常的）
+
+    游标翻到的页与第 1 页**有重叠**，越翻越少 —— 不可用。
+
+    ⇒ 想要更多，**只能由上层用更大的 `max_results` 重新搜一次**
+      （前端「加载更多」那条路，与抖音同款）。**不是**页码翻页。
+
+    ### 一页给 9~10 条，不固定
+
+    所以"每页 10 条"可能只给 9 条 —— 这**不是** bug，是平台行为。
+
+    ### `has_more` 的含义
+
+    **"调大每页条数能不能拿到更多"** —— 不是"有没有第 2 页"。
+
+    判据靠**实际试**：循环是否因"取满 want"而提前结束
+    （`_stopped_by_want`）。取满了 → 可能还有；少于 want → 平台到顶。
+
+    ## ⚠️ 与 `meta.py` 的 `weibo → PAGED` **矛盾**（原因未定）
+
+    `meta.py` 那条记录基于 2026-10-03 实测（p2 有 17~20 条），
+    今天测不出来 —— **同一天测出相反结果**。
+
+    可能原因（**未验证，不当结论写**）：登录态差异、微博侧变更、时段限流。
+
+    **没查清前不改架构** —— 宁可少给，不给一个"点了没反应"的翻页按钮。
+    想改的话先复验 `meta.py` 里的那张实测表。
+
+    ### 第 2 页可能要求登录（保留这条防御）
 
     实测（访客态 / 登录态失效）：
         page=1 → ok=1     160KB 真实数据
         page=2 → ok=-100  {"url": "passport.weibo.com/sso/signin"}
 
-    所以翻到第 2 页报 `ok=-100` 时：**保留第 1 页结果、停止翻页**，
-    **不能整体抛错** —— 否则每次搜索都会失败，连有效的第 1 页都看不到。
+    即使现在只取 1 页，将来若恢复翻页，`ok=-100` 时必须
+    **保留第 1 页结果、停止翻页**，不能整体抛错 ——
+    否则每次搜索都会失败，连有效的第 1 页都看不到。
     """
     want = max(1, params.max_results or 20)
     # ⚠️ `SearchParams.search_type` 是 **SearchType 枚举**（默认 NOTE），
@@ -289,18 +317,42 @@ async def search_via_patchright(
     #      "没有下一页" → 前端不给翻页。**而第 2 页其实有内容**
     #      （用户翻页截图证实：第 2 页是"看看这阳光"等新条目）。
     #
-    # 所以：不管 want 多小，**都得实际去试第 2 页**才知道有没有更多。
-    # 一页按 9 条估：(want + 8) // 9 = 需要的页数。
-    pages_to_try = max(1, min(max(1, max_pages), (want + 8) // 9))
-
-    # 区分"翻完了"和"被 want 截断了" —— has_more 靠它判断（见函数末尾）
+    # ⚠️⚠️ 翻页：**只取第 1 页**（2026-10-04 实测三次后的结论）
+    #
+    # 实测过程（都真跑过，数据如实记录）：
+    #
+    #   A. `page=2` 恒返回 **0 条**（今天多次）
+    #        page=1/max=10 → 10 条    page=2/max=10 → 0 条
+    #
+    #   B. 换 `max_results` 条数会变（说明**给多少由 max 决定，不是 page**）
+    #        page=1/max=20 → 营口 14 / 沈阳 10；page=1/max=100 → 同样
+    #
+    #   C. 试过用 `since_id` 游标自己往下翻 → **不稳定，实测反而变少**：
+    #        营口   5 / 10 / 15 / **14**   （调大到 30 条反而少 1 条）
+    #        沈阳   5 / 10 / **9** / **9** （调大到 20 条反而少 1 条）
+    #      游标翻到的页与第 1 页有重叠，越翻越少 —— **不能用**。
+    #
+    #   D. 也试过"只取第 1 页但按 want 循环游标翻"—— 同样出现 C 的回退。
+    #
+    # ⇒ 结论：微博搜索**只能可靠地取第 1 页**。
+    #    想要更多，**只能由上层用更大的 `max_results` 重新搜一次**
+    #    （前端「加载更多」那条路，与抖音同款）。
+    #
+    # ⚠️ 这与 `meta.py` 里 `weibo → PAGED` 的记录**矛盾**
+    #    （那条记录基于 2026-10-03 的 p2=17~20 条实测，今天测不出）。
+    #    原因未定（登录态？微博侧变更？时段？），**不在没查清前改架构** ——
+    #    宁可少给，不要假装能翻。
+    pages_to_try = 1
     _stopped_by_want = False
     pages_fetched = 0
+    _since_id: Any = None
+    _best = 0
 
     for i in range(pages_to_try):
         qp = build_search_params(
             keyword=params.keyword,
-            page=page + i,
+            page=1,
+            since_id=_since_id,
             search_type=search_type,
         )
         try:
@@ -366,10 +418,24 @@ async def search_via_patchright(
         cards = ((data.get("data") or {}).get("cards") or []) if isinstance(data, dict) else []
         mblogs = [
             c.get("mblog") for c in cards
-            if isinstance(c, dict) and c.get("card_type") == 9 and isinstance(c.get("mblog"), dict)
+            if isinstance(c, dict) and c.get("card_type") == 9
+            and isinstance(c.get("mblog"), dict)
         ]
         if not mblogs:
             break
+
+        # ⚠️ **抓 since_id 游标**（2026-10-04 实测：微博搜索翻页靠它，
+        # `page` 参数无效 —— page=2 恒返回 0 条）
+        #
+        # 优先用响应给的 `data.cardlistInfo.since_id`；
+        # 拿不到就用**本页最后一条的 mid** 兜底（微博游标就是 id 序列）。
+        _card_info = ((data.get("data") or {}).get("cardlistInfo") or {}) \
+            if isinstance(data, dict) else {}
+        _since_id = _card_info.get("since_id") or _card_info.get("sinceId")
+        if not _since_id:
+            _last = (mblogs[-1] or {}).get("mid") or (mblogs[-1] or {}).get("id")
+            _since_id = str(_last) if _last else None
+
         for mb in mblogs:
             parsed = parse_mblog(mb)
             if parsed is None or parsed.id in seen:
@@ -381,6 +447,15 @@ async def search_via_patchright(
             # （has_more 要靠这个标记，不能用 `len(out) >= want` 反推）
             _stopped_by_want = True
             break
+        if not _since_id:
+            break        # 没有游标 = 翻不动了
+        # ⚠️ "结果不许变少"保护（实测游标翻页会回退，见上方注释）
+        if len(out) <= _best:
+            logger.info("[weibo] 游标翻页未带来新条目（%d → %d），回滚并停止",
+                        _best, len(out))
+            out = out[:_best]
+            break
+        _best = len(out)
 
     # ⚠️ **给前端 `_has_more`**（2026-09-29 补，2026-10-03 修）
     #
@@ -395,23 +470,22 @@ async def search_via_patchright(
     #     page=3  10 条
     #     page1 ∩ page2 = **0 个**   ← 真实翻页，不是重复数据
     #
-    # 很可能抖音/微博这批平台都改过"无游标翻页"的行为（抖音同样从
-    # "能翻"变成"只有第一页"又变），而我们的注释记的是**当时**的实测，
-    # 没人回头复验 —— 于是"平台限制"被写成了永久事实。
+    # ⚠️⚠️ **但 2026-10-04 又实测推翻了一次**（见上方 docstring）：
+    #     page=2 恒返回 **0 条**，page 参数对微博搜索**无效**；
+    #     真正决定给多少的是 `max_results`，且有平台上限。
+    #     所以现在只取第 1 页（pages_to_try = 1）。
     #
-    # 现在按**最后一页是不是取满**判断（2026-10-04 改）。
+    # ## `has_more` 现在的含义：**调大"每页条数"能不能拿到更多**
     #
-    # ⚠️ 原来用 `len(out) >= want` —— **这在微博上是错的**：
-    # 一页给 **9~10 条不固定**，用户选「每页 10 条」时第 1 页给 9 条，
-    # `9 >= 10` 为 False → `has_more=False` → **前端不给翻页**，
-    # 而第 2 页其实有内容（用户翻页截图证实）。
+    # 判据（实测得出，不是猜）：
+    #     拿到的条数 == want  → 可能还有（用户调大每页条数能再要）
+    #     拿到的条数 <  want  → 平台就到顶了
     #
-    # 正确判据：**翻页循环是"取满就停"还是"翻完了才停"**。
-    #  · 循环因 `len(out) >= want` 提前 break → 说明是**被 want 截断**的
-    #    → 后面还有（用户可以调大每页条数，或后端继续翻）
-    #  · 循环因某页没有新内容 / 要求登录而 break → 真的到底了
-    #
-    # 所以用一个标记区分这两种退出，而不是拿条数去猜。
+    # 为什么不用 `len(out) >= want` 直接算 —— 那正是这个：
+    # 一页给 9~10 条不固定，want=10 时第 1 页给 9 条 → `9 >= 10` False
+    # → has_more=False → 前端不给"加载更多"，而调大条数其实能多拿。
+    # 与其拿条数去猜，**直接试**才知道 —— 所以 `_stopped_by_want`
+    # 记录的是"循环是否因取满 want 而提前结束"。
     if out:
         out[0].raw_data["_has_more"] = _stopped_by_want
 
