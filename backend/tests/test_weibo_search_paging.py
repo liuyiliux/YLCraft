@@ -338,11 +338,21 @@ class TestParseDesktopCard(unittest.TestCase):
         r = sd.parse_desktop_card(self._card(nums=[]))
         self.assertEqual((0, 0, 0), (r.shares, r.comments, r.likes))
 
-    def test_create_time_left_empty_not_faked(self):
-        """桌面卡片只有 "43分钟前"，**如实留空**而不是编时间戳。"""
+    def test_create_time_passed_through_when_present(self):
+        """直连路径换算出的时间戳要被**带过来**（2026-10-07）。
+
+        以前这里恒为 `""` —— 直连已经把 `.from` 里的
+        `10月06日 15:50` 换算成时间戳了，却在 `to_search_result`
+        被硬编码的 `"from": ""` 扔掉，前端「发布时间」列永远 `-`。
+        """
+        r = sd.parse_desktop_card(self._card(create_time="1759774200"))
+        self.assertEqual("1759774200", r.create_time)
+
+    def test_create_time_still_empty_when_absent(self):
+        """拿不到就**如实留空** —— 编一个时间戳比留空更坏。"""
         r = sd.parse_desktop_card(self._card())
         self.assertEqual("", r.create_time,
-                         "编一个时间戳比留空更坏 —— 详情页才有精确 created_at")
+                         "桌面卡片只有 '43分钟前'，不编时间戳（详情页才有精确值）")
 
     def test_card_without_mid_rejected(self):
         self.assertIsNone(sd.parse_desktop_card({"mid": "", "text": "x"}))
@@ -354,6 +364,133 @@ class TestParseDesktopCard(unittest.TestCase):
         self.assertEqual("video", sd.parse_desktop_card(
             self._card(is_video=True)).type)
         self.assertEqual("note", sd.parse_desktop_card(self._card()).type)
+
+
+class TestPublishTimeIsNotDropped(unittest.TestCase):
+    """⚠️⚠️ 「发布时间」列永远显示 `-` —— 真 bug（2026-10-07 修）
+
+    用户截图：搜索结果每一行的「发布时间」都是 `-`。
+
+    原因不在前端：前端 `formatTime()` 本来就会渲染
+    `10月06日 15:50` 这种文本。是**后端自己把数据扔了**：
+
+        search_http.to_search_result()  →  "from": "",   ← 硬编码
+        search_desktop.parse_desktop_card() → create_time=""
+
+    而 HTML 里**明明有**（浏览器实测 `s.weibo.com/weibo?q=抚顺`）：
+
+        10月03日 12:50  来自 微博视频号
+        10月06日 19:45  来自 𓆡𓂃꙳HarmonyOS
+        09月16日 08:26  来自 iPhone 15 Pro Max
+    """
+
+    @staticmethod
+    def _seg(from_text: str, mid: str = "5351108362898098") -> str:
+        """按**真实**的 `.from` 结构造片段（2026-10-07 从页面上扒的）。
+
+        结构照抄：
+
+            <div class="from">
+              <a href="//weibo.com/6079887320/RikziB9zF?...">
+                09月16日 08:26
+              </a>
+               &nbsp;来自 <a href="//weibo.com/" rel="nofollow">iPhone 15 Pro Max</a>
+            </div>
+
+        ⚠️ 注意结束标签是 `</div>`；我第一版按 `</span>` 造 fixture，
+           测试全绿了 —— **但线上正则一条都匹配不到**，是假绿。
+           所以这里必须贴着真实 HTML 造。
+        """
+        return (
+            '<div class="card-wrap" mid="%s">'
+            '<p class="txt">抚顺这家烤肉真不错</p>'
+            '<a class="name" href="//weibo.com/5404977405/x">某人</a>'
+            '<div class="from">'
+            '<a href="//weibo.com/5404977405/x">\n  %s\n</a>\n'
+            ' &nbsp;来自 <a href="//weibo.com/" rel="nofollow">设备</a>'
+            '</div>'
+            '<div class="card-act"><ul>'
+            '<li><a href="#">转发</a><em>1</em></li>'
+            '<li><a href="#">1</a></li>'
+            '<li><a href="#">251</a></li>'
+            '</ul></div>'
+            '</div>' % (mid, from_text)
+        )
+
+    @staticmethod
+    def _card(from_text: str) -> dict:
+        """走一遍 `parse_cards` → `to_search_result`，拿到 SearchResult。"""
+        return sh.to_search_result(sh.parse_cards(
+            TestPublishTimeIsNotDropped._seg(from_text))[0])
+
+    def test_from_text_is_captured(self):
+        """`.from` 的时间要能解析成时间戳。"""
+        from datetime import datetime
+        r = self._card("10月06日 15:50")
+        self.assertTrue(r.create_time, "没抓到发布时间 ⇒ 前端显示 '-'")
+        got = datetime.fromtimestamp(int(r.create_time))
+        self.assertEqual((10, 6, 15, 50), (got.month, got.day, got.hour, got.minute))
+
+    def test_source_is_captured_separately(self):
+        r = self._card("10月06日 15:50")
+        self.assertIn("设备", r.raw_data.get("_from_text", ""),
+                      "「来自」后面的设备名要留下来")
+        self.assertIn("10月06日 15:50", r.raw_data.get("_from_text", ""))
+
+    def test_missing_year_becomes_last_twelve_months(self):
+        """⚠️ `.from` **没有年份**。补出来的年份不能跑到未来。
+
+        微博搜索按时间倒序，不会返回未来内容 ⇒ 若补今年算出的时间
+        大于"现在"，说明它是去年的，取上一年。
+        """
+        from datetime import datetime
+        r = self._card("12月31日 23:59")
+        self.assertTrue(r.create_time)
+        self.assertLessEqual(int(r.create_time), int(datetime.now().timestamp()),
+                             "补出来的年份不能让时间跑到未来")
+
+    def test_explicit_year_is_respected(self):
+        """跨年时微博会写 `2025年09月16日` —— 这时不要改年份。"""
+        from datetime import datetime
+        r = self._card("2025年09月16日 08:26")
+        got = datetime.fromtimestamp(int(r.create_time))
+        self.assertEqual(2025, got.year)
+
+    def test_unparseable_from_is_left_empty_not_faked(self):
+        """抓得到 `.from` 但时间读不懂 ⇒ 留空，**绝不编**。"""
+        r = self._card("来自 微博网页版")
+        self.assertEqual("", r.create_time, "读不懂的时间不能编一个")
+
+    def test_card_without_from_still_parsed(self):
+        """没有 `.from` 的卡片照常解析，不能整张丢掉。"""
+        seg = ('<div class="card-wrap" mid="5351108362898099">'
+               '<p class="txt">没有来源的微博</p>'
+               '<a class="name" href="//weibo.com/5404977405/x">某人</a>'
+               '</div>')
+        card = sh.parse_cards(seg)[0]
+        self.assertEqual("", card["create_time"])
+        self.assertEqual("没有来源的微博", card["text"])
+
+    def test_regex_matches_real_page_structure(self):
+        """⚠️ 防"假绿"：正则必须能吃下**真实**的 `.from` HTML。
+
+        第一版把结束标签写成 `</span>`，而页面上是 `</div>` ——
+        测试 fixture 也是照着错的正则造的，于是全绿、线上全丢。
+        这个测试直接用从页面抄来的原始片段。
+        """
+        real = (
+            '<div class="from">'
+            '<a href="//weibo.com/6079887320/RikziB9zF?refer_flag=1001030103_"'
+            ' target="_blank" suda-data="key=tblog_search_weibo&amp;value=seqid:1">'
+            '\n                        09月16日 08:26\n                        </a>\n'
+            '                                         &nbsp;来自 '
+            '<a href="//weibo.com/" rel="nofollow">iPhone 15 Pro Max</a></div>'
+        )
+        seg = ('<div class="card-wrap" mid="5351">'
+               '<p class="txt">真实片段</p>' + real + '</div>')
+        card = sh.parse_cards(seg)[0]
+        self.assertTrue(card["create_time"], "真实结构的 .from 没匹配上")
+        self.assertEqual("iPhone 15 Pro Max", card["source"])
 
 
 class TestPlatformConstants(unittest.TestCase):

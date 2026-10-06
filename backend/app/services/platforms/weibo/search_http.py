@@ -62,6 +62,7 @@ from __future__ import annotations
 import html as _html_mod
 import logging
 import re
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
 
@@ -109,6 +110,19 @@ RE_USER_HREF = re.compile(r'href="//weibo\.com/(\d{6,})')
 RE_IMG = re.compile(r'(https://tvax\d\.sinaimg\.cn/[^"\']+)')
 RE_CARD_ACT = re.compile(r'<div class="card-act">(.*?)</ul>', re.S)
 RE_LI = re.compile(r"<li[^>]*>(.*?)</li>", re.S)
+# ⚠️ 发布时间 + 发布来源，例如：
+#     `10月06日 15:50  来自 iPhone客户端`
+#     不抓它 ⇒ 前端「发布时间」列永远是 `-`（真 bug，2026-10-07 修）。
+#
+# ⚠️⚠️ 结束标签必须是 `</div>`，**不是 `</span>`**（2026-10-07 实测）：
+#     <div class="from">
+#       <a href="//weibo.com/6079887320/RikziB9zF?...">\n 09月16日 08:26\n</a>
+#        &nbsp;来自 <a href="//weibo.com/" rel="nofollow">iPhone 15 Pro Max</a>
+#     </div>
+#     第一版我按 `</span>` 写 → 一条都匹配不到 → 时间继续全丢。
+RE_FROM = re.compile(r'class="from"[^>]*>(.*?)</div>', re.S)
+# 同一条文本里的前半段：`10月06日 15:50`，跨年时是 `2025年09月16日 08:26`
+RE_FROM_TIME = re.compile(r"(\d{4}年)?\s*(\d{1,2})月(\d{1,2})日\s*(\d{1,2}):(\d{2})")
 RE_VIDEO = re.compile(r"video\.weibo\.com|\.media-video")
 RE_NUM = re.compile(r"[\d.]+\s*[万亿]?")
 # ⚠️ 必须先删注释 —— `.card-act` 里有一段被注释掉的 <li>（"收藏"），
@@ -134,6 +148,88 @@ def _unescape(text: str) -> str:
     out = _html_mod.unescape(text or "")
     # 微博正文末尾常带 U+200B，用户看到是空方块
     return out.replace("\u200b", "").strip()
+
+
+def _parse_from(seg: str) -> Dict[str, Any]:
+    """从卡片片段里取发布时间 + 发布来源。
+
+    `.from` 里的文本形如（实测 2026-10-07）：
+
+        `10月06日 15:50  来自 iPhone客户端`
+        `2025年09月16日 08:26  来自 iPhone 15 Pro Max`
+
+    返回 `{"create_time": "<毫秒时间戳字符串>", "source": "iPhone客户端"}`，
+    抓不到就返回 `{"create_time": "", "source": ""}` —— **不编**。
+
+    ## 为什么非转成时间戳
+
+    `.from` **没有年份**（除非跨年了，微博会写成 `2025年09月16日`）。
+    直接把 `"10月06日 15:50"` 丢给前端 `new Date()`，浏览器会按
+    **2001 年**兜底 → 显示"24 年前"。
+
+    ⇒ 所以这里补年份：用「**不晚于今天**」的最近一年。
+       这是有依据的推断（微博搜索结果按时间倒序，默认不会给未来内容），
+       不是随手猜的常量。
+    """
+    m = RE_FROM.search(seg or "")
+    if not m:
+        return {"create_time": "", "source": ""}
+
+    raw = _unescape(_clean(m.group(1)))
+    if not raw:
+        return {"create_time": "", "source": ""}
+
+    # 来源 = 「来自」后面的设备/应用名。⚠️ 有的卡片没有「来自」，
+    #    那就整段都是时间，别把时间当来源。
+    source = ""
+    sm = re.search(r"来自\s*(.+)$", raw)
+    if sm:
+        source = sm.group(1).strip()
+
+    tm = RE_FROM_TIME.search(raw)
+    if not tm:
+        # 只有文本、没有可解析的时间 → 如实留空，别塞个假时间进去
+        return {"create_time": "", "source": source}
+
+    year = int(tm.group(1)[:-1]) if tm.group(1) else 0
+    month, day, hour, minute = (
+        int(tm.group(2)), int(tm.group(3)),
+        int(tm.group(4)), int(tm.group(5)),
+    )
+    if not (1 <= month <= 12 and 1 <= day <= 31 and hour <= 23 and minute <= 59):
+        return {"create_time": "", "source": source}
+
+    now = datetime.now()
+    if not year:
+        year = now.year
+        # 补出来的年份让时间跑到未来 ⇒ 说明是去年的，取上一年
+        try:
+            candidate = datetime(year, month, day, hour, minute)
+        except ValueError:      # 2 月 29 日这类
+            return {"create_time": "", "source": source}
+        if candidate > now:
+            try:
+                candidate = datetime(year - 1, month, day, hour, minute)
+            except ValueError:
+                return {"create_time": "", "source": source}
+        year = candidate.year
+
+    try:
+        ts = int(datetime(year, month, day, hour, minute).timestamp())
+    except (ValueError, OSError, OverflowError):
+        return {"create_time": "", "source": source}
+    return {"create_time": str(ts), "source": source}
+
+
+def _pretty_time(ts: str) -> str:
+    """时间戳 → `10月06日 15:50`（微博 `.from` 的原格式）。
+
+    转不出来就返回空串 —— 宁可没有来源名，也不要写一个错的。
+    """
+    try:
+        return datetime.fromtimestamp(int(ts)).strftime("%m月%d日 %H:%M")
+    except (TypeError, ValueError, OSError, OverflowError):
+        return ""
 
 
 def _to_int(li_html: str) -> int:
@@ -228,6 +324,7 @@ def parse_cards(html: str) -> List[Dict[str, Any]]:
         href_m = RE_USER_HREF.search(seg)
         img_m = RE_IMG.search(seg)
         repost, comment, like = _parse_counts(seg)
+        info = _parse_from(seg)
 
         out.append({
             "mid": mid,
@@ -239,6 +336,8 @@ def parse_cards(html: str) -> List[Dict[str, Any]]:
             "repost": repost,
             "comment": comment,
             "like": like,
+            "create_time": info["create_time"],
+            "source": info["source"],
         })
     return out
 
@@ -271,12 +370,20 @@ def to_search_result(card: Dict[str, Any]) -> Any:
     """
     from .search_desktop import parse_desktop_card
 
+    create_time = str(card.get("create_time") or "")
+    source = str(card.get("source") or "")
+
     return parse_desktop_card({
         "mid": card.get("mid"),
         "text": card.get("text"),
         "user": card.get("user"),
         "userHref": "//weibo.com/%s" % card.get("user_id", ""),
-        "from": "",
+        # ⚠️ 这里以前硬编码 `from: ""`，于是 `_parse_from()` 解析出来的
+        #    发布时间被**原样丢掉** → 前端「发布时间」列永远显示 `-`
+        #    （2026-10-07 修）。`from` 形如 `10月06日 15:50  来自 iPhone客户端`。
+        "from": ("%s 来自 %s" % (_pretty_time(create_time), source)
+                 if create_time and source else _pretty_time(create_time)),
+        "create_time": create_time,
         "nums": [str(card.get("repost") or ""), str(card.get("comment") or ""),
                  str(card.get("like") or "")],
         "img": card.get("img") or "",
