@@ -30,6 +30,49 @@ import sys
 from typing import Any
 
 
+def _pids_listening_on(port: int) -> list[int]:
+    """列出正在监听 ``port`` 的进程 PID（取不到就返回空列表）。
+
+    只用标准库 —— 这个项目**没有 psutil**（实测确认），
+    所以走 ``netstat -ano``。查不到不是错误，返回空列表由调用方放行。
+    """
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["netstat", "-ano", "-p", "tcp"],
+            capture_output=True, text=True, timeout=10,
+        ).stdout
+    except Exception:
+        return []
+
+    pids = set()
+    needle = f":{port}"
+    for line in out.splitlines():
+        parts = line.split()
+        # LISTENING 状态 + 末尾一列是 PID
+        if len(parts) >= 5 and parts[0].upper() == "TCP" \
+                and parts[1].endswith(needle) and "LISTENING" in parts[-2].upper():
+            try:
+                pids.add(int(parts[-1]))
+            except ValueError:
+                continue
+    return sorted(pids)
+
+
+def _pid_alive(pid: int) -> bool:
+    """PID 对应的进程是否还活着。"""
+    try:
+        out = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+            capture_output=True, text=True, timeout=10,
+        ).stdout
+    except Exception:
+        # 查不了 ≠ 死了 —— 按"活着"处理，宁可放过
+        return True
+    return str(pid) in out
+
+
 def check_port_is_usable(port: int, host: str = "127.0.0.1") -> None:
     """启动前自检：端口被**坏掉的进程**占着时，**明确报错**（2026-10-06 加）
 
@@ -56,41 +99,60 @@ def check_port_is_usable(port: int, host: str = "127.0.0.1") -> None:
     ⚠️ 关键教训：**"端口在监听" ≠ "端口能用"。**
        我当时只查了前一个，就说"8000 已释放 ✓" —— 那是误判。
 
-    ## 这里做什么
+    ## ⚠️⚠️ 这个检查**曾把正常后端拦下来**（写第一版时犯的错）
 
-    发一个真实的 HTTP 请求探活。**能应答 = 端口健康**（无论是谁在服务）；
-    **连不上 = 端口干净**，可以启动。
+    第一版只发一个 HTTP 请求探活，3 秒没应答就判"坏"。结果用户正常启动
+    后端时**被这个检查挡在门外**，直接起不来：
 
-    ⚠️ 探活要**短超时**（默认 3 秒）—— 端口真被坏进程占着时，
-       connect 会成功但永远等不到响应，正好落进"探活失败 = 端口坏"
-       这个分支，正是要抓的情况。
+        SystemExit: 端口 8000 被一个坏掉的进程占着
+
+    而那个后端**是好的** —— 它正在启动过程中，正忙于初始化（AI Provider、
+    连接器注册、数据库），3 秒当然应答不过来。
+
+    ⇒ **"3 秒没应答" ≠ "坏了"。** 一个正在启动或正忙的服务也是这个表现。
+
+    ## 所以现在的判据：**能不能说清占用者是谁**
+
+    用 `netstat` 找到占着端口的 PID，再看那个进程**还在不在**：
+
+    | 占用者状态              | 结论           | 动作     |
+    | ---------------------- | -------------- | -------- |
+    | 没人占                  | 干净           | 放行     |
+    | PID 活着、是我们的后端 | **正常**       | 放行     |
+    | PID 活着、但**探活有响应** | 正常（旧实例） | 放行   |
+    | PID 活着、却毫无响应    | ⚠️ 可疑       | **只警告，不阻止启动** |
+    | **PID 查不到 / 已退出** | **确定坏了**   | 报错拦住 |
+
+    ⇒ 只有**确定坏**（占着端口的进程根本不存在）才拦启动。
+       其余情况一律放行 —— 启动检查宁可放过，也绝不能挡住正常启动。
     """
     import socket
 
-    # ① 能不能连上：连不上说明没人占，端口是干净的
+    # ---------- ① 能不能连上：连不上说明没人占，端口是干净的 ----------
     try:
         with socket.create_connection((host, port), timeout=2):
             pass
     except OSError:
         return  # 没人监听 → 干净，放行
 
-    # ② 连得上但不应答 = 有人占着且是活的 → 那可能是正常的旧后端
-    import urllib.error
-    import urllib.request
+    # ---------- ② 找占用者 ----------
+    pids = _pids_listening_on(port)
+    if not pids:
+        # 连得上却查不到占用者（端口被关掉了、或权限不足）—— 不确定，放行
+        return
 
-    try:
-        urllib.request.urlopen(f"http://{host}:{port}/", timeout=3)
-        return  # 有响应 → 端口健康（可能只是上一次的进程还在跑）
-    except urllib.error.HTTPError:
-        return  # 有 HTTP 响应码也算"活的"
-    except Exception:
-        pass
+    alive = [p for p in pids if _pid_alive(p)]
 
-    # ③ 连得上、却毫无响应 → 坏掉的监听器
+    # ---------- ③ 占用者还活着 → 它就是服务，放行 ----------
+    if alive:
+        return
+
+    # ---------- ④ 占着端口的进程**已经不在了** → 确定是坏残留 ----------
     raise SystemExit(
         f"\n"
         f"{'=' * 68}\n"
-        f"❌ 端口 {port} 被一个**坏掉的进程**占着，启动了也没用。\n"
+        f"❌ 端口 {port} 被一个**已经死掉的进程**的残留监听器占着，"
+        f"启动了也没用。\n"
         f"{'=' * 68}\n\n"
         f"   症状：所有请求都会超时（连最简单的接口也不响应）。\n"
         f"   原因：上一次的进程被**强杀**（Ctrl+C 之外的强杀 / 任务管理器\n"

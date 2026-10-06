@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """端口自检（2026-10-06 用户实测踩到后加）。
 
-## 故障
+## 故障一：强杀残留的坏监听器
 
 上一轮后端被**强杀**（不是 Ctrl+C），留下半个 ``--reload`` 进程树：
 
@@ -18,17 +18,41 @@
 
 ⇒ 新后端绑到这个坏端口上，**"看起来启动成功"，但所有请求都超时**。
 
-## 用户看到的是什么
-
-界面点第 2 页 → **空白**。第一页正常（那是之前缓存在前端的结果）。
+用户看到的是：界面点第 2 页 → **空白**。第一页正常（那是前端缓存的旧结果）。
 然后连 ``/api/v1/platforms`` 这种最简单的接口也超时。
 
-## ⚠️ 最贵的一课
+## ⚠️ 故障二：**我自己写的检查把正常后端拦下来了**
+
+第一版用"发个 HTTP 请求探活，3 秒不应答就判坏"。结果用户正常启动后端时
+**直接起不来**：
+
+    SystemExit: 端口 8000 被一个坏掉的进程占着
+
+而那个后端**是好的** —— 它正在启动过程中（初始化 AI Provider、注册连接器、
+连数据库），3 秒当然应答不过来。
+
+⇒ **"没及时应答" ≠ "坏了"。** 一个活着但正忙的服务也是这个表现。
+
+## 最终判据
+
+只有**确定坏**才拦启动：
+
+| 占用者状态             | 结论     | 动作         |
+| ---------------------- | -------- | ------------ |
+| 没人占                 | 干净     | 放行         |
+| PID 活着               | **正常** | 放行         |
+| 查不到占用者           | 不确定   | 放行         |
+| **PID 查得到但已退出** | **确定坏** | 报错拦住   |
+
+## ⚠️ 第一课："端口在监听" ≠ "端口能用"
 
 我当时只查了"8000 有没有人监听"，看到有，就报告 **"8000 已释放 ✓"** ——
-**那是误判**。"端口在监听" ≠ "端口能用"。
+**那是误判**，用户照做后问题依旧。
 
-所以这个检查**发真实请求探活**，不是查监听表。
+## ⚠️ 第二课：启动检查宁可放过，也绝不能挡住正常启动
+
+写这类"防御性检查"时，**误报的代价远大于漏报**：漏报只是少帮一次忙，
+误报是让人**根本起不来**，而且会被当成程序有 bug。
 """
 import socket
 import sys
@@ -85,15 +109,22 @@ class TestHealthyServerPasses(unittest.TestCase):
             srv.server_close()
 
 
-class TestBrokenListenerIsCaught(unittest.TestCase):
-    """⭐ 核心用例：连得上但不应答 = 坏监听器，必须**拦下来并说清楚**。"""
+class TestBusyButAliveServiceIsNotBlocked(unittest.TestCase):
+    """⭐⭐ 写第一版时犯的错：把**正常但正忙**的后端拦下来了。
 
-    def test_black_hole_port_raises_with_actionable_message(self):
+    实测：用户正常启动后端时被这个检查挡住，直接起不来 ——
+    ``SystemExit: 端口 8000 被一个坏掉的进程占着``。
+    而那个后端**是好的**，它正在启动过程中（初始化 AI Provider、
+    注册连接器），3 秒当然应答不过来。
+
+    ⇒ **"没及时应答" ≠ "坏了"。** 一个活着但正忙的服务也是这个表现。
+    """
+
+    def test_slow_responding_but_live_listener_passes(self):
+        """黑洞 socket（accept 但不应答）+ **进程活着** → 必须放行。"""
         import socket as _s
         import threading
 
-        # 造一个"只 accept、永远不应答"的黑洞 —— 正是被强杀后
-        # 那个监听器的行为（监听器活着，但控制它的父进程没了）
         srv = _s.socket(_s.AF_INET, _s.SOCK_STREAM)
         srv.setsockopt(_s.SOL_SOCKET, _s.SO_REUSEADDR, 1)
         srv.bind(("127.0.0.1", 0))
@@ -105,26 +136,118 @@ class TestBrokenListenerIsCaught(unittest.TestCase):
             srv.settimeout(0.5)
             while not stop.is_set():
                 try:
-                    c, _ = srv.accept()
-                    # 关键：**不关闭、也不应答** —— 连接挂着但没有响应
+                    srv.accept()   # 接了连接，但**永不回应**
                 except OSError:
                     continue
 
-        t = threading.Thread(target=accept_and_hang, daemon=True)
-        t.start()
+        threading.Thread(target=accept_and_hang, daemon=True).start()
+        try:
+            # 本进程就是占用者（活着）→ 绝不能报错拦启动
+            check_port_is_usable(port)
+        finally:
+            stop.set()
+            srv.close()
+
+    def test_never_blocks_when_netstat_unavailable(self):
+        """⚠️ 查不到占用者时**必须放行** —— 不确定 ≠ 坏。
+
+        启动检查宁可放过，也绝不能挡住正常启动。
+        """
+        import app.core.win_loop as wl
+        orig = wl._pids_listening_on
+        wl._pids_listening_on = lambda port: []
+        try:
+            wl.check_port_is_usable(_free_port())  # 不抛即通过
+        finally:
+            wl._pids_listening_on = orig
+
+
+class TestDeadListenerIsCaught(unittest.TestCase):
+    """只有**占用者已经死了**（残留监听器）才拦 —— 这才是真故障。"""
+
+    def test_dead_owner_raises_with_actionable_message(self):
+        import app.core.win_loop as wl
+        import socket as _s
+
+        # 造一个"连得上、但 netstat 报不出占用者（或报了个已死的 PID）"
+        srv = _s.socket(_s.AF_INET, _s.SOCK_STREAM)
+        srv.setsockopt(_s.SOL_SOCKET, _s.SO_REUSEADDR, 1)
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(5)
+        port = srv.getsockname()[1]
+        # 谎报：占用者是一个**已经退出**的 PID
+        dead_pid = 999999
+        orig = wl._pids_listening_on
+        wl._pids_listening_on = lambda p: [dead_pid]
+        orig_alive = wl._pid_alive
+        wl._pid_alive = lambda p: False
         try:
             with self.assertRaises(SystemExit) as ctx:
-                check_port_is_usable(port)
+                wl.check_port_is_usable(port)
             msg = str(ctx.exception)
-            self.assertIn("坏掉", msg)
+            self.assertIn("已经死掉的进程", msg)
             self.assertIn(str(port), msg, "报错要说明是哪个端口")
             # 必须给出**能照做的**操作，不是只说"出错了"
             self.assertIn("Stop-Process", msg)
             self.assertIn(str(port + 1), msg,
                           "换端口的建议也要用**这个**端口号，不能写死 8000")
         finally:
-            stop.set()
+            wl._pids_listening_on = orig
+            wl._pid_alive = orig_alive
             srv.close()
+
+    def test_alive_owner_is_never_blocked(self):
+        """占用者活着（哪怕不应答）→ 一律放行。"""
+        import app.core.win_loop as wl
+        import socket as _s
+
+        srv = _s.socket(_s.AF_INET, _s.SOCK_STREAM)
+        srv.setsockopt(_s.SOL_SOCKET, _s.SO_REUSEADDR, 1)
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(5)
+        port = srv.getsockname()[1]
+        orig = wl._pids_listening_on
+        wl._pids_listening_on = lambda p: [4242]
+        orig_alive = wl._pid_alive
+        wl._pid_alive = lambda p: True
+        try:
+            wl.check_port_is_usable(port)   # 不抛 = 通过
+        finally:
+            wl._pids_listening_on = orig
+            wl._pid_alive = orig_alive
+            srv.close()
+
+
+class TestHelpers(unittest.TestCase):
+    """两个辅助函数本身的行为。"""
+
+    def test_pids_listening_finds_self(self):
+        """当前进程正监听时，必须能查到自己。"""
+        import socket as _s
+        from app.core.win_loop import _pid_alive, _pids_listening_on
+        import os
+
+        srv = _s.socket(_s.AF_INET, _s.SOCK_STREAM)
+        srv.setsockopt(_s.SOL_SOCKET, _s.SO_REUSEADDR, 1)
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(5)
+        port = srv.getsockname()[1]
+        try:
+            pids = _pids_listening_on(port)
+            self.assertIn(os.getpid(), pids,
+                          f"要能查到自己（pid={os.getpid()}），实得 {pids}")
+            self.assertTrue(_pid_alive(os.getpid()))
+        finally:
+            srv.close()
+
+    def test_pid_alive_on_garbage_is_true(self):
+        """⚠️ 查不了 ≠ 死了 —— 按"活着"处理，宁可放过。"""
+        from app.core.win_loop import _pid_alive
+        self.assertTrue(_pid_alive(-1))
+
+    def test_unknown_port_returns_empty(self):
+        from app.core.win_loop import _pids_listening_on
+        self.assertEqual([], _pids_listening_on(1))   # 端口 1 不该有监听
 
 
 class TestStartupWiring(unittest.TestCase):
