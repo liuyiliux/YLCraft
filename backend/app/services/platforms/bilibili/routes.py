@@ -871,11 +871,17 @@ async def get_up_videos(
 async def get_up_series(
     uid: str = Query(..., description="UP主 UID"),
     page: int = Query(1, ge=1, description="页码"),
-    # ⚠️ 上限是 **20**，不是 50（实测 2026-10-07）：
-    # B站 这个接口 page_size>20 一律回 `code=-400 请求错误`，且响应体里
-    # 没有原因（`{"code":-400,"message":"请求错误","data":null}`）。
-    # 之前这里写 le=50，前端传 30 就必炸。**别再放宽**。
-    page_size: int = Query(20, ge=1, le=20, description="每页数量（B站 上限 20）"),
+    # ⚠️ 这里**保持宽松**（le=50），不要收紧成 20。
+    #
+    # B站 那个接口的真实上限是 20（page_size>20 一律 code=-400，实测），
+    # 但那是**下游 B站**的限制，已经由 client 里的
+    # `min(page_size, 20)` 夹住了。
+    #
+    # 曾经在这里写 le=20 想"提前挡住"，结果前端传 30 时 FastAPI 直接
+    # 返回 422，连 B站 都碰不到 —— 把一个本来能夹住的问题变成了更早的报错，
+    # 而且前端拿到的是校验错误数组，显示成 `[object Object]`。
+    # ⇒ 入口放宽，内部夹住。别再收紧。
+    page_size: int = Query(20, ge=1, le=50, description="每页数量（内部夹到 B站 上限 20）"),
     conn_id: str = Query("", description="B站连接ID"),
 ):
     """
