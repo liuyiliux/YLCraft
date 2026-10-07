@@ -70,7 +70,48 @@ import httpx
 
 logger = logging.getLogger("ylcraft.platforms.weibo.http")
 
+# ⚠️⚠️ 微博桌面版的分类**不在同一个地址下**（2026-10-07 从页面自己的
+# 标签 href 读出来的，**不是猜的**）：
+#
+#     综合  /weibo?q=沈阳&Refer=weibo_weibo
+#     热门  /weibo?q=沈阳&xsort=hot&Refer=hotmore
+#     实时  /realtime?q=沈阳&rd=realtime&tw=realtime     ← **另一个页面**！
+#     视频  /video?q=沈阳&xsort=hot&hasvideo=1&tw=video
+#     图片  /pic?q=沈阳
+#     用户  /user?q=沈阳
+#     话题  /topic?q=沈阳&pagetype=topic&topic=1
+#
+# ⚠️⚠️ **我之前把「实时」当成不存在，删掉了 —— 那个结论是错的。**
+#    当时只看了 `/weibo?q=` 上有没有实时分类，看不到就说"桌面版没有实时"。
+#    实际上它就在 `/realtime` 这个另一个页面上（用户截图直接指出来了）。
+#
+# ⇒ 所以这些**不能**只用 `xsort` 区分，必须按 `path` 分开取。
 DESKTOP_SEARCH_URL = "https://s.weibo.com/weibo?q={keyword}&page={page}"
+
+#: 前端 search_type → (页面路径, 附加查询串)
+#:
+#: ⚠️ 「热门」不是按点赞数排的（实测 xsort=hot 返回 515, 467, 1142, 8992…）
+#:    —— 是微博自己的热度榜，**不要在前端按点赞重排**，那会与官方不一致。
+DESKTOP_PATHS: Dict[str, Tuple[str, str]] = {
+    "note":     ("weibo",     ""),                 # 综合
+    "all":      ("weibo",     ""),
+    "default":  ("weibo",     ""),
+    "popular":  ("weibo",     "&xsort=hot"),      # 热门
+    "hot":      ("weibo",     "&xsort=hot"),
+    "realtime": ("realtime",  "&rd=realtime&tw=realtime"),
+    "video":    ("video",     "&xsort=hot&hasvideo=1&tw=video"),
+    # ⚠️ 「图片」**故意不放进来**（2026-10-07 实测后不提供）。
+    #
+    # `/pic` 页面能返回 200 且有 20 个 `mid`，但它是**纯瀑布流**：
+    #     div.card-wrap = 0    .txt = 0    .from = 0
+    # mid 全部挂在 `<img>` 上，**没有任何文案/作者/时间/计数**。
+    # ⇒ 现有解析器一条都取不出来，返回 0 条。
+    #
+    # 给一个只会返回 0 条的 tab = **假选项**（标签写着"图片"，
+    # 点了什么都没有），比没有更糟 —— 和之前误删「实时」是同一类错误的反面。
+    # ⇒ 要支持得单独写一套瀑布流解析（至少要能拿到 alt/作者），
+    #    在那之前**不提供这个 tab**。
+}
 
 # 实测上限（第 50 页仍有内容，page=51 会被弹回第 1 页）
 MAX_PAGE = 50
@@ -137,6 +178,12 @@ RE_FROM_TIME = re.compile(
     r"(\d{4}年)?\s*(\d{1,2})月(\d{1,2})日\s*(\d{1,2}):(\d{2})")
 # `今天08:07` / `昨天 21:30` —— 没有月日，需要按"今天/昨天"反推
 RE_FROM_TODAY = re.compile(r"(今天|昨天|前天)\s*(\d{1,2}):(\d{2})")
+# ⚠️⚠️ **实时页**的时间格式**又不一样**（2026-10-07 实测 s.weibo.com/realtime）：
+#
+#     9秒前 / 30秒前 / 1分钟前 / 3分钟前 / 6分钟前
+#
+# `RE_FROM_TODAY` 匹配不到这些（没有 HH:MM），第一版会把实时的时间全丢成空。
+RE_FROM_AGO = re.compile(r"(\d+)\s*(秒|分钟|分|小时|天)前")
 RE_VIDEO = re.compile(r"video\.weibo\.com|\.media-video")
 RE_NUM = re.compile(r"[\d.]+\s*[万亿]?")
 # ⚠️ 必须先删注释 —— `.card-act` 里有一段被注释掉的 <li>（"收藏"），
@@ -243,6 +290,15 @@ def _parse_from(seg: str) -> Dict[str, Any]:
                         hour=hour, minute=minute, second=0, microsecond=0)
                 except ValueError:
                     target = None
+
+    if target is None:
+        # ③ `9秒前` / `3分钟前` —— **实时页**的格式（见 RE_FROM_AGO）
+        am = RE_FROM_AGO.search(raw)
+        if am:
+            n = int(am.group(1))
+            unit = am.group(2)
+            secs = {"秒": 1, "分": 60, "分钟": 60, "小时": 3600, "天": 86400}[unit]
+            target = now - timedelta(seconds=n * secs)
 
     if target is None:
         # 只有文本、没有可解析的时间 → 如实留空，别塞个假时间进去
@@ -445,16 +501,29 @@ def _is_search_page(url: str) -> bool:
     return host == "s.weibo.com"
 
 
-def build_search_url(keyword: str, page: int = 1, xsort: str = "") -> str:
+def build_search_url(
+    keyword: str,
+    page: int = 1,
+    xsort: str = "",
+    search_type: str = "",
+) -> str:
     """拼搜索 URL。
 
     ⚠️ 关键词必须 `quote` —— 中文不编码会让微博返回"页面不存在"
        （实测：`?q=沈阳` 直接访问 → pagenotfound）。
+
+    ⚠️ `search_type` 决定**页面路径**（实时/视频/图片各有各的地址，
+       见 `DESKTOP_PATHS`）；`xsort` 只是 `weibo` 页上的附加参数。
     """
-    url = DESKTOP_SEARCH_URL.format(keyword=quote(keyword or ""),
-                                    page=max(1, int(page)))
-    if xsort:
-        url = f"{url}&xsort={xsort}"
+    path, extra = DESKTOP_PATHS.get(
+        (search_type or "").strip().lower(), DESKTOP_PATHS["note"])
+    # 未指定 search_type 时保留旧的 xsort 行为（兼容既有调用方）
+    if not search_type and xsort:
+        path, extra = "weibo", "&xsort=" + xsort
+
+    page_no = max(1, int(page))
+    url = (f"https://s.weibo.com/{path}?q={quote(keyword or '')}"
+           f"&page={page_no}{extra}")
     return url
 
 
@@ -464,6 +533,7 @@ async def fetch_page(
     *,
     cookie_header: str = "",
     xsort: str = "",
+    search_type: str = "",
     timeout: float = 20.0,
 ) -> Tuple[List[Dict[str, Any]], Optional[int]]:
     """直连取**一页**。返回 `(卡片列表, 总页数)`。
@@ -471,7 +541,7 @@ async def fetch_page(
     总页数是 `None` 表示"页面没说" —— 调用方要如实说不知道，
     **不要**用它反推"没有更多了"。
     """
-    url = build_search_url(keyword, page, xsort)
+    url = build_search_url(keyword, page, xsort, search_type)
 
     cookies: Dict[str, str] = {}
     for part in (cookie_header or "").split(";"):

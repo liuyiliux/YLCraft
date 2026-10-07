@@ -123,14 +123,30 @@ DESKTOP_XSORT: Dict[str, str] = {
     "all": "",            # 综合（桌面版不带 xsort）
     "default": "",
     "note": "",
-    "realtime": "",       # ⚠️ 桌面版**没有**实时分类（页面上只有 综合 / 热门）
+    "realtime": "",       # ⚠️ 实时**不在这个页面上**（见下方更正）
     "popular": "hot",     # 热门
     "hot": "hot",
 }
 
-# 桌面版**没有**「实时」标签 —— 显式记下来，见 `search_via_patchright`
-# 里"回退到综合要打日志"那条。前端有这个标签时不静默冒充。
-DESKTOP_NO_REALTIME = "realtime"
+# ⚠️⚠️ **更正（2026-10-07）：桌面版**有**「实时」分类！**
+#
+# 我原来在这里写「桌面版**没有**实时分类」，并据此把前端的「实时」
+# tab 删掉了 —— **那个结论是错的**。错在只看了 `/weibo?q=` 一个页面。
+#
+# 浏览器实测（用户截图 + 我从标签 href 读出来）：
+#
+#     综合  /weibo?q=沈阳&Refer=weibo_weibo
+#     热门  /weibo?q=沈阳&xsort=hot&Refer=hotmore
+#     实时  /realtime?q=沈阳&rd=realtime&tw=realtime   ← **另一个页面**
+#     视频  /video?q=沈阳&xsort=hot&hasvideo=1&tw=video
+#     图片  /pic?q=沈阳
+#
+# ⇒ 「实时」不是 xsort 参数，而是**另一个路径** `/realtime`。
+#    真实映射见 `search_http.DESKTOP_PATHS`。
+#
+# ⚠️ 教训：**下"平台没有 X"这种结论之前，要把相关页面都看过**。
+#    我在一个页面上没看到，就推广成了"整个平台没有"，用户直接截图打脸。
+DESKTOP_NO_REALTIME = "realtime"   # 保留名字仅供兼容，实际**有**这个分类
 
 # 实测上限：第 50 页仍有内容，再往后就是空页
 DESKTOP_MAX_PAGE = 50
