@@ -141,3 +141,6 @@ check_cover*.py
 !docs/**/*.png
 !frontend/public/**/*.png
 !frontend/src/assets/**/*.png
+
+# DSH 测试输出临时文件
+backend/_sb.*
