@@ -1081,7 +1081,7 @@ export default function PlatformUserPage() {
                       key: 'series',
                       label: (
                         <Space size={4}>
-                          <AppstoreOutlined />合集
+                          <AppstoreOutlined />合集和系列
                           <Text type="secondary" style={{ fontSize: 11 }}>
                             {upSeries.length || ''}
                           </Text>
@@ -1142,15 +1142,26 @@ export default function PlatformUserPage() {
                               ),
                             },
                             {
-                              // ⚠️⚠️ 字段名是 **`media_count`**（B站接口原名），
-                              // 不是 `count`。2026-10-07 修：原来写 `dataIndex:'count'`
-                              // ⇒ 拿不到值 ⇒ **20 行全是 `-`**（用户截图反馈
-                              // 「以前能查收藏夹，现在怎么看不了了」）。
-                              // 实测响应字段：id / title / cover / media_count / ctime / mtime
-                              title: '数量', dataIndex: 'media_count', width: 72,
+                              // ⚠️ 合集/系列的数量字段是 **`count`**（不是 media_count）。
+                              // 实测：`meta.total=28` → 后端归一化成 `count`。
+                              // 这里原来写 `media_count`（2026-10-07 修收藏夹时被误改，
+                              // 收藏夹用 media_count、合集用 count，两个不一致），
+                              // 结果合集这一列全是 `-`。
+                              title: '数量', dataIndex: 'count', width: 72,
                               onHeaderCell: () => ({ style: { whiteSpace: 'nowrap' } }),
                               render: (v: any) => (
                                 <span style={{ whiteSpace: 'nowrap' }}>{v ?? '-'}</span>
+                              ),
+                            },
+                            {
+                              // 合集 / 系列在 B站 是**两回事**，界面上要分得开
+                              // （实测 uid=50908119：3 个合集 + 6 个系列）。
+                              title: '类型', dataIndex: 'kind', width: 64,
+                              onHeaderCell: () => ({ style: { whiteSpace: 'nowrap' } }),
+                              render: (v: string) => (
+                                <Tag color={v === 'series' ? 'purple' : 'blue'} style={{ fontSize: 11 }}>
+                                  {v === 'series' ? '系列' : '合集'}
+                                </Tag>
                               ),
                             },
                           ]}
