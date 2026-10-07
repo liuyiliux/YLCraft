@@ -146,7 +146,7 @@ REM 也是 Patchright 能起浏览器的硬前提（详见 app/core/win_loop.py�
 start "YLCraft-Backend" cmd /k "cd /d ""%~dp0backend"" && venv_win\Scripts\activate.bat && python -m uvicorn app.main:app --port 8000 --loop app.core.win_loop:new_loop"
 
 REM 启动后自检：端口起来但 /health 不通 = 又进了死循环，直接告诉你
-REM（以前只能等你在页面上点半天才发现）。失败时给出可复制的排查命令。
+REM （以前只能等你在页面上点半天才发现）。失败时给出可复制的排查命令。
 start "" /b powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "Start-Sleep -Seconds 12; try { $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 8 'http://127.0.0.1:8000/health'; if ($r.StatusCode -eq 200) { Write-Host '  [Backend] OK - http://localhost:8000' -ForegroundColor Green } } catch { Write-Host ''; Write-Host '  [Backend] 启动失败或无响应！' -ForegroundColor Red; Write-Host '  最常见：8000 端口被旧进程占着' -ForegroundColor Yellow; Write-Host '  排查： netstat -ano | findstr :8000   然后 taskkill /PID <PID> /F' -ForegroundColor Yellow; Write-Host '  看崩溃现场： backend\storage\logs\app.log 里搜 Accept failed' -ForegroundColor Yellow }"
 
