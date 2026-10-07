@@ -222,6 +222,10 @@ export default function PlatformUserPage() {
   // 一直都还在，纯粹是页面合并时没搬过来。
   const [upSeries, setUpSeries] = useState<any[]>([])
   const [upFavorites, setUpFavorites] = useState<any[]>([])
+  // ⚠️ 失败原因（如实显示，别让"接口坏了"长得像"没有合集"）
+  // 2026-10-07：B站合集接口返回 code=-400，代码却吞成空列表，
+  // 用户看到的是「暂无合集」—— 以为这 UP 没有合集，其实是被 B站拒了。
+  const [seriesError, setSeriesError] = useState<string>('')
   const [loadingSeries, setLoadingSeries] = useState(false)
   const [loadingFavorites, setLoadingFavorites] = useState(false)
 
@@ -504,6 +508,7 @@ export default function PlatformUserPage() {
     if (platform !== 'bili' || !selected?.id) return
     if (activeTab === 'series' && upSeries.length === 0 && !loadingSeries) {
       setLoadingSeries(true)
+      setSeriesError('')
       getBiliUpSeries({ uid: selected.id, page: 1, page_size: 30, conn_id: connId })
         .then((res: any) => {
           // ⚠️ 实测结构是 `{total, list, page, page_size}`（不是 series）
@@ -512,7 +517,10 @@ export default function PlatformUserPage() {
           setUpSeries(Array.isArray(list) ? list : [])
         })
         .catch((e: any) => {
-          message.error(String(e?.response?.data?.detail || e?.message || '获取合集失败').slice(0, 100))
+          // ⚠️ 如实显示失败原因（后端已把 B站原始 code 带在 detail 里）
+          const why = String(e?.response?.data?.detail || e?.message || '获取合集失败')
+          setSeriesError(why.slice(0, 160))
+          message.error(why.slice(0, 100))
         })
         .finally(() => setLoadingSeries(false))
     }
@@ -612,6 +620,8 @@ export default function PlatformUserPage() {
   const resetBiliExtras = useCallback(() => {
     setUpSeries([])
     setUpFavorites([])
+    // ⚠️ 连错误一起清 —— 否则上一个人报的错会挂在**下一个人**的页面上
+    setSeriesError('')
   }, [])
 
   const userColumns: ColumnsType<PlatformUserItem> = [
@@ -1047,7 +1057,23 @@ export default function PlatformUserPage() {
                           loading={loadingSeries}
                           dataSource={upSeries}
                           pagination={{ pageSize: 5, size: 'small' }}
-                          locale={{ emptyText: <Empty description="暂无合集" /> }}
+                          locale={{
+                            // ⚠️ 失败时**显示原因**，不要显示「暂无合集」——
+                            // 那会让"B站接口报错"看起来像"这个 UP 没有合集"。
+                            emptyText: loadingSeries
+                              ? <Spin size="small" />
+                              : seriesError
+                                ? (
+                                  <div style={{ fontSize: 12, color: '#ef4444', textAlign: 'left', padding: '8px 4px' }}>
+                                    获取失败：{seriesError}
+                                    <br />
+                                    <span style={{ color: THEME.textSecondary }}>
+                                      这<strong>不代表该 UP 没有合集</strong> —— 是接口报错。
+                                    </span>
+                                  </div>
+                                )
+                                : <Empty description="该 UP 暂无合集" />
+                          }}
                           scroll={{ x: 380 }}
                           columns={[
                             {
@@ -1074,10 +1100,15 @@ export default function PlatformUserPage() {
                               ),
                             },
                             {
-                              title: '数量', dataIndex: 'count', width: 72,
+                              // ⚠️⚠️ 字段名是 **`media_count`**（B站接口原名），
+                              // 不是 `count`。2026-10-07 修：原来写 `dataIndex:'count'`
+                              // ⇒ 拿不到值 ⇒ **20 行全是 `-`**（用户截图反馈
+                              // 「以前能查收藏夹，现在怎么看不了了」）。
+                              // 实测响应字段：id / title / cover / media_count / ctime / mtime
+                              title: '数量', dataIndex: 'media_count', width: 72,
                               onHeaderCell: () => ({ style: { whiteSpace: 'nowrap' } }),
-                              render: (v: number) => (
-                                <span style={{ whiteSpace: 'nowrap' }}>{v || '-'}</span>
+                              render: (v: any) => (
+                                <span style={{ whiteSpace: 'nowrap' }}>{v ?? '-'}</span>
                               ),
                             },
                           ]}
