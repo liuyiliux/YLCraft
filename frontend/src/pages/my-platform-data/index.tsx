@@ -158,9 +158,21 @@ export default function MyPlatformDataPage() {
   }, [platform])
 
   // 进页面或切平台后自动加载
+  //
+  // ⚠️ **B站例外**：它下面渲染的是专属面板 `MyDataPage`（含收藏夹/历史/
+  // 关注/付费课程 6 个页签），通用面板的 profile/videos **一个都不会显示**。
+  // 而 B站 没在 `meta.py` 声明 `self_profile` ⇒ `/users/me` 必回 501，
+  // 于是每次进来都弹一条红条"平台没有实现查询自己的资料"，**数据却全都在**
+  // （来自下面的专属面板）。实测这条请求的产物**一个像素都没用到**。
+  //
+  // ⇒ B站 直接不跑这次注定失败、且无人消费的请求。
+  //    （正解是给 B站 实现 self_profile，但那是**加功能**，
+  //      不解决"提示"这个用户实际在意的现象，且页面根本用不到它。）
+  const usesGenericPanel = platform !== 'bili'
+
   useEffect(() => {
-    if (conns.length > 0) { void load() }
-  }, [conns, load])
+    if (conns.length > 0 && usesGenericPanel) { void load() }
+  }, [conns, load, usesGenericPanel])
 
   const videoColumns: ColumnsType<PlatformUserVideo> = [
     {
