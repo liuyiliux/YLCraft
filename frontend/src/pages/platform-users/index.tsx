@@ -248,6 +248,17 @@ export default function PlatformUserPage() {
   const [videoPage, setVideoPage] = useState(1)
   const [videoHasMore, setVideoHasMore] = useState(false)
   const [loadingMoreVideos, setLoadingMoreVideos] = useState(false)
+  // ⚠️ 2026-10-07：B站 是**真分页**，这里存后端给的**总条数**。
+  //
+  // 原来只有"加载更多"，注释还写着"B站接口不给总数" —— **那是错的**：
+  // `GET /bilibili/up/videos` 一直返回 `{list, total, page, page_size}`，
+  // 实测 uid=50908119 → `total=321`（B站 空间页也显示 322，含图文）。
+  // 后端早就把总数给全了，只是前端没用。
+  //
+  // ⇒ 有总数的平台走 antd 分页（能跳页、能显示"共 N 条"），
+  //   没有总数的平台（微博/抖音/小红书走 `/users/videos`，只有 max_results）
+  //   保留"加载更多"。**不是所有平台都该用同一种翻页。**
+  const [videoTotal, setVideoTotal] = useState<number | null>(null)
 
   // ===== B站专属：合集 / 收藏夹（2026-10-02 恢复）=====
   //
@@ -307,6 +318,7 @@ export default function PlatformUserPage() {
     setSelected(null)
     setProfile(null)
     setVideos([])
+    setVideoTotal(null)
     setKeyword('')
   }, [platform])
 
@@ -318,6 +330,7 @@ export default function PlatformUserPage() {
     setSelected(null)
     setProfile(null)
     setVideos([])
+    setVideoTotal(null)
 
     // ⚠️ 作品搜索分支已删（2026-10-07）：本页只搜博主。
     //    作品搜索请去「采集与下载」—— 那里的实现更完整，
@@ -460,6 +473,8 @@ export default function PlatformUserPage() {
     setLoadingVideos(true)
     setVideos([])
     setVideoPage(1)
+    // ⚠️ 换博主/换排序要**清掉上一个人的总数**，否则分页器会拿旧数字算页数
+    setVideoTotal(null)
     try {
       if (platform === 'bili') {
         // ⚠️ 传 order（排序）—— 旧版 /up-analytics 有"最新/播放最多/收藏最多"，
@@ -471,8 +486,11 @@ export default function PlatformUserPage() {
         const rawList = res?.data?.videos || res?.data?.list || res?.data || []
         const list: PlatformUserVideo[] = (Array.isArray(rawList) ? rawList : []).map(adaptBiliVideo)
         setVideos(list)
-        // 取满一页就认为"可能还有"（B站接口不给总数）
-        setVideoHasMore(list.length >= VIDEO_PAGE_SIZE)
+        // ⚠️ B站**给总数**（实测 total=321），据此判断还有没有下一页，
+        // 不要再用"取满一页就猜还有"那种不可靠的判据。
+        const total = Number(res?.data?.total ?? 0)
+        setVideoTotal(Number.isFinite(total) && total > 0 ? total : null)
+        setVideoHasMore(list.length >= VIDEO_PAGE_SIZE && (total <= 0 || list.length < total))
       } else {
         // ⚠️ X 同样要传 handle（见上面 profile 处的说明）
         const isXv = platform === 'twitter' || platform === 'x' || platform === 'tw'
@@ -484,6 +502,10 @@ export default function PlatformUserPage() {
         })
         const list: PlatformUserVideo[] = res?.data || []
         setVideos(list)
+        // 其它平台走 `/users/videos`，**没有 page 也没有 total** ——
+        // 只有 max_results，后端自己翻页凑数。
+        // 所以这里只能"取满一页就可能还有"，与 B站 分开处理。
+        setVideoTotal(null)
         // ⚠️⚠️ 这里原来写死 `maxResults: 20` 且 `setVideoHasMore(false)`
         //    （注释：通用接口暂不支持翻页）—— **那个结论是错的**（2026-10-07 修）。
         //
@@ -657,6 +679,34 @@ export default function PlatformUserPage() {
       setLoadingMoreVideos(false)
     }
   }, [platform, selected, videoPage, videoOrder, connId, videos.length])
+
+  /** 切到指定页（B站 有真分页时用；跳页后必须重新拉，不能只切现有数据）。
+   *
+   * ⚠️ antd 的 `pagination.onChange` 只给你页码，**不会重新请求** ——
+   * 必须自己再调一次接口拿那一页，否则点"第 9 页"看到的还是第 1 页的内容
+   * （和当初"用 antd 分页只切当前数据"是同一个坑，这里显式重取）。
+   */
+  const loadVideoPage = useCallback(async (page: number) => {
+    if (!selected?.id || platform !== 'bili') return
+    setLoadingVideos(true)
+    try {
+      const res: any = await getBiliUpVideos({
+        uid: selected.id, page, page_size: VIDEO_PAGE_SIZE,
+        order: videoOrder, conn_id: connId,
+      })
+      const rawList = res?.data?.videos || res?.data?.list || res?.data || []
+      const list: PlatformUserVideo[] = (Array.isArray(rawList) ? rawList : []).map(adaptBiliVideo)
+      setVideos(list)
+      setVideoPage(page)
+      const total = Number(res?.data?.total ?? 0)
+      setVideoTotal(Number.isFinite(total) && total > 0 ? total : null)
+      setVideoHasMore(list.length >= VIDEO_PAGE_SIZE && (total <= 0 || list.length < total))
+    } catch (e: any) {
+      message.error(errDetail(e, '切换页码失败').slice(0, 100))
+    } finally {
+      setLoadingVideos(false)
+    }
+  }, [platform, selected, videoOrder, connId])
 
   /** 切博主时清掉旧数据（否则会显示上一个人的合集）。 */
   const resetBiliExtras = useCallback(() => {
@@ -1028,14 +1078,37 @@ export default function PlatformUserPage() {
                           loading={loadingVideos}
                           columns={videoColumns}
                           dataSource={videos}
-                          // ⚠️ 不用 antd 分页（它只切当前数据，不请求后端）——
-                          // 改成**后端翻页**，避免"看着有第 2 页其实没数据"
-                          pagination={false}
+                          // ⚠️ 分页按平台能力分两种（2026-10-07）：
+                          //
+                          // · B站：后端返回 `{list,total,page,page_size}`，能跳页
+                          //   → 用 antd 真分页，显示"共 N 条"、可直达第 9 页
+                          //   （与 B站 空间页一致：322 个 / 9 页）
+                          //
+                          // · 其它平台走 `/users/videos`，**没有 page、没有 total**，
+                          //   只有 max_results → 只能"加载更多"，用 antd 分页会是假的
+                          //
+                          // ⚠️ onChange 必须自己重新请求（loadVideoPage），
+                          //    antd 只切已有数据，不发请求。
+                          pagination={
+                            platform === 'bili' && videoTotal
+                              ? {
+                                  current: videoPage,
+                                  pageSize: VIDEO_PAGE_SIZE,
+                                  total: videoTotal,
+                                  size: 'small',
+                                  showTotal: (t, range) =>
+                                    `第 ${range[0]}-${range[1]} 条 / 共 ${t} 个作品`,
+                                onChange: (pg: number) => void loadVideoPage(pg),
+                                // B站 空间页有「跳至 __ 页」，322 个作品翻起来很需要
+                                showQuickJumper: videoTotal > VIDEO_PAGE_SIZE * 3,
+                              }
+                              : false
+                          }
                           scroll={{ x: 420 }}
                           locale={{ emptyText: <Empty description="暂无作品" /> }}
                         />
-                        {/* 加载更多（2026-10-07：全平台显示，原来只有 B站能翻页）*/}
-                        {(videoHasMore || loadingMoreVideos) && (
+                        {/* 「加载更多」只给**没有总数**的平台（B站 走上面的分页了）*/}
+                        {platform !== 'bili' && (videoHasMore || loadingMoreVideos) && (
                           <div style={{ textAlign: 'center', marginTop: 10 }}>
                             <Button
                               size="small"
@@ -1046,7 +1119,9 @@ export default function PlatformUserPage() {
                             </Button>
                           </div>
                         )}
-                        {!videoHasMore && videos.length > 0 && (
+                        {/* 「已加载全部」只对**没有总数**的平台有意义 ——
+                            B站 有总数和分页，这行会误导（明明还有 300 条没看）*/}
+                        {platform !== 'bili' && !videoHasMore && videos.length > 0 && (
                           <div style={{
                             textAlign: 'center', marginTop: 8,
                             fontSize: 11, color: THEME.textSecondary,
@@ -1089,16 +1164,29 @@ export default function PlatformUserPage() {
                       ),
                       children: (
                         <Table
-                          // ⚠️ 实测：`/up/series` 返回的首条 `id` 和 `title` 都是**空串**
-                          // （B站的合集列表接口字段不全）—— 用 `r.id` 做 rowKey
-                          // 会**全部重复**（React 报 key 冲突、行状态错乱）。
-                          // 所以用 index 兜底。
+                          // ⚠️ 原来注释说"首条 id/title 都是空串" —— 那是接口报错
+                          // 时的表现（那时一条数据都没有）。2026-10-07 接口打通后
+                          // `meta.season_id/series_id` 已能正常解析出来（实测 420975 等）。
+                          // 仍保留 index 兜底：万一某条真的没 id，不至于 React key 冲突。
                           rowKey={(r: any, i?: number) =>
                             String(r.id || r.title || `series-${i}`)}
                           size="small"
                           loading={loadingSeries}
                           dataSource={upSeries}
-                          pagination={{ pageSize: 5, size: 'small' }}
+                          // ⚠️ 这里**是本地分页**（pageSize 10），
+                          // 因为 `/up/series` 一次就把全部合集+系列返回了
+                          // （实测 uid=50908119 一次 9 条），不需要后端翻页。
+                          //
+                          // 原来写死 `pageSize: 5`，9 条要点两下才能看完 ——
+                          // 与 B站 空间页那种"一屏铺开"的观感也不一致。
+                          // 改成 10 条并显示总数，小博主大多一屏看完。
+                          pagination={{
+                            pageSize: 10,
+                            size: 'small',
+                            showTotal: (t) => `共 ${t} 个`,
+                            // 一页放得下就别显示分页器，省得无意义的"1"
+                            hideOnSinglePage: true,
+                          }}
                           locale={{
                             // ⚠️ 失败时**显示原因**，不要显示「暂无合集」——
                             // 那会让"B站接口报错"看起来像"这个 UP 没有合集"。
@@ -1190,7 +1278,13 @@ export default function PlatformUserPage() {
                             size="small"
                             loading={loadingFavorites}
                             dataSource={upFavorites}
-                            pagination={{ pageSize: 5, size: 'small' }}
+                            // 同上：收藏夹也是一次全量返回，本地分页即可
+                            pagination={{
+                              pageSize: 10,
+                              size: 'small',
+                              showTotal: (t) => `共 ${t} 个`,
+                              hideOnSinglePage: true,
+                            }}
                             locale={{ emptyText: <Empty description="暂无收藏夹" /> }}
                             scroll={{ x: 380 }}
                             columns={[
