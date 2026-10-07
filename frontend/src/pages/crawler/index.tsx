@@ -382,10 +382,23 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
   },
   wb: {
     // ⚠️ 排序用 **tab（search_type）**，不用 sortBy —— 实测依据：
-    // 微博搜索的排序档位就在 containerid 的 `type=` 里（后端 `apis.SEARCH_TYPE_ALIASES`）：
-    //     note=1 综合 / realtime=61 实时 / popular=60 热门
+    // 微博搜索的排序档位就在桌面版的 `xsort` 里（后端 `DESKTOP_XSORT`）：
+    //     无 xsort=综合 / xsort=hot=热门
     // 而 `sort_by` 微博后端**不消费**（search_via_patchright 只看 params.search_type）。
     // 之前把「最新/热门」放进 sortOptions → 选了没反应（假选项）。
+    //
+    // ⚠️⚠️ 2026-10-07 **删掉「实时」与「用户」两个 tab**（用户实测后实测确认）
+    //
+    // 【实时】是**假选项**。实测同一个关键词同一页：
+    //     综合 10 条 vs 实时 10 条 → **重叠 10/10（100% 相同）**
+    // 后端 `DESKTOP_XSORT["realtime"] = ""`，即回落到综合；
+    // 日志里那句「桌面版没有『实时』分类，回退到综合」就是它。
+    // ⇒ 标签写着"实时"、给的是综合数据 = **撒谎**，比没有更糟。
+    //   微博桌面版页面上的分类只有「综合 / 热门」两个（见 search_desktop.py）。
+    //
+    // 【用户】是**功能重复**。用户搜索已挪到「博主中心」，
+    // 而且这里传 `search_type=user` 后端也不认（`DESKTOP_XSORT` 无此键），
+    // 实测返回的仍是**普通微博**而不是用户列表 —— 标签与内容不符。
     searchTypes: [
       {
         value: 'note', label: '综合', icon: <MessageOutlined />,
@@ -393,17 +406,7 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
         defaultSort: '',
       },
       {
-        value: 'realtime', label: '实时', icon: <MessageOutlined />,
-        sortOptions: [],
-        defaultSort: '',
-      },
-      {
         value: 'popular', label: '热门', icon: <MessageOutlined />,
-        sortOptions: [],
-        defaultSort: '',
-      },
-      {
-        value: 'user', label: '用户', icon: <UserOutlined />,
         sortOptions: [],
         defaultSort: '',
       },
