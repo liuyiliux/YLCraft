@@ -1478,9 +1478,9 @@ class BilibiliClient(BasePlatformClient):
         """获取用户的合集列表（不需要登录）"""
         self._log(f"Getting user series list: user_id={user_id}")
         
-        # ⚠️ 这个接口**必须 WBI 签名**。
-        # 不带 w_rid 时 B站一律回 `code=-400 请求错误`（实测 2026-10-07），
-        # 表现为"查不到合集"，其实请求根本没被受理。
+        # ⚠️ 这个接口**必须 WBI 签名**（全文件第 22 个走签名的调用点，
+        # 原来这里是裸 urlencode，所以 B站一律回 `code=-400 请求错误`，
+        # 表现为"查不到合集"，其实请求根本没被受理）。
         params = {
             "mid": user_id,
             "page_num": page,
@@ -1491,12 +1491,10 @@ class BilibiliClient(BasePlatformClient):
         try:
             query = await self._sign_params(params)
         except Exception as e:
-            # `_get_wbi_keys` 拿不到时依次退回浏览器 localStorage / nav 接口，
-            # 都拿不到才报错 —— 绝不退回"无签名请求"（那必然 -400）
-            keys = (
-                await self._get_wbi_keys_from_browser()
-                or await self._get_wbi_keys_from_api()
-            )
+            # `_get_wbi_keys` 打的是 nav 接口；这里唯一**不同来源**的兜底是
+            # 浏览器 localStorage。⚠️ 别再退回 `_get_wbi_keys_from_api()`——
+            # 它打的也是 nav，同一个来源，失败过一次不会再成功，纯属死代码。
+            keys = await self._get_wbi_keys_from_browser()
             if not keys:
                 raise RuntimeError(f"获取B站 WBI 签名失败，合集接口无法调用: {e}")
             signer = BilibiliSign(keys[0], keys[1])
