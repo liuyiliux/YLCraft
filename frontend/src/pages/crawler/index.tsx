@@ -31,6 +31,8 @@ import {
   // ⚠️ 429「平台侧拒绝」面板的图标（2026-10-04）
   // 用 ⚠ 而不是 Message —— 501（没实现）才用"不支持"的中性语气。
   WarningOutlined,
+  // ⚠️ 微博搜索分类图标（2026-10-07 加回「实时」时补的）
+  ThunderboltOutlined, FireOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
 import { useResizableColumns } from '../../hooks/useResizableColumns'
@@ -381,35 +383,34 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
     defaultSearchType: 'note',
   },
   wb: {
-    // ⚠️ 排序用 **tab（search_type）**，不用 sortBy —— 实测依据：
-    // 微博搜索的排序档位就在桌面版的 `xsort` 里（后端 `DESKTOP_XSORT`）：
-    //     无 xsort=综合 / xsort=hot=热门
-    // 而 `sort_by` 微博后端**不消费**（search_via_patchright 只看 params.search_type）。
-    // 之前把「最新/热门」放进 sortOptions → 选了没反应（假选项）。
+    // ⚠️ 排序用 **tab（search_type）**，不用 sortBy。
     //
-    // ⚠️⚠️ 2026-10-07 **删掉「实时」与「用户」两个 tab**（用户实测后实测确认）
+    // ⚠️⚠️ **2026-10-07 我把「实时」删掉过 —— 那个结论是错的，已加回来。**
     //
-    // 【实时】是**假选项**。实测同一个关键词同一页：
-    //     综合 10 条 vs 实时 10 条 → **重叠 10/10（100% 相同）**
-    // 后端 `DESKTOP_XSORT["realtime"] = ""`，即回落到综合；
-    // 日志里那句「桌面版没有『实时』分类，回退到综合」就是它。
-    // ⇒ 标签写着"实时"、给的是综合数据 = **撒谎**，比没有更糟。
-    //   微博桌面版页面上的分类只有「综合 / 热门」两个（见 search_desktop.py）。
+    // 我当时实测「实时」与综合 100% 重叠，就断定"桌面版没有实时分类"，
+    // 还把它写进注释当永久结论。**用户截图 `/realtime?q=沈阳` 直接打脸**：
+    // 实时是有的，只是不在 `/weibo` 这个页面上，而是**另一个页面**：
     //
-    // 【用户】是**功能重复**。用户搜索已挪到「博主中心」，
-    // 而且这里传 `search_type=user` 后端也不认（`DESKTOP_XSORT` 无此键），
-    // 实测返回的仍是**普通微博**而不是用户列表 —— 标签与内容不符。
+    //     综合 /weibo?q=…&Refer=weibo_weibo
+    //     热门 /weibo?q=…&xsort=hot&Refer=hotmore
+    //     实时 /realtime?q=…&rd=realtime&tw=realtime      ← 另一个页面
+    //     视频 /video?q=…&xsort=hot&hasvideo=1&tw=video
+    //
+    // （映射见后端 `search_http.DESKTOP_PATHS`）
+    //
+    // ⇒ 教训：**下"平台没有 X"之前，要把相关页面都看过**。
+    //   在一个页面上没看到 ≠ 平台没有。我把"我没看到"写成了"它没有"。
+    //
+    // ⚠️ **「图片」不放这里**（2026-10-07 实测）：`/pic` 是纯瀑布流，
+    //    mid 全挂在 `<img>` 上，**没有文案/作者/时间/计数**，现有解析取不到。
+    //    给一个点了只有 0 条的 tab = 假选项。要支持得单独写一套解析。
+    //
+    // 「用户」不放这里 —— 用户搜索归「博主中心」，那边能出真正的用户列表。
     searchTypes: [
-      {
-        value: 'note', label: '综合', icon: <MessageOutlined />,
-        sortOptions: [],
-        defaultSort: '',
-      },
-      {
-        value: 'popular', label: '热门', icon: <MessageOutlined />,
-        sortOptions: [],
-        defaultSort: '',
-      },
+      { value: 'note', label: '综合', icon: <MessageOutlined />, sortOptions: [], defaultSort: '' },
+      { value: 'realtime', label: '实时', icon: <ThunderboltOutlined />, sortOptions: [], defaultSort: '' },
+      { value: 'popular', label: '热门', icon: <FireOutlined />, sortOptions: [], defaultSort: '' },
+      { value: 'video', label: '视频', icon: <VideoCameraOutlined />, sortOptions: [], defaultSort: '' },
     ],
     defaultSearchType: 'note',
   },

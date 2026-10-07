@@ -50,7 +50,6 @@ from .client import parse_user
 from .client import parse_mblog
 from .search_desktop import (
     DESKTOP_MAX_PAGE,
-    DESKTOP_NO_REALTIME,
     DESKTOP_PAGE_SIZE,
     DESKTOP_XSORT,
     DesktopLoginRequired,
@@ -303,10 +302,20 @@ async def search_via_patchright(
     raw_st = getattr(params, "search_type", "") or "note"
     st_key = str(getattr(raw_st, "value", raw_st)).strip().lower()
     xsort = DESKTOP_XSORT.get(st_key, "")
-    if st_key == DESKTOP_NO_REALTIME:
-        # ⚠️ 桌面版**没有「实时」分类**（页面上只有 综合 / 热门）。
-        # 静默当综合 = 给用户一份标着"实时"的数据，其实是综合 —— 撒谎。
-        logger.info("[weibo] 桌面版没有「实时」分类（实测：只有综合/热门），回退到综合")
+    # ⚠️⚠️ 「实时」**是有的** —— 我之前说"桌面版没有实时分类"是**错的**（2026-10-07 修正）。
+    #
+    # 我当时只看了 `/weibo?q=` 这个页面，上面的标签里没有实时，就下了结论。
+    # 用户直接截图 `/realtime?q=沈阳&rd=realtime` 证明它**存在**，
+    # 而且是**另一个页面**（不是 `/weibo` 上的参数）。
+    #
+    # 浏览器实测（2026-10-07，从标签 href 读出来的）：
+    #     综合 /weibo?q=…&Refer=weibo_weibo
+    #     热门 /weibo?q=…&xsort=hot&Refer=hotmore
+    #     实时 /realtime?q=…&rd=realtime&tw=realtime     ← 这里
+    #     视频 /video?q=…&xsort=hot&hasvideo=1&tw=video
+    #     图片 /pic?q=…
+    #
+    # ⇒ 真实路径由 `search_http.DESKTOP_PATHS` 决定，这里只透传 search_type。
 
     # ===== ① 先试直连 =====
     # ⚠️ 用 `raised` 记录"直连是**失败**了"还是"直连**成功但没内容**"。
@@ -317,11 +326,12 @@ async def search_via_patchright(
         results = await _search_http(
             params.keyword, want=want, page=page,
             max_pages=max_pages, xsort=xsort, conn_key=conn_key,
+            search_type=st_key,
         )
         if results:
             logger.info(
-                "[weibo] 搜索 %r -> %d 条（直连 s.weibo.com，has_more=%s，共%s页）",
-                params.keyword, len(results),
+                "[weibo] 搜索 %r -> %d 条（直连 s.weibo.com，type=%s，has_more=%s，共%s页）",
+                params.keyword, len(results), st_key,
                 results[0].raw_data.get("_has_more"),
                 results[0].raw_data.get("_total_pages"),
             )
@@ -396,6 +406,7 @@ async def _search_http(
     max_pages: int,
     xsort: str,
     conn_key: str,
+    search_type: str = "",
 ) -> List[SearchResult]:
     """直连 `s.weibo.com` 取结果（主路径）。
 
@@ -435,7 +446,8 @@ async def _search_http(
         pn = page + i
         try:
             cards, tp = await fetch_page(
-                keyword, pn, cookie_header=cookie, xsort=xsort)
+                keyword, pn, cookie_header=cookie, xsort=xsort,
+                search_type=search_type)
         except HttpLoginRequired:
             # ⚠️ 这里必须 re-raise 成**同一个类型** —— 上层
             #    `search_via_patchright` 按它决定"要不要试浏览器"。

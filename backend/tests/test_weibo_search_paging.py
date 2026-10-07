@@ -245,19 +245,59 @@ class TestLoginRequiredIsDistinct(unittest.TestCase):
 
 
 class TestSearchTypeOnDesktop(unittest.TestCase):
-    """桌面版的分类参数是 `xsort`（**实测**），不是移动版的 `type`。
+    """桌面版的分类**各有各的页面地址**（2026-10-07 浏览器实测）。
 
-    ⚠️ 移动版 `type=61` 在桌面版**完全无效**：实测返回与默认 100% 重叠
-    （一模一样的 20 条）。参数名照抄过来 = 标签页点了没反应。
+    ## ⚠️⚠️ 这里曾把「实时」断言成"桌面版没有"，然后据此把前端 tab 删了
+    ## —— **那个断言是错的**，用户截图直接打脸。
+
+    我当时只看了 `/weibo?q=` 这一个页面，上面没有实时，就写下
+    "桌面版没有实时分类"。实际上：
+
+        实时 → /realtime?q=…&rd=realtime&tw=realtime     ← 另一个页面
+        视频 → /video?q=…&xsort=hot&hasvideo=1&tw=video
+        图片 → /pic?q=…
+        热门 → /weibo?q=…&xsort=hot
+
+    ⇒ 教训：**"我在一个页面上没看到" ≠ "平台没有"**。
+    下这种结论前必须把相关页面都看过。
     """
 
     def test_xsort_mapping_exists(self):
         self.assertEqual("hot", sd.DESKTOP_XSORT["popular"])
         self.assertEqual("", sd.DESKTOP_XSORT["all"])
 
-    def test_realtime_has_no_desktop_equivalent(self):
-        self.assertIn(sd.DESKTOP_NO_REALTIME, sd.DESKTOP_XSORT,
-                      "桌面版只有综合/热门；「实时」要显式记录为回退到综合")
+    def test_realtime_uses_its_own_path(self):
+        """⚠️ **实时不是 xsort，是另一个路径 `/realtime`。**"""
+        path, extra = sh.DESKTOP_PATHS["realtime"]
+        self.assertEqual("realtime", path,
+                         "「实时」必须走 /realtime，我当年误判成不存在")
+        self.assertIn("rd=realtime", extra)
+
+    def test_video_has_its_own_path(self):
+        path, extra = sh.DESKTOP_PATHS["video"]
+        self.assertEqual("video", path)
+        self.assertIn("hasvideo=1", extra)
+
+    def test_general_and_popular_stay_on_weibo_page(self):
+        self.assertEqual("weibo", sh.DESKTOP_PATHS["note"][0])
+        self.assertEqual("weibo", sh.DESKTOP_PATHS["popular"][0])
+        self.assertIn("xsort=hot", sh.DESKTOP_PATHS["popular"][1])
+
+    def test_pic_is_not_offered_because_unparseable(self):
+        """⚠️ 「图片」故意**不提供**：/pic 是纯瀑布流，取不到文案。
+
+        实测 `div.card-wrap`=0 / `.txt`=0 / `.from`=0，mid 全挂在 `<img>` 上。
+        给一个只会返回 0 条的 tab = 假选项。
+        """
+        self.assertNotIn("pic", sh.DESKTOP_PATHS)
+        self.assertNotIn("image", sh.DESKTOP_PATHS)
+
+    def test_build_url_uses_the_right_page(self):
+        for st, want_path in [("note", "/weibo?"), ("realtime", "/realtime?"),
+                              ("popular", "/weibo?"), ("video", "/video?")]:
+            url = sh.build_search_url("沈阳", 2, search_type=st)
+            self.assertIn(want_path, url, "%s 应走 %s" % (st, want_path))
+            self.assertIn("page=2", url)
 
     def test_enum_value_is_extracted(self):
         """⚠️ `params.search_type` 是**枚举**，直接 str() 得到
@@ -269,6 +309,43 @@ class TestSearchTypeOnDesktop(unittest.TestCase):
     def test_xsort_is_passed_through(self):
         code = _code()
         self.assertIn("xsort=xsort", code, "xsort 要传到桌面版抓取函数")
+
+    def test_search_type_is_passed_through(self):
+        code = _code()
+        self.assertIn("search_type=st_key", code,
+                      "search_type 必须透传，否则四个分类全都走 /weibo 综合")
+
+
+class TestRealtimeAgoTime(unittest.TestCase):
+    """⚠️ 实时页的时间格式**又不一样**（`9秒前` / `3分钟前`）。
+
+    实测 s.weibo.com/realtime：没有月日、也没有 `今天08:07`，
+    只有"N秒前 / N分钟前"。第一版只有月日与今天两种正则 ⇒ 实时时间全丢。
+    """
+
+    def _ts(self, from_text: str) -> str:
+        seg = ('<div class="card-wrap" mid="5351438842857742">'
+               '<p class="txt">实时的一条</p>'
+               '<div class="from"><a href="//weibo.com/1/x">%s</a></div>'
+               '</div>' % from_text)
+        return sh.to_search_result(sh.parse_cards(seg)[0]).create_time
+
+    def test_seconds_ago(self):
+        from datetime import datetime
+        self.assertTrue(self._ts("9秒前"), "「9秒前」没解析出来")
+
+    def test_minutes_ago(self):
+        from datetime import datetime, timedelta
+        ts = int(self._ts("3分钟前"))
+        self.assertTrue(ts)
+        age = datetime.now() - datetime.fromtimestamp(ts)
+        self.assertLess(age.total_seconds(), 600, "「3分钟前」应落在 10 分钟内")
+        self.assertGreater(age.total_seconds(), 60)
+
+    def test_ago_is_not_in_the_future(self):
+        from datetime import datetime
+        self.assertLessEqual(
+            int(self._ts("1分钟前")), int(datetime.now().timestamp()))
 
 
 class TestParseDesktopCard(unittest.TestCase):
