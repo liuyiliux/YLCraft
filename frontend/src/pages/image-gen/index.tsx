@@ -31,6 +31,7 @@ import {
   Tabs,
   Upload,
   Modal,
+  Alert,
 } from 'antd'
 import {
   ThunderboltOutlined,
@@ -47,11 +48,22 @@ import {
   DatabaseOutlined,
   CloseOutlined,
   SaveOutlined,
+  EditOutlined,
 } from '@ant-design/icons'
 import type { UploadFile } from 'antd/es/upload/interface'
 import { useTheme } from '../../constants/theme'
 import { createUserImagePromptReference, getImageBackends, generateImage as generateImageApi, getImageTask, linkCreativeProjectAsset, optimizeImagePrompt } from '../../api'
 import AssetReferencePicker from '../../components/asset-reference-picker/AssetReferencePicker'
+import ImageEditorWorkspace from '../../components/image-annotation/ImageEditorWorkspace'
+import { renderAnnotatedImage } from '../../components/image-annotation/renderAnnotatedImage'
+// ⚠️ 只导入 `toAnnotationPayload` / `ImageAnnotation`，**不再导入
+// `AnnotationCanvas` 组件本身**（2026-10-07）：主表单里的批注画布已移除，
+// 批注统一在「改图工作台」（ImageEditorWorkspace）里画。
+// 数据类型与提交载荷仍是共用的，所以这两个必须留。
+import {
+  toAnnotationPayload,
+  type ImageAnnotation,
+} from '../../components/image-annotation/AnnotationCanvas'
 import type { ImagePromptReference } from '../../api'
 import MultiPlatformGen from './MultiPlatformGen'
 import { useTaskPolling } from '../../hooks/useTaskPolling'
@@ -251,6 +263,13 @@ function ImageGenSinglePage() {
 
   // 生成模式
   const [mode, setMode] = useState<'text2img' | 'img2img'>('text2img')
+  // 工作台形态：`classic` = 单栏表单（默认）；`editor` = EditHere 式编辑台。
+  //
+  // **默认必须是 classic**：编辑台是给「看着图改图」用的，没有参考图就没有可圈的东西。
+  // 文生图同样不该进编辑台——它连参考图都没有，进去只能看到一个空画布。
+  // 用户真正需要批注时，在图生图下点「切换到编辑台」即可。
+  const [workspace, setWorkspace] = useState<'classic' | 'editor'>('classic')
+  const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null)
 
   // 输入
   const [prompt, setPrompt] = useState('')
@@ -259,6 +278,85 @@ function ImageGenSinglePage() {
   const [referenceAssetIds, setReferenceAssetIds] = useState<string[]>([])
   const [referenceUrl, setReferenceUrl] = useState('')
   const [assetPickerOpen, setAssetPickerOpen] = useState(false)
+
+  // 图生图「画面批注」：在参考图上圈选区域并写下修改意见，随主提示词一起提交。
+  // 空数组是常态，提交时若为空则完全不带该字段。
+  const [annotations, setAnnotations] = useState<ImageAnnotation[]>([])
+  // 批注定位方式：
+  // - `marked`（默认）= 把框**画到像素上**，作为一张额外参考图随原图一起发给模型。
+  //   多模态模型看图比读数字准，Google 的 Gemini 图像标记工具用的就是这个思路。
+  // - `text` = 只发原图 + 文字坐标描述。留给"模型不认第二张图"或"框线反而干扰画质"的情况。
+  //
+  // 默认 `marked`：我们原先只报中心点，「圈一小撮头发」和「整头改色」会生成几乎
+  // 一样的指令，模型分不出所以有时只改一撮、有时整张脸被重画。画出来就没有这个歧义。
+  const [annotationHintMode, setAnnotationHintMode] = useState<'marked' | 'text'>('marked')
+  // 标注图说明的自定义文案：`undefined` = 用内置默认；`''` = 已关闭；其余 = 自定义。
+  // 三态必须分开——用户要能看见默认文案、能改、也能整段关掉。
+  const [annotationHintText, setAnnotationHintText] = useState<string | undefined>(undefined)
+  // 批注画布标注的是**第一张参考图**：多于一张时用户无法分辨意见对应哪张图，
+  // 猜错比不猜更糟，所以固定第一张并在界面上写明。
+  //
+  // 三条参考图来源里只有「粘贴 URL」天然带地址：
+  // - 本地上传走 `beforeUpload={() => false}`，**从不设置 `f.url`**，只有 `originFileObj`；
+  // - 素材库选图默认走 base64 模式，`url` 是**空串**（图片由后端按 assetId 解析）。
+  // 因此这里必须各自兜底，否则批注面板在这些路径下永不出现——
+  // 用户明明加了参考图，却被告知「加上参考图后就能圈选」。
+  const [localPreviewUrls, setLocalPreviewUrls] = useState<Record<string, string>>({})
+
+  const annotationImage = useMemo(() => {
+    const first = referenceImages[0]
+    if (!first) return ''
+    const meta = first as unknown as { assetId?: string; thumbUrl?: string }
+    const direct = first.url || meta.thumbUrl || ''
+    if (direct) return direct
+    if (meta.assetId) return `/api/v1/assets/${encodeURIComponent(meta.assetId)}/thumbnail`
+    if (first.uid && localPreviewUrls[first.uid]) return localPreviewUrls[first.uid]
+    return ''
+  }, [referenceImages, localPreviewUrls])
+
+  // objectURL 不回收会一直占着内存直到页面关闭（参考图可能有好几 MB）。
+  useEffect(() => {
+    setLocalPreviewUrls((prev) => {
+      const next: Record<string, string> = {}
+      for (const file of referenceImages) {
+        const existing = prev[file.uid]
+        if (existing) {
+          next[file.uid] = existing
+          continue
+        }
+        const raw = file.originFileObj as unknown as Blob | undefined
+        if (raw) next[file.uid] = URL.createObjectURL(raw)
+      }
+      // 已移除的引用要 revoke，否则每换一次参考图就漏一批。
+      for (const uid of Object.keys(prev)) {
+        if (!next[uid]) URL.revokeObjectURL(prev[uid])
+      }
+      return next
+    })
+  }, [referenceImages])
+
+  useEffect(
+    () => () => {
+      Object.values(localPreviewUrls).forEach((url) => URL.revokeObjectURL(url))
+    },
+    [localPreviewUrls],
+  )
+
+  // 切走图生图时丢弃批注：这些坐标是相对**那一张**参考图的，换图后全部失效。
+  useEffect(() => {
+    if (mode !== 'img2img') {
+      setAnnotations([])
+      // 文生图没有参考图，编辑台留着只会看到一个空画布——没有可圈的东西。
+      // 直接退回表单模式，而不是把人困在一个用不了的界面里。
+      setWorkspace('classic')
+      setActiveAnnotationId(null)
+    }
+  }, [mode])
+
+  // 换参考图后同样作废——旧坐标指向的是上一张图。
+  useEffect(() => {
+    setAnnotations([])
+  }, [annotationImage])
 
   const handleAssetPicked = (payload: any) => {
     // 方案 A：素材库选图走后端本地解析，仅记录 assetId，前端不下载转 base64
@@ -561,6 +659,21 @@ function ImageGenSinglePage() {
   }, [])
 
   // 厂商切换时，重置模型选择
+  const handleAddReferenceUrl = () => {
+    const url = referenceUrl.trim()
+    if (!url) return
+    setReferenceImages((prev) => [
+      ...prev,
+      {
+        uid: `url-${Date.now()}`,
+        name: url.split('/').pop() || 'url-reference',
+        status: 'done',
+        url,
+      } as unknown as UploadFile,
+    ])
+    setReferenceUrl('')
+  }
+
   const handleProviderChange = (newVendor: string) => {
     setProvider(newVendor)
     const vendorGroup = Object.values(groupedBackends).find(g => g.provider_label === newVendor)
@@ -733,7 +846,18 @@ function ImageGenSinglePage() {
 
   // 生成图片
   const handleGenerate = async () => {
-    if (!prompt.trim()) {
+    // ⚠️ 2026-10-07：主表单已**不再**提供批注 UI（批注只在「改图工作台」里），
+    // 所以这里回到最朴素的判断——必须有提示词。
+    //
+    // 原来这里允许"没提示词、只有批注"就提交，因为主表单上就有批注画布。
+    // 既然那块搬走了，`writtenAnnotations` 在经典表单下恒为空
+    //（annotations 只在工作台模式下才可能被写入），保留那个分支只会让
+    // 用户点生成后毫无反应（既没提示词、也没有批注可提交）。
+    //
+    // `toAnnotationPayload` / `writtenAnnotations` **保留**：工作台模式下
+    // 它仍然是提交路径的一部分。
+    const writtenAnnotations = toAnnotationPayload(annotations)
+    if (!prompt.trim() && writtenAnnotations.length === 0) {
       message.warning('请输入提示词')
       return
     }
@@ -778,42 +902,101 @@ function ImageGenSinglePage() {
       // 图生图模式：参考图
       // 素材库选图（assetId）→ 交后端本地解析转 base64；上传文件/手动 URL → 前端转 base64
       if (mode === 'img2img') {
+        // 图生图没有参考图就等于文生图，语义完全错了。编辑台默认就是图生图，
+        // 用户很容易空着手点「开始生成」——这里拦下来并说清要做什么，而不是让后端
+        // 当成文生图跑一趟（花钱且结果不对）。
+        if (referenceImages.length === 0) {
+          message.warning('图生图需要先放一张参考图：上传、粘贴链接，或从素材库选一张')
+          return
+        }
         if (referenceAssetIds.length > 0) {
           body.reference_asset_ids = referenceAssetIds
         }
         const manualImages = referenceImages.filter((f) => !(f as any).assetId)
-        if (manualImages.length > 0) {
-          body.reference_images = await Promise.all(
-            manualImages.map(async (f) => {
-              if (f.originFileObj) {
-                // blob -> base64
-                return new Promise<string>((resolve, reject) => {
-                  const reader = new FileReader()
-                  reader.onload = () => resolve(reader.result as string)
-                  reader.onerror = reject
-                  reader.readAsDataURL(f.originFileObj!)
-                })
-              }
-              // 手动 URL 参考图：需 fetch 下载后转 base64
-              if (f.url) {
-                try {
-                  const resp = await fetch(f.url)
-                  const blob = await resp.blob()
+        const manualImagePayloads: string[] = manualImages.length
+          ? await Promise.all(
+              manualImages.map(async (f) => {
+                if (f.originFileObj) {
+                  // blob -> base64
                   return new Promise<string>((resolve, reject) => {
                     const reader = new FileReader()
                     reader.onload = () => resolve(reader.result as string)
                     reader.onerror = reject
-                    reader.readAsDataURL(blob)
+                    reader.readAsDataURL(f.originFileObj!)
                   })
-                } catch (e) {
-                  console.error('[ImageGen] 下载参考图失败:', e)
-                  return f.url
                 }
+                // 手动 URL 参考图：需 fetch 下载后转 base64
+                if (f.url) {
+                  try {
+                    const resp = await fetch(f.url)
+                    const blob = await resp.blob()
+                    return new Promise<string>((resolve, reject) => {
+                      const reader = new FileReader()
+                      reader.onload = () => resolve(reader.result as string)
+                      reader.onerror = reject
+                      reader.readAsDataURL(blob)
+                    })
+                  } catch (e) {
+                    console.error('[ImageGen] 下载参考图失败:', e)
+                    return f.url
+                  }
+                }
+                return ''
+              }),
+            )
+          : []
+
+        // 画面批注：只在「写好了意见」时提交。只框没写字的会被 toAnnotationPayload 滤掉，
+        // 空数组则完全不发这个字段——后端收到空值时行为与接入前一致。
+        // 复用上面已经算好的 writtenAnnotations，避免同一批数据算两遍（两处可能不一致）。
+        if (writtenAnnotations.length > 0) {
+          body.annotations = writtenAnnotations
+          // 用户自定义 / 关闭的标注图说明。只有真正定义了才发这个字段——
+          // `undefined` 走后端默认，`''` 表示明确不要这段。两者语义不同，不能互相兜底。
+          if (annotationHintText !== undefined) {
+            body.annotation_hint_text = annotationHintText
+          }
+
+          // 把框画到像素上，作为**追加的一张参考图**跟在原图后面。
+          // 模型顺序即「参考 1 = 原图，参考 2 = 标了框的同一张图」，
+          // 提示词里显式说明这两张的关系，避免模型把框线当成要保留的内容。
+          if (annotationHintMode === 'marked' && annotationImage) {
+            try {
+              const marked = await renderAnnotatedImage(annotationImage, writtenAnnotations)
+              if (marked) {
+                // 注意顺序：后端 `merge_reference_images` 的合并次序是
+                // 「显式 URL/base64 → 集合卡片 → 素材库 ID」。素材库选图走
+                // `reference_asset_ids`，若标注图只塞进 reference_images，
+                // 解析出的**原图反而会排在标注图后面**，与提示词里
+                // 「第 2 张是带框图」的说法对不上。
+              // 所以：素材库有图时把标注图放进集合卡片字段（排在 base64 之后、
+              // asset 之前）；纯本地上传时才直接追加到 reference_images 末尾。
+              if (referenceAssetIds.length > 0) {
+                body.reference_image_collection = [
+                  ...(body.reference_image_collection || []),
+                  { url: marked },
+                ]
+              } else {
+                body.reference_images = [...manualImagePayloads, marked]
               }
-              return ''
-            })
-          )
+              body.annotation_marked_reference = true
+              } else {
+                message.info('带框标注图生成失败，已改用文字定位')
+              }
+            } catch (e: any) {
+              // 跨域图片会因 canvas 污染导不出，退回纯文字而不是让整次提交失败。
+              console.error('[ImageGen] 生成标注图失败:', e)
+              message.info(`带框标注图不可用，已改用文字定位：${e?.message || e}`)
+            }
+          }
         }
+
+        if (manualImagePayloads.length > 0 && !body.reference_images) {
+          body.reference_images = manualImagePayloads
+        }
+      } else if (annotations.length > 0) {
+        // 文生图没有参考图可圈，不静默吞掉用户的批注意图。
+        message.warning('画面批注只用于图生图：切到图生图并添加参考图后才能标注')
       }
 
       setProgress(30)
@@ -903,9 +1086,199 @@ function ImageGenSinglePage() {
     }
   }
 
+  // 编辑工作台专用的模型下拉数据（沿用页面里既有的分组与过滤，不另起一套口径）
+  const editorModelOptions = useMemo(() => {
+    const vendorGroup = Object.values(groupedBackends).find(
+      (g) => g.provider_label === provider,
+    )
+    return (vendorGroup?.backends || []).map((b) => ({
+      label: b.name,
+      value: b.name,
+    }))
+  }, [groupedBackends, provider])
+
+  const editorSizeOptions = sizeOptions.length
+    ? sizeOptions
+    : [{ label: '默认', value: '1024x1024' }]
+
+  // 生成结果卡片：表单模式放右栏、编辑台模式放工作台下方，两处共用同一份数据与操作，
+  // 避免两套渲染逻辑各自漂移（曾经出现过一处图标缺失、另一处正常的分叉）。
+  const resultsCard = (
+    <Card
+      title={
+        <span>
+          <ThunderboltOutlined style={{ marginRight: 8, color: '#a855f7' }} />
+          生成结果
+          {generatedImages.length > 0 && (
+            <Tag color="purple" style={{ marginLeft: 8 }}>
+              {generatedImages.length} 张
+            </Tag>
+          )}
+        </span>
+      }
+      extra={
+        generatedImages.length > 0 ? (
+          <Button
+            size="small"
+            icon={<ReloadOutlined />}
+            onClick={() => setGeneratedImages([])}
+          >
+            清空
+          </Button>
+        ) : null
+      }
+    >
+      {generatedImages.length === 0 ? (
+        <Empty
+          description="暂无生成结果"
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          style={{ padding: '48px 0' }}
+        />
+      ) : (
+        <Row gutter={[16, 16]}>
+          {generatedImages.map(img => (
+            <Col xs={24} sm={12} md={8} key={img.id}>
+              <Card
+                hoverable
+                cover={
+                  <div
+                    style={{
+                      height: 200,
+                      background: THEME.bgElevated,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <Image
+                      src={getGeneratedImageSrc(img)}
+                      style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }}
+                      preview={{ src: getGeneratedImageSrc(img) }}
+                      placeholder
+                    />
+                  </div>
+                }
+                actions={[
+                  <Tooltip title="下载" key="download">
+                    <DownloadOutlined style={{ color: THEME.textSecondary }} onClick={() => handleDownload(img)} />
+                  </Tooltip>,
+                  <Tooltip title="复制提示词" key="copy">
+                    <CopyOutlined style={{ color: THEME.textSecondary }} onClick={() => handleCopyPrompt(img.prompt)} />
+                  </Tooltip>,
+                  <Button
+                    key="save-prompt"
+                    type="text"
+                    size="small"
+                    icon={<SaveOutlined />}
+                    disabled={savedPromptImageIds.has(img.id)}
+                    onClick={() => void saveGeneratedImagePrompt(img)}
+                  >
+                    {savedPromptImageIds.has(img.id) ? '已保存' : '保存提示词'}
+                  </Button>,
+                  <Tooltip title="删除" key="delete">
+                    <DeleteOutlined
+                      style={{ color: THEME.textSecondary }}
+                      onClick={() => setGeneratedImages(prev => prev.filter(i => i.id !== img.id))}
+                    />
+                  </Tooltip>,
+                ]}
+                size="small"
+              >
+                <Card.Meta
+                  title={
+                    <div
+                      style={{
+                        fontSize: 12,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {img.prompt.slice(0, 30)}...
+                    </div>
+                  }
+                  description={
+                    <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                      <Space size={4}>
+                        <Tag color="blue">{img.provider}</Tag>
+                        {img.project_linked && <Tag color="green">已回写项目</Tag>}
+                        {img.seed && <span style={{ fontSize: 11, color: THEME.textSecondary }}>seed: {img.seed}</span>}
+                      </Space>
+                      <div style={{ height: 22 }} />
+                    </Space>
+                  }
+                />
+              </Card>
+            </Col>
+          ))}
+        </Row>
+      )}
+    </Card>
+  )
+
   return (
     <div style={{ padding: 0 }}>
-      <Row gutter={24}>
+      {/* 编辑台模式：整块占满宽度，画布才能真正大起来；表单模式才用两栏 Row */}
+      {workspace === 'editor' ? (
+          <Col xs={24}>
+            <ImageEditorWorkspace
+              imageUrl={annotationImage}
+              annotations={annotations}
+              onAnnotationsChange={setAnnotations}
+              activeId={activeAnnotationId}
+              onActiveChange={setActiveAnnotationId}
+              referenceImages={referenceImages}
+              onReferenceImagesChange={(files) => {
+                setReferenceImages(files)
+                setReferenceAssetIds(
+                  files.map((f) => (f as any).assetId).filter(Boolean),
+                )
+              }}
+              onPickFromLibrary={() => setAssetPickerOpen(true)}
+              referenceUrl={referenceUrl}
+              onReferenceUrlChange={setReferenceUrl}
+              onAddReferenceUrl={handleAddReferenceUrl}
+              libraryPicker={
+                <AssetReferencePicker
+                  open={assetPickerOpen}
+                  onClose={() => setAssetPickerOpen(false)}
+                  onSelect={handleAssetPicked}
+                />
+              }
+              provider={provider}
+              providerOptions={vendorOptions}
+              onProviderChange={handleProviderChange}
+              selectedModel={selectedModel}
+              modelOptions={editorModelOptions}
+              onModelChange={(value) => {
+                setSelectedModel(value)
+                const vendorGroup = Object.values(groupedBackends).find(
+                  (g) => g.provider_label === provider,
+                )
+                const target = vendorGroup?.backends.find((b) => b.name === value)
+                if (target?.supported_sizes?.length) setSize(target.supported_sizes[0])
+              }}
+              size={size}
+              sizeOptions={editorSizeOptions}
+              onSizeChange={setSize}
+              batchCount={batchCount}
+              onBatchCountChange={setBatchCount}
+              loading={loading}
+              onGenerate={handleGenerate}
+              onSwitchToClassic={() => setWorkspace('classic')}
+              hintMode={annotationHintMode}
+              onHintModeChange={setAnnotationHintMode}
+              hintText={annotationHintText}
+              onHintTextChange={setAnnotationHintText}
+              prompt={prompt}
+              onPromptChange={setPrompt}
+              negativePrompt={negativePrompt}
+              onNegativePromptChange={setNegativePrompt}
+            />
+          </Col>
+        ) : (
+          <Row gutter={24}>
         {/* 左侧：输入面板 */}
         <Col xs={24} lg={10}>
           <Card
@@ -914,6 +1287,14 @@ function ImageGenSinglePage() {
                 <PictureOutlined style={{ marginRight: 8, color: '#7c3aed' }} />
                 AI 图像生成
               </span>
+            }
+            extra={
+              // 只有图生图才进编辑台：文生图没有参考图，编辑台里没有可圈的画面。
+              mode === 'img2img' ? (
+                <Button size="small" icon={<EditOutlined />} onClick={() => setWorkspace('editor')}>
+                  改图工作台
+                </Button>
+              ) : null
             }
             style={{ marginBottom: 16 }}
           >
@@ -1085,51 +1466,48 @@ function ImageGenSinglePage() {
                       placeholder="粘贴图片 URL（也可从素材库复制来源链接）"
                       value={referenceUrl}
                       onChange={(e) => setReferenceUrl(e.target.value)}
-                      onPressEnter={() => {
-                        const url = referenceUrl.trim()
-                        if (!url) return
-                        setReferenceImages((prev) => [
-                          ...prev,
-                          {
-                            uid: `url-${Date.now()}`,
-                            name: url.split('/').pop() || 'url-reference',
-                            status: 'done',
-                            url,
-                          } as unknown as UploadFile,
-                        ])
-                        setReferenceUrl('')
-                      }}
+                      onPressEnter={handleAddReferenceUrl}
                       style={{ background: '#1e1e2e', border: '1px solid #333', color: '#e2e8f0' }}
                     />
-                    <Button
-                      type="primary"
-                      onClick={() => {
-                        const url = referenceUrl.trim()
-                        if (!url) return
-                        setReferenceImages((prev) => [
-                          ...prev,
-                          {
-                            uid: `url-${Date.now()}`,
-                            name: url.split('/').pop() || 'url-reference',
-                            status: 'done',
-                            url,
-                          } as unknown as UploadFile,
-                        ])
-                        setReferenceUrl('')
-                      }}
-                    >
+                    <Button type="primary" onClick={handleAddReferenceUrl}>
                       添加 URL
                     </Button>
                   </Space.Compact>
                   <div style={{ marginTop: 6, fontSize: 12, color: '#8b8ba8' }}>
                     支持通过 URL 图生图：可从素材库选择图片，或手动输入图片地址（含素材库「来源 URL」）。最多 3 张。
                   </div>
+                  {/* 已有参考图时才引导进编辑台：没图可圈时推荐过去只会让人撞上空画布。 */}
+                  {referenceImages.length > 0 && (
+                    <div style={{ marginTop: 8 }}>
+                      <Button
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={() => setWorkspace('editor')}
+                      >
+                        打开改图工作台（圈选 + 批注）
+                      </Button>
+                      <div style={{ color: '#8b8ba8', fontSize: 12, marginTop: 4 }}>
+                        想在图上圈出某处再改？进工作台，那里可以标注；本表单只填提示词。
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <AssetReferencePicker
                   open={assetPickerOpen}
                   onClose={() => setAssetPickerOpen(false)}
                   onSelect={handleAssetPicked}
                 />
+
+                {/* ⚠️ 这里**不再渲染批注 UI**（2026-10-07 用户要求）。
+                    主表单恢复成**以前那种**图生图：填提示词 + 参考图，直接生成。
+
+                    批注只在「打开改图工作台」那个页面里有
+                    （workspace === 'editor' → <ImageEditorWorkspace>），
+                    两种形态**分开**：主表单轻量、批注功能完整。
+
+                    `annotations` state 与提交逻辑**保留不动** —— 工作台
+                    圈出的批注仍要随生成一起提交，所以只删 UI，不删数据。
+                */}
               </div>
             )}
 
@@ -1325,119 +1703,15 @@ function ImageGenSinglePage() {
 
         {/* 右侧：生成结果 */}
         <Col xs={24} lg={14}>
-          <Card
-            title={
-              <span>
-                <ThunderboltOutlined style={{ marginRight: 8, color: '#a855f7' }} />
-                生成结果
-                {generatedImages.length > 0 && (
-                  <Tag color="purple" style={{ marginLeft: 8 }}>
-                    {generatedImages.length} 张
-                  </Tag>
-                )}
-              </span>
-            }
-            extra={
-              <Space>
-                <Button
-                  size="small"
-                  icon={<ReloadOutlined />}
-                  onClick={() => setGeneratedImages([])}
-                >
-                  清空
-                </Button>
-              </Space>
-            }
-          >
-            {generatedImages.length === 0 ? (
-              <Empty
-                description="暂无生成结果"
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                style={{ padding: '48px 0' }}
-              />
-            ) : (
-              <Row gutter={[16, 16]}>
-                {generatedImages.map(img => (
-                  <Col xs={24} sm={12} md={8} key={img.id}>
-                    <Card
-                      hoverable
-                      cover={
-                        <div
-                          style={{
-                            height: 200,
-                            background: THEME.bgElevated,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            overflow: 'hidden',
-                          }}
-                        >
-                          <Image
-                            src={getGeneratedImageSrc(img)}
-                            style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }}
-                            preview={{ src: getGeneratedImageSrc(img) }}
-                            placeholder
-                          />
-                        </div>
-                      }
-                      actions={[
-                        <Tooltip title="下载" key="download">
-                          <DownloadOutlined style={{ color: THEME.textSecondary }} onClick={() => handleDownload(img)} />
-                        </Tooltip>,
-                        <Tooltip title="复制提示词" key="copy">
-                          <CopyOutlined style={{ color: THEME.textSecondary }} onClick={() => handleCopyPrompt(img.prompt)} />
-                        </Tooltip>,
-                        <Button
-                          key="save-prompt"
-                          type="text"
-                          size="small"
-                          icon={<SaveOutlined />}
-                          disabled={savedPromptImageIds.has(img.id)}
-                          onClick={() => void saveGeneratedImagePrompt(img)}
-                        >
-                          {savedPromptImageIds.has(img.id) ? '已保存' : '保存提示词'}
-                        </Button>,
-                        <Tooltip title="删除" key="delete">
-                          <DeleteOutlined
-                            style={{ color: THEME.textSecondary }}
-                            onClick={() => setGeneratedImages(prev => prev.filter(i => i.id !== img.id))}
-                          />
-                        </Tooltip>,
-                      ]}
-                      size="small"
-                    >
-                      <Card.Meta
-                        title={
-                          <div
-                            style={{
-                              fontSize: 12,
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {img.prompt.slice(0, 30)}...
-                          </div>
-                        }
-                        description={
-                          <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                            <Space size={4}>
-                              <Tag color="blue">{img.provider}</Tag>
-                              {img.project_linked && <Tag color="green">已回写项目</Tag>}
-                              {img.seed && <span style={{ fontSize: 11, color: THEME.textSecondary }}>seed: {img.seed}</span>}
-                            </Space>
-                            <div style={{ height: 22 }} />
-                          </Space>
-                        }
-                      />
-                    </Card>
-                  </Col>
-                ))}
-              </Row>
-            )}
-          </Card>
+          {resultsCard}
         </Col>
       </Row>
+      )}
+
+      {/* 编辑台模式：结果排在工作台下方，而不是右侧——右侧已经被批注侧栏占了 */}
+      {workspace === 'editor' && generatedImages.length > 0 && (
+        <div style={{ marginTop: 16 }}>{resultsCard}</div>
+      )}
       <PromptReferencePicker
         open={promptReferencePickerOpen}
         onCancel={() => setPromptReferencePickerOpen(false)}
