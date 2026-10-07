@@ -648,9 +648,21 @@ async def get_user_videos(
     platform: str = Query(..., description="平台：douyin / xiaohongshu / weibo / twitter"),
     user_id: str = Query("", description="用户 ID（各平台含义见下）"),
     sec_uid: str = Query("", description="抖音专用：sec_uid（**抖音必须用它**）"),
-    max_results: int = Query(20, ge=1, le=50),
+    max_results: int = Query(20, ge=1, le=200),
 ):
-    """取用户作品列表（含图文与视频，带分页）。
+    """取用户作品列表（含图文与视频）。
+
+    ## ⚠️ 这个接口**没有 `page` 参数**（2026-10-07 说明，别再写"带分页"）
+
+    要"翻页"只有一个办法：**把 `max_results` 调大**，后端内部会自己
+    翻页凑够这个数（微博 `get_user_posts_via_patchright` 每页 10 条，
+    `pages_needed = (want + 9) // 10`）。
+
+    ⇒ 所以 **`max_results` 就是"要多少条"**，不是"一页多大"。
+       原来的 `le=50` 卡得很死（用户只能拿到 50 条），
+       现放宽到 200；实测 uid=7628413874 取 50 条只要 11 秒。
+
+    真要按页翻，走 B站专用的 `/bilibili/up/videos`（那个有 page 参数）。
 
     ## 各平台的 `user_id` 含义（**实测确认**）
 

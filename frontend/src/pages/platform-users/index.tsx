@@ -227,8 +227,19 @@ export default function PlatformUserPage() {
 
   /** 每页拉多少条作品（与后端默认一致） */
   const VIDEO_PAGE_SIZE = 20
-  /** ⚠️ 硬上限：避免无限翻页把平台惹毛（也防用户手抖点太多次） */
-  const MAX_VIDEOS = 100
+  /** ⚠️ 硬上限：避免无限翻页把平台惹毛（也防用户手抖点太多次）
+   *
+   * ⚠️ 原来 `max_results` 写死 20，于是**任何博主都只显示 20 条**，
+   *    而"加载更多"按钮又只有 B站 显示 ⇒ 微博/抖音/小红书**完全没法翻页**
+   *    （用户实测：「这个博主明显超过 20 条，为什么只显示 20」）。
+   *
+   * 实测 uid=7628413874 走 `/users/videos`：
+   *     max_results=20 → 20 条 / 17s
+   *     max_results=50 → 50 条 / 11s   ← 更快
+   * 后端每页 10 条自己翻页凑数（`pages_needed=(want+9)//10`），
+   * 所以这里能给多大就多大，受限的是平台风控不是技术。
+   */
+  const MAX_VIDEOS = 200
 
   /** 上一次加载的博主 id（用来判断"是不是换人了"，换人才清空合集/收藏夹）。 */
   const selectedRef = useRef<PlatformUserItem | null>(null)
@@ -430,10 +441,26 @@ export default function PlatformUserPage() {
           ? (user.username || user.raw_data?.handle || '')
           : user.id
         const res: any = await getPlatformUserVideos(platform, {
-          userId: vidLookup, secUid: user.sec_uid || '', maxResults: 20,
+          userId: vidLookup, secUid: user.sec_uid || '', maxResults: VIDEO_PAGE_SIZE,
         })
-        setVideos(res?.data || [])
-        setVideoHasMore(false)   // 通用接口暂不支持翻页，如实置 false
+        const list: PlatformUserVideo[] = res?.data || []
+        setVideos(list)
+        // ⚠️⚠️ 这里原来写死 `maxResults: 20` 且 `setVideoHasMore(false)`
+        //    （注释：通用接口暂不支持翻页）—— **那个结论是错的**（2026-10-07 修）。
+        //
+        //    `/users/videos` 没有 page 参数，**但后端会自己翻页凑够 max_results**
+        //    （微博 `get_user_posts_via_patchright` 每页 10 条，
+        //      `pages_needed = (want+9)//10`）。
+        //    实测 uid=7628413874：
+        //        max_results=20 → 20 条
+        //        max_results=50 → 50 条   ← 一次到位，11 秒
+        //
+        //    ⇒ 真正的限制是**前端把 maxResults 写死成 20**，
+        //      不是平台不给、也不是后端不能翻。
+        //
+        //    `has_more` 的判据：拿满一页就**可能**还有（接口不给总数），
+        //    与 B站分支一致。拿不满就是到底了。
+        setVideoHasMore(list.length >= VIDEO_PAGE_SIZE)
       }
     } catch (e: any) {
       message.error(e?.response?.data?.detail || '获取作品失败')
@@ -514,9 +541,20 @@ export default function PlatformUserPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, platform, selected?.id, connId])
 
-  /** 加载下一页作品（**追加**，不是替换）。 */
+  /** 加载下一页作品（**追加**，不是替换）。
+   *
+   * ⚠️⚠️ 原来第一行是 `if (platform !== 'bili') return` —— 于是**只有 B站**
+   *    能翻页，微博/抖音/小红书永远停在第一页（用户实测：「这个博主明显
+   *    超过 20 条，为什么只显示 20」）。2026-10-07 改成全平台都能翻。
+   *
+   * 两种翻法（接口不同，不能混）：
+   *  · B站     `/bilibili/up/videos` **有 page 参数** → 直接翻页 + 按 id 去重
+   *  · 其它平台 `/users/videos` **没有 page**，后端自己凑够 max_results
+   *            → 只能"把要的数量调大再整体重取"（这就是它慢一点的原因，
+   *              但结果正确；`MAX_VIDEOS` 封顶防把平台惹毛）
+   */
   const loadMoreVideos = useCallback(async () => {
-    if (platform !== 'bili' || !selected?.id) return
+    if (!selected?.id) return
     if (videos.length >= MAX_VIDEOS) {
       message.info(`已达上限 ${MAX_VIDEOS} 条（避免一次拉太多被限流）`)
       setVideoHasMore(false)
@@ -525,30 +563,50 @@ export default function PlatformUserPage() {
     setLoadingMoreVideos(true)
     const next = videoPage + 1
     try {
-      const res: any = await getBiliUpVideos({
-        uid: selected.id, page: next, page_size: VIDEO_PAGE_SIZE,
-        order: videoOrder, conn_id: connId,
-      })
-      const rawList = res?.data?.videos || res?.data?.list || res?.data || []
-      const list: PlatformUserVideo[] = (Array.isArray(rawList) ? rawList : []).map(adaptBiliVideo)
-      if (list.length === 0) {
-        setVideoHasMore(false)
-        message.info('没有更多作品了')
+      if (platform === 'bili') {
+        const res: any = await getBiliUpVideos({
+          uid: selected.id, page: next, page_size: VIDEO_PAGE_SIZE,
+          order: videoOrder, conn_id: connId,
+        })
+        const rawList = res?.data?.videos || res?.data?.list || res?.data || []
+        const list: PlatformUserVideo[] = (Array.isArray(rawList) ? rawList : []).map(adaptBiliVideo)
+        if (list.length === 0) {
+          setVideoHasMore(false)
+          message.info('没有更多作品了')
+        } else {
+          // ⚠️ 按 id 去重 —— B站翻页有时会**重复返回**上一页的末尾几条
+          setVideos(prev => {
+            const seen = new Set(prev.map(v => String(v.id)))
+            return [...prev, ...list.filter(v => !seen.has(String(v.id)))]
+          })
+          setVideoPage(next)
+          setVideoHasMore(list.length >= VIDEO_PAGE_SIZE)
+        }
       } else {
-        // ⚠️ 按 id 去重 —— B站翻页有时会**重复返回**上一页的末尾几条
+        // 没有 page 参数 ⇒ 只能把目标条数调大后**整体重取**，再取新增部分
+        const want = Math.min(MAX_VIDEOS, videos.length + VIDEO_PAGE_SIZE)
+        const isXv = platform === 'twitter' || platform === 'x' || platform === 'tw'
+        const vidLookup = isXv
+          ? (selected.username || selected.raw_data?.handle || '')
+          : selected.id
+        const res: any = await getPlatformUserVideos(platform, {
+          userId: vidLookup, secUid: selected.sec_uid || '', maxResults: want,
+        })
+        const list: PlatformUserVideo[] = res?.data || []
         setVideos(prev => {
           const seen = new Set(prev.map(v => String(v.id)))
           return [...prev, ...list.filter(v => !seen.has(String(v.id)))]
         })
-        setVideoPage(next)
-        setVideoHasMore(list.length >= VIDEO_PAGE_SIZE)
+        // 取不满目标数 = 平台已经没有更多了
+        setVideoHasMore(list.length >= want)
+        if (list.length < want) message.info('没有更多作品了')
       }
     } catch (e: any) {
       message.error(String(e?.response?.data?.detail || e?.message || '加载更多失败').slice(0, 100))
     } finally {
       setLoadingMoreVideos(false)
     }
-  }, [platform, selected?.id, videoPage, videoOrder, connId, videos.length])
+  }, [platform, selected, videoPage, videoOrder, connId, videos.length])
 
   /** 切博主时清掉旧数据（否则会显示上一个人的合集）。 */
   const resetBiliExtras = useCallback(() => {
@@ -924,8 +982,8 @@ export default function PlatformUserPage() {
                           scroll={{ x: 420 }}
                           locale={{ emptyText: <Empty description="暂无作品" /> }}
                         />
-                        {/* 加载更多（只有确实支持翻页的平台才显示） */}
-                        {platform === 'bili' && (videoHasMore || loadingMoreVideos) && (
+                        {/* 加载更多（2026-10-07：全平台显示，原来只有 B站能翻页）*/}
+                        {(videoHasMore || loadingMoreVideos) && (
                           <div style={{ textAlign: 'center', marginTop: 10 }}>
                             <Button
                               size="small"
@@ -936,12 +994,16 @@ export default function PlatformUserPage() {
                             </Button>
                           </div>
                         )}
-                        {platform === 'bili' && !videoHasMore && videos.length > 0 && (
+                        {!videoHasMore && videos.length > 0 && (
                           <div style={{
                             textAlign: 'center', marginTop: 8,
                             fontSize: 11, color: THEME.textSecondary,
                           }}>
-                            — 已加载全部（{videos.length} 条）—
+                            {/* 触到 MAX_VIDEOS 时说清是**上限**而不是"就这些"——
+                                否则用户会以为这博主只发了这么多（实测踩过）*/}
+                            {videos.length >= MAX_VIDEOS
+                              ? `— 已达 ${MAX_VIDEOS} 条上限（如需更多请在「采集与下载」用搜索）—`
+                              : `— 已加载全部（${videos.length} 条）—`}
                           </div>
                         )}
                       </>
