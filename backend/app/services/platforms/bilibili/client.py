@@ -1475,32 +1475,65 @@ class BilibiliClient(BasePlatformClient):
             return {"total": 0, "list": [], "page": page, "page_size": page_size}
     
     async def get_user_series_list(self, user_id: str, page: int = 1, page_size: int = 20) -> Dict[str, Any]:
-        """获取用户的合集列表（不需要登录）"""
+        """获取用户的合集列表（合集和系列）。
+
+        ## ⚠️ 参数是**照抄浏览器真实请求**定的（2026-10-07，uid=50908119）
+
+        浏览器实际发的（DevTools 复制）：
+
+            GET /x/polymer/web-space/seasons_series_list
+              ?mid=50908119
+              &page_size=20
+              &page_num=1
+              &web_location=333.1387
+              &x-bili-locale-json={"c_locale":{"language":"zh","script":"Hans"},
+                                   "always_translate":false}
+              &x-bili-device-req-json={"platform":"web","device":"pc",
+                                       "spmid":"333.1387","mobi_app":"web_cn"}
+              → 200 OK，返回合集与系列
+
+        两个 `x-bili-*` 参数是 B站前端会带的（语言/设备指纹）。
+        ⚠️ **实测它们不是必需的** —— 对照组（去掉这两个、同样不签名）
+        一样返回 code=0（2026-10-07 实测两组结果完全一致）。
+        保留是为了让请求和浏览器一致、少一个变量；将来 B站收紧时优先补这里。
+
+        **真正的差别只有一条：不要加 WBI 签名。** 加了就是 -400。
+        （我先前类推"别的接口都要签名所以这个也要"，实测是错的。）
+
+        Referer 也要对：`space.bilibili.com/<uid>/lists`（合集列表页），
+        基类 `_build_headers` 用的是 `https://space.bilibili.com/`，
+        实测那个也够用，故不额外覆盖。
+        """
         self._log(f"Getting user series list: user_id={user_id}")
-        
-        # ⚠️ 这个接口**必须 WBI 签名**（全文件第 22 个走签名的调用点，
-        # 原来这里是裸 urlencode，所以 B站一律回 `code=-400 请求错误`，
-        # 表现为"查不到合集"，其实请求根本没被受理）。
+
         params = {
             "mid": user_id,
-            "page_num": page,
             "page_size": min(page_size, 50),
+            "page_num": page,
             "web_location": "333.1387",
+            # ⚠️ 这两个是 B站前端必传的设备/语言参数，缺了就是 code=-400。
+            # 值是**静态**的（照抄浏览器），不要往里加时间戳。
+            "x-bili-locale-json": json.dumps(
+                {
+                    "c_locale": {"language": "zh", "script": "Hans"},
+                    "always_translate": False,
+                },
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ),
+            "x-bili-device-req-json": json.dumps(
+                {
+                    "platform": "web",
+                    "device": "pc",
+                    "spmid": "333.1387",
+                    "mobi_app": "web_cn",
+                },
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ),
         }
 
-        try:
-            query = await self._sign_params(params)
-        except Exception as e:
-            # `_get_wbi_keys` 打的是 nav 接口；这里唯一**不同来源**的兜底是
-            # 浏览器 localStorage。⚠️ 别再退回 `_get_wbi_keys_from_api()`——
-            # 它打的也是 nav，同一个来源，失败过一次不会再成功，纯属死代码。
-            keys = await self._get_wbi_keys_from_browser()
-            if not keys:
-                raise RuntimeError(f"获取B站 WBI 签名失败，合集接口无法调用: {e}")
-            signer = BilibiliSign(keys[0], keys[1])
-            query = signer.sign(params)
-
-        url = f"{BASE_URL}{USER_SERIES}?{query}"
+        url = f"{BASE_URL}{USER_SERIES}?{urlencode(params)}"
         self._log(f"[DEBUG] Series API URL: {url[:200]}")
 
         try:
@@ -1514,25 +1547,41 @@ class BilibiliClient(BasePlatformClient):
                 items_lists = data.get("items_lists", {})
                 self._log(f"[DEBUG] Series data keys: {list(data.keys())}, items_lists keys: {list(items_lists.keys())}")
                 
-                # 获取合集列表（先找seasons_list，如果没有就找series_list）
+                # ⚠️⚠️ **所有字段都在 `meta` 里，不在顶层**（实测 2026-10-07）。
+                #
+                #   实际返回：
+                #     {"meta": {"season_id":420975, "name":"合集·社会工程学",
+                #                "total":28, "cover":"https://...", "mid":50908119},
+                #      "archives": [ ... ]}
+                #
+                # 原来这里读 `series.get("season_id")` / `series.get("name")`
+                # —— **全是 None**，于是就算请求成功，列表里也是一堆空名字。
+                # 这是和"接口 -400"叠加在一起的**第二个独立 bug**。
+                # ⇒ 一律先取 meta，meta 没有再退回顶层（兼容旧结构）。
                 series_list = items_lists.get("seasons_list", []) or items_lists.get("series_list", []) or []
-                if len(series_list) > 0:
-                    self._log(f"[DEBUG] First series item keys: {list(series_list[0].keys())}")
-                
+                self._log(f"[DEBUG] seasons={len(items_lists.get('seasons_list') or [])} series={len(items_lists.get('series_list') or [])}")
+
                 result = []
                 for series in series_list:
-                    # 从第一个视频获取封面
-                    first_archive = (series.get("archives", []) or [])[0] if series.get("archives") else {}
-                    cover = first_archive.get("pic", "") or ""
-                    
+                    meta = series.get("meta") or {}
+                    # 封面：meta.cover 优先，其次第一个视频的 pic
+                    first_archive = (series.get("archives") or [{}])[0] or {}
+                    cover = meta.get("cover") or first_archive.get("pic", "") or ""
+
                     result.append({
-                        "id": str(series.get("season_id", series.get("series_id", ""))),
-                        "title": series.get("name", series.get("title", "")),
+                        "id": str(meta.get("season_id") or meta.get("series_id") or ""),
+                        # ⚠️ 合集的 name 是"合集·社会工程学"，title 是"社会工程学"；
+                        # 列表标题用 name（含前缀更明确），描述取 description。
+                        "title": meta.get("name") or meta.get("title") or "",
                         "cover": self._fix_bili_url(cover),
-                        "description": series.get("description", series.get("subtitle", "")),
-                        "mid": str(user_id),
-                        "count": len(series.get("archives", [])),
-                        "ctime": first_archive.get("ctime", 0),
+                        "description": meta.get("description") or meta.get("subtitle") or "",
+                        "mid": str(meta.get("mid") or user_id),
+                        # ⚠️ `meta.total` 才是**合集里的总视频数**；
+                        # len(archives) 只是接口随附的**预览条目**（实测 6 条，
+                        # 而合集实际有 28 个）。原来用 len(archives) 会显示 6，
+                        # 与页面上标的 28 不一致。
+                        "count": meta.get("total") or len(series.get("archives") or []),
+                        "ctime": meta.get("ptime") or meta.get("ctime") or first_archive.get("ctime", 0),
                     })
                 
                 page_info = items_lists.get("page", {})
