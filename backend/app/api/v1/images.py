@@ -32,6 +32,13 @@ from app.services.creative_project.visual_baseline import resolve_visual_baselin
 from app.services.ai.service import ai_call_context
 from app.services.ai.types import ImageCapability, ImageGenerationRequest, MediaType
 from app.services.asset_hub.reference_resolver import merge_reference_images
+from app.services.image_annotation import (
+    MARKED_IMAGE_HINT,
+    AnnotationError,
+    annotation_payload_summary,
+    build_effective_prompt,
+    normalize_annotations,
+)
 from app.services.platform_log import service as platform_log
 from app.services.ai.visual_planning import build_visual_planning_summary
 
@@ -64,6 +71,13 @@ def _image_retry_payload(req) -> dict:
         "planning_summary": req.planning_summary or {},
         "production_plan_id": req.production_plan_id or "",
         "production_node_id": req.production_node_id or "",
+        # 批注必须一起带进重发参数：重发走的是同一个端点，少了这个字段就会重生成出一张
+        # 「没带批注」的图——用户点重发却得到不同结果，且没有任何地方提示原因。
+        # 与 prompt 一样属于用户输入，不做额外脱敏。
+        "annotations": req.annotations or [],
+        # 同理：带框标注图虽已混在 reference_images 里，但提示词里那段
+        # 「不要把框线画进结果」的说明靠这个开关触发。丢了它，重发就会生成一张带红框的图。
+        "annotation_marked_reference": req.annotation_marked_reference,
     }
 
 
@@ -323,6 +337,17 @@ class ImageGenerateRequest(BaseModel):
     visual_intent: Optional[str] = None
     composition: Optional[str] = None
     planning_summary: dict[str, Any] = Field(default_factory=dict)
+    #: 图生图「画面批注」：用户在参考图上圈选区域并写下修改意见。
+    #: 坐标为 0~1 相对比例（x2/y2 为开区间），服务端校验后翻译成追加提示词。
+    #: 留空/为 null 时**不改变任何行为**，与接入前完全一致。
+    annotations: Optional[list[dict[str, Any]]] = None
+    #: 前端已把批注框**画到像素上**并追加为一张额外参考图时置 true。
+    #: 服务端据此在提示词里说明「第 2 张参考图是带红框的原图，只用于定位，不是要保留的内容」——
+    #: 不说明的话模型可能把框线本身画进结果里。
+    annotation_marked_reference: bool = False
+    #: 标注图说明的自定义文案。`None` = 用内置默认；空字符串 = **不加这句**；
+    #: 非空 = 用这段。三种状态语义不同，**不能互相兜底**。
+    annotation_hint_text: Optional[str] = None
 
 
 def _generation_lineage_from_request(req: ImageGenerateRequest, *, extra: dict | None = None) -> dict:
@@ -598,6 +623,64 @@ class ImagePromptOptimizeRequest(BaseModel):
     model: Optional[str] = None
 
 
+class ImagePromptPreviewRequest(BaseModel):
+    """预览「真正会发给图像模型的完整提示词」。
+
+    只拼装、**不调用模型、不创建任务、不产生任何费用**，与
+    `POST /images/generate` 共用 `build_effective_prompt`。
+    """
+
+    prompt: str = ""
+    annotations: Optional[list[dict[str, Any]]] = None
+    annotation_marked_reference: bool = False
+    #: `None` = 用默认文案；`""` = 不加这句；非空 = 自定义。见 build_effective_prompt。
+    annotation_hint_text: Optional[str] = None
+
+
+class ImagePromptPreviewResponse(BaseModel):
+    success: bool = True
+    #: 最终提示词全文（主提示词 + 系统追加部分），与实际提交给模型的一致。
+    prompt: str = ""
+    #: 分块展示用：标出哪些是系统自动加的，避免用户误以为那是他自己写的。
+    blocks: list[dict[str, Any]] = Field(default_factory=list)
+    system_added: list[str] = Field(default_factory=list)
+    #: 当前生效的标注图默认文案，供前端「恢复默认」。
+    default_hint_text: str = ""
+    error: Optional[str] = None
+
+
+@router.post(
+    "/prompt-preview",
+    response_model=ImagePromptPreviewResponse,
+    summary="预览真正会发送的完整生图提示词（含系统自动拼接部分）",
+)
+async def preview_image_prompt(req: ImagePromptPreviewRequest):
+    """让用户看清**完整**提示词，并可改掉系统自动追加的部分。
+
+    为什么不只回显 `req.prompt`：图生图下系统还会追加标注图说明与批注意见清单，
+    用户真正关心的是"模型最后收到的是什么"。默认文案各家模型反应差别很大，
+    必须可见、可改、可关——否则用户被一段看不见的固定文案绑定，出问题时无从下手。
+    """
+    try:
+        annotations = normalize_annotations(req.annotations)
+    except AnnotationError as exc:
+        raise HTTPException(status_code=400, detail=f"画面批注不合法：{exc}") from exc
+
+    built = build_effective_prompt(
+        base_prompt=req.prompt,
+        annotations=annotations,
+        marked_reference=req.annotation_marked_reference,
+        marked_hint=req.annotation_hint_text,
+    )
+    return ImagePromptPreviewResponse(
+        success=True,
+        prompt=built["prompt"],
+        blocks=built["blocks"],
+        system_added=built["system_added"],
+        default_hint_text=MARKED_IMAGE_HINT,
+    )
+
+
 class ImagePromptOptimizeResponse(BaseModel):
     success: bool = True
     prompt: str = ""
@@ -651,9 +734,40 @@ async def generate_image(
     if not manager.is_loaded():
         raise HTTPException(status_code=503, detail="AIService 未初始化")
 
+    # 画面批注：校验并翻译成追加提示词。
+    #
+    # 放在 try 之前是刻意的：本端点的 try 捕获所有异常并转成 `ImageResponse(success=False)`，
+    # 那条路径表示「生成失败」。但批注不合法是**请求本身写错了**，属于 400，若放进 try
+    # 会被吞成生成失败——外部 Agent（ylk_ Key）就无法区分「我该改请求」还是「供应商挂了」。
+    # 同理放在 _merge_reference_images 之前：不合法的数据不该先去做素材解析和下载。
+    try:
+        annotations = normalize_annotations(req.annotations)
+    except AnnotationError as exc:
+        raise HTTPException(status_code=400, detail=f"画面批注不合法：{exc}") from exc
+    annotation_summary = annotation_payload_summary(annotations)
+    # 预览与生成走**同一个**拼装函数：两份实现各写各的话，预览就会与实际不一致，
+    # 用户照着预览调半天、生成出来却不一样。详见 services/image_annotation.build_effective_prompt。
+    built = build_effective_prompt(
+        base_prompt=req.prompt,
+        annotations=annotations,
+        marked_reference=req.annotation_marked_reference,
+        marked_hint=req.annotation_hint_text,
+    )
+    effective_prompt = built["prompt"]
+    if built["system_added"]:
+        logger.info(
+            "[image/annotations] prompt composed, system blocks: %s",
+            ",".join(built["system_added"]),
+        )
+    # 没有生成出批注段时摘要记 0 而不是记 N，否则日志会让人以为
+    # 「批注生效了但没效果」（实际是意见与主提示词重复，被去重掉了）。
+    if "annotations" not in built["system_added"]:
+        annotation_summary = annotation_payload_summary([])
+
     try:
         reference_images = await _merge_reference_images(req, session, manager)
         requested_generation_params = _asset_generation_params(req)
+
         planning_summary = req.planning_summary or build_visual_planning_summary(
             "image",
             req.prompt,
@@ -672,7 +786,7 @@ async def generate_image(
         )
         req.planning_summary = planning_summary
         img_req = ImageGenerationRequest(
-            prompt=req.prompt,
+            prompt=effective_prompt,
             negative_prompt=req.negative_prompt or "",
             size=req.size or "1024x1024",
             style=req.style or "",
@@ -736,6 +850,9 @@ async def generate_image(
                         "production_plan_id": req.production_plan_id or "",
                         "production_node_id": req.production_node_id or "",
                         "planning_summary": planning_summary,
+                        # 只存摘要（条数 + 框位），不存意见原文：任务详情页要给用户看
+                        # 「这张图当时标了几处」，不需要也不应该把原文复制一份到任务表。
+                        "annotations_summary": annotation_summary,
                         "diagnostics": {
                             "external_task_id": result.task_id,
                             "provider": result.provider or req.provider or "",
@@ -826,6 +943,7 @@ async def generate_image(
                                 "prompt_reference_source_id": req.prompt_reference_source_id or "",
                                 "prompt_reference_title": req.prompt_reference_title or "",
                                 "planning_summary": planning_summary,
+                                "annotations_summary": annotation_summary,
                             },
                             lineage=_generation_lineage_from_request(req),
                             owner_user_id=principal_owner_user_id(principal),
