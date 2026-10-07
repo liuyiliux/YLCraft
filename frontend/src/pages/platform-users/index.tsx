@@ -1159,10 +1159,15 @@ export default function PlatformUserPage() {
                                 ),
                               },
                               {
-                                title: '数量', dataIndex: 'count', width: 72,
+                                // ⚠️ B站 收藏夹列表返回的字段是 **`media_count`**
+                                // （不是 count）。2026-10-07 实测返回：
+                                //   id/title/cover/media_count/ctime/mtime/fav_state
+                                // 写成 `count` 时 20 行全是 `-` ——
+                                // 合集用 `count`、收藏夹用 `media_count`，两个不一致。
+                                title: '数量', dataIndex: 'media_count', width: 72,
                                 onHeaderCell: () => ({ style: { whiteSpace: 'nowrap' } }),
                                 render: (v: number) => (
-                                  <span style={{ whiteSpace: 'nowrap' }}>{v || '-'}</span>
+                                  <span style={{ whiteSpace: 'nowrap' }}>{v ?? '-'}</span>
                                 ),
                               },
                             ]}
