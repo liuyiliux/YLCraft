@@ -5134,7 +5134,7 @@
       "summary": "批量获取无水印资源",
       "function": "fetch_no_watermark",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 804,
+      "line": 824,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5150,7 +5150,7 @@
       "summary": "导入到素材库",
       "function": "import_to_assets",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 379,
+      "line": 384,
       "response_model": "ImportResponse",
       "include_in_schema": true
     },
@@ -5166,7 +5166,7 @@
       "summary": "获取笔记详情（无水印）",
       "function": "get_note_detail",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 695,
+      "line": 715,
       "response_model": "NoteDetailResponse",
       "include_in_schema": true
     },
@@ -5182,7 +5182,7 @@
       "summary": "获取采集配置选项",
       "function": "get_options",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 277,
+      "line": 282,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5198,7 +5198,7 @@
       "summary": "获取支持的平台列表",
       "function": "get_platforms",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 271,
+      "line": 276,
       "response_model": "",
       "include_in_schema": true
     },
@@ -5214,7 +5214,7 @@
       "summary": "搜索视频/图文素材",
       "function": "search_materials",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 286,
+      "line": 291,
       "response_model": "SearchResponse",
       "include_in_schema": true
     },
@@ -5230,10 +5230,9 @@
       "summary": "增强搜索（支持笔记/用户）",
       "function": "search_enhanced",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 441,
+      "line": 445,
       "response_model": "SearchResponse",
-      "include_in_schema": true,
-      "note": "SearchResponse.total_pages = platform-stated page count (weibo 共50页, measured); null = platform did not say, frontend must say unknown rather than guess"
+      "include_in_schema": true
     },
     {
       "method": "GET",
@@ -5247,7 +5246,7 @@
       "summary": "查询采集任务状态",
       "function": "get_task_status",
       "file": "backend/app/api/v1/crawler.py",
-      "line": 425,
+      "line": 430,
       "response_model": "",
       "include_in_schema": true
     },
@@ -7391,7 +7390,7 @@
       "summary": "可用图像后端列表",
       "function": "list_backends",
       "file": "backend/app/api/v1/images.py",
-      "line": 519,
+      "line": 523,
       "response_model": "ImageBackendsResponse",
       "include_in_schema": true
     },
@@ -7407,7 +7406,7 @@
       "summary": "生成图片",
       "function": "generate_image",
       "file": "backend/app/api/v1/images.py",
-      "line": 661,
+      "line": 723,
       "response_model": "ImageResponse",
       "include_in_schema": true
     },
@@ -7423,7 +7422,7 @@
       "summary": "批量生成多平台图片",
       "function": "batch_generate_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 1684,
+      "line": 1741,
       "response_model": "BatchGenerateResponse",
       "include_in_schema": true
     },
@@ -7439,7 +7438,7 @@
       "summary": "单张图片重生成",
       "function": "batch_retry_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 1615,
+      "line": 1672,
       "response_model": "BatchRetryResponse",
       "include_in_schema": true
     },
@@ -7455,7 +7454,7 @@
       "summary": "多主题批量生成",
       "function": "batch_topics_generate_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 1721,
+      "line": 1778,
       "response_model": "BatchTopicGenerateResponse",
       "include_in_schema": true
     },
@@ -7471,7 +7470,7 @@
       "summary": "多平台大纲生成",
       "function": "generate_outline_endpoint",
       "file": "backend/app/api/v1/images.py",
-      "line": 1551,
+      "line": 1608,
       "response_model": "GenerateOutlineResponse",
       "include_in_schema": true
     },
@@ -7487,7 +7486,7 @@
       "summary": "用 LLM 优化生图提示词",
       "function": "optimize_prompt",
       "file": "backend/app/api/v1/images.py",
-      "line": 634,
+      "line": 696,
       "response_model": "ImagePromptOptimizeResponse",
       "include_in_schema": true
     },
@@ -7503,7 +7502,7 @@
       "summary": "可用平台/Prompt 模板列表",
       "function": "list_platform_templates",
       "file": "backend/app/api/v1/images.py",
-      "line": 1422,
+      "line": 1479,
       "response_model": "dict",
       "include_in_schema": true
     },
@@ -7519,7 +7518,7 @@
       "summary": "新增平台模板",
       "function": "create_platform_template",
       "file": "backend/app/api/v1/images.py",
-      "line": 1453,
+      "line": 1510,
       "response_model": "dict",
       "include_in_schema": true
     },
@@ -7535,7 +7534,7 @@
       "summary": "更新平台模板",
       "function": "update_platform_template",
       "file": "backend/app/api/v1/images.py",
-      "line": 1483,
+      "line": 1540,
       "response_model": "dict",
       "include_in_schema": true
     },
@@ -7551,8 +7550,24 @@
       "summary": "删除平台模板",
       "function": "delete_platform_template",
       "file": "backend/app/api/v1/images.py",
-      "line": 1521,
+      "line": 1578,
       "response_model": "dict",
+      "include_in_schema": true
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/images/prompt-preview",
+      "router": "images",
+      "prefix": "/api/v1/images",
+      "local_path": "/prompt-preview",
+      "tags": [
+        "Images"
+      ],
+      "summary": "预览真正会发送的完整生图提示词（含系统自动拼接部分）",
+      "function": "preview_image_prompt",
+      "file": "backend/app/api/v1/images.py",
+      "line": 657,
+      "response_model": "ImagePromptPreviewResponse",
       "include_in_schema": true
     },
     {
@@ -7567,7 +7582,7 @@
       "summary": "轮询图像生成任务",
       "function": "poll_image_task",
       "file": "backend/app/api/v1/images.py",
-      "line": 965,
+      "line": 1022,
       "response_model": "ImageResponse",
       "include_in_schema": true
     },

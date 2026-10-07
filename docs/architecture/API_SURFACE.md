@@ -7,8 +7,8 @@
 ## Summary
 
 - Router mounts: 64
-- Endpoints: 736
-- Public schema endpoints: 735
+- Endpoints: 737
+- Public schema endpoints: 736
 - Hidden compatibility endpoints: 1
 
 ## Router Mounts
@@ -447,14 +447,14 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `POST` | `/api/v1/crawler/fetch-no-watermark` | 批量获取无水印资源 | `fetch_no_watermark` | `backend/app/api/v1/crawler.py:804` |
-| `POST` | `/api/v1/crawler/import` | 导入到素材库 | `import_to_assets` | `backend/app/api/v1/crawler.py:379` |
-| `GET` | `/api/v1/crawler/note-detail` | 获取笔记详情（无水印） | `get_note_detail` | `backend/app/api/v1/crawler.py:695` |
-| `GET` | `/api/v1/crawler/options` | 获取采集配置选项 | `get_options` | `backend/app/api/v1/crawler.py:277` |
-| `GET` | `/api/v1/crawler/platforms` | 获取支持的平台列表 | `get_platforms` | `backend/app/api/v1/crawler.py:271` |
-| `POST` | `/api/v1/crawler/search` | 搜索视频/图文素材 | `search_materials` | `backend/app/api/v1/crawler.py:286` |
-| `POST` | `/api/v1/crawler/search-enhanced` | 增强搜索（支持笔记/用户）。响应 `SearchResponse` 多一个 `total_pages`：**平台明确说出**的总页数（微博「共50页」实测）；`null` = 平台没说，前端应说"不知道"而**不要猜** | `search_enhanced` | `backend/app/api/v1/crawler.py:441` |
-| `GET` | `/api/v1/crawler/tasks/{task_id}` | 查询采集任务状态 | `get_task_status` | `backend/app/api/v1/crawler.py:425` |
+| `POST` | `/api/v1/crawler/fetch-no-watermark` | 批量获取无水印资源 | `fetch_no_watermark` | `backend/app/api/v1/crawler.py:824` |
+| `POST` | `/api/v1/crawler/import` | 导入到素材库 | `import_to_assets` | `backend/app/api/v1/crawler.py:384` |
+| `GET` | `/api/v1/crawler/note-detail` | 获取笔记详情（无水印） | `get_note_detail` | `backend/app/api/v1/crawler.py:715` |
+| `GET` | `/api/v1/crawler/options` | 获取采集配置选项 | `get_options` | `backend/app/api/v1/crawler.py:282` |
+| `GET` | `/api/v1/crawler/platforms` | 获取支持的平台列表 | `get_platforms` | `backend/app/api/v1/crawler.py:276` |
+| `POST` | `/api/v1/crawler/search` | 搜索视频/图文素材 | `search_materials` | `backend/app/api/v1/crawler.py:291` |
+| `POST` | `/api/v1/crawler/search-enhanced` | 增强搜索（支持笔记/用户） | `search_enhanced` | `backend/app/api/v1/crawler.py:445` |
+| `GET` | `/api/v1/crawler/tasks/{task_id}` | 查询采集任务状态 | `get_task_status` | `backend/app/api/v1/crawler.py:430` |
 
 ### Crawler — Bilibili
 
@@ -694,18 +694,19 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/images/backends` | 可用图像后端列表 | `list_backends` | `backend/app/api/v1/images.py:519` |
-| `POST` | `/api/v1/images/generate` | 生成图片 | `generate_image` | `backend/app/api/v1/images.py:661` |
-| `POST` | `/api/v1/images/generate-batch` | 批量生成多平台图片 | `batch_generate_endpoint` | `backend/app/api/v1/images.py:1684` |
-| `POST` | `/api/v1/images/generate-batch/retry` | 单张图片重生成 | `batch_retry_endpoint` | `backend/app/api/v1/images.py:1615` |
-| `POST` | `/api/v1/images/generate-batch/topics` | 多主题批量生成 | `batch_topics_generate_endpoint` | `backend/app/api/v1/images.py:1721` |
-| `POST` | `/api/v1/images/generate-outline` | 多平台大纲生成 | `generate_outline_endpoint` | `backend/app/api/v1/images.py:1551` |
-| `POST` | `/api/v1/images/optimize-prompt` | 用 LLM 优化生图提示词 | `optimize_prompt` | `backend/app/api/v1/images.py:634` |
-| `GET` | `/api/v1/images/platform-templates` | 可用平台/Prompt 模板列表 | `list_platform_templates` | `backend/app/api/v1/images.py:1422` |
-| `POST` | `/api/v1/images/platform-templates` | 新增平台模板 | `create_platform_template` | `backend/app/api/v1/images.py:1453` |
-| `PUT` | `/api/v1/images/platform-templates/{template_id}` | 更新平台模板 | `update_platform_template` | `backend/app/api/v1/images.py:1483` |
-| `DELETE` | `/api/v1/images/platform-templates/{template_id}` | 删除平台模板 | `delete_platform_template` | `backend/app/api/v1/images.py:1521` |
-| `GET` | `/api/v1/images/tasks/{task_id}` | 轮询图像生成任务 | `poll_image_task` | `backend/app/api/v1/images.py:965` |
+| `GET` | `/api/v1/images/backends` | 可用图像后端列表 | `list_backends` | `backend/app/api/v1/images.py:523` |
+| `POST` | `/api/v1/images/generate` | 生成图片 | `generate_image` | `backend/app/api/v1/images.py:723` |
+| `POST` | `/api/v1/images/generate-batch` | 批量生成多平台图片 | `batch_generate_endpoint` | `backend/app/api/v1/images.py:1741` |
+| `POST` | `/api/v1/images/generate-batch/retry` | 单张图片重生成 | `batch_retry_endpoint` | `backend/app/api/v1/images.py:1672` |
+| `POST` | `/api/v1/images/generate-batch/topics` | 多主题批量生成 | `batch_topics_generate_endpoint` | `backend/app/api/v1/images.py:1778` |
+| `POST` | `/api/v1/images/generate-outline` | 多平台大纲生成 | `generate_outline_endpoint` | `backend/app/api/v1/images.py:1608` |
+| `POST` | `/api/v1/images/optimize-prompt` | 用 LLM 优化生图提示词 | `optimize_prompt` | `backend/app/api/v1/images.py:696` |
+| `GET` | `/api/v1/images/platform-templates` | 可用平台/Prompt 模板列表 | `list_platform_templates` | `backend/app/api/v1/images.py:1479` |
+| `POST` | `/api/v1/images/platform-templates` | 新增平台模板 | `create_platform_template` | `backend/app/api/v1/images.py:1510` |
+| `PUT` | `/api/v1/images/platform-templates/{template_id}` | 更新平台模板 | `update_platform_template` | `backend/app/api/v1/images.py:1540` |
+| `DELETE` | `/api/v1/images/platform-templates/{template_id}` | 删除平台模板 | `delete_platform_template` | `backend/app/api/v1/images.py:1578` |
+| `POST` | `/api/v1/images/prompt-preview` | 预览真正会发送的完整生图提示词（含系统自动拼接部分） | `preview_image_prompt` | `backend/app/api/v1/images.py:657` |
+| `GET` | `/api/v1/images/tasks/{task_id}` | 轮询图像生成任务 | `poll_image_task` | `backend/app/api/v1/images.py:1022` |
 
 ### JianYing
 
