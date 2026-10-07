@@ -456,6 +456,55 @@ class TestPublishTimeIsNotDropped(unittest.TestCase):
         got = datetime.fromtimestamp(int(r.create_time))
         self.assertEqual(2025, got.year)
 
+    def test_today_format_is_parsed(self):
+        """⚠️⚠️ `今天08:07` —— **没有月日**（2026-10-07 浏览器实测才发现）。
+
+        第一版只认 `10月06日 15:50` 和 `2025年09月16日 08:26`，
+        于是"今天"发的微博时间全丢。实测第 2 页 9 条里丢了 5 条 ——
+        恰好全是今天发的（搜索结果按时间倒序，今天的最靠前）。
+
+        真实片段：
+            <a href="//weibo.com/7326815172/Rlwqd4fWB?refer_flag=...">
+              今天08:07 </a> &nbsp;来自
+            <a href="https://huati.weibo.com/k/..." rel="nofollow">季肖冰超话</a>
+        """
+        from datetime import datetime, timedelta
+        r = self._card("今天08:07")
+        self.assertTrue(r.create_time, "「今天」的时间没解析出来")
+        got = datetime.fromtimestamp(int(r.create_time))
+        now = datetime.now()
+        self.assertEqual((now.year, now.month, now.day),
+                         (got.year, got.month, got.day),
+                         "「今天」应当落在今天")
+        self.assertEqual((8, 7), (got.hour, got.minute))
+
+    def test_yesterday_format_is_parsed(self):
+        from datetime import datetime, timedelta
+        r = self._card("昨天21:30")
+        self.assertTrue(r.create_time, "「昨天」的时间没解析出来")
+        got = datetime.fromtimestamp(int(r.create_time))
+        want = datetime.now() - timedelta(days=1)
+        self.assertEqual((want.year, want.month, want.day),
+                         (got.year, got.month, got.day))
+        self.assertEqual((21, 30), (got.hour, got.minute))
+
+    def test_interluded_text_does_not_break_parsing(self):
+        """`.from` 中间会插 `转赞人数超过40`，不能因此解析不出时间。"""
+        from datetime import datetime
+        r = self._card("今天 03:55 转赞人数超过40")
+        self.assertTrue(r.create_time, "插话导致时间丢了")
+        got = datetime.fromtimestamp(int(r.create_time))
+        self.assertEqual((3, 55), (got.hour, got.minute))
+
+    def test_today_not_in_the_future(self):
+        """「今天23:50」在凌晨看就是未来 2 小时 —— 那是"今天凌晨"没错，
+        但不能因为它 > now 就掉进"去年"分支。"""
+        from datetime import datetime, timedelta
+        r = self._card("今天23:59")
+        self.assertTrue(r.create_time)
+        delta = datetime.now().timestamp() - int(r.create_time)
+        self.assertLess(delta, 86400, "「今天」应落在最近 24 小时内")
+
     def test_unparseable_from_is_left_empty_not_faked(self):
         """抓得到 `.from` 但时间读不懂 ⇒ 留空，**绝不编**。"""
         r = self._card("来自 微博网页版")
@@ -491,6 +540,48 @@ class TestPublishTimeIsNotDropped(unittest.TestCase):
         card = sh.parse_cards(seg)[0]
         self.assertTrue(card["create_time"], "真实结构的 .from 没匹配上")
         self.assertEqual("iPhone 15 Pro Max", card["source"])
+
+    def test_real_page2_today_cards_are_captured(self):
+        """⚠️ 第 2 页真实的卡片（2026-10-07 从 s.weibo.com 抄的）。
+
+        这是**发现问题的那一页**：9 条里第一版只抓到 4 条 ——
+        漏掉的 5 条全是 `今天HH:MM` 写法。
+
+        这里原样放两条漏掉的 + 一条正常格式，锁住不再退化。
+        """
+        raw = (
+            '<div class="card-wrap" mid="5352">'
+            '<p class="txt">今天发的</p>'
+            '<div class="from">'
+            '<a href="//weibo.com/7326815172/Rlwqd4fWB?refer_flag=1001030103_"'
+            ' target="_blank" suda-data="key=tblog_search_weibo&amp;value=seqid:9">'
+            ' 今天08:07 </a> &nbsp;来自 '
+            '<a href="https://huati.weibo.com/k/x" rel="nofollow">季肖冰超话</a>'
+            '</div>'
+            '<div class="card-wrap" mid="5353">'
+            '<p class="txt">今天发的2</p>'
+            '<div class="from">'
+            '<a href="//weibo.com/1751291250/Rlw5tmXgC?refer_flag=1001030103_"'
+            ' target="_blank" suda-data="key=tblog_search_weibo&amp;value=seqid:9">'
+            ' 今天06:35 </a> &nbsp;来自 '
+            '<a href="https://app.weibo.com/t/feed/x" rel="nofollow">vivo X80</a>'
+            '</div>'
+            '<div class="card-wrap" mid="5354">'
+            '<p class="txt">昨天发的</p>'
+            '<div class="from">'
+            '<a href="//weibo.com/5404977405/RlryQc9Vw?refer_flag=1001030103_"'
+            ' target="_blank" suda-data="key=tblog_search_weibo&amp;value=seqid:9">'
+            '今天 03:55 转赞人数超过40</a> &nbsp;来自 '
+            '<a href="//weibo.com/" rel="nofollow">HarmonyOS</a>'
+            '</div></div>'
+        )
+        cards = sh.parse_cards(raw)
+        self.assertEqual(3, len(cards), "三张卡都要解析出来")
+        for c in cards:
+            self.assertTrue(c["create_time"],
+                            "「%s」的时间丢了" % c["text"])
+        self.assertEqual(["季肖冰超话", "vivo X80", "HarmonyOS"],
+                         [c["source"] for c in cards])
 
 
 class TestPlatformConstants(unittest.TestCase):
