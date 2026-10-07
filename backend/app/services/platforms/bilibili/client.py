@@ -1539,7 +1539,13 @@ class BilibiliClient(BasePlatformClient):
         try:
             response = await self.request("GET", url)
             self._log(f"[DEBUG] Series API response code: {response.get('code', 'N/A')}, keys: {list(response.keys()) if isinstance(response, dict) else type(response)}")
-            import json
+            # ⚠️ **别在这里写 `import json`**（2026-10-07 踩过）：
+            # 函数里任何位置出现 `import json`，Python 就把 `json` 判定为
+            # **整个函数的局部变量**，于是函数开头（拼 x-bili-* 参数时）
+            # 用 `json.dumps` 会抛
+            #     `local variable 'json' referenced before assignment`
+            # —— 报错还完全指不到真正的行（只说"合集接口报错"）。
+            # 模块顶部**已经** import json（line 8），这里用模块级的即可。
             self._log(f"[DEBUG] Series API full response: {json.dumps(response, ensure_ascii=False)[:800]}")
             
             if isinstance(response, dict) and response.get("code") == 0:
@@ -1558,11 +1564,25 @@ class BilibiliClient(BasePlatformClient):
                 # —— **全是 None**，于是就算请求成功，列表里也是一堆空名字。
                 # 这是和"接口 -400"叠加在一起的**第二个独立 bug**。
                 # ⇒ 一律先取 meta，meta 没有再退回顶层（兼容旧结构）。
-                series_list = items_lists.get("seasons_list", []) or items_lists.get("series_list", []) or []
-                self._log(f"[DEBUG] seasons={len(items_lists.get('seasons_list') or [])} series={len(items_lists.get('series_list') or [])}")
+                #
+                # ⚠️⚠️ 还有第三个：`or` 链 `seasons_list or series_list`
+                # 只会取到**第一个非空的**。实测 uid=50908119 是
+                # seasons_list=3（合集）、series_list=6（系列），
+                # `or` 把 6 个系列整个丢掉了，
+                # 而 B站 空间页那个标签叫「**合集和系列**」——两个都要显示。
+                # ⇒ 两个数组**都要**，series 排在后面。
+                seasons = items_lists.get("seasons_list") or []
+                series_items = items_lists.get("series_list") or []
+                self._log(
+                    f"[DEBUG] seasons={len(seasons)} series={len(series_items)}"
+                )
 
                 result = []
-                for series in series_list:
+                # (条目, 类型标记) —— 前端可据此区分"合集/系列"
+                for series, kind in (
+                    [(s, "season") for s in seasons]
+                    + [(s, "series") for s in series_items]
+                ):
                     meta = series.get("meta") or {}
                     # 封面：meta.cover 优先，其次第一个视频的 pic
                     first_archive = (series.get("archives") or [{}])[0] or {}
@@ -1582,10 +1602,13 @@ class BilibiliClient(BasePlatformClient):
                         # 与页面上标的 28 不一致。
                         "count": meta.get("total") or len(series.get("archives") or []),
                         "ctime": meta.get("ptime") or meta.get("ctime") or first_archive.get("ctime", 0),
+                        "kind": kind,
                     })
-                
+
                 page_info = items_lists.get("page", {})
-                total = page_info.get("total", len(result))
+                # ⚠️ 列表长度才是"这个 UP 一共有多少"，不能用 page.total
+                # （实测 page.total=9 = 3合集+6系列，而翻页时每页可能不足）
+                total = len(result) or page_info.get("total", 0)
                 
                 return {
                     "total": total,
