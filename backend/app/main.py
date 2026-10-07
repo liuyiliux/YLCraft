@@ -3,12 +3,21 @@ YLCraft — FastAPI 入口
 
 启动方式（Windows 必须带 --loop，否则浏览器类功能不可用）：
     cd backend
-    uvicorn app.main:app --reload --port 8000 --loop app.core.win_loop:new_loop
+    uvicorn app.main:app --port 8000 --loop app.core.win_loop:new_loop
 
-为什么需要 --loop：`--reload` 会让 uvicorn 选 SelectorEventLoop，而它在 Windows 上
-不支持 create_subprocess_exec，Patchright 无法启动浏览器（Cookie 获取全部失败）。
-详见 app/core/win_loop.py。
-非 Windows 平台无需该参数。
+⚠️ **不要加 `--reload`**（2026-10-07 改，`start.bat` 同步去掉了）
+
+uvicorn 0.46.0 的 `Config.use_subprocess` 是 `bool(reload or workers > 1)`，
+而 `loops/asyncio.py` 只在**没开**它的时候才给 ProactorEventLoop ——
+带 `--reload` 就会拿到 SelectorEventLoop，在 Windows 上无法创建子进程。
+
+实测后果（45 万行日志）：启动后约 2 秒必崩 `WinError 87`，然后自动重启，
+再崩……`Application startup complete` 一次都没出现过 ⇒ 端口在监听但永不响应。
+代价是改后端代码要手动重启后端窗口，换后端不再自己重启到死。
+
+为什么需要 `--loop`：Patchright 要起浏览器（子进程），
+SelectorEventLoop 在 Windows 上做不到（`NotImplementedError`）。
+详见 app/core/win_loop.py。非 Windows 平台无需该参数。
 """
 
 from __future__ import annotations

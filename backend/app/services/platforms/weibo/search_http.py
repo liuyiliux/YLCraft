@@ -62,7 +62,7 @@ from __future__ import annotations
 import html as _html_mod
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
 
@@ -121,8 +121,22 @@ RE_LI = re.compile(r"<li[^>]*>(.*?)</li>", re.S)
 #     </div>
 #     第一版我按 `</span>` 写 → 一条都匹配不到 → 时间继续全丢。
 RE_FROM = re.compile(r'class="from"[^>]*>(.*?)</div>', re.S)
-# 同一条文本里的前半段：`10月06日 15:50`，跨年时是 `2025年09月16日 08:26`
-RE_FROM_TIME = re.compile(r"(\d{4}年)?\s*(\d{1,2})月(\d{1,2})日\s*(\d{1,2}):(\d{2})")
+# ⚠️⚠️ `.from` 的时间**不止一种写法**（2026-10-07 浏览器实测，三种都真实存在）：
+#
+#     ① `10月06日 15:50`                     —— 最常见
+#     ② `今天08:07`                          —— 当天的，**没有月日**！
+#     ③ `2025年09月16日 08:26`               —— 跨年才带年份
+#
+#     ② 是第一版漏掉的：只写了 ①③ 的正则，于是"今天"的微博时间全丢
+#     （实测第 2 页 9 条里丢了 5 条 —— 那 5 条恰好全是今天发的）。
+#
+# 另外 `.from` 里还会插话，比如：
+#     `今天 03:55 转赞人数超过40`  /  `10月06日 12:50 转赞人数超过200`
+# ⇒ 时间用"按位置取"而不是"匹配到就停"，插在中间也不影响。
+RE_FROM_TIME = re.compile(
+    r"(\d{4}年)?\s*(\d{1,2})月(\d{1,2})日\s*(\d{1,2}):(\d{2})")
+# `今天08:07` / `昨天 21:30` —— 没有月日，需要按"今天/昨天"反推
+RE_FROM_TODAY = re.compile(r"(今天|昨天|前天)\s*(\d{1,2}):(\d{2})")
 RE_VIDEO = re.compile(r"video\.weibo\.com|\.media-video")
 RE_NUM = re.compile(r"[\d.]+\s*[万亿]?")
 # ⚠️ 必须先删注释 —— `.card-act` 里有一段被注释掉的 <li>（"收藏"），
@@ -153,23 +167,26 @@ def _unescape(text: str) -> str:
 def _parse_from(seg: str) -> Dict[str, Any]:
     """从卡片片段里取发布时间 + 发布来源。
 
-    `.from` 里的文本形如（实测 2026-10-07）：
+    `.from` 里的文本**有三种写法**（2026-10-07 浏览器实测，都真实出现）：
 
-        `10月06日 15:50  来自 iPhone客户端`
-        `2025年09月16日 08:26  来自 iPhone 15 Pro Max`
+        ① `10月06日 15:50  来自 iPhone客户端`
+        ② `今天08:07  来自 季肖冰超话`      ← **没有月日**
+        ③ `2025年09月16日 08:26  来自 iPhone` ← 跨年才带年份
 
-    返回 `{"create_time": "<毫秒时间戳字符串>", "source": "iPhone客户端"}`，
+        中间还可能插话：`今天 03:55 转赞人数超过40`
+
+    返回 `{"create_time": "<秒时间戳字符串>", "source": "<设备名>"}`，
     抓不到就返回 `{"create_time": "", "source": ""}` —— **不编**。
 
     ## 为什么非转成时间戳
 
-    `.from` **没有年份**（除非跨年了，微博会写成 `2025年09月16日`）。
+    `.from` 基本**没有年份**，而且 ② 连月日都没有。
     直接把 `"10月06日 15:50"` 丢给前端 `new Date()`，浏览器会按
     **2001 年**兜底 → 显示"24 年前"。
 
-    ⇒ 所以这里补年份：用「**不晚于今天**」的最近一年。
-       这是有依据的推断（微博搜索结果按时间倒序，默认不会给未来内容），
-       不是随手猜的常量。
+    ⇒ 缺年份时取「**不晚于今天**」的最近一年（微博按时间倒序，
+       不会给未来内容）；② 用「今天/昨天」直接反推。
+       这是有依据的推断，不是随手猜的常量。
     """
     m = RE_FROM.search(seg or "")
     if not m:
@@ -186,39 +203,52 @@ def _parse_from(seg: str) -> Dict[str, Any]:
     if sm:
         source = sm.group(1).strip()
 
+    now = datetime.now()
+    target: Optional[datetime] = None
+
     tm = RE_FROM_TIME.search(raw)
-    if not tm:
+    if tm:
+        year = int(tm.group(1)[:-1]) if tm.group(1) else 0
+        month, day, hour, minute = (
+            int(tm.group(2)), int(tm.group(3)),
+            int(tm.group(4)), int(tm.group(5)),
+        )
+        if 1 <= month <= 12 and 1 <= day <= 31 and hour <= 23 and minute <= 59:
+            if not year:
+                year = now.year
+            try:
+                candidate = datetime(year, month, day, hour, minute)
+            except ValueError:      # 2 月 29 日这类
+                candidate = None
+            if candidate is not None and not tm.group(1):
+                # 补出来的年份让时间跑到未来 ⇒ 说明是去年的，取上一年
+                if candidate > now:
+                    try:
+                        candidate = datetime(
+                            year - 1, month, day, hour, minute)
+                    except ValueError:
+                        candidate = None
+            target = candidate
+
+    if target is None:
+        # ② `今天08:07` / `昨天21:30` —— 按今天/昨天反推
+        rm = RE_FROM_TODAY.search(raw)
+        if rm:
+            days_back = {"今天": 0, "昨天": 1, "前天": 2}.get(rm.group(1), 0)
+            hour, minute = int(rm.group(2)), int(rm.group(3))
+            if hour <= 23 and minute <= 59:
+                base = now - timedelta(days=days_back)
+                try:
+                    target = base.replace(
+                        hour=hour, minute=minute, second=0, microsecond=0)
+                except ValueError:
+                    target = None
+
+    if target is None:
         # 只有文本、没有可解析的时间 → 如实留空，别塞个假时间进去
         return {"create_time": "", "source": source}
 
-    year = int(tm.group(1)[:-1]) if tm.group(1) else 0
-    month, day, hour, minute = (
-        int(tm.group(2)), int(tm.group(3)),
-        int(tm.group(4)), int(tm.group(5)),
-    )
-    if not (1 <= month <= 12 and 1 <= day <= 31 and hour <= 23 and minute <= 59):
-        return {"create_time": "", "source": source}
-
-    now = datetime.now()
-    if not year:
-        year = now.year
-        # 补出来的年份让时间跑到未来 ⇒ 说明是去年的，取上一年
-        try:
-            candidate = datetime(year, month, day, hour, minute)
-        except ValueError:      # 2 月 29 日这类
-            return {"create_time": "", "source": source}
-        if candidate > now:
-            try:
-                candidate = datetime(year - 1, month, day, hour, minute)
-            except ValueError:
-                return {"create_time": "", "source": source}
-        year = candidate.year
-
-    try:
-        ts = int(datetime(year, month, day, hour, minute).timestamp())
-    except (ValueError, OSError, OverflowError):
-        return {"create_time": "", "source": source}
-    return {"create_time": str(ts), "source": source}
+    return {"create_time": str(int(target.timestamp())), "source": source}
 
 
 def _pretty_time(ts: str) -> str:
