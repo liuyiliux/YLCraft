@@ -891,7 +891,15 @@ async def get_up_series(
 
         except Exception as e:
             logger.error(f"[up_series] Error: {e}")
-            raise HTTPException(status_code=500, detail=f"获取UP主合集失败: {str(e)}")
+            # ⚠️ 这里**如实回 502 并带上原因**。
+            # 合集接口经常被 B站限流/改签名（实测 code=-400），
+            # 之前这里回 500「获取UP主合集失败: ...」但 body 里没有 code，
+            # 前端只看到「暂无合集」—— 分不清"没合集"还是"接口坏了"。
+            # 现在 detail 里带 B站原始错误码，能一眼定位。
+            raise HTTPException(
+                status_code=502,
+                detail=f"获取UP主合集失败（B站接口报错）：{str(e)[:200]}",
+            )
 
 
 @router.get("/up/ranking", summary="获取UP主热门视频排行", response_model=UpVideosResponse)

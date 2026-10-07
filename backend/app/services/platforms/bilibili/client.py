@@ -1532,11 +1532,27 @@ class BilibiliClient(BasePlatformClient):
                     "page_size": page_size,
                 }
             else:
-                return {"total": 0, "list": [], "page": page, "page_size": page_size}
-                
+                # ⚠️⚠️ B站返回了**错误码**（实测 2026-10-07：`code=-400 请求错误`）。
+                #
+                # 原来这里和"成功但没有合集"一样返回 `{"total":0,"list":[]}`，
+                # 上层于是显示「暂无合集」—— 用户看到的是**"这个 UP 没有合集"**，
+                # 而真相是**"接口被 B站拒了"**。两种情况完全不同，混在一起
+                # 就是最典型的假阴性：查不出原因，只能反复重试。
+                #
+                # ⇒ 这里**如实抛错**，让上层能提示"接口出错"而不是"没有合集"。
+                code = response.get("code") if isinstance(response, dict) else "N/A"
+                msg = response.get("message") if isinstance(response, dict) else ""
+                raise RuntimeError(
+                    f"B站合集接口返回错误 code={code} message={msg!r}"
+                    f"（uid={user_id}）。这不是「该 UP 没有合集」，是请求被拒。"
+                )
+
+        except RuntimeError:
+            # ⚠️ 上面主动抛的（如实报错），**不要再吞成空列表**
+            raise
         except Exception as e:
             self._log(f"Get user series list error: {e}", "error")
-            return {"total": 0, "list": [], "page": page, "page_size": page_size}
+            raise RuntimeError(f"获取B站合集列表失败: {e}")
     
     # =========================================================================
     # 评论
