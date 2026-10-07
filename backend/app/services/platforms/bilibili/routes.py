@@ -871,7 +871,11 @@ async def get_up_videos(
 async def get_up_series(
     uid: str = Query(..., description="UP主 UID"),
     page: int = Query(1, ge=1, description="页码"),
-    page_size: int = Query(20, ge=1, le=50, description="每页数量"),
+    # ⚠️ 上限是 **20**，不是 50（实测 2026-10-07）：
+    # B站 这个接口 page_size>20 一律回 `code=-400 请求错误`，且响应体里
+    # 没有原因（`{"code":-400,"message":"请求错误","data":null}`）。
+    # 之前这里写 le=50，前端传 30 就必炸。**别再放宽**。
+    page_size: int = Query(20, ge=1, le=20, description="每页数量（B站 上限 20）"),
     conn_id: str = Query("", description="B站连接ID"),
 ):
     """

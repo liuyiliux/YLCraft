@@ -1508,11 +1508,24 @@ class BilibiliClient(BasePlatformClient):
 
         params = {
             "mid": user_id,
-            "page_size": min(page_size, 50),
+            # ⚠️⚠️ **必须夹到 20**（实测 2026-10-07，这是最后一个 -400 的真因）。
+            #
+            # 实测矩阵（同一个 uid=50908119、同一套 headers，只改 page_size）：
+            #     page_size=20 → code=0，9 条 ✅
+            #     page_size=30 → code=-400 请求错误 ❌
+            #
+            # B站 这个接口的 page_size 有**未公开的上限**，超过 20 就直接拒，
+            # 而且只在响应体里回 `{"code":-400,"message":"请求错误","data":null}`
+            # —— 没有任何可读原因，只能靠对照实验定位。
+            #
+            # 之前这里写 `min(page_size, 50)`（照抄同文件其它接口的上限），
+            # 而 `routes.py` 的 page_size 上限也是 le=50，于是前端传 30 就炸。
+            # 那个 50 是**别的接口**的规则，不是这个的。
+            "page_size": min(page_size, 20),
             "page_num": page,
             "web_location": "333.1387",
-            # ⚠️ 这两个是 B站前端必传的设备/语言参数，缺了就是 code=-400。
-            # 值是**静态**的（照抄浏览器），不要往里加时间戳。
+            # B站 前端会带的设备/语言参数。实测**去掉也能通**，保留只为
+            # 与浏览器一致、少一个变量（将来 B站 收紧时优先补这里）。
             "x-bili-locale-json": json.dumps(
                 {
                     "c_locale": {"language": "zh", "script": "Hans"},
