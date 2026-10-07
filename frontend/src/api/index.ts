@@ -24,6 +24,7 @@ async function request(path: string, init?: RequestInit) {
       data && typeof data === 'object'
         ? ((data as any).detail ?? (data as any).message)
         : data
+    const url = `${BASE}${path}`
     const message =
       typeof detail === 'string' && detail
         ? detail
@@ -31,6 +32,14 @@ async function request(path: string, init?: RequestInit) {
     const error = new Error(message)
     ;(error as any).status = r.status
     ;(error as any).data = data
+    ;(error as any).url = url
+    // 404 单独强调：多半是**后端没重启**，新加的端点还没加载。
+    // 只回一句 "Not Found" 用户无从判断是路径写错还是服务没更新，
+    // 曾经为此排查了很久——把实际请求地址一并带上，便于直接核对。
+    if (r.status === 404) {
+      console.error(`[api] 404 ${url} — 若该端点刚新增，请重启后端服务使其加载`)
+      ;(error as any).message = `${message}（${url}；若接口为新加，请重启后端）`
+    }
     ;(error as any).response = { status: r.status, data }
     throw error
   }
@@ -3313,7 +3322,19 @@ export const getBiliFavorites = (connId: string) => {
   return request(`/bilibili/favorites?${qs}`)
 }
 
-/** 获取UP主公开收藏夹列表 */
+/** 获取某 UP主 的**公开收藏夹**列表（不是"我的收藏夹"）
+ *
+ * ⚠️⚠️ 2026-10-07 用户实测：「收藏还是我的，不是查询那个人的」。
+ *   原因是这里调用了 `getBiliFavorites(connId)` ——
+ *   **那个接口取的是当前登录用户自己的收藏夹**（B站只有这���）。
+ *
+ *   但 B站**确实提供**看别人公开收藏夹的接口（实测可用，**不需要登录**）：
+ *     GET /bilibili/up/{uid}/favorites?conn_id=…
+ *   实测 uid=50908119 → 2 个：默认收藏夹(557) / bgm(1)
+ *   与该 UP 的 B站空间页显示一致。
+ *
+ * ⇒ 这才是点开某个博主时应该调的那个。
+ */
 export const getBiliUpFavorites = (uid: string, connId?: string) => {
   const qs = new URLSearchParams()
   if (connId) qs.set('conn_id', connId)

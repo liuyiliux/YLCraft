@@ -1478,17 +1478,33 @@ class BilibiliClient(BasePlatformClient):
         """获取用户的合集列表（不需要登录）"""
         self._log(f"Getting user series list: user_id={user_id}")
         
-        # 新的API不需要WBI签名，参数也不同
+        # ⚠️ 这个接口**必须 WBI 签名**。
+        # 不带 w_rid 时 B站一律回 `code=-400 请求错误`（实测 2026-10-07），
+        # 表现为"查不到合集"，其实请求根本没被受理。
         params = {
             "mid": user_id,
             "page_num": page,
             "page_size": min(page_size, 50),
             "web_location": "333.1387",
         }
-        
-        url = f"{BASE_URL}{USER_SERIES}?{urlencode(params)}"
+
+        try:
+            query = await self._sign_params(params)
+        except Exception as e:
+            # `_get_wbi_keys` 拿不到时依次退回浏览器 localStorage / nav 接口，
+            # 都拿不到才报错 —— 绝不退回"无签名请求"（那必然 -400）
+            keys = (
+                await self._get_wbi_keys_from_browser()
+                or await self._get_wbi_keys_from_api()
+            )
+            if not keys:
+                raise RuntimeError(f"获取B站 WBI 签名失败，合集接口无法调用: {e}")
+            signer = BilibiliSign(keys[0], keys[1])
+            query = signer.sign(params)
+
+        url = f"{BASE_URL}{USER_SERIES}?{query}"
         self._log(f"[DEBUG] Series API URL: {url[:200]}")
-        
+
         try:
             response = await self.request("GET", url)
             self._log(f"[DEBUG] Series API response code: {response.get('code', 'N/A')}, keys: {list(response.keys()) if isinstance(response, dict) else type(response)}")
@@ -1502,7 +1518,6 @@ class BilibiliClient(BasePlatformClient):
                 
                 # 获取合集列表（先找seasons_list，如果没有就找series_list）
                 series_list = items_lists.get("seasons_list", []) or items_lists.get("series_list", []) or []
-                self._log(f"[DEBUG] Series list count: {len(series_list)}")
                 if len(series_list) > 0:
                     self._log(f"[DEBUG] First series item keys: {list(series_list[0].keys())}")
                 
@@ -1546,7 +1561,6 @@ class BilibiliClient(BasePlatformClient):
                     f"B站合集接口返回错误 code={code} message={msg!r}"
                     f"（uid={user_id}）。这不是「该 UP 没有合集」，是请求被拒。"
                 )
-
         except RuntimeError:
             # ⚠️ 上面主动抛的（如实报错），**不要再吞成空列表**
             raise

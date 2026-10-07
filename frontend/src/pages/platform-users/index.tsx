@@ -37,7 +37,7 @@ import {
   getBiliUpProfile, getBiliUpVideos,
   // ⚠️ 这两个 API 封装**一直都在**（后端接口也没删），
   // 只是 `db03be3c` 合并页面时漏接了 —— 见下方 tab 的说明
-  getBiliUpSeries, getBiliFavorites,
+  getBiliUpSeries, getBiliUpFavorites,
 } from '../../api'
 import type { PlatformUserItem, PlatformUserVideo, PlatformConnectionResponse } from '../../api'
 import { useTheme } from '../../constants/theme'
@@ -526,15 +526,20 @@ export default function PlatformUserPage() {
     }
     if (activeTab === 'favorites' && upFavorites.length === 0 && !loadingFavorites) {
       setLoadingFavorites(true)
-      // ⚠️ 收藏夹接口取的是**当前登录用户自己**的收藏夹
-      // （B站没有"看别人收藏夹"的公开接口）—— 所以 UI 里如实说明了。
-      // ⚠️ 该接口**必须要 conn_id**（实测：不传返回 400 "需要提供 B站连接ID"）。
-      if (!connId) {
-        setLoadingFavorites(false)
-        message.warning('需要先在账号中心保存 B站登录态才能看收藏夹')
-        return
-      }
-      getBiliFavorites(connId)
+      // ⚠️⚠️⚠️ 2026-10-07 用户实测：「收藏还是我的，不是查询那个人的」
+      //
+      // 原来这里调 `getBiliFavorites(connId)` —— **那个接口取的是
+      // **当前登录用户自己**的收藏夹**，所以点谁的头像看到的都是你自己那 20 个。
+      //
+      // 而注释里还写着「B站没有『看别人收藏夹』的公开接口」——
+      // **这句话是错的**（我又把"我不知道"写成了"平台没有"）。
+      // B站确实有，实测可用、**不需要登录**：
+      //     GET /bilibili/up/{uid}/favorites
+      // 实测 uid=50908119 → 默认收藏夹(557) / bgm(1)，与其空间页一致。
+      //
+      // ⚠️ 这已经是**第三次**同样的错误（实时 / 图片 / 收藏夹）：
+      //   下"平台没有 X"之前，先真的去调那个接口看看。
+      getBiliUpFavorites(selected.id, connId)
         .then((res: any) => {
           const d = res?.data
           // ⚠️ 实测结构是 `{total, list, page, page_size}`（不是 favorites）
@@ -1127,10 +1132,8 @@ export default function PlatformUserPage() {
                       ),
                       children: (
                         <>
-                          {/* ⚠️ 如实说明：B站**没有**"看别人收藏夹"的公开接口，
-                              这个 tab 取的是**你自己账号**的收藏夹 */}
                           <Text style={{ fontSize: 11, color: THEME.textSecondary, display: 'block', marginBottom: 8 }}>
-                            注：B站未开放"查看他人收藏夹"，这里显示的是**你自己账号**的收藏夹。
+                            注：这里显示的是**该 UP 主公开的收藏夹**（别人空间页上能看到的那几个）。
                           </Text>
                           <Table
                             // ⚠️ 同样用 index 兜底（B站字段可能不全）
