@@ -102,6 +102,41 @@ function formatCount(n: number | undefined | null): string {
   return String(v)
 }
 
+/** 把后端错误响应的 detail 变成**能给人看的字符串**。
+ *
+ * ⚠️ FastAPI 的 `detail` 有**两种形状**（2026-10-07 踩过）：
+ *
+ *   · 我们自己抛的 HTTPException → `detail` 是**字符串**
+ *       "获取UP主合集失败（B站接口报错）：…"   ← 能看
+ *   · FastAPI 自己的**参数校验**失败（422）→ `detail` 是**数组**
+ *       [{type:"less_than_equal", loc:["query","page_size"], msg:"..."}]
+ *
+ * 原来的 `String(detail)` 对数组会得到 **"[object Object]"** ——
+ * 用户在界面上只看到"获取失败：[object Object]"，完全不知道发生了什么
+ * （实测：page_size 超上限那次就是这样）。
+ *
+ * ⇒ 数组时把每项的 `msg` 拼起来，并带上字段名，让提示真正可读。
+ */
+function errDetail(e: any, fallback: string): string {
+  const d = e?.response?.data?.detail ?? e?.message ?? ''
+  if (typeof d === 'string') return d || fallback
+  if (Array.isArray(d)) {
+    const parts = d
+      .map((it: any) => {
+        const field = Array.isArray(it?.loc) ? it.loc.slice(1).join('.') : ''
+        const msg = it?.msg || it?.message || ''
+        return field ? `${field}: ${msg}` : String(msg)
+      })
+      .filter(Boolean)
+    if (parts.length) return parts.join('; ')
+  }
+  if (d && typeof d === 'object') {
+    // 兜底：对象至少 JSON 化一下，别再出现 [object Object]
+    try { return JSON.stringify(d) } catch { return fallback }
+  }
+  return fallback
+}
+
 /** 把 B站搜索结果适配成统一的 PlatformUserItem。
  *
  * ⚠️ B站把昵称放在 `title` 里（后端 `_parse_user_result` 用
@@ -316,7 +351,7 @@ export default function PlatformUserPage() {
         )
       }
     } catch (e: any) {
-      const msg = e?.response?.data?.detail || '搜索失败'
+      const msg = errDetail(e, '搜索失败')
       message.error(msg)
     } finally {
       setSearching(false)
@@ -339,7 +374,7 @@ export default function PlatformUserPage() {
       setUserTotal(Number(res?.total) || list.length)
       setUserPage(p)
     } catch (e: any) {
-      message.error(e?.response?.data?.detail || '翻页失败')
+      message.error(errDetail(e, '翻页失败'))
     } finally {
       setSearching(false)
     }
@@ -417,7 +452,7 @@ export default function PlatformUserPage() {
         }
       }
     } catch (e: any) {
-      message.error(e?.response?.data?.detail || '获取资料失败')
+      message.error(errDetail(e, '获取资料失败'))
     } finally {
       setLoadingProfile(false)
     }
@@ -467,7 +502,7 @@ export default function PlatformUserPage() {
         setVideoHasMore(list.length >= VIDEO_PAGE_SIZE)
       }
     } catch (e: any) {
-      message.error(e?.response?.data?.detail || '获取作品失败')
+      message.error(errDetail(e, '获取作品失败'))
     } finally {
       setLoadingVideos(false)
     }
@@ -518,7 +553,9 @@ export default function PlatformUserPage() {
         })
         .catch((e: any) => {
           // ⚠️ 如实显示失败原因（后端已把 B站原始 code 带在 detail 里）
-          const why = String(e?.response?.data?.detail || e?.message || '获取合集失败')
+          // 用 errDetail 而不是 String(detail) —— 422 校验错误时 detail 是
+          // **数组**，String() 会得到 "[object Object]"（实测踩过）。
+          const why = errDetail(e, '获取合集失败')
           setSeriesError(why.slice(0, 160))
           message.error(why.slice(0, 100))
         })
@@ -547,7 +584,7 @@ export default function PlatformUserPage() {
           setUpFavorites(Array.isArray(list) ? list : [])
         })
         .catch((e: any) => {
-          message.error(String(e?.response?.data?.detail || e?.message || '获取收藏夹失败').slice(0, 100))
+          message.error(errDetail(e, '获取收藏夹失败').slice(0, 100))
         })
         .finally(() => setLoadingFavorites(false))
     }
@@ -615,7 +652,7 @@ export default function PlatformUserPage() {
         if (list.length < want) message.info('没有更多作品了')
       }
     } catch (e: any) {
-      message.error(String(e?.response?.data?.detail || e?.message || '加载更多失败').slice(0, 100))
+      message.error(errDetail(e, '加载更多失败').slice(0, 100))
     } finally {
       setLoadingMoreVideos(false)
     }
