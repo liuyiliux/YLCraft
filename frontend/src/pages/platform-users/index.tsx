@@ -430,16 +430,33 @@ export default function PlatformUserPage() {
           message.warning(res?.message || '未能获取该 UP 主资料')
         }
       } else if (platform === 'kuaishou') {
-        // ⚠️ **快手不调 profile 接口**（2026-10-01 实测确认它没有这个能力）：
-        //   · `profile/get` 是**无参查自己**，传 userId 无效
-        //   · 搜用户接口**不按 id 索引**（用 uid 反查搜不到）
-        //   · 搜索结果里的用户字段**不含粉丝数/作品数**
-        // 所以直接用**搜索结果里已有的**信息渲染（昵称/头像/简介都在），
-        // 而不是去调一个必然失败的接口、再弹一个错误提示。
-        // 后端 `KuaishouClient.get_user_profile` 也如实抛 NotImplementedError。
+        // ⚠️ **2026-10-07 反转：快手现在能查别人的资料了。**
+        //
+        // 原来（2026-10-01）这里**不调** profile 接口，理由是
+        // "profile/get 是无参查自己，传 userId 无效"。**那个结论被推翻了** ——
+        // 抓包实测：
+        //     GET /rest/v/profile/get?__NS_hxfalcon=…
+        //     · **请求体是空的** —— userId 不在 body 也不在 query
+        //     · userId 在**页面 URL**（`kuaishou.com/profile/{uid}`）上
+        // 之前"传 userId 无效"是因为**位置搞错了**。
+        //
+        // ⚠️ 前提：**必须登录态**。未登录时返回 `{"result":109}`，
+        //    后端会转成 401，前端提示重新登录 —— 那是正确行为。
+        //
+        // ⇒ 先用搜索结果渲染（昵称/头像/简介立刻可见，不卡），
+        //    再**异步补**统计数字；失败不打断，已有的信息照样显示。
         setProfile(user)
-        if (!user.followers) {
-          message.info('快手不提供博主粉丝数接口 —— 展示的是搜索得到的信息')
+        try {
+          const res: any = await getPlatformUserProfile(platform, { userId: user.id })
+          if (res?.success && res.data) {
+            // ⚠️ 用合并而非整体替换：profile/get 不一定返回全部字段，
+            // 别把搜索结果里已有的昵称/头像弄丢。
+            setProfile((prev) => (prev ? { ...prev, ...res.data, id: prev.id } : res.data))
+          }
+        } catch (e: any) {
+          // 取不到就维持搜索结果 —— 不弹错误，数字位置显示「—」
+          // （多为未登录：后端返回 result:109 → 401，属预期）
+          console.debug('[kuaishou] 补统计失败，沿用搜索结果', e)
         }
       } else {
         // ⚠️ **X 必须传 handle（不是数字 id）**（2026-10-02 修）
@@ -997,22 +1014,22 @@ export default function PlatformUserPage() {
                       </div>
                     </Space>
 
-                    {/* ⚠️ 快手：`/search/user` **不返回任何统计数字**（实测）。
-                        真实字段只有 headurl/isFollowing/livingInfo/user_id/
-                        user_name/user_text/verified —— 没有粉丝数、没有作品数。
-                        显示 "0" 等于**谎报**"这博主 0 粉 0 作品"。
-                        ⇒ 快手显示「—」，并说明原因。
-                        （查资料只能查自己 `/profile/get` 查不了别人，所以补不出来。）*/}
-                    {platform === 'kuaishou' ? (
+                    {/* ⚠️ 快手：统计数字**是有的**（用户截图证明：关注 8/粉丝 1.3万/
+                        获赞 5.5万），数据来自 `profile/get` —— 但它**需要登录态**
+                        （未登录返回 `{"result":109}`）。
+                        取到就正常显示数字；取不到才显示这条说明（不显示假 0）。
+                        ⚠️ 我先前写过"快手不提供博主统计数字"——**那是错的**。*/}
+                    {platform === 'kuaishou' && !profile.followers ? (
                       <Alert
                         type="info"
                         showIcon
                         style={{ marginBottom: 12, fontSize: 12 }}
-                        message="快手不提供博主统计数字"
+                        message="快手：这些数字暂时取不到"
                         description={
-                          '快手的用户搜索接口只返回昵称/头像/签名，不含粉丝数与作品数；'
-                          + '它的资料接口又只能查自己，查不了别人。所以这里无法显示这些数字——'
-                          + '不是 0，是接口不提供。'
+                          '快手页面**是有**粉丝/关注/获赞的，但接口要求登录态，'
+                          + '未登录会被拒绝（返回 109）。所以这里显示「—」——'
+                          + '既不是 0，也不是平台没有，是这次没取到。'
+                          + '请在「账号中心」重新获取快手登录态后再试。'
                         }
                       />
                     ) : (
