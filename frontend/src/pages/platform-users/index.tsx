@@ -23,6 +23,8 @@ import { useSearchParams } from 'react-router-dom'
 import {
   Card, Input, Button, Select, Table, Tag, message, Space, Row, Col,
   Typography, Tabs, Empty, Image, Divider, Descriptions, Avatar, Spin,
+  // ⚠️ 2026-10-07：快手不提供统计数字，用它说明原因（别显示 0 冒充）
+  Alert,
 } from 'antd'
 import {
   SearchOutlined, UserOutlined, VideoCameraOutlined, FireOutlined,
@@ -765,7 +767,10 @@ export default function PlatformUserPage() {
       sorter: (a, b) => (a.followers || 0) - (b.followers || 0),
       render: (v: number) => (
         <Text style={{ color: '#f59e0b', whiteSpace: 'nowrap' }}>
-          <TeamOutlined /> {formatCount(v)}
+          {/* ⚠️ 快手搜不到粉丝数（实测 /search/user 只返回
+              headurl/isFollowing/livingInfo/user_id/user_name/user_text/verified，
+              没有任何数字）。显示 "0" 等于谎报"0 粉丝" ⇒ 显示「—」。*/}
+          <TeamOutlined /> {v ? formatCount(v) : '—'}
         </Text>
       ),
     },
@@ -992,6 +997,25 @@ export default function PlatformUserPage() {
                       </div>
                     </Space>
 
+                    {/* ⚠️ 快手：`/search/user` **不返回任何统计数字**（实测）。
+                        真实字段只有 headurl/isFollowing/livingInfo/user_id/
+                        user_name/user_text/verified —— 没有粉丝数、没有作品数。
+                        显示 "0" 等于**谎报**"这博主 0 粉 0 作品"。
+                        ⇒ 快手显示「—」，并说明原因。
+                        （查资料只能查自己 `/profile/get` 查不了别人，所以补不出来。）*/}
+                    {platform === 'kuaishou' ? (
+                      <Alert
+                        type="info"
+                        showIcon
+                        style={{ marginBottom: 12, fontSize: 12 }}
+                        message="快手不提供博主统计数字"
+                        description={
+                          '快手的用户搜索接口只返回昵称/头像/签名，不含粉丝数与作品数；'
+                          + '它的资料接口又只能查自己，查不了别人。所以这里无法显示这些数字——'
+                          + '不是 0，是接口不提供。'
+                        }
+                      />
+                    ) : (
                     <Row gutter={8} style={{ marginBottom: 12 }}>
                       {[
                         { label: '粉丝', value: profile.followers, color: '#f59e0b' },
@@ -1012,6 +1036,7 @@ export default function PlatformUserPage() {
                         </Col>
                       ))}
                     </Row>
+                    )}
 
                     <Descriptions size="small" column={1} colon={false}
                       labelStyle={{ width: 70, color: THEME.textSecondary }}>

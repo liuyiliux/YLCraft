@@ -222,10 +222,33 @@ def parse_feed(feed: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 def parse_user(user: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """把一条 `users[]` 转成内部结构（实测字段）。
+    """把一条 `users[]` 转成内部结构。
 
-        {"user_name": "快手美食", "headurl": "https://…jpg",
-         "user_id"/"id": …, "fan"/"followerCount": …}
+    ## ⚠️ 实测：快手 `/search/user` **不返回任何数字统计**（2026-10-07 核对）
+
+    拿真实响应（关键词「沈阳」）打出来的**全部字段**只有 7 个：
+
+        headurl / isFollowing / livingInfo / user_id / user_name /
+        user_text / verified
+
+    **没有 fan、没有 photoCount、没有任何计数。**
+
+    ⇒ 所以搜出来的博主，`followers/following/total_videos` **必然是 0**，
+      这是**平台限制**，不是解析 bug。写代码时不要以为"换个字段名就能取到"。
+
+    ## 为什么不显示数字（前端据 `stats_available=False` 处理）
+
+    快手**能**拿到这些数字的地方只有 `/rest/v/profile/get`，而它
+    **只能查自己**（body 是空的 `{}`，不接受 user_id），所以查不了别人。
+
+    ⇒ 这里显式声明 `stats_available=False`，让前端显示"接口不提供"
+      而不是显示 **0** —— 显示 0 等于**谎报**"这博主 0 粉丝 0 作品"，
+      是仓库铁律里最该避免的那类假数据。
+
+    ## 字段名兼容
+
+    保留 fan/followerCount/fansCount 等旧候选，是为了**万一**某些版本
+    或某些入口（如自己搜自己）真的带了数字时能用上；取不到就是 0。
     """
     if not isinstance(user, dict):
         return None
@@ -233,13 +256,32 @@ def parse_user(user: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     name = str(user.get("user_name") or user.get("name") or "")
     if not uid and not name:
         return None
+
+    def _first_positive(*keys: str) -> int:
+        """取第一个**存在且 > 0** 的候选值（0 视作"没有"而不是"真的是 0"）。"""
+        for k in keys:
+            v = _to_int(user.get(k))
+            if v > 0:
+                return v
+        return 0
+
     return {
         "id": uid,
         "name": name,
         "avatar": str(user.get("headurl") or user.get("headUrl") or ""),
-        "followers": _to_int(
-            user.get("fan") or user.get("followerCount") or user.get("fansCount")
+        "followers": _first_positive(
+            "fan", "followerCount", "fansCount", "followCount",
         ),
+        "following": _first_positive(
+            "following", "followCount", "followingCount", "follow",
+        ),
+        "total_videos": _first_positive(
+            "photoCount", "workCount", "videoCount", "publicPhotoCount",
+            "noteCount", "photo_count", "works",
+        ),
+        # ⚠️ 2026-10-07：显式告诉前端"这个平台搜不出统计数字"，
+        #    让它显示「接口不提供」而不是 0（0 是谎报）。
+        "stats_available": False,
         "desc": str(user.get("user_text") or user.get("description") or ""),
         "verified": bool(user.get("verified")),
         "raw": user,
