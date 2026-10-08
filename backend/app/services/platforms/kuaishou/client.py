@@ -729,6 +729,14 @@ class KuaishouClient(BasePlatformClient):
                         avatar=p["avatar"],
                         platform="kuaishou",
                         followers=p["followers"],
+                        # ⚠️ 2026-10-07 补传（原来只传 followers）。
+                        # 实测快手 /search/user **压根不返回这些数字**
+                        # （真实字段只有 headurl/isFollowing/livingInfo/
+                        #  user_id/user_name/user_text/verified），
+                        # 所以这里仍是 0 —— 前端据 raw 里的
+                        # stats_available=False 显示「接口不提供」而非 0。
+                        following=p.get("following", 0),
+                        total_videos=p.get("total_videos", 0),
                         desc=p["desc"],
                         verified=p["verified"],
                         raw_data=p["raw"],
