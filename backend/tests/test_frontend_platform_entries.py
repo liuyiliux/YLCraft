@@ -92,39 +92,77 @@ def test_no_login_branch_shows_positive_message():
     )
 
 
-def test_kuaishou_does_not_call_profile_api():
-    """**回归**：快手用户详情**不要**调 profile 接口。
+def test_kuaishou_calls_profile_api_but_degrades_gracefully():
+    """**2026-10-07 反转**：快手**应该**调 profile 接口了。
 
-    实测确认（2026-10-01）快手没有"按 id 查博主资料"的接口：
-      · `profile/get` 是无参查自己
-      · 搜用户接口不按 id 索引
-      · 搜索结果里的用户字段不含粉丝数
-    后端 `get_user_profile` 如实抛 NotImplementedError，
-    前端应直接用**搜索结果**渲染，别去调一个必然失败的接口。
+    ⚠️ 这条测试原来叫 `test_kuaishou_does_not_call_profile_api`，
+    断言"快手分支**不该**调 getPlatformUserProfile"。那个结论基于
+    2026-10-01 的判断"快手没有按 id 查资料的接口"——**已被抓包推翻**：
+
+        `profile/get` 的 userId 在**页面 URL** 上（`/profile/{uid}`），
+        不是 body/query。之前"传 userId 无效"是位置搞错了。
+
+    ⇒ 现在要调，但必须**优雅降级**：
+      1. 先用搜索结果渲染（昵称/头像立刻可见，不白屏）
+      2. 再异步补统计；失败**不弹错误**，沿用搜索结果
+         （未登录时后端返回 109→401，属预期，不该当成故障刷屏）
+      3. 合并而非替换，别把搜索结果里已有的字段弄丢
     """
     src = _read("pages/platform-users/index.tsx")
     i = src.find("loadUserDetail = useCallback")
     assert i != -1
-    seg = src[i:i + 1600]
+    seg = src[i:i + 2200]
     assert "'kuaishou'" in seg, "loadUserDetail 里要有 kuaishou 分支"
-    # 该分支不能落到通用的 getPlatformUserProfile
     ks_i = seg.find("'kuaishou'")
     next_branch = seg.find("} else {", ks_i)
     branch = seg[ks_i:next_branch if next_branch > ks_i else len(seg)]
-    assert "getPlatformUserProfile" not in branch, (
-        "快手分支不该调 getPlatformUserProfile（它必然失败）"
+
+    assert "getPlatformUserProfile" in branch, (
+        "快手分支现在应该调 profile 接口补统计（抓包已证明可行）"
     )
-    assert "setProfile(user)" in branch, "应直接用搜索结果渲染"
+    # 优雅降级：先用搜索结果渲染，失败不打断
+    assert "setProfile(user)" in branch, "应先用搜索结果渲染，不白屏"
+    assert "catch" in branch, "补统计失败要有 catch，不能让整个详情失败"
+    # 合并而非替换
+    assert "..." in branch, "应用 {...prev, ...res.data} 合并，别丢掉搜索结果的字段"
 
 
-def test_kuaishou_backend_profile_raises_not_implemented():
-    """后端也要如实：快手 `get_user_profile` 抛 NotImplementedError。"""
+def test_kuaishou_backend_profile_can_query_others():
+    """**2026-10-07 反转**：快手 `get_user_profile` **能**查别人了。
+
+    ⚠️ 这条测试原来断言"抛 NotImplementedError"（依据是 2026-10-01 的
+    结论"快手没有按 id 查博主资料的接口"）。那个结论**已被抓包推翻**：
+
+        GET /rest/v/profile/get?__NS_hxfalcon=…
+        · **请求体是空的** —— userId 不在 body 也不在 query
+        · userId 在**页面 URL**（`kuaishou.com/profile/{uid}`）上
+        · 之前"传 userId 无效"是因为**位置搞错了**
+
+    所以现在断言：真正实现在 `_get_user_profile_impl`，且
+    **必须带 uid 去做签名抓取**（签名是在目标用户主页上抓的）。
+    """
     from app.services.platforms.kuaishou.client import KuaishouClient
     import inspect
 
     src = inspect.getsource(KuaishouClient.get_user_profile)
-    assert "NotImplementedError" in src, "要如实抛错，不能返回假数据"
-    assert "没有" in src or "实测确认" in src, "要说明为什么做不到"
+    assert "NotImplementedError" not in src, (
+        "还在抛 NotImplementedError —— 2026-10-07 抓包已证明可以查别人"
+    )
+
+    impl = inspect.getsource(KuaishouClient._get_user_profile_impl)
+    assert "uid=uid" in impl, "必须把目标 uid 传下去（签名在目标主页抓）"
+    # ⚠️ 必须校验返回的是目标用户，否则缓存串了会拿自己的资料冒充别人的
+    assert "与请求的" in impl, "没有校验「返回的用户 == 请求的用户」"
+
+
+def test_kuaishou_pages_for_uses_target_uid():
+    """`_pages_for` 传了 uid 就必须去**那个人的**主页。"""
+    from app.services.platforms.kuaishou.client import KuaishouClient
+    import inspect
+
+    src = inspect.getsource(KuaishouClient._pages_for)
+    assert "uid" in inspect.signature(KuaishouClient._pages_for).parameters
+    assert "/profile/{uid}" in src, "没有用目标 uid 拼主页 URL"
 
 
 # =============================================================================

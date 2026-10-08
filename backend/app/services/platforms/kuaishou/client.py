@@ -111,28 +111,44 @@ class KuaishouClient(BasePlatformClient):
     纯 HTTP 模式做不到（见模块 docstring）。
     """
 
-    def _pages_for(self, uri: str) -> List[str]:
+    def _pages_for(self, uri: str, uid: str = "") -> List[str]:
         """返回**会发出该路径请求**的页面 URL（按优先级）。
 
-        实测（2026-09-30）：
+        实测（2026-09-30 抓包）：
 
             搜索页 `/search/video?searchKey=…`
                 → /rest/v/search/feed, /rest/v/search/user, /rest/v/profile/get
             用户主页 `/profile/{uid}`
                 → /rest/v/profile/feed          ← **只有这里才有**
+                → /rest/v/profile/get           ← **带目标 uid 的统计**（2026-10-07）
+
+        ## ⚠️ 2026-10-07：查**别人**资料必须去**他的**主页
+
+        抓包实测 `GET /rest/v/profile/get?__NS_hxfalcon=…`：
+          · **请求体是空的**（`{}`，userId 不在 body 里）
+          · 用户 id 在**页面 URL** 上 —— 打开 `/profile/{uid}` 才发这个请求
+          · 打开**自己**主页时也会发这个请求（body 同样是空的），
+            所以以前只查到了「我自己」，一直以为查不了别人。
+
+        ⇒ 传了 `uid` 就去那个人的主页抓签名，别用自己主页的。
 
         所以抓 `profile/feed` 的签名必须去用户主页。
         没有 uid 时先取自己的（`profile/get` 能拿到）。
         """
+        # ⚠️ 指定了目标用户 → 必须去**他的**主页，否则抓到的签名对应的是自己
+        if uid:
+            return [f"{BASE}/profile/{uid}"]
         if uri == PROFILE_FEED:
-            uid = _self_uid_cache.get(self.config.conn_id or "-")
-            if uid:
-                return [f"{BASE}/profile/{uid}", search_page_url("美食")]
+            own = _self_uid_cache.get(self.config.conn_id or "-")
+            if own:
+                return [f"{BASE}/profile/{own}", search_page_url("美食")]
             # 还不知道 uid → 先去搜索页（那里会带 profile/get，能拿 uid）
             return [search_page_url("美食")]
         return [search_page_url("美食")]
 
-    async def _ensure_signed_url(self, uri: str = SEARCH_FEED) -> Optional[str]:
+    async def _ensure_signed_url(
+        self, uri: str = SEARCH_FEED, uid: str = "",
+    ) -> Optional[str]:
         """拿到**指定路径**的带签名 URL（有缓存）。
 
         ## ⚠️ 签名是**按路径绑定**的（2026-09-30 实测）
@@ -153,7 +169,12 @@ class KuaishouClient(BasePlatformClient):
         所以现在**按页面实际发出的请求，逐路径抓并缓存**。
         """
         conn = self.config.conn_id or "-"
-        cache_key = f"{conn}:{uri}"
+        # ⚠️ 2026-10-07：缓存键**要带上 uid**。
+        # 签名是在**目标用户主页**上抓的（`/profile/{uid}`），
+        # 拿 A 用户的签名去查 B 用户会拿到错的数据。
+        # 以前键只有 conn+uri，所以查过自己之后，所有别人的查询
+        # 都会命中同一个缓存 → 永远显示自己的资料（用户看到"粉丝 0"）。
+        cache_key = f"{conn}:{uri}" + (f":{uid}" if uid else "")
         if _signed_urls.get(cache_key):
             return _signed_urls[cache_key]
 
@@ -219,7 +240,7 @@ class KuaishouClient(BasePlatformClient):
                 #     用户主页  → /rest/v/profile/feed        ← 只有这里才有！
                 #
                 # 所以只打开搜索页时，`profile/feed` 的签名**永远抓不到**。
-                for url in self._pages_for(uri):
+                for url in self._pages_for(uri, uid):
                     if uri in captured:
                         break
                     try:
@@ -475,13 +496,18 @@ class KuaishouClient(BasePlatformClient):
         except Exception as exc:
             logger.warning("[kuaishou] 注入 cookie 失败：%s", type(exc).__name__)
 
-    async def _post(self, uri: str, body: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def _post(
+        self, uri: str, body: Dict[str, Any], uid: str = "",
+    ) -> Optional[Dict[str, Any]]:
         """在页面上下文里 POST（用**该路径自己的**签名）。
 
         ⚠️ **签名绑路径** —— 不能用 `search/feed` 的签名去调别的路径
         （实测会返回 `{"result":2}`）。见 `_ensure_signed_url` 的说明。
+
+        ⚠️ `uid`：2026-10-07 新增。查**别人**资料时，签名必须在
+        **那个人自己的主页**上抓（实测 userId 只体现在页面 URL 上）。
         """
-        signed = await self._ensure_signed_url(uri)
+        signed = await self._ensure_signed_url(uri, uid=uid)
         if not signed:
             # ⚠️ **这里必须是 `LoginExpiredError`，不能是裸 `RuntimeError`**（2026-10-01 修）
             #
@@ -751,47 +777,32 @@ class KuaishouClient(BasePlatformClient):
         return out[:want]
 
     async def get_user_profile(self, user_id: str) -> UserProfile:
-        """取**别人**的资料。
+        """取**别人**的资料（博主中心点「查看」时用）。
 
-        ## ⚠️ 快手**没有这个能力** —— 实测确认（2026-10-01）
+        ## ⚠️⚠️ 2026-10-07：这份文档的结论**是错的**，已推翻
 
-        我本来想"用搜索反查 userId"绕过，**实测行不通**：
+        原来（2026-10-01）写的是"快手没有这个能力"，依据是：
 
-            search_users("3xktibdxreacj6w")  → 命中不到那个用户
-            （搜 uid 字符串不会返回该用户；搜索是按**昵称/内容**索引的）
+            "· `/rest/v/profile/get` 是**无参查自己**（传 userId 无效）
+              实测：`?userId={真|假}` 都返回 `{"result":2}`，**无法区分**"
 
-        而其它可能的路也都不通：
+        **2026-10-07 抓包实测推翻了它**：
 
-          · `/rest/v/profile/get` 是**无参查自己**（传 userId 无效）
-            实测：`?userId={真|假}` 都返回 `{"result":2}`，**无法区分**
-            （这条早就在 `cookies/platforms/kuaishou.py` 里留过档）
-          · `/rest/v/profile/feed`（按 userId 取作品）**需要登录签名**
-            且它返回的是**作品**，不是资料
-          · 搜索结果里的用户字段**只有** `user_id/user_name/headurl/
-            user_text/verified/isFollowing` —— **没有粉丝数/作品数**
+            GET /rest/v/profile/get?__NS_hxfalcon=…
+            · **请求体是空的** —— userId **根本不在 body 也不在 query**
+            · userId 体现在**页面 URL**：`kuaishou.com/profile/{uid}`
+            · 打开**那个人的**主页就会发这个请求，返回**他的**统计
 
-        所以这里**如实抛错**，而不是：
-          · 返回一个粉丝数为 0 的空壳（那是**假数据**，用户会以为
-            这博主真的 0 粉）
-          · 假装能查（用户会反复重试）
+        ⇒ 以前之所以"传 userId 无效"，是因为**位置搞错了**
+          （该放在页面 URL 上，却拼到了 query 里）。
+        ⇒ 而且必须**登录态**：未登录时返回 `{"result":109}`。
 
-        前端「博主中心」点快手用户时，应当**直接用搜索结果里已有的
-        字段**渲染（昵称/头像/简介都在），不要调这个接口。
-        —— 见 `frontend/src/pages/platform-users/index.tsx` 对
-        `kuaishou` 的处理（搜到的用户直接够用）。
+        用户截图（关注 8 / 粉丝 1.3万 / 获赞 5.5万）也证明这些数字确实存在。
 
-        ⚠️ 如果将来发现有效路径（比如登录态有效时某个接口能查），
-        再实现它并把这段注释改掉 —— **不要再猜**。
+        实现见下方 `_get_user_profile_impl`（`get_user_profile` 只是转发，
+        保留是为了不改调用方）。
         """
-        raise NotImplementedError(
-            "[kuaishou] 快手没有公开的「按 id 查博主资料」接口。\n"
-            "实测确认（2026-10-01）：\n"
-            "  · profile/get 是无参的（只能查自己）\n"
-            "  · 搜用户接口不按 id 索引\n"
-            "  · 搜索结果里的用户字段**不含粉丝数/作品数**\n"
-            "所以请直接使用**搜索结果里的用户信息**（昵称/头像/简介都有）。\n"
-            "粉丝数需要快手后续开放接口，或登录态下另找路径。"
-        )
+        return await self._get_user_profile_impl(user_id)
 
     async def get_comments_page(
         self,
@@ -1133,6 +1144,69 @@ class KuaishouClient(BasePlatformClient):
             platform="kuaishou",
             followers=_to_int(payload.get("fans")),
             # ⚠️ 快手叫 `follows`（关注数），不是 `following`
+            following=_to_int(payload.get("follows")),
+            total_likes=_to_int(payload.get("like")),
+            desc=str(payload.get("userTex") or ""),
+            raw_data=payload,
+        )
+
+    async def _get_user_profile_impl(self, user_id: str) -> Optional[UserProfile]:
+        """查**指定用户**的资料 —— `get_user_profile` 的真正实现。
+
+        ## ⚠️ 2026-10-07 新增：以前**只能查自己**
+
+        抓包实测（`kuaishou.com/profile/3xep6p7wbnqcvj6`）：
+
+            GET /rest/v/profile/get?__NS_hxfalcon=…
+            · **请求体是空的** —— userId **不在 body 里**
+            · userId 体现在**页面 URL**（`/profile/{uid}`）上
+            · 打开**自己**主页时同样会发这个请求
+
+        ⇒ 以前调它（body `{}`、抓自己主页的签名）拿到的**永远是"我自己"**，
+          于是界面上一片 0，还让人以为"快手查不了别人的资料"。
+        ⇒ 现在把目标 uid 传进 `_pages_for`，去**他的**主页抓签名。
+
+        ## 前提：必须**登录态**
+
+        实测**未登录**时这个接口返回 `{"result":109}`，页面上也不显示数字。
+        `_post` 会把 109 映射成 `LoginExpiredError` → 上层转 401，
+        前端提示重新登录 —— 这是正确行为，不要吞成"没有资料"。
+
+        字段名沿用 `get_self_profile` 的实测值（顶层扁平结构）：
+        `userId/userName/userHead/fans/follows/like/userTex`
+        """
+        uid = str(user_id or "").strip()
+        if not uid:
+            return None
+
+        payload = await self._post(PROFILE_GET, {}, uid=uid)
+        if payload is None:
+            return None
+
+        got_uid = str(payload.get("userId") or payload.get("userDefineId") or "")
+        got_name = str(payload.get("userName") or "")
+        if not got_uid and not got_name:
+            logger.info(
+                "[kuaishou] profile/get(%s) 字段与预期不符，顶层键：%s",
+                uid, sorted(payload.keys())[:14],
+            )
+            return None
+
+        # ⚠️ 必须校验返回的是**目标用户**，不是"我自己"。
+        # 签名/缓存一旦串了，就会拿着自己的资料冒充别人的（假数据）。
+        if got_uid and got_uid != uid:
+            logger.warning(
+                "[kuaishou] profile/get 返回的用户(%s)与请求的(%s)不一致 —— 丢弃",
+                got_uid, uid,
+            )
+            return None
+
+        return UserProfile(
+            id=got_uid or uid,
+            name=got_name,
+            avatar=str(payload.get("userHead") or ""),
+            platform="kuaishou",
+            followers=_to_int(payload.get("fans")),
             following=_to_int(payload.get("follows")),
             total_likes=_to_int(payload.get("like")),
             desc=str(payload.get("userTex") or ""),
