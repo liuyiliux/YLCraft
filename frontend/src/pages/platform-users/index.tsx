@@ -248,16 +248,20 @@ export default function PlatformUserPage() {
   const [videoPage, setVideoPage] = useState(1)
   const [videoHasMore, setVideoHasMore] = useState(false)
   const [loadingMoreVideos, setLoadingMoreVideos] = useState(false)
-  // ⚠️ 2026-10-07：B站 是**真分页**，这里存后端给的**总条数**。
+  // ⚠️ 2026-10-07：作品**总数**。两条来源，B站 用前者，其余平台用后者。
   //
-  // 原来只有"加载更多"，注释还写着"B站接口不给总数" —— **那是错的**：
-  // `GET /bilibili/up/videos` 一直返回 `{list, total, page, page_size}`，
-  // 实测 uid=50908119 → `total=321`（B站 空间页也显示 322，含图文）。
-  // 后端早就把总数给全了，只是前端没用。
+  // 1) B站：`GET /bilibili/up/videos` 返回 `{list, total, page, page_size}`，
+  //    实测 uid=50908119 → `total=321`（B站 空间页也显示 322，含图文）。
+  //    ⇒ 真分页：能跳页、能显示"共 N 条"。
   //
-  // ⇒ 有总数的平台走 antd 分页（能跳页、能显示"共 N 条"），
-  //   没有总数的平台（微博/抖音/小红书走 `/users/videos`，只有 max_results）
-  //   保留"加载更多"。**不是所有平台都该用同一种翻页。**
+  // 2) 其它平台（微博/抖音/小红书走 `/users/videos`）：该接口**没有 total**，
+  //    只有 max_results。但**用户资料里已经有真实总数** ——
+  //    `UserProfile.total_videos`，各平台都填了：
+  //       抖音 aweme_count / 小红书 posted / 微博 statuses_count / X tweets_count
+  //    ⇒ 直接拿来当"共 N 个"显示，**不用改后端**。
+  //
+  // ⚠️ 之前这里写"其它平台没有总数"，只给 B站 显示 —— 那让同一个页面里
+  //   两个平台待遇不一致（B站能看到 321，别的连有多少都不知道）。
   const [videoTotal, setVideoTotal] = useState<number | null>(null)
 
   // ===== B站专属：合集 / 收藏夹（2026-10-02 恢复）=====
@@ -502,10 +506,17 @@ export default function PlatformUserPage() {
         })
         const list: PlatformUserVideo[] = res?.data || []
         setVideos(list)
-        // 其它平台走 `/users/videos`，**没有 page 也没有 total** ——
-        // 只有 max_results，后端自己翻页凑数。
-        // 所以这里只能"取满一页就可能还有"，与 B站 分开处理。
-        setVideoTotal(null)
+        // 其它平台走 `/users/videos`，**没有 page、没有 total**（只有
+        // max_results，后端自己翻页凑数）⇒ 翻页方式仍是「加载更多」。
+        //
+        // 但**显示总数**不依赖这个接口：`user`（/users/profile 的结果）里
+        // 已经带了各平台的真实作品数（抖音 aweme_count / 小红书 posted /
+        // 微博 statuses_count / X tweets_count），直接拿来显示"共 N 个"。
+        //
+        // ⚠️ 这个数可能与列表条数不一致（图文/置顶/口径差异），所以
+        //   **只用于显示**，不用来算"还有没有更多"（那个仍按拿满一页判断）。
+        const known = Number(user.total_videos || 0)
+        setVideoTotal(Number.isFinite(known) && known > 0 ? known : null)
         // ⚠️⚠️ 这里原来写死 `maxResults: 20` 且 `setVideoHasMore(false)`
         //    （注释：通用接口暂不支持翻页）—— **那个结论是错的**（2026-10-07 修）。
         //
@@ -1078,14 +1089,18 @@ export default function PlatformUserPage() {
                           loading={loadingVideos}
                           columns={videoColumns}
                           dataSource={videos}
-                          // ⚠️ 分页按平台能力分两种（2026-10-07）：
+                          // ⚠️ 翻页按平台能力分两种，但**总数都显示**（2026-10-07）：
                           //
                           // · B站：后端返回 `{list,total,page,page_size}`，能跳页
-                          //   → 用 antd 真分页，显示"共 N 条"、可直达第 9 页
-                          //   （与 B站 空间页一致：322 个 / 9 页）
+                          //   → antd 真分页 + 「跳至 __ 页」（与 B站 空间页一致：322 个 / 9 页）
                           //
-                          // · 其它平台走 `/users/videos`，**没有 page、没有 total**，
-                          //   只有 max_results → 只能"加载更多"，用 antd 分页会是假的
+                          // · 其它平台走 `/users/videos`，**没有 page**，只有 max_results
+                          //   → 翻页仍是「加载更多」（antd 分页会是假的），
+                          //     但"共 N 个"用 `profile.total_videos` 显示
+                          //     （各平台都有：抖音 aweme_count / 小红书 posted /
+                          //      微博 statuses_count / X tweets_count）
+                          //
+                          // ⇒ **不是所有平台都该用同一种翻页，但都该告诉用户一共多少。**
                           //
                           // ⚠️ onChange 必须自己重新请求（loadVideoPage），
                           //    antd 只切已有数据，不发请求。
@@ -1098,16 +1113,27 @@ export default function PlatformUserPage() {
                                   size: 'small',
                                   showTotal: (t, range) =>
                                     `第 ${range[0]}-${range[1]} 条 / 共 ${t} 个作品`,
-                                onChange: (pg: number) => void loadVideoPage(pg),
-                                // B站 空间页有「跳至 __ 页」，322 个作品翻起来很需要
-                                showQuickJumper: videoTotal > VIDEO_PAGE_SIZE * 3,
-                              }
+                                  onChange: (pg: number) => void loadVideoPage(pg),
+                                  // B站 空间页有「跳至 __ 页」，322 个作品翻起来很需要
+                                  showQuickJumper: videoTotal > VIDEO_PAGE_SIZE * 3,
+                                }
                               : false
                           }
                           scroll={{ x: 420 }}
                           locale={{ emptyText: <Empty description="暂无作品" /> }}
                         />
-                        {/* 「加载更多」只给**没有总数**的平台（B站 走上面的分页了）*/}
+                        {/* 非 B站：显示总数 + 「加载更多」。
+                            ⚠️ 这里的 total 来自 profile，可能与列表条数有出入
+                            （图文/置顶/口径差异），所以**只显示、不据此判断到底没到底**。*/}
+                        {platform !== 'bili' && videoTotal ? (
+                          <div style={{
+                            textAlign: 'center', marginTop: 8,
+                            fontSize: 12, color: THEME.textSecondary,
+                          }}>
+                            已加载 {videos.length} / 共 {videoTotal} 个作品
+                          </div>
+                        ) : null}
+                        {/* 「加载更多」只给没有 page 的平台（B站 走上面的分页了）*/}
                         {platform !== 'bili' && (videoHasMore || loadingMoreVideos) && (
                           <div style={{ textAlign: 'center', marginTop: 10 }}>
                             <Button
@@ -1115,7 +1141,12 @@ export default function PlatformUserPage() {
                               loading={loadingMoreVideos}
                               onClick={loadMoreVideos}
                             >
-                              加载更多（已 {videos.length} 条）
+                              加载更多
+                              {/* 有总数时说清"已看多少 / 一共多少"，否则用户
+                                  不知道再点几次能看完（实测微博有 1847 个作品）*/}
+                              {videoTotal
+                                ? `（已 ${videos.length} / ${videoTotal}）`
+                                : `（已 ${videos.length} 条）`}
                             </Button>
                           </div>
                         )}
@@ -1130,7 +1161,9 @@ export default function PlatformUserPage() {
                                 否则用户会以为这博主只发了这么多（实测踩过）*/}
                             {videos.length >= MAX_VIDEOS
                               ? `— 已达 ${MAX_VIDEOS} 条上限（如需更多请在「采集与下载」用搜索）—`
-                              : `— 已加载全部（${videos.length} 条）—`}
+                              : videoTotal
+                                ? `— 已看完全部 ${videos.length} 个作品 —`
+                                : `— 已加载全部（${videos.length} 条）—`}
                           </div>
                         )}
                       </>
