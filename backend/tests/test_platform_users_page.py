@@ -321,31 +321,50 @@ def test_favorites_requires_conn_id():
     """**回归**：收藏夹接口**必须要 conn_id**（实测不传返回 400）。
 
     要**提前检查 + 给可操作提示**，而不是让用户撞一个 400 报错。
+
+    ⚠️ 2026-10-07 两处调整：
+    1. 函数名 `getBiliFavorites(` → `getBiliUpFavorites(`
+       （原来那个取的是**登录账号自己**的收藏夹，所以搜谁都是"我的"；
+        现在取**被搜索那个 UP** 的公开收藏夹）。
+    2. **不再要求 `!connId` 字面量出现在调用点附近** ——
+       前置提示写在连接选择区（"未找到…连接 —— 请先到「账号中心」获取并保存登录态"），
+       那里离调用点有两千多行。原来用"字符串是否在附近出现"来断言，
+       会因为改版式而误报。改为断言**真正的不变量**：
+       调用要传 conn_id，且界面上确实存在可操作的前置提示。
     """
     src = _read("pages/platform-users/index.tsx")
-    i = src.find("getBiliFavorites(")
-    assert i != -1
+    i = src.find("getBiliUpFavorites(")
+    assert i != -1, "收藏夹没有走「目标 UP 的公开收藏夹」接口"
     seg = src[max(0, i - 900):i + 200]
     assert "connId" in seg or "conn_id" in seg, "没传 conn_id"
-    assert "!connId" in seg or "账号中心" in seg, "没做前置检查/提示"
+
+    # 前置提示：连接为空时要告诉用户去哪儿配
+    assert "账号中心" in src, "没有『请先到账号中心』这类可操作提示"
 
 
-def test_favorites_explains_it_is_own_account():
-    """**诚实性**：要说明收藏夹是**你自己账号**的。
+def test_favorites_shows_target_up_account():
+    """**诚实性**：要说明收藏夹是**被搜索那个 UP** 的公开收藏夹。
 
-    ⚠️ B站没有"看别人收藏夹"的公开接口 —— 不说明的话
-    用户以为在看该博主的收藏夹（误导）。
+    ⚠️ 2026-10-07 反转了断言方向。
+    原测试要求源码里出现「未开放 / 你自己账号」—— 那句话是**错的**，
+    害得界面上一边显示别人的收藏夹、一边写着"这是你自己的"（自相矛盾）。
+    实测 `/bilibili/up/{uid}/favorites` 可用，能拿到该 UP 空间页上
+    公开的那几个收藏夹（uid=50908119 → 默认收藏夹 557 / bgm 1）。
+    ⇒ 现在**必须**说明是"该 UP 主公开的收藏夹"，且**不许**再出现旧说法。
     """
     src = _read("pages/platform-users/index.tsx")
-    assert "未开放" in src or "你自己账号" in src
+    assert "该 UP 主公开的收藏夹" in src, "没说明收藏夹属于被搜索的 UP"
+    assert "未开放" not in src, (
+        "还留着「B站未开放查看他人收藏夹」的错误说明"
+    )
 
 
 def test_series_rowkey_has_index_fallback():
     """**回归**：合集列表 rowKey 要能兜底。
 
-    ⚠️ 实测：`/up/series` 返回的**首条 `id` 和 `title` 都是空串**
-    （B站接口字段不全）—— 直接用 `r.id` 会让所有行 key 相同
-    （React key 冲突 → 行状态错乱）。
+    ⚠️ 2026-10-07 修正注释：接口打通后 `meta.season_id` 已能正常解析
+    （实测 420975 等），"首条 id/title 都是空串"是**接口报错时**的表现。
+    index 兜底仍然保留，所以断言不变。
     """
     src = _read("pages/platform-users/index.tsx")
     i = src.find("key: 'series'")
@@ -354,22 +373,35 @@ def test_series_rowkey_has_index_fallback():
     assert "series-${i}" in seg, "合集 rowKey 没有 index 兜底"
 
 
-def test_videos_have_load_more_and_backend_paging():
-    """**关键回归**：作品列表要**后端翻页 + 加载更多**。
+def test_videos_paginate_for_bili_and_keep_load_more_otherwise():
+    """**关键回归**：作品列表的翻页要**按平台能力**分两种（2026-10-07）。
 
-    ⚠️ 原来固定 20 条，且 `pagination={{pageSize: 5}}` 只是
-    **切当前数据** —— 点第 2 页看到的还是那 20 条里的，属于**假分页**。
+    · B站：`/bilibili/up/videos` 返回 `{list,total,page,page_size}`，
+      能**真跳页**、能显示「共 N 个」⇒ 用 antd 分页 + 自己重新请求。
+    · 其它平台走 `/users/videos`，**没有 page、没有 total**，
+      只有 max_results ⇒ 只能「加载更多」，用 antd 分页是假的。
+
+    ⚠️ 旧测试要求 `pagination={false}`（"别用假分页"）——
+    现在 B站 恰恰**要**用分页，因为后端真支持；假分页的问题
+    由 `loadVideoPage` 自己重新请求来解决（而不是靠关掉分页器）。
     """
     src = _read("pages/platform-users/index.tsx")
-    assert "loadMoreVideos" in src, "没有加载更多"
-    assert "videoHasMore" in src, "没有'还有更多'状态"
 
+    # B站：真分页 + 用 total
+    assert "loadVideoPage" in src, "B站 没有按页重新请求的逻辑"
+    assert "videoTotal" in src, "没有保存后端返回的总数"
+    assert "onChange: (pg: number) => void loadVideoPage(pg)" in src, (
+        "antd 分页的 onChange 没有触发重新请求 —— 点了还是旧数据"
+    )
     i = src.find("dataSource={videos}")
     assert i != -1
-    seg = src[i - 400:i + 400]
-    assert "pagination={false}" in seg, (
-        "作品表还开着 antd 本地分页（假翻页），应改成后端翻页"
-    )
+    seg = src[i - 200:i + 1400]
+    assert "platform === 'bili' && videoTotal" in seg, "B站 没有走真分页分支"
+
+    # 其它平台：保留「加载更多」
+    assert "loadMoreVideos" in src, "其它平台的加载更多被误删了"
+    assert "videoHasMore" in src, "没有'还有更多'状态"
+    assert "platform !== 'bili'" in src, "加载更多没有限定平台"
 
 
 def test_videos_dedup_and_limit():

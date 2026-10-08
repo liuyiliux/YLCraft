@@ -221,18 +221,45 @@ def _resolve(platform: str) -> Dict[str, str]:
 
 
 def _to_item(p) -> UserItem:
-    raw = p.raw_data or {}
+    """把平台对象转成统一的 `UserItem`。
+
+    ⚠️ 这里**同时接受两种不同类型**（2026-10-07 修）：
+    `UserProfile`（详情/profile 用，有 `.name`）和
+    `SearchResult`（`search_users` 返回，**没有 `.name`**，昵称在 `.title`）。
+
+    原来直接 `p.name`，于是**B站 用户搜索必然 500**：
+        'SearchResult' object has no attribute 'name'
+    实测 GET /users/search?platform=bilibili&keyword=yuppt → HTTP 500。
+
+    为什么一直没被发现：B站 前端**不走**这条通用路径（它调
+    `/crawler/search-enhanced?search_type=user`），所以这条分支
+    平时没人踩 —— 但接口是暴露的，文档里也写着能用。
+
+    ⇒ 用 `getattr` + 字段回退，两种类型都吃得下。
+    """
+    raw = getattr(p, "raw_data", None) or {}
+    # 昵称：UserProfile.name → SearchResult.title → SearchResult.author
+    name = (
+        getattr(p, "name", "")
+        or getattr(p, "title", "")
+        or getattr(p, "author", "")
+    )
     return UserItem(
-        id=p.id,
-        name=p.name,
-        avatar=p.avatar,
-        platform=p.platform,
-        followers=p.followers,
-        following=p.following,
-        total_likes=p.total_likes,
-        total_videos=p.total_videos,
-        desc=p.desc,
-        verified=p.verified,
+        id=getattr(p, "id", "") or "",
+        name=name,
+        # 头像：UserProfile.avatar / SearchResult.cover
+        avatar=getattr(p, "avatar", "") or getattr(p, "cover", "") or "",
+        platform=getattr(p, "platform", "") or "",
+        followers=int(getattr(p, "followers", 0) or 0),
+        following=int(getattr(p, "following", 0) or 0),
+        # 获赞：UserProfile.total_likes / SearchResult 没有 ⇒ 0
+        total_likes=int(getattr(p, "total_likes", 0) or 0),
+        # 作品数：UserProfile.total_videos / SearchResult.videos
+        total_videos=int(
+            getattr(p, "total_videos", 0) or getattr(p, "videos", 0) or 0
+        ),
+        desc=getattr(p, "desc", "") or "",
+        verified=bool(getattr(p, "verified", False)),
         # 抖音：查作品列表必须用 sec_uid
         sec_uid=raw.get("sec_uid") or "",
         # 小红书：部分接口需要 xsec_token
