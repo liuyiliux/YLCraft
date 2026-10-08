@@ -8,10 +8,22 @@
 
 **没有任何计数** ⇒ 搜出来的条目 `followers/following/total_videos` 必然是 0。
 
-⚠️ **但这不等于"快手没有这些数字"**（我曾这么写，被用户截图推翻）：
-数字在 `GET /rest/v/profile/get` —— 打开 `kuaishou.com/profile/{uid}` 时发出，
-userId 在**页面 URL** 上，需要**登录态**（未登录返回 `result:109`）。
-见 `KuaishouClient.get_user_profile`。
+## ⚠️⚠️ 但这**不等于**"快手页面上没有这些数字"
+
+用户截图（**未登录**的浏览器）明明白白显示：关注 8 / 粉丝 1.3万 / 获赞 5.5万。
+
+两次抓包（2026-10-07）定位了真正来源：**`POST /s/w/c`**，一个
+**端到端加密**接口（请求体 `{"data":"1gCA…"}`、响应
+`{"dataRsp":"In+Wx…","result":1}`，都是密文；加解密在快手前端 JS bundle 里）。
+它不在任何普通 REST 接口中 ⇒ 现有的签名机制取不到。
+
+⚠️ 我先后下过两个**都错**的结论，这条测试就是防它们复发的：
+  ① "快手没有这些数字"      —— 用户截图推翻
+  ② "要登录态才能取到"      —— 用户截图（未登录）推翻；109 的含义是
+                             "这个接口没给数字"，不是"数字被锁住"
+
+所以 `stats_available=False` 只描述**搜索接口**，
+前端据此显示「—」而不是 0（0 是谎报）。
 """
 from __future__ import annotations
 
@@ -32,12 +44,11 @@ REAL_SEARCH_USER_ITEM = {
 def test_real_response_has_no_counters():
     """**实测事实（仍然成立）**：搜索接口 `/search/user` 返回里**没有计数**。
 
-    ⚠️ 但这**不代表快手没有这些数字**！
-    2026-10-07 抓包发现：数字在 `GET /rest/v/profile/get`（打开
-    `kuaishou.com/profile/{uid}` 时发出，userId 在**页面 URL** 上）。
+    ⚠️ 但这**不代表快手页面上没有这些数字**！
+    2026-10-07 抓包发现：页面上的数字来自 **`POST /s/w/c`**（端到端加密），
+    未登录时页面**照样显示**（用户截图：关注 8 / 粉丝 1.3万 / 获赞 5.5万）。
 
-    ⚠️ 我曾据这条结论写下"快手不提供博主统计数字"，**那是错的**，
-    用户的截图（关注 8 / 粉丝 1.3万 / 获赞 5.5万）推翻了它。
+    ⚠️ 我曾据这条结论写过"快手不提供博主统计数字"，**那是错的**。
     这条测试的作用是提醒：**搜索结果**里没有 ≠ **平台**没有。
     """
     p = parse_user(REAL_SEARCH_USER_ITEM)
@@ -50,8 +61,8 @@ def test_real_response_has_no_counters():
 def test_declares_stats_unavailable():
     """`stats_available=False` 只描述**搜索结果**这件事。
 
-    ⚠️ 措辞很重要：它说的是"这次搜索拿不到"，**不是**"平台没有"。
-    数字要靠 `get_user_profile`（profile/get）去取。
+    ⚠️ 措辞很重要：它说的是"这个搜索接口拿不到"，**不是**"平台没有"。
+    数字确实存在于快手页面，只是来自加密接口 `/s/w/c`，我们读不到。
     """
     p = parse_user(REAL_SEARCH_USER_ITEM)
     assert p["stats_available"] is False, (
