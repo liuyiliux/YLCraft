@@ -224,31 +224,38 @@ def parse_feed(feed: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 def parse_user(user: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """把一条 `users[]` 转成内部结构。
 
-    ## ⚠️ 实测：快手 `/search/user` **不返回任何数字统计**（2026-10-07 核对）
+    ## ⚠️ 实测：快手 `/search/user` **不返回任何数字统计**（2026-10-07 抓包核实）
 
-    拿真实响应（关键词「沈阳」）打出来的**全部字段**只有 7 个：
+    真实响应（关键词「沈阳」）的**全部字段**只有 7 个：
 
         headurl / isFollowing / livingInfo / user_id / user_name /
         user_text / verified
 
-    **没有 fan、没有 photoCount、没有任何计数。**
+    ⇒ 搜出来的博主，`followers/following/total_videos` **必然是 0**。
 
-    ⇒ 所以搜出来的博主，`followers/following/total_videos` **必然是 0**，
-      这是**平台限制**，不是解析 bug。写代码时不要以为"换个字段名就能取到"。
+    ## ⚠️⚠️ **但这不代表快手页面上没有这些数字**（用户截图证明有）
 
-    ## 为什么不显示数字（前端据 `stats_available=False` 处理）
+    页面上明明白白显示 关注 8 / 粉丝 1.3万 / 获赞 5.5万。
+    两次抓包（2026-10-07）定位了数字的真正来源：
 
-    快手**能**拿到这些数字的地方只有 `/rest/v/profile/get`，而它
-    **只能查自己**（body 是空的 `{}`，不接受 user_id），所以查不了别人。
+        **POST /s/w/c** —— **端到端加密接口**
 
-    ⇒ 这里显式声明 `stats_available=False`，让前端显示"接口不提供"
-      而不是显示 **0** —— 显示 0 等于**谎报**"这博主 0 粉丝 0 作品"，
-      是仓库铁律里最该避免的那类假数据。
+        请求体是密文：`{"data":"1gCA6FEVQdV1z+g5/OH…"}`
+        响应体也是密文：`{"dataRsp":"In+WxaasWqdky…","result":1}`
 
-    ## 字段名兼容
+    加密/解密实现在快手前端的 JS bundle 里（`assets/index-*.js`），
+    **不在普通 REST 接口里** ⇒ 用现有的签名机制取不到。
 
-    保留 fan/followerCount/fansCount 等旧候选，是为了**万一**某些版本
-    或某些入口（如自己搜自己）真的带了数字时能用上；取不到就是 0。
+    ⚠️ 我先后下过两个**都错**的结论，教训记在这里：
+      ① "快手没有按 id 查资料的接口" —— 错，`profile/get` 存在，
+         但 userId 在**页面 URL** 上（`/profile/{uid}`）而非 body/query。
+      ② "必须有登录态才能取到数字" —— 也错。**未登录时页面照样显示数字**，
+         而 `profile/get` 在未登录时返回 `{"result":109}`。
+         109 不是"数字被锁"，而是**这个接口本来就不返回数字**（数字走 /s/w/c）。
+
+    ⇒ 所以：`stats_available=False` 的含义是
+      **"这个搜索接口不给数字"**，不是"平台没有"。
+      显示 0 是谎报，前端据此显示「—」。
     """
     if not isinstance(user, dict):
         return None
