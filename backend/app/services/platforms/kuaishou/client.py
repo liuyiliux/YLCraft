@@ -49,6 +49,7 @@ from .apis import (
     COMMENT_LIST,
     COMMENT_SUB_LIST,
     PROFILE_GET,
+    _parse_cn_count,
     _to_int,
     SEARCH_FEED,
     SEARCH_USER,
@@ -1271,7 +1272,7 @@ class KuaishouClient(BasePlatformClient):
         if session is not None:
             query = (
                 "query{ visionProfile(userId:\"%s\"){ result "
-                "userProfile{ ownerCount{ fan photo follow } } } }" % uid
+                "userProfile{ ownerCount{ fan photo follow photo_public } } } }" % uid
             )
             try:
                 raw = await session.page.evaluate(
@@ -1299,10 +1300,27 @@ class KuaishouClient(BasePlatformClient):
                         )
                         oc = {}
                     if oc:
+                        # ⚠️⚠️⚠️ 2026-10-07 **带真实 cookie 实测**发现的三个坑：
+                        #
+                        #   {"fan":"1.3万", "photo":null, "follow":8,
+                        #    "photo_public":176}
+                        #
+                        #   ① **`fan` 是带"万"的中文字符串 `"1.3万"`**，不是数字！
+                        #      原来的 `_to_int` 转成 0 ⇒ 界面粉丝恒显示 0。
+                        #      ⇒ 必须解析"1.3万 / 5.5万 / 12.3亿"这类。
+                        #   ② **`photo` 返回 null** —— 拿它当作品数必然是 0。
+                        #   ③ 作品数在 **`photo_public`**（**下划线**）里 = 176。
+                        #      ⚠️ 我之前按驼峰试 `photoPublic` 被拒 —— 是**下划线**。
+                        #
+                        # 页面真值对照（uid=3xep6p7wbnqcvj6）：
+                        #   关注 8 / 粉丝 1.3万 / 获赞 5.5万
+                        #   实测 GraphQL：follow=8 ✅ fan="1.3万" ✅ photo_public=176
+                        # ⇒ `follow`=关注、`fan`=粉丝、`photo_public`=作品，**全对上了**。
                         counts = {
-                            "fan": _to_int(oc.get("fan")),
-                            "photo": _to_int(oc.get("photo")),
-                            "follow": _to_int(oc.get("follow")),
+                            "fan": _parse_cn_count(oc.get("fan")),
+                            # ⚠️ photo 恒为 null（实测），作品数用 photo_public
+                            "photo": _parse_cn_count(oc.get("photo_public")),
+                            "follow": _parse_cn_count(oc.get("follow")),
                         }
                         logger.info(
                             "[kuaishou] GraphQL %s → 粉丝=%s 关注=%s 作品=%s",
