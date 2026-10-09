@@ -87,3 +87,30 @@ def test_uses_page_context_for_credentials():
         "应在页面上下文里 fetch（credentials: include），"
         "未登录会返回 result=2 / userProfile=null"
     )
+
+
+def test_signature_cache_key_matches_between_store_and_read():
+    """**回归**：签名的「存」与「取」必须用同一个键（2026-10-07 线上 bug）。
+
+    现象：日志上一行写着
+        `[kuaishou] 抓到 2 个路径的签名：/rest/v/profile/feed, /rest/v/profile/get`
+    紧接着却抛
+        `未能获取 /rest/v/profile/get 的接口签名`
+
+    根因：我上一版给 `cache_key` 加了 uid 后缀（`conn:uri:uid`），
+    但**写入**用的是不带 uid 的 `f"{conn}:{path}"` ⇒ 存和取对不上。
+
+    这类 bug 只在**真跑**时暴露（单测不碰缓存），所以这里钉死键的形状。
+    """
+    from app.services.platforms.kuaishou.client import KuaishouClient
+
+    src = inspect.getsource(KuaishouClient._ensure_signed_url)
+    # 存和取都用不带 uid 的键
+    assert 'cache_key = f"{conn}:{uri}"' in src, (
+        "cache_key 必须是 conn:uri（不带 uid）—— 快手签名是**会话级**的"
+    )
+    assert 'f"{conn}:{path}"' in src, "写入缓存的键也不该带 uid"
+    assert "_signed_urls.get(cache_key)" in src, "读取应统一用 cache_key"
+    assert ":{uid}" not in src.replace("# ", ""), (
+        "键里不该再出现 uid —— 存与取不一致会导致「刚抓到却说没抓到」"
+    )

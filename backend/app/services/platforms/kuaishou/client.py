@@ -169,12 +169,20 @@ class KuaishouClient(BasePlatformClient):
         所以现在**按页面实际发出的请求，逐路径抓并缓存**。
         """
         conn = self.config.conn_id or "-"
-        # ⚠️ 2026-10-07：缓存键**要带上 uid**。
-        # 签名是在**目标用户主页**上抓的（`/profile/{uid}`），
-        # 拿 A 用户的签名去查 B 用户会拿到错的数据。
-        # 以前键只有 conn+uri，所以查过自己之后，所有别人的查询
-        # 都会命中同一个缓存 → 永远显示自己的资料（用户看到"粉丝 0"）。
-        cache_key = f"{conn}:{uri}" + (f":{uid}" if uid else "")
+        # ⚠️⚠️ 2026-10-07 修：缓存键**不加 uid**。
+        #
+        # 我上一版加 uid 是为了"区分不同用户的签名"，但那是个**想当然**的
+        # 设计 —— 快手签名是**会话级**的（同一 cookie 下签一次能通用），
+        # 而且 `_pages_for` 本来就会带着 uid 去打开那个人的主页。
+        #
+        # 更要命的是：加了 uid 之后**存和取的键不一致**，直接导致线上 bug ——
+        #     存： _signed_urls[f"{conn}:{path}"]        ← 不带 uid
+        #     取： _signed_urls.get(cache_key)            ← 带 uid
+        # 现象是日志上一行刚打印"抓到 2 个路径的签名"，
+        # 下一行就抛"未能获取 /rest/v/profile/get 的接口签名"，自相矛盾。
+        #
+        # ⇒ 统一用不带 uid 的键。签名本就是会话级的，不需要按用户区分。
+        cache_key = f"{conn}:{uri}"
         if _signed_urls.get(cache_key):
             return _signed_urls[cache_key]
 
@@ -272,7 +280,16 @@ class KuaishouClient(BasePlatformClient):
                 "[kuaishou] 抓到 %d 个路径的签名：%s",
                 len(captured), ", ".join(sorted(captured)),
             )
-            return _signed_urls.get(cache_key)
+            # ⚠️ 存与取必须同键（都用不带 uid 的 `conn:uri`）——
+            #   见上面 cache_key 的说明，这里曾经因为键不一致导致
+            #   "刚抓到签名却说没抓到"。
+            got = _signed_urls.get(cache_key)
+            if not got:
+                logger.warning(
+                    "[kuaishou] 抓到签名但 %s 不在其中（已有：%s）",
+                    uri, ", ".join(sorted(captured)),
+                )
+            return got
 
     async def _get_session(self) -> Optional[PooledSession]:
         """取（或新建）一个快手浏览器会话（**无头**）。
