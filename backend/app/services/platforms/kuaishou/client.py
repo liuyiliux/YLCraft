@@ -1368,10 +1368,12 @@ class KuaishouClient(BasePlatformClient):
         }
         ids.discard("")
         if not ids or uid not in ids:
+            # ⚠️ 如实记录**返回了什么**（字段名 + 两个 id），
+            #    否则只能看到"id 不符"，根本不知道该比哪个字段。
             logger.warning(
-                "[kuaishou] profile/get 返回的 id(%s) 与请求的(%s)不符 —— "
-                "**丢弃整个结果**（否则会拿自己的资料冒充别人）",
-                "/".join(sorted(ids)) or "空", uid,
+                "[kuaishou] profile/get id 不符：请求 uid=%s，返回 ids=%s。"
+                "顶层键=%s —— **丢弃结果**（防止拿自己资料冒充别人）",
+                uid, sorted(ids), sorted(payload.keys())[:20],
             )
             return None
 
