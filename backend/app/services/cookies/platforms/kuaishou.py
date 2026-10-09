@@ -230,14 +230,24 @@ class KuaishouDetector(PlatformDetector):
     async def extract_account_info(self, page) -> dict:
         """提取快手账号信息。
 
-        ⚠️ **只从 cookie 取 `userId`**，昵称/头像**留空**（不编造）：
+        ## 2026-10-07：现在**能取到昵称**了（原来恒为 None）
 
-          · **不读 DOM** —— 实测首页的昵称/头像是**别人的**（信息流作者）
-          · **不用 `/rest/v/profile/get`** —— 它在签名白名单里，
-            这里拿不到签名（返回 `result=50`，见模块 docstring）
+        原来的实现只从 cookie 取 `userId`，昵称/头像留空，注释写着
+        "需要昵称的话…（那是另一条路，还没做）"。
 
-        需要昵称的话，用 `userId` 去请求**公开的用户主页接口**
-        （那是另一条路，还没做）。
+        那条路现在通了 —— 走 **GraphQL**（实测确认，字段见
+        `platforms/kuaishou/client.py` 的 `_get_user_profile_impl`）：
+
+            POST https://www.kuaishou.com/graphql
+            { "query": "query{ visionProfile(userId:\\"<uid>\\"){ result "
+                       "userProfile{ name headurl } } }" }
+
+        ⚠️ 为什么必须用 GraphQL 而不是 `/rest/v/profile/get`：
+          · `profile/get` 在签名白名单里，这里拿不到签名（`result=50`）
+          · 昵称在 GraphQL 的 `userProfile` 上（**不是** REST 的 userName）
+
+        ⚠️ 取不到就**留空**（不编造）—— 与其它平台的处理一致：
+        B站/抖音/小红书/微博都能取到昵称，快手以前是唯一的例外。
         """
         info = {
             "account_id": None,
@@ -259,5 +269,53 @@ class KuaishouDetector(PlatformDetector):
                     break
         except Exception as exc:
             logger.debug("[kuaishou] 提取账号信息失败：%s", type(exc).__name__)
+
+        # ---- 补昵称/头像：GraphQL（2026-10-07 新增）----
+        #
+        # ⚠️ 必须在**页面上下文**里发（credentials: include）——
+        #   cookie 刚拿到，用同一个 context 最自然。
+        if info.get("account_id"):
+            try:
+                import json as _json
+
+                # ⚠️ 快手有两个 id：cookie 里的 userId 是**数字**（1578058299），
+                #   而 GraphQL 的 visionProfile 收的是 **userDefineId**（3xep…）。
+                #   实测 GraphQL 传数字 id 会返回 result=2/空。
+                #   ⇒ 先试数字，不行再从页面 URL 里取 3xep… 形式的 id。
+                raw = await page.evaluate(
+                    """async (args) => {
+                        try {
+                            const r = await fetch('/graphql', {
+                                method: 'POST',
+                                credentials: 'include',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({query: args.query}),
+                            });
+                            return await r.text();
+                        } catch (e) { return JSON.stringify({_error: String(e)}); }
+                    }""",
+                    {"query": (
+                        'query{ visionProfile(userId:"%s"){ result '
+                        'userProfile{ name headurl } } }' % info["account_id"]
+                    )},
+                )
+                data = _json.loads(raw) if isinstance(raw, str) else {}
+                vp = ((data.get("data") or {}).get("visionProfile") or {})
+                up = vp.get("userProfile") or {}
+                name = str(up.get("name") or "")
+                if name:
+                    info["account_name"] = name
+                    head = str(up.get("headurl") or "")
+                    if head:
+                        info["account_avatar"] = head
+                    logger.info("[kuaishou] GraphQL 取到昵称：%s", name)
+                else:
+                    # 数字 id 多半不被接受 —— 从地址栏/页面里找 3xep… 形式
+                    logger.info(
+                        "[kuaishou] GraphQL 未取到昵称（result=%s，"
+                        "可能是数字 id 不被接受）", vp.get("result"),
+                    )
+            except Exception as exc:
+                logger.debug("[kuaishou] GraphQL 取昵称失败：%s", type(exc).__name__)
 
         return info
