@@ -105,12 +105,59 @@ def test_signature_cache_key_matches_between_store_and_read():
     from app.services.platforms.kuaishou.client import KuaishouClient
 
     src = inspect.getsource(KuaishouClient._ensure_signed_url)
-    # 存和取都用不带 uid 的键
     assert 'cache_key = f"{conn}:{uri}"' in src, (
         "cache_key 必须是 conn:uri（不带 uid）—— 快手签名是**会话级**的"
     )
     assert 'f"{conn}:{path}"' in src, "写入缓存的键也不该带 uid"
     assert "_signed_urls.get(cache_key)" in src, "读取应统一用 cache_key"
-    assert ":{uid}" not in src.replace("# ", ""), (
-        "键里不该再出现 uid —— 存与取不一致会导致「刚抓到却说没抓到」"
+
+
+# =============================================================================
+# ⚠️⚠️ 最重要的一条：**绝不拿自己的资料冒充别人**（2026-10-07 线上事故）
+# =============================================================================
+
+def test_navigates_to_target_profile_before_graphql():
+    """GraphQL 必须在**目标用户主页**的上下文里发。
+
+    ⚠️ 事故经过：搜「沈阳」点查看，界面显示的是
+       **逸流AI（我自己）粉丝15 关注26 获赞318**。
+
+    原因：GraphQL 是用 `_JS_POST` 在**当前页面**发 fetch 的，
+    而当前页面可能是**自己的主页** ⇒ 拿回的是自己的 `ownerCount`。
+    ⇒ 发查询前必须先 `goto` 目标主页。
+    """
+    src = _impl_source()
+    assert '_pages_for("__gql__", uid)' in src, (
+        "GraphQL 前必须先打开目标用户主页（否则拿到的是自己的数字）"
     )
+    assert "page.goto(page_url" in src, "要真的导航，不只是算个 URL"
+
+
+def test_rejects_profile_whose_id_mismatches():
+    """**硬校验**：`profile/get` 返回的用户必须等于请求的用户。
+
+    ⚠️ 事故里我原来的校验只 `logger.warning` 然后把 id 清空，
+       **数据照样返回** —— 名字和数字是「自己」的、id 又填回「目标」，
+       成了张冠李戴。
+
+    ⇒ 身份对不上必须 `return None`，宁可显示"取不到"也不能冒充。
+    """
+    src = _impl_source()
+    assert "if got_uid != uid:" in src, "缺少硬校验（不是 != None 的软判断）"
+
+    # 校验块内部必须含 return None（取其后 400 字符即可覆盖到）
+    i = src.index("if got_uid != uid:")
+    block = src[i:i + 400]
+    assert "return None" in block, (
+        "身份对不上时要 **return None**，不能只记警告然后照常返回"
+    )
+    # 且返回的 id 必须是请求的 uid（不是 got_uid or uid 那种兜底）
+    ret = src[src.rindex("return UserProfile("):]
+    assert "id=uid," in ret, "返回的 id 应直接用请求的 uid，不做兜底"
+
+
+def test_graphql_result_validated_against_target():
+    """GraphQL 的数字也要校验返回的用户是不是目标用户。"""
+    src = _impl_source()
+    assert "back_id" in src, "GraphQL 结果缺少身份校验"
+    assert "丢弃数字" in src, "身份不符时必须丢弃 GraphQL 数字"

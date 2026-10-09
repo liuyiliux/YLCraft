@@ -1204,9 +1204,27 @@ class KuaishouClient(BasePlatformClient):
             return None
 
         # ---- 1) GraphQL 取数字（fan/photo/follow）----
+        #
+        # ⚠️⚠️ 2026-10-07 线上事故的直接原因：GraphQL 是**在当前页面上下文**里
+        #   发的 fetch，而当前页面**可能是自己的主页** —— 于是拿回来的
+        #   `ownerCount` 是**自己账号**的数字（实测拿到 粉丝15/关注26/获赞318，
+        #   而目标是搜出来的「沈阳」）。
+        #
+        # ⇒ 必须先把页面导航到**目标用户主页**，再发这个查询。
+        #   （`_pages_for(uri, uid)` 就是干这个的）
         counts: Dict[str, int] = {}
         session = await self._get_session()
         if session is not None:
+            # 先打开**目标用户**主页，让页面上下文与目标一致
+            for page_url in self._pages_for("__gql__", uid):
+                try:
+                    await session.page.goto(page_url, wait_until="domcontentloaded",
+                                            timeout=60000)
+                    await session.page.wait_for_timeout(4000)
+                    break
+                except Exception as exc:
+                    logger.warning("[kuaishou] 打开 %s 失败：%s",
+                                   page_url[:60], type(exc).__name__)
             query = (
                 "query{ visionProfile(userId:\"%s\"){ result "
                 "userProfile{ ownerCount{ fan photo follow } } } }" % uid
@@ -1223,7 +1241,19 @@ class KuaishouClient(BasePlatformClient):
                 else:
                     inner = _json.loads(env.get("body") or "{}")
                     vp = ((inner.get("data") or {}).get("visionProfile") or {})
-                    oc = (vp.get("userProfile") or {}).get("ownerCount") or {}
+                    up = vp.get("userProfile") or {}
+                    oc = up.get("ownerCount") or {}
+                    # ⚠️⚠️ **二次校验**：确认返回的确实是目标用户。
+                    # 有了 ID 比对，才能保证这三个数字不是"自己的"。
+                    # （`VisionUserProfile` 上没有 id 字段时，至少要靠下面的
+                    #   REST 校验兜底 —— 那时 counts 也会被一并丢弃）
+                    back_id = str(up.get("id") or up.get("userId") or "")
+                    if oc and back_id and back_id != uid:
+                        logger.warning(
+                            "[kuaishou] GraphQL 返回的用户(%s) ≠ 请求的(%s) —— "
+                            "丢弃数字", back_id, uid,
+                        )
+                        oc = {}
                     if oc:
                         counts = {
                             "fan": _to_int(oc.get("fan")),
@@ -1238,7 +1268,7 @@ class KuaishouClient(BasePlatformClient):
                         # result=2 通常就是"没登录" —— 如实记，不要静默
                         logger.info(
                             "[kuaishou] GraphQL %s 返回空（result=%s）"
-                            "—— 多半是登录态失效",
+                            "—— 可能登录态失效，或页面上下文不对",
                             uid, vp.get("result"),
                         )
             except Exception as exc:
@@ -1268,25 +1298,39 @@ class KuaishouClient(BasePlatformClient):
                 uid, sorted(payload.keys())[:14],
             )
 
-        # ⚠️ 必须校验返回的是**目标用户**，不是"我自己"。
-        # 签名/缓存一旦串了，就会拿着自己的资料冒充别人的（假数据）。
-        if got_uid and got_uid != uid:
+        # ⚠️⚠️ **硬校验**：返回的用户必须就是请求的那个。
+        #
+        # 2026-10-07 线上事故：搜「沈阳」点查看，界面显示的是
+        #   **逸流AI（我自己的账号）** 粉丝15 关注26 获赞318
+        # —— 名字和数字全是自己的。
+        #
+        # 原因：`profile/get` 的**签名是会话级**的，页面打开的是
+        # *自己的*主页时，它返回的就是自己；只要没走对页面，
+        # 拿到的就是自己的资料。而我原来的校验只 `logger.warning`
+        # 然后把 `got_uid` 清空 —— **数据照样返回**，
+        # 于是 `name` 还是"逸流AI"、`got_uid or uid` 又填回目标的 id，
+        # 变成了"张冠李戴"：名字和数字是 A 的，ID 是 B 的。
+        #
+        # ⇒ 身份对不上就**直接返回 None**，宁可前端显示"取不到"，
+        #   也绝不能拿别人的资料冒充目标用户。
+        if got_uid != uid:
             logger.warning(
-                "[kuaishou] profile/get 返回的用户(%s)与请求的(%s)不一致 —— 丢弃",
-                got_uid, uid,
+                "[kuaishou] profile/get 返回的用户(%s) ≠ 请求的(%s) —— "
+                "**丢弃整个结果**（否则会拿自己的资料冒充别人）",
+                got_uid or "空", uid,
             )
-            got_uid = ""
+            # GraphQL 的数字同样不可信（同一页面上下文拿的）⇒ 一并丢弃
+            return None
 
         raw_all = dict(payload)
         if counts:
             raw_all["_graphql"] = counts
 
         return UserProfile(
-            id=got_uid or uid,
+            id=uid,
             name=got_name,
             avatar=str(payload.get("userHead") or ""),
             platform="kuaishou",
-            # ⚠️ 优先用 GraphQL 的数字；REST 的 fans/follows 作兜底
             followers=counts.get("fan") or _to_int(payload.get("fans")),
             following=counts.get("follow") or _to_int(payload.get("follows")),
             # ⚠️ GraphQL 的 photo 才是**作品数**；REST 没有这个字段
