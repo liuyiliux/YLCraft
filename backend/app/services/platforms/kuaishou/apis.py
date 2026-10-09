@@ -235,27 +235,51 @@ def parse_user(user: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
     ## ⚠️⚠️ **但这不代表快手页面上没有这些数字**（用户截图证明有）
 
-    页面上明明白白显示 关注 8 / 粉丝 1.3万 / 获赞 5.5万。
-    两次抓包（2026-10-07）定位了数字的真正来源：
+    页面上明明白白显示 关注 8 / 粉丝 1.3万 / 获赞 5.5万，
+    而且**未登录也能看到**（用户确认 + 截图右侧有"立即登录"）。
 
-        **POST /s/w/c** —— **端到端加密接口**
+    ### 数字在哪：GraphQL，不是 REST（2026-10-07 实测）
 
-        请求体是密文：`{"data":"1gCA6FEVQdV1z+g5/OH…"}`
-        响应体也是密文：`{"dataRsp":"In+WxaasWqdky…","result":1}`
+    参考开源项目 MediaCrawler 的 `media_platform/kuaishou/graphql/vision_profile.graphql`，
+    实测确认快手博主资料走 **GraphQL**：
 
-    加密/解密实现在快手前端的 JS bundle 里（`assets/index-*.js`），
-    **不在普通 REST 接口里** ⇒ 用现有的签名机制取不到。
+        POST https://www.kuaishou.com/graphql
+        {
+          visionProfile(userId: "<uid>") {
+            result
+            userProfile {
+              ownerCount { fan  photo  follow }   # ← 粉丝 / 作品 / 关注
+            }
+          }
+        }
 
-    ⚠️ 我先后下过两个**都错**的结论，教训记在这里：
-      ① "快手没有按 id 查资料的接口" —— 错，`profile/get` 存在，
-         但 userId 在**页面 URL** 上（`/profile/{uid}`）而非 body/query。
-      ② "必须有登录态才能取到数字" —— 也错。**未登录时页面照样显示数字**，
-         而 `profile/get` 在未登录时返回 `{"result":109}`。
-         109 不是"数字被锁"，而是**这个接口本来就不返回数字**（数字走 /s/w/c）。
+    **字段实测结论**（GraphQL 的 `Did you mean` 报错是免费的字段字典）：
+        · 参数名只能是 `userId`（`id`/`user_id` 都不认）
+        · 计数字段**嵌在 `ownerCount` 对象里**：类型 `VisionUserProfileOwnerCount`
+        · 真实字段只有三个：`fan` / `photo` / `follow`
+          ⇒ **没有 `likedCount`/`获赞`！我猜的 `likedCount` 等全不存在。
+        · `VisionUserProfile` 上没有 `fan`/`follow`/`photoCount` 等平铺字段
 
-    ⇒ 所以：`stats_available=False` 的含义是
-      **"这个搜索接口不给数字"**，不是"平台没有"。
-      显示 0 是谎报，前端据此显示「—」。
+    ### 为什么我这边测出来是 null
+
+    未登录时 `visionProfile` 返回 `result: 2` 且 `userProfile: null`。
+    而页面上仍显示数字 ⇒ **页面不是靠这个未登录的 GraphQL 请求**，
+    它用了另一条带登录态/设备指纹的通道。
+    ⇒ 要拿到数字，得用**已登录的浏览器上下文**发这个 GraphQL 请求
+      （项目的 Patchright 模式正好能提供）。
+
+    ### ⚠️ 我连错三次的记录（防复发）
+
+      ① "快手没有按 id 查资料的接口"（2026-10-01）
+         → 部分错：REST 的 `profile/get` 确实存在（userId 在**页面 URL** 上）
+      ② "数字只能从加密接口 /s/w/c 取"（2026-10-07 中途）
+         → 错：那是**另一路**请求，数字在 **GraphQL**
+      ③ "必须有登录态才能取到"（2026-10-07）
+         → **对了一半**：未登录页面也显示数字，但那是页面用了别的通道；
+            我们要自己发 GraphQL，就必须用登录态上下文。
+
+    ⇒ `stats_available=False` 的含义是**"这个搜索接口不给数字"**，
+      不是"平台没有"。显示 0 是谎报，前端据此显示「—」。
     """
     if not isinstance(user, dict):
         return None
