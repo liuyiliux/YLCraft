@@ -435,6 +435,23 @@ class KuaishouClient(BasePlatformClient):
                 len(parts), "有" if has_login else "**无**",
                 "有" if has_kws else "**无**",
             )
+            # ⚠️⚠️ 2026-10-07：`kwscode`/`kwssectoken` 缺失是**登录态失效的
+            # 决定性信号**，而原来的报错只说"未抓到签名"，把原因藏起来了。
+            #
+            # 实测经过：cookie 里 userId **还在**（所以看起来"有登录态"），
+            # 但 kwscode/kwssectoken 已无 —— 这两个是签名所需的**风控凭证**，
+            # 6 分钟 TTL（服务端控制）。缺失时页面**根本不发**带签名的请求，
+            # 于是上层报"未能获取签名"，用户完全不知道是登录态过期了。
+            #
+            # ⇒ 直接说清是登录态问题，别让它伪装成"页面结构变了"
+            #   （后者会让排查方向跑偏 —— 我这次就差点去查快手前端改版）。
+            if not has_kws:
+                logger.warning(
+                    "[kuaishou] ⚠️ 浏览器 cookie 里 **没有 kwscode/kwssectoken**"
+                    " ⇒ 登录态已失效（这组风控凭证 TTL 约 6 分钟，服务端控制）。\n"
+                    "   后续必然抓不到签名（未登录时快手页面不发带签名请求）。\n"
+                    "   请到「账号中心」重新扫码获取快手登录态。"
+                )
 
     async def _inject_cookies(self, ctx) -> None:
         """把 `self.config.cookie` 注入浏览器上下文。
@@ -546,15 +563,29 @@ class KuaishouClient(BasePlatformClient):
             # 会把它吞成 `return []` → 用户看到"找到 0 条结果"。
             #
             # 用**类型**表达语义，不靠上层猜关键词。
+            #
+            # ⚠️ 2026-10-07：**先说最可能的原因**。
+            # 原来把"没有登录态"和"页面结构变了"并列成 1/2/3，
+            # 用户看到的是一大段可能性 —— 而实测**绝大多数就是登录态过期**
+            # （浏览器 cookie 里 kwscode/kwssectoken 已消失）。
+            # 并列陈述会让人以为是快手改版，排查方向直接跑偏。
+            has_kws = ("kwscode=" in (self.config.cookie or "")
+                       and "kwssectoken=" in (self.config.cookie or ""))
+            likely = (
+                "【最可能：登录态已过期】浏览器 cookie 里没有 "
+                "kwscode/kwssectoken（风控凭证，TTL 约 6 分钟）。\n"
+                "   → 请到「账号中心」**重新扫码获取快手登录态**。\n"
+                if not has_kws else
+                "【可能是登录态问题】请到「账号中心」重新获取快手登录态。\n"
+            )
             raise LoginExpiredError(
                 f"[kuaishou] 未能获取 {uri} 的接口签名。\n"
-                "可能原因：\n"
-                "  1. 浏览器会话**没有登录态** —— 请在「账号中心」"
-                "重新获取快手登录态（未登录时页面不发带签名的请求）\n"
-                "  2. 该路径当前页面不会主动请求（快手前端可能改了调用方式）\n"
-                "  3. 页面结构变化，签名机制升级\n\n"
-                "⚠️ 实测：快手登录态**约 20 分钟**就失效（服务端控制，无法延长），"
-                "所以搜索前建议重新读一次 cookie。"
+                f"{likely}\n"
+                "若重新登录后仍报此错，才是下面这些原因：\n"
+                "  · 该路径当前页面不会主动请求（快手前端改了调用方式）\n"
+                "  · 页面结构变化，签名机制升级\n\n"
+                "⚠️ 快手登录态很短命（服务端控制，实测约 6~20 分钟就失效，"
+                "无法延长），所以用过一阵就搜不到是**正常现象**，重新扫码即可。"
             )
 
         session = await self._get_session()
