@@ -166,6 +166,48 @@ def _to_int(v: Any) -> int:
     return 0
 
 
+def _parse_cn_count(v: Any) -> int:
+    """解析**中文数量**（2026-10-07 实测发现）。
+
+    ## 为什么需要（实测证据，uid=3xep6p7wbnqcvj6）
+
+        GraphQL 返回：{"fan":"1.3万", "photo":null,
+                       "follow":8, "photo_public":176}
+        页面显示：     关注 8 / 粉丝 1.3万 / 获赞 5.5万
+
+    ⚠️ **`fan` 是带"万"的中文字符串 `"1.3万"`，不是数字** ——
+    `_to_int("1.3万")` 会 `float("1.3万")` 抛异常 → 返回 **0**
+    ⇒ 粉丝数在界面上恒显示 0，而我一度以为是"平台不提供"。
+
+    ⇒ 这里必须能解析：`1.3万` / `5.5万` / `12.3亿` / `1,234` 等。
+    """
+    if v is None:
+        return 0
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return int(v)
+
+    s = str(v).strip()
+    if not s:
+        return 0
+    try:
+        # 纯数字（含千分位逗号）
+        return int(float(s.replace(",", "")))
+    except (ValueError, TypeError):
+        pass
+
+    mult = 1
+    if s.endswith("万"):
+        mult, s = 10_000, s[:-1]
+    elif s.endswith("亿"):
+        mult, s = 100_000_000, s[:-1]
+    elif s.endswith("w") or s.endswith("W"):
+        mult, s = 10_000, s[:-1]
+    try:
+        return int(float(s.replace(",", "")) * mult)
+    except (ValueError, TypeError):
+        return 0
+
+
 def parse_feed(feed: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """把一条 `feed` 转成我们内部用的 dict（**字段全部实测**）。
 

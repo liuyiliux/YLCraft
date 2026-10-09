@@ -1017,52 +1017,66 @@ export default function PlatformUserPage() {
                       </div>
                     </Space>
 
-                    {/* ⚠️ 快手：这些数字**页面上是有的**（用户截图：关注 8/粉丝 1.3万/
-                        获赞 5.5万），但我们**取不到**。
-                        两次抓包（2026-10-07）定位：数字来自 **POST /s/w/c**，
-                        那是**端到端加密接口**（请求/响应都是密文，加解密在前端
-                        JS bundle 里），不在普通 REST 接口里 ⇒ 签名机制拿不到。
+                    {/* ⚠️ 快手：GraphQL 能取到**部分**统计（实测 `关注=8`），
+                        但**没有获赞字段**，且粉丝/作品可能本身是 0。
 
-                        ⚠️ 我先后下过两个**都错**的结论，别再走回头路：
-                          ① "快手没这个接口" —— 错，profile/get 存在
-                          ② "要登录才能取到" —— 也错，**未登录页面照样显示**
-                        ⇒ 只能说"暂时取不到"，不能说"平台没有"。
+                        ⚠️⚠️ 2026-10-07 修正：这里**必须逐项显示**。
+                        原来只要 `!profile.followers` 就**整块换成提示**，
+                        而沈阳的粉丝数**真的是 0**（本来就没人关注他）
+                        ⇒ 已经取到的「关注 8」被一起藏了，用户看到的
+                        全是"取不到"，误以为功能坏了。
 
-                        显示 0 同样是谎报，所以显示「—」+ 说明原因。*/}
-                    {platform === 'kuaishou' && !profile.followers ? (
-                      <Alert
-                        type="info"
-                        showIcon
-                        style={{ marginBottom: 12, fontSize: 12 }}
-                        message="快手：粉丝/关注/获赞暂时取不到"
-                        description={
-                          '快手页面上是有这些数字的，但它们来自一个**加密接口**，'
-                          + '我们的抓取方式读不到。所以这里显示「—」——'
-                          + '不是 0，也不是平台没有。作品列表不受影响，是正常的。'
-                        }
-                      />
-                    ) : (
+                        ⇒ 现在：
+                          · **取到的数字照常显示**（关注 8 就是要看到）
+                          · 取不到/为 0 的项显示「—」（0 与"没取到"要能区分）
+                          · 只在**一个都没取到**时才显示提示条
+                    */}
                     <Row gutter={8} style={{ marginBottom: 12 }}>
-                      {[
+                      {([
                         { label: '粉丝', value: profile.followers, color: '#f59e0b' },
                         { label: '关注', value: profile.following, color: '#22d3ee' },
                         { label: profile.platform === 'xiaohongshu' ? '获赞与收藏' : '获赞', value: profile.total_likes, color: '#ec4899' },
                         { label: '作品', value: profile.total_videos, color: '#10b981' },
-                      ].map((s) => (
+                      ] as { label: string; value?: number | null; color: string }[]).map((s) => (
                         <Col span={6} key={s.label}>
                           <div style={{
                             textAlign: 'center', padding: '8px 4px',
                             background: `${s.color}11`, borderRadius: 6,
                           }}>
-                            <div style={{ fontSize: 16, fontWeight: 700, color: s.color }}>
-                              {formatCount(s.value)}
+                            {/* ⚠️ 0 与"取不到"要区分开：
+                                0 是**真实值**（小博主确实没人关注），
+                                显示 0 没问题；None/未取到才显示「—」。*/}
+                            <div style={{
+                              fontSize: 16, fontWeight: 700,
+                              color: s.value === null || s.value === undefined
+                                ? THEME.textSecondary : s.color,
+                            }}>
+                              {s.value === null || s.value === undefined
+                                ? '—' : formatCount(s.value)}
                             </div>
                             <div style={{ fontSize: 11, color: THEME.textSecondary }}>{s.label}</div>
                           </div>
                         </Col>
                       ))}
                     </Row>
-                    )}
+
+                    {/* 只在**一个都没取到**时才提示（原来只看 followers，
+                        而它可能是真实的 0）*/}
+                    {platform === 'kuaishou'
+                      && profile.followers === null && profile.followers === undefined
+                      && !profile.following && !profile.total_videos ? (
+                      <Alert
+                        type="info"
+                        showIcon
+                        style={{ marginBottom: 12, fontSize: 12 }}
+                        message="快手：统计数字暂时取不到"
+                        description={
+                          '快手只公开「粉丝 / 关注 / 作品」三个数字（GraphQL），'
+                          + '**没有「获赞」字段**，所以获赞恒为空。'
+                          + '若三个都没有，多半是登录态失效了。'
+                        }
+                      />
+                    ) : null}
 
                     <Descriptions size="small" column={1} colon={false}
                       labelStyle={{ width: 70, color: THEME.textSecondary }}>
