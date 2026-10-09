@@ -779,31 +779,34 @@ class KuaishouClient(BasePlatformClient):
     async def get_user_profile(self, user_id: str) -> UserProfile:
         """取**别人**的资料（博主中心点「查看」时用）。
 
-        ## ⚠️⚠️ 2026-10-07：这个方法**取不到粉丝/关注/获赞**，两次结论都错过
+        ## 数据来源：**GraphQL**，不是 REST（2026-10-07 实测）
 
-        绕了两次弯路，都记在这里免得再走：
+        参考开源项目 MediaCrawler（`media_platform/kuaishou/graphql/vision_profile.graphql`），
+        实测确认快手博主资料走 GraphQL：
 
-        ① 2026-10-01 的结论「快手没有按 id 查资料的接口」——
-           **部分错**：`profile/get` 确实存在，而且能按目标用户查
-           （抓包实测：userId 在**页面 URL** `/profile/{uid}` 上，
-             **不在 body 也不在 query**；这正是当年"传 userId 无效"的原因）。
+            POST https://www.kuaishou.com/graphql
+            {
+              "query": "query{ visionProfile(userId:\\"<uid>\\"){ result "
+                       "userProfile{ ownerCount{ fan photo follow } } } }"
+            }
 
-        ② 2026-10-07 中途我写的「要登录态才能取到数字」—— **也错**。
-           用户截图（**未登录**的浏览器）照样显示
-           关注 8 / 粉丝 1.3万 / 获赞 5.5万。
-           而未登录时 `profile/get` 返回 `{"result":109}` ——
-           109 的含义是"这个接口没给出数字"，**不是**"数字被锁住"。
+        **字段实测结论**（GraphQL 的 `Did you mean` 报错是免费的字段字典）：
+            · 参数名只能 `userId`
+            · 计数字段嵌在 **`ownerCount`** 对象里（类型 `VisionUserProfileOwnerCount`）
+            · 真实字段只有 `fan` / `photo` / `follow`
+              ⇒ **没有「获赞」** —— 我猜的 `likedCount` 之类**全不存在**。
+                页面上那个「获赞 5.5万」来自别的通道，GraphQL 这条路给不了。
 
-        **真相**：那些数字来自 **`POST /s/w/c`** —— 端到端**加密**接口
-        （请求体 `{"data":"1gCA…"}`、响应 `{"dataRsp":"In+Wx…","result":1}`，
-        均为密文；加解密逻辑在快手前端 JS bundle 里）。
-        它不在任何普通 REST 接口中 ⇒ 现有的签名机制取不到。
+        ## 为什么走浏览器上下文
 
-        所以本方法**能查到昵称/头像/简介**（这些 `profile/get` 有），
-        但**粉丝/关注/获赞会是 0** ⇒ 上层/前端要显示「—」而不是 0
-        （0 是谎报）。
+        GraphQL **不需要 `__NS_hxfalcon` 签名**，但要 `credentials: include`
+        （带浏览器自己的 cookie）。未登录时实测返回
+        `{"result":2,"userProfile":null}` ⇒ 必须用**已登录**的会话。
 
-        实现见 `_get_user_profile_impl`（这里只是转发，保留原签名）。
+        ⇒ 复用已有的 `_JS_POST`（在页面上下文里 fetch），只是 URL 换成
+          `/graphql`、body 换成 GraphQL 查询。签名机制完全不需要。
+
+        ## ⚠️ 我连错三次（详见 `apis.parse_user` 的注释）
         """
         return await self._get_user_profile_impl(user_id)
 
@@ -1154,44 +1157,91 @@ class KuaishouClient(BasePlatformClient):
         )
 
     async def _get_user_profile_impl(self, user_id: str) -> Optional[UserProfile]:
-        """查**指定用户**的资料 —— `get_user_profile` 的真正实现。
+        """查**指定用户**的资料 —— 走 **GraphQL**（`get_user_profile` 的实现）。
 
-        ## ⚠️ 2026-10-07 新增：以前**只能查自己**
+        ## 查询（字段全部实测确认，不是猜的）
 
-        抓包实测（`kuaishou.com/profile/3xep6p7wbnqcvj6`）：
+            POST https://www.kuaishou.com/graphql
+            {
+              "query": "query{ visionProfile(userId:\\"<uid>\\"){ result "
+                       "userProfile{ ownerCount{ fan photo follow } } } }"
+            }
 
-            GET /rest/v/profile/get?__NS_hxfalcon=…
-            · **请求体是空的** —— userId **不在 body 里**
-            · userId 体现在**页面 URL**（`/profile/{uid}`）上
-            · 打开**自己**主页时同样会发这个请求
+        `ownerCount` 的类型是 `VisionUserProfileOwnerCount`，**只有 3 个字段**：
+        `fan`（粉丝）/ `photo`（作品）/ `follow`（关注）。
+        ⚠️ **没有「获赞」** —— 页面上那个「获赞 5.5万」不在这条通道里，
+        所以 `total_likes` 会是 0，前端别把它当成"0 获赞"显示。
 
-        ⇒ 以前调它（body `{}`、抓自己主页的签名）拿到的**永远是"我自己"**，
-          于是界面上一片 0，还让人以为"快手查不了别人的资料"。
-        ⇒ 现在把目标 uid 传进 `_pages_for`，去**他的**主页抓签名。
+        ## 身份信息（昵称/头像/简介）从哪来
 
-        ## ⚠️ 但它**给不出**粉丝/关注/获赞（别再在这上面耗时间）
+        GraphQL 这次**没查**那些字段（`VisionUserProfile` 上没有 `userName`
+        这类平铺字段，实测报 `Cannot query field`）。
+        所以身份信息仍用 REST `profile/get`（`userName/userHead/userTex`），
+        数字用 GraphQL，**两路合并**。
 
-        昵称/头像/简介它有；那三个数字来自 `POST /s/w/c`（**端到端加密接口**，
-        请求/响应都是密文，加解密在快手前端 JS 里）⇒ 签名机制取不到。
-        未登录时本接口返回 `{"result":109}` —— 那是"没给数字"，
-        **不是**"要登录才能看"（用户未登录的截图照样显示那些数字）。
-
-        ## 前提：**登录态**才能抓到签名
-
-        实测未登录时页面不发带 `__NS_hxfalcon` 的请求 ⇒ `_ensure_signed_url`
-        失败。`_post` 把这种情况映射成 `LoginExpiredError` → 上层转 401，
-        前端提示重新登录 —— 这是正确行为，不要吞成"没有资料"。
-
-        字段名沿用 `get_self_profile` 的实测值（顶层扁平结构）：
-        `userId/userName/userHead/fans/follows/like/userTex`
+        ⚠️ GraphQL 未登录时返回 `{"result":2,"userProfile":null}`
+          ⇒ 必须有**登录态**的浏览器上下文（`credentials: include`）。
         """
         uid = str(user_id or "").strip()
         if not uid:
             return None
 
+        # ---- 1) GraphQL 取数字（fan/photo/follow）----
+        counts: Dict[str, int] = {}
+        session = await self._get_session()
+        if session is not None:
+            query = (
+                "query{ visionProfile(userId:\"%s\"){ result "
+                "userProfile{ ownerCount{ fan photo follow } } } }" % uid
+            )
+            try:
+                raw = await session.page.evaluate(
+                    _JS_POST,
+                    {"url": f"{BASE}/graphql", "body": {"query": query}},
+                )
+                import json as _json
+                env = _json.loads(raw) if isinstance(raw, str) else (raw or {})
+                if env.get("_error"):
+                    logger.warning("[kuaishou] GraphQL 请求失败：%s", env["_error"])
+                else:
+                    inner = _json.loads(env.get("body") or "{}")
+                    vp = ((inner.get("data") or {}).get("visionProfile") or {})
+                    oc = (vp.get("userProfile") or {}).get("ownerCount") or {}
+                    if oc:
+                        counts = {
+                            "fan": _to_int(oc.get("fan")),
+                            "photo": _to_int(oc.get("photo")),
+                            "follow": _to_int(oc.get("follow")),
+                        }
+                        logger.info(
+                            "[kuaishou] GraphQL %s → 粉丝=%s 关注=%s 作品=%s",
+                            uid, counts["fan"], counts["follow"], counts["photo"],
+                        )
+                    else:
+                        # result=2 通常就是"没登录" —— 如实记，不要静默
+                        logger.info(
+                            "[kuaishou] GraphQL %s 返回空（result=%s）"
+                            "—— 多半是登录态失效",
+                            uid, vp.get("result"),
+                        )
+            except Exception as exc:
+                logger.warning("[kuaishou] GraphQL 异常：%s: %s",
+                               type(exc).__name__, exc)
+
+        # ---- 2) REST profile/get 取身份信息（昵称/头像/简介）----
         payload = await self._post(PROFILE_GET, {}, uid=uid)
         if payload is None:
-            return None
+            # REST 也失败 ⇒ 至少把数字带回去，别什么都不给
+            if not counts:
+                return None
+            return UserProfile(
+                id=uid, name="", avatar="", platform="kuaishou",
+                followers=counts.get("fan", 0),
+                following=counts.get("follow", 0),
+                total_videos=counts.get("photo", 0),
+                desc="",
+                raw_data={"_graphql": counts},
+            )
 
         got_uid = str(payload.get("userId") or payload.get("userDefineId") or "")
         got_name = str(payload.get("userName") or "")
@@ -1200,7 +1250,6 @@ class KuaishouClient(BasePlatformClient):
                 "[kuaishou] profile/get(%s) 字段与预期不符，顶层键：%s",
                 uid, sorted(payload.keys())[:14],
             )
-            return None
 
         # ⚠️ 必须校验返回的是**目标用户**，不是"我自己"。
         # 签名/缓存一旦串了，就会拿着自己的资料冒充别人的（假数据）。
@@ -1209,18 +1258,26 @@ class KuaishouClient(BasePlatformClient):
                 "[kuaishou] profile/get 返回的用户(%s)与请求的(%s)不一致 —— 丢弃",
                 got_uid, uid,
             )
-            return None
+            got_uid = ""
+
+        raw_all = dict(payload)
+        if counts:
+            raw_all["_graphql"] = counts
 
         return UserProfile(
             id=got_uid or uid,
             name=got_name,
             avatar=str(payload.get("userHead") or ""),
             platform="kuaishou",
-            followers=_to_int(payload.get("fans")),
-            following=_to_int(payload.get("follows")),
+            # ⚠️ 优先用 GraphQL 的数字；REST 的 fans/follows 作兜底
+            followers=counts.get("fan") or _to_int(payload.get("fans")),
+            following=counts.get("follow") or _to_int(payload.get("follows")),
+            # ⚠️ GraphQL 的 photo 才是**作品数**；REST 没有这个字段
+            total_videos=counts.get("photo", 0),
+            # ⚠️ GraphQL **没有获赞** ⇒ 这里只能用 REST 的 like（可能取不到）
             total_likes=_to_int(payload.get("like")),
             desc=str(payload.get("userTex") or ""),
-            raw_data=payload,
+            raw_data=raw_all,
         )
 
     async def get_user_videos(
