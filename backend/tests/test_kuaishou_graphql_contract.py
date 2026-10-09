@@ -133,28 +133,33 @@ def test_navigates_to_target_profile_before_graphql():
     assert "page.goto(page_url" in src, "要真的导航，不只是算个 URL"
 
 
-def test_rejects_profile_whose_id_mismatches():
     """**硬校验**：`profile/get` 返回的用户必须等于请求的用户。
 
-    ⚠️ 事故里我原来的校验只 `logger.warning` 然后把 id 清空，
-       **数据照样返回** —— 名字和数字是「自己」的、id 又填回「目标」，
-       成了张冠李戴。
+    事故里原来的校验只 logger.warning 然后照常返回 —— 名字和数字是
+    「自己」的、id 又填回「目标」，成了张冠李戴。
 
-    ⇒ 身份对不上必须 `return None`，宁可显示"取不到"也不能冒充。
+    => 身份对不上必须 return None。
+
+    ## 但要认**两个** id（2026-10-07 第二次踩坑）
+
+    快手同时有 userId（数字，如 1578058299）和
+    userDefineId（字符串，即我们请求的 3xep6p7wbnqcvj6）。
+    只拿 userId 去比 uid **必然不等** => 硬校验一直触发，
+    功能整个用不了（success=False「用户不存在或资料不可见」）。
     """
     src = _impl_source()
-    assert "if got_uid != uid:" in src, "缺少硬校验（不是 != None 的软判断）"
-
-    # 校验块内部必须含 return None（取其后 400 字符即可覆盖到）
-    i = src.index("if got_uid != uid:")
-    block = src[i:i + 400]
-    assert "return None" in block, (
-        "身份对不上时要 **return None**，不能只记警告然后照常返回"
+    assert 'payload.get("userId")' in src, "没取 userId（数字 id）"
+    assert 'payload.get("userDefineId")' in src, "没取 userDefineId（字符串 id）"
+    assert "uid not in ids" in src, (
+        "必须「两个 id 任一匹配」—— 只比 userId 会与 userDefineId 永远不等"
     )
-    # 且返回的 id 必须是请求的 uid（不是 got_uid or uid 那种兜底）
-    ret = src[src.rindex("return UserProfile("):]
-    assert "id=uid," in ret, "返回的 id 应直接用请求的 uid，不做兜底"
-
+    i = src.index("uid not in ids:")
+    assert "return None" in src[i:i + 400], (
+        "身份对不上必须 return None —— 只记警告会拿自己的资料冒充别人"
+    )
+    assert "if got_uid != uid:" not in src, (
+        "残留单字段比较（只比 userId）会永远误判 —— 2026-10-07 线上事故"
+    )
 
 def test_graphql_result_validated_against_target():
     """GraphQL 的数字也要校验返回的用户是不是目标用户。"""

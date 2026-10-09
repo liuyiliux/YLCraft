@@ -1336,21 +1336,28 @@ class KuaishouClient(BasePlatformClient):
         # —— 名字和数字全是自己的。
         #
         # 原因：`profile/get` 的**签名是会话级**的，页面打开的是
-        # *自己的*主页时，它返回的就是自己；只要没走对页面，
-        # 拿到的就是自己的资料。而我原来的校验只 `logger.warning`
-        # 然后把 `got_uid` 清空 —— **数据照样返回**，
-        # 于是 `name` 还是"逸流AI"、`got_uid or uid` 又填回目标的 id，
-        # 变成了"张冠李戴"：名字和数字是 A 的，ID 是 B 的。
+        # *自己的*主页时，它返回的就是自己；而我原来的校验只 warning
+        # 然后把 `got_uid` 清空 —— **数据照样返回**（张冠李戴）。
         #
-        # ⇒ 身份对不上就**直接返回 None**，宁可前端显示"取不到"，
-        #   也绝不能拿别人的资料冒充目标用户。
-        if got_uid != uid:
+        # ⚠️⚠️ 2026-10-07 第二次踩坑：**别只比一个 ID 字段**。
+        # 快手同时有两个 id：
+        #     userId       数字（如 1578058299）
+        #     userDefineId 字符串（就是我们请求的 3xep6p7wbnqcvj6）
+        # 拿 `userId` 去和请求的 `uid`（userDefineId）比，**必然不等** ——
+        # 于是硬校验一直触发，功能整个用不了（success=False
+        # "用户不存在或资料不可见"）。
+        # ⇒ 两个字段**任一**匹配即视为同一人。
+        ids = {
+            str(payload.get("userId") or ""),
+            str(payload.get("userDefineId") or ""),
+        }
+        ids.discard("")
+        if not ids or uid not in ids:
             logger.warning(
-                "[kuaishou] profile/get 返回的用户(%s) ≠ 请求的(%s) —— "
+                "[kuaishou] profile/get 返回的 id(%s) 与请求的(%s)不符 —— "
                 "**丢弃整个结果**（否则会拿自己的资料冒充别人）",
-                got_uid or "空", uid,
+                "/".join(sorted(ids)) or "空", uid,
             )
-            # GraphQL 的数字同样不可信（同一页面上下文拿的）⇒ 一并丢弃
             return None
 
         raw_all = dict(payload)
