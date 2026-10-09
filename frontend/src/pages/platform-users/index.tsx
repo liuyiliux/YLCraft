@@ -430,32 +430,35 @@ export default function PlatformUserPage() {
           message.warning(res?.message || '未能获取该 UP 主资料')
         }
       } else if (platform === 'kuaishou') {
-        // ⚠️ **2026-10-07 反转：快手现在能查别人的资料了。**
+        // ⚠️ 快手：GraphQL 能取到**统计数字**（关注/粉丝/作品），
+        // 但**取不到昵称/头像/简介** ——
+        //   · GraphQL 的 VisionUserProfile 上实测只有 ownerCount
+        //     （name/headurl/userText 全部 `Cannot query field`）
+        //   · `/rest/v/profile/get` **只能查自己**，查不了别人
+        //     （它返回的永远是登录账号，实测 ids=['2695872552'] = 我自己）
         //
-        // 原来（2026-10-01）这里**不调** profile 接口，理由是
-        // "profile/get 是无参查自己，传 userId 无效"。**那个结论被推翻了** ——
-        // 抓包实测：
-        //     GET /rest/v/profile/get?__NS_hxfalcon=…
-        //     · **请求体是空的** —— userId 不在 body 也不在 query
-        //     · userId 在**页面 URL**（`kuaishou.com/profile/{uid}`）上
-        // 之前"传 userId 无效"是因为**位置搞错了**。
+        // ⇒ 身份信息**只能来自搜索结果**（前端本来就有），
+        //   后端只补数字。
         //
-        // ⚠️ 前提：**必须登录态**。未登录时返回 `{"result":109}`，
-        //    后端会转成 401，前端提示重新登录 —— 那是正确行为。
-        //
-        // ⇒ 先用搜索结果渲染（昵称/头像/简介立刻可见，不卡），
-        //    再**异步补**统计数字；失败不打断，已有的信息照样显示。
+        // ⚠️ 合并时**必须保留已有字段** —— 后端返回的 name/avatar 是空的，
+        //   直接整体替换会把昵称/头像弄没。
         setProfile(user)
         try {
           const res: any = await getPlatformUserProfile(platform, { userId: user.id })
           if (res?.success && res.data) {
-            // ⚠️ 用合并而非整体替换：profile/get 不一定返回全部字段，
-            // 别把搜索结果里已有的昵称/头像弄丢。
-            setProfile((prev) => (prev ? { ...prev, ...res.data, id: prev.id } : res.data))
+            setProfile((prev) => {
+              if (!prev) return { ...user, ...res.data }
+              // 只让后端**非空**的字段覆盖，空值（name/avatar/desc）保留原有的
+              const merged: any = { ...prev }
+              for (const [k, v] of Object.entries(res.data)) {
+                if (v !== null && v !== undefined && v !== '') merged[k] = v
+              }
+              merged.id = prev.id
+              return merged
+            })
           }
         } catch (e: any) {
           // 取不到就维持搜索结果 —— 不弹错误，数字位置显示「—」
-          // （多为未登录：后端返回 result:109 → 401，属预期）
           console.debug('[kuaishou] 补统计失败，沿用搜索结果', e)
         }
       } else {

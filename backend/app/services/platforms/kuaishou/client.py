@@ -1249,28 +1249,26 @@ class KuaishouClient(BasePlatformClient):
         if not uid:
             return None
 
-        # ---- 1) GraphQL 取数字（fan/photo/follow）----
+        # ---- GraphQL 取统计（fan / photo / follow）----
         #
-        # ⚠️⚠️ 2026-10-07 线上事故的直接原因：GraphQL 是**在当前页面上下文**里
-        #   发的 fetch，而当前页面**可能是自己的主页** —— 于是拿回来的
-        #   `ownerCount` 是**自己账号**的数字（实测拿到 粉丝15/关注26/获赞318，
-        #   而目标是搜出来的「沈阳」）。
+        # ⚠️⚠️ 2026-10-07：**不要先跳转页面**（我先前加过，是错的）
         #
-        # ⇒ 必须先把页面导航到**目标用户主页**，再发这个查询。
-        #   （`_pages_for(uri, uid)` 就是干这个的）
+        # 我以为"GraphQL 在当前页面发 fetch，会拿到当前页用户的数字"，
+        # 于是先 `goto` 目标主页再查。实测**两处都不对**：
+        #
+        #   ① 跳转**经常失败**（`打开 …/profile/3xep… 失败：Error`），
+        #      失败还会连带影响同一会话里 `profile/feed` 的签名抓取
+        #      ⇒ **作品列表一起挂掉**
+        #   ② **根本不需要跳** —— GraphQL 的 `visionProfile(userId:…)`
+        #      **自带 userId 参数**，查的就是那个用户。
+        #      实测证据（同一份日志里）：
+        #        `GraphQL 3xep6p7wbnqcvj6 → 粉丝=0 关注=8 作品=0`
+        #      「关注 8」是「沈阳」的真实值 ⇒ 请求确实命中了目标用户。
+        #
+        # ⇒ 直接发，不跳转。
         counts: Dict[str, int] = {}
         session = await self._get_session()
         if session is not None:
-            # 先打开**目标用户**主页，让页面上下文与目标一致
-            for page_url in self._pages_for("__gql__", uid):
-                try:
-                    await session.page.goto(page_url, wait_until="domcontentloaded",
-                                            timeout=60000)
-                    await session.page.wait_for_timeout(4000)
-                    break
-                except Exception as exc:
-                    logger.warning("[kuaishou] 打开 %s 失败：%s",
-                                   page_url[:60], type(exc).__name__)
             query = (
                 "query{ visionProfile(userId:\"%s\"){ result "
                 "userProfile{ ownerCount{ fan photo follow } } } }" % uid
@@ -1321,79 +1319,56 @@ class KuaishouClient(BasePlatformClient):
                 logger.warning("[kuaishou] GraphQL 异常：%s: %s",
                                type(exc).__name__, exc)
 
-        # ---- 2) REST profile/get 取身份信息（昵称/头像/简介）----
-        payload = await self._post(PROFILE_GET, {}, uid=uid)
-        if payload is None:
-            # REST 也失败 ⇒ 至少把数字带回去，别什么都不给
-            if not counts:
-                return None
-            return UserProfile(
-                id=uid, name="", avatar="", platform="kuaishou",
-                followers=counts.get("fan", 0),
-                following=counts.get("follow", 0),
-                total_videos=counts.get("photo", 0),
-                desc="",
-                raw_data={"_graphql": counts},
-            )
-
-        got_uid = str(payload.get("userId") or payload.get("userDefineId") or "")
-        got_name = str(payload.get("userName") or "")
-        if not got_uid and not got_name:
+        # ---- ⚠️⚠️ 2026-10-07：**不再调用 `/rest/v/profile/get`**（实测证明有害）
+        #
+        # 我之前用它取"昵称/头像/简介"，结果它是**所有麻烦的根源**：
+        #
+        #   ① 它**只能查自己** —— 签名是会话级的，userId 不在 body 也不在
+        #      query（只在**页面 URL** 上）。实测请求目标 uid 时，
+        #      返回的永远是**登录账号自己**（日志实测：
+        #        `profile/get id 不符：请求 uid=3xep…，返回 ids=['2695872552']`
+        #        —— 2695872552 就是我自己的 userId）
+        #   ② 为此我加了「先跳转目标主页」的步骤，而它**经常失败**
+        #      （实测 `打开 https://www.kuaishou.com/profile/3xep… 失败：Error`），
+        #      失败还会连带让 `profile/feed` 的签名抓不到 ⇒ **作品列表也挂**
+        #   ③ 于是又得加"id 校验"防冒充 —— 而它必然触发，整个功能不可用
+        #
+        # **实测证明它本来就不必要**（同一次请求里）：
+        #     [kuaishou] GraphQL 3xep6p7wbnqcvj6 → 粉丝=0 关注=8 作品=0
+        # 「关注 8」正是「沈阳」的真实值（与 B站/快手页面一致）⇒
+        # **GraphQL 自带 userId 参数，本来就查的是目标用户**，
+        # 不需要跳转页面，也不需要 profile/get 兜底。
+        #
+        # 身份字段（昵称/头像/简介）怎么办？
+        #   · 前端**已经先用搜索结果渲染**了（昵称/头像/简介都在，见
+        #     `frontend/src/pages/platform-users/index.tsx` 的快手分支）
+        #   · GraphQL 的 `VisionUserProfile` 上**实测没有任何身份字段**
+        #     （name/headurl/userText/id/verified 全部 `Cannot query field`，
+        #       只有 ownerCount）—— 所以身份只能来自搜索结果。
+        #
+        # ⇒ 所以这里**只返回 GraphQL 的数字**，身份留空由上层合并。
+        if not counts:
             logger.info(
-                "[kuaishou] profile/get(%s) 字段与预期不符，顶层键：%s",
-                uid, sorted(payload.keys())[:14],
-            )
-
-        # ⚠️⚠️ **硬校验**：返回的用户必须就是请求的那个。
-        #
-        # 2026-10-07 线上事故：搜「沈阳」点查看，界面显示的是
-        #   **逸流AI（我自己的账号）** 粉丝15 关注26 获赞318
-        # —— 名字和数字全是自己的。
-        #
-        # 原因：`profile/get` 的**签名是会话级**的，页面打开的是
-        # *自己的*主页时，它返回的就是自己；而我原来的校验只 warning
-        # 然后把 `got_uid` 清空 —— **数据照样返回**（张冠李戴）。
-        #
-        # ⚠️⚠️ 2026-10-07 第二次踩坑：**别只比一个 ID 字段**。
-        # 快手同时有两个 id：
-        #     userId       数字（如 1578058299）
-        #     userDefineId 字符串（就是我们请求的 3xep6p7wbnqcvj6）
-        # 拿 `userId` 去和请求的 `uid`（userDefineId）比，**必然不等** ——
-        # 于是硬校验一直触发，功能整个用不了（success=False
-        # "用户不存在或资料不可见"）。
-        # ⇒ 两个字段**任一**匹配即视为同一人。
-        ids = {
-            str(payload.get("userId") or ""),
-            str(payload.get("userDefineId") or ""),
-        }
-        ids.discard("")
-        if not ids or uid not in ids:
-            # ⚠️ 如实记录**返回了什么**（字段名 + 两个 id），
-            #    否则只能看到"id 不符"，根本不知道该比哪个字段。
-            logger.warning(
-                "[kuaishou] profile/get id 不符：请求 uid=%s，返回 ids=%s。"
-                "顶层键=%s —— **丢弃结果**（防止拿自己资料冒充别人）",
-                uid, sorted(ids), sorted(payload.keys())[:20],
+                "[kuaishou] GraphQL 没取到 %s 的统计（登录态失效？）—— "
+                "上层会沿用搜索结果里的昵称/头像", uid,
             )
             return None
 
-        raw_all = dict(payload)
-        if counts:
-            raw_all["_graphql"] = counts
-
         return UserProfile(
             id=uid,
-            name=got_name,
-            avatar=str(payload.get("userHead") or ""),
+            # ⚠️ 身份字段留空：GraphQL 没有，`profile/get` 只能查自己。
+            #   上层（前端）会用搜索结果补齐，这里返回空**不会**覆盖它。
+            name="",
+            avatar="",
             platform="kuaishou",
-            followers=counts.get("fan") or _to_int(payload.get("fans")),
-            following=counts.get("follow") or _to_int(payload.get("follows")),
-            # ⚠️ GraphQL 的 photo 才是**作品数**；REST 没有这个字段
+            followers=counts.get("fan", 0),
+            following=counts.get("follow", 0),
             total_videos=counts.get("photo", 0),
-            # ⚠️ GraphQL **没有获赞** ⇒ 这里只能用 REST 的 like（可能取不到）
-            total_likes=_to_int(payload.get("like")),
-            desc=str(payload.get("userTex") or ""),
-            raw_data=raw_all,
+            # ⚠️ GraphQL **没有获赞字段** ⇒ 恒为 0。
+            #   前端据此显示「—」而不是"0 获赞"（那是谎报）。
+            total_likes=0,
+            desc="",
+            raw_data={"_graphql": counts, "_source": "graphql"},
         )
 
     async def get_user_videos(
@@ -1422,8 +1397,16 @@ class KuaishouClient(BasePlatformClient):
         seen: set[str] = set()
         pcursor = ""
         for _ in range(max(1, (want + 19) // 20) + 1):
+            # ⚠️⚠️ 2026-10-07 修：**必须传 uid**
+            #
+            # `profile/feed` 的签名**只在打开目标用户主页时**才会发出
+            # （搜索页永远不发，见 `_pages_for` 的说明）。
+            # 原来这里没传 uid ⇒ 签名去抓自己主页的 ⇒ 抓不到：
+            #     [kuaishou] 抓到签名但 /rest/v/profile/feed 不在其中
+            #     （已有：/rest/v/profile/get, /rest/v/search/feed, /rest/v/search/user）
+            # ⇒ 作品列表 500。
             payload = await self._post(
-                PROFILE_FEED, build_profile_feed_body(uid, pcursor)
+                PROFILE_FEED, build_profile_feed_body(uid, pcursor), uid=uid,
             )
             if payload is None:
                 break
