@@ -114,15 +114,57 @@ def test_does_not_navigate_before_graphql():
     )
 
 
+def test_prefers_init_state_over_graphql():
+    """★ 必须**优先** `window.INIT_STATE`（2026-10-07 实测精度差异）。
+
+    同一用户（uid=3xep6p7wbnqcvj6）实测：
+
+        GraphQL    {"fan":"1.3万", "photo":null, "follow":8}
+        INIT_STATE {"fan":12551, "like":55163, "follow":8, "photo_public":176}
+        页面显示   粉丝 1.3万 / 获赞 5.5万
+
+    ⇒ GraphQL 给的是**四舍五入的展示字符串**（"1.3万"），
+      反解成 13000 比真实 12551 **多 449**；
+      且 GraphQL 上**没有获赞字段**。
+    ⇒ INIT_STATE 才是精确值，且含获赞。
+
+    ⚠️ 这个差别是本文件存在的根本理由（另一份独立调查报告提供的线索）。
+    """
+    src = _impl_source()
+    assert "_read_profile_from_init_state" in src, (
+        "必须优先用 INIT_STATE —— GraphQL 的数字被四舍五入，且没有获赞"
+    )
+    # INIT_STATE 分支在 GraphQL **调用**之前
+    # ⚠️ 不能用 "visionProfile" 比较位置 —— 它在方法 docstring 里也出现过
+    _call = "init = await self._read_profile_from_init_state(uid)"
+    _gql = 'query = (\n                "query{ visionProfile'
+    assert _call in src, "找不到 INIT_STATE 调用点"
+    if _gql not in src:
+        _gql = "ownerCount{ fan photo follow photo_public }"
+    assert src.index(_call) < src.index(_gql), (
+        "INIT_STATE 读取必须排在 GraphQL 之前（它的数字更准、还含获赞）"
+    )
+    # 取值字段要与实测一致
+    assert 'oc.get("photo_public")' in src, "作品数在 photo_public（不是 photo）"
+    assert 'oc.get("like")' in src, "获赞在 like（GraphQL 上没有，INIT_STATE 有）"
+
+
+def test_init_state_validates_user_id():
+    """INIT_STATE 也必须校验 `user_id`，避免拿到页面上别人的数据。"""
+    src = inspect.getsource(
+        __import__("app.services.platforms.kuaishou.client",
+                   fromlist=["KuaishouClient"]).KuaishouClient
+        ._read_profile_from_init_state
+    )
+    assert "user_id" in src, "缺少 user_id 校验"
+    assert "INIT_STATE 的 user_id" in src, "身份不符时应记录并丢弃"
+
+
 def test_does_not_use_profile_get():
     """**不再调用 `/rest/v/profile/get`** —— 它只能查自己。
 
     实测：请求目标 uid 时它返回的是**登录账号自己**
-    （日志：`profile/get id 不符：请求 uid=3xep…，返回 ids=['2695872552']`
-      —— 2695872552 是登录者的 userId）。
-
-    它曾是一连串麻烦的根源（id 校验、跳转、张冠李戴、功能整体不可用），
-    现在整条路删掉：身份信息由上层用**搜索结果**补齐。
+    （日志：`profile/get id 不符：请求 uid=3xep…，返回 ids=['2695872552']`）。
     """
     src = _impl_source()
     assert "PROFILE_GET" not in src, (
@@ -144,19 +186,17 @@ def test_no_dual_id_check_left():
     )
 
 
-def test_returns_graphql_counts_with_empty_identity():
-    """只返回 GraphQL 的数字，**身份字段留空**由上层合并。
-
-    实测 GraphQL 的 `VisionUserProfile` 上**没有任何身份字段**
-    （name/headurl/userText/id/verified 全部 `Cannot query field`，
-      只有 ownerCount）⇒ 身份只能来自搜索结果（前端本来就有）。
-    """
+def test_returns_graphql_counts_as_fallback():
+    """GraphQL 只作**兜底**，其数字是四舍五入值（"1.3万"）。"""
     src = _impl_source()
-    assert 'followers=counts.get("fan"' in src
-    assert 'following=counts.get("follow"' in src
-    assert 'total_videos=counts.get("photo"' in src
-    # 获赞：GraphQL 没有该字段 ⇒ 恒 0，前端显示「—」而非谎报 0
-    assert "total_likes=0" in src, "GraphQL 没有获赞字段，不要编造"
+    assert "_parse_cn_count" in src, (
+        "GraphQL 的 fan 是 '1.3万' 这类字符串，需要 _parse_cn_count"
+    )
+    # GraphQL 兜底里：作品数也要用 photo_public（实测 photo 返回 null）
+    assert '"photo": _parse_cn_count(oc.get("photo_public"))' in src, (
+        "GraphQL 兜底也要用 photo_public —— 实测 photo 返回 null"
+    )
+    assert "--- 兜底：GraphQL" in src, "GraphQL 应标注为兜底（INIT_STATE 才是首选）"
 
 
 def test_videos_passes_uid_for_signature():

@@ -1060,20 +1060,22 @@ export default function PlatformUserPage() {
                       ))}
                     </Row>
 
-                    {/* 只在**一个都没取到**时才提示（原来只看 followers，
-                        而它可能是真实的 0）*/}
+                    {/* 只在**一个都没取到**时才提示。
+                        ⚠️ 2026-10-07：数字来自 `window.INIT_STATE`（明文精确，
+                        含粉丝/关注/获赞/作品）。此前"没有获赞字段"的说法是错的
+                        —— 那个结论来自 GraphQL，而 GraphQL 上确实没有 like 字段。*/}
                     {platform === 'kuaishou'
-                      && profile.followers === null && profile.followers === undefined
-                      && !profile.following && !profile.total_videos ? (
+                      && !profile.followers && !profile.following
+                      && !profile.total_likes && !profile.total_videos ? (
                       <Alert
                         type="info"
                         showIcon
                         style={{ marginBottom: 12, fontSize: 12 }}
                         message="快手：统计数字暂时取不到"
                         description={
-                          '快手只公开「粉丝 / 关注 / 作品」三个数字（GraphQL），'
-                          + '**没有「获赞」字段**，所以获赞恒为空。'
-                          + '若三个都没有，多半是登录态失效了。'
+                          '快手的粉丝/关注/获赞/作品数来自页面的 INIT_STATE 数据，'
+                          + '若这一项为空，多半是登录态失效或页面结构变了。'
+                          + '作品列表不受影响。'
                         }
                       />
                     ) : null}

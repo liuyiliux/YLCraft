@@ -1250,6 +1250,48 @@ class KuaishouClient(BasePlatformClient):
         if not uid:
             return None
 
+        # ---- ★ 首选：`window.INIT_STATE`（明文、精确、实测最准）----
+        #
+        # 实测对比（uid=3xep6p7wbnqcvj6）：
+        #     GraphQL  ownerCount: {"fan":"1.3万", ...}   ← **四舍五入**
+        #     INIT_STATE ownerCount: {"fan":12551, "like":55163,
+        #                               "follow":8, "photo_public":176}  ← 明文
+        # 页面显示 1.3万 = 12551 取整 ⇒ 走 GraphQL 会显示 13000，**差 449**。
+        #
+        # ⇒ 必须优先 INIT_STATE。
+        #
+        # ⚠️ key 是**移位加密**的（每字符 -1），这也是之前 grep 昵称得到 0 次的原因：
+        #     tusjoh.0sftu0w0qspgjmf0vtfs-pckfdu.vtfs`je.uvtkpi/<uid>
+        #     → visionProfile.userId/<uid>
+        #   **值本身是明文**（实测 user_name 直接就是"沈阳"），只有 key 要解码。
+        init = await self._read_profile_from_init_state(uid)
+        if init:
+            prof = init.get("profile") or {}
+            oc = prof.get("ownerCount") or {}
+            logger.info(
+                "[kuaishou] INIT_STATE %s → 粉丝=%s 关注=%s 作品=%s 获赞=%s",
+                uid, oc.get("fan"), oc.get("follow"),
+                oc.get("photo_public"), oc.get("like"),
+            )
+            return UserProfile(
+                id=uid,
+                name=str(prof.get("user_name") or ""),
+                avatar=self._fix_bili_url(str(prof.get("headurl") or "")),
+                platform="kuaishou",
+                followers=_to_int(oc.get("fan")),
+                following=_to_int(oc.get("follow")),
+                total_videos=_to_int(oc.get("photo_public")),
+                # ⚠️ `like` 是**获赞总数**（实测 55163 = 页面的 5.5万）
+                total_likes=_to_int(oc.get("like")),
+                desc=str(prof.get("user_text") or ""),
+                verified=bool(prof.get("verified")),
+                raw_data={"_source": "init_state", "profile": prof},
+            )
+        logger.info(
+            "[kuaishou] INIT_STATE 没取到 %s —— 改用 GraphQL（数字会被四舍五入）", uid,
+        )
+
+        # ---- 兜底：GraphQL（数字是**四舍五入**的展示值）----
         # ---- GraphQL 取统计（fan / photo / follow）----
         #
         # ⚠️⚠️ 2026-10-07：**不要先跳转页面**（我先前加过，是错的）
@@ -1388,6 +1430,94 @@ class KuaishouClient(BasePlatformClient):
             desc="",
             raw_data={"_graphql": counts, "_source": "graphql"},
         )
+
+    async def _read_profile_from_init_state(self, uid: str) -> Optional[Dict[str, Any]]:
+        """从目标主页的 `window.INIT_STATE` 读明文资料（实测 2026-10-07）。
+
+        ## 为什么用这条路（而不是 GraphQL）
+
+        实测同一用户（uid=3xep6p7wbnqcvj6）：
+
+            GraphQL    ownerCount: {"fan":"1.3万", "photo":null, "follow":8}
+            INIT_STATE ownerCount: {"fan":12551, "like":55163,
+                                    "follow":8, "photo_public":176}
+            页面显示    粉丝 1.3万 / 获赞 5.5万
+
+        ⇒ GraphQL 给的是**四舍五入的展示字符串**，INIT_STATE 才是**精确值**
+          且**含获赞**。走 INIT_STATE 还能拿到昵称/头像/简介（GraphQL 上
+          那几个字段实测 `Cannot query field`）。
+
+        ## key 是移位加密的
+
+            HTML: tusjoh.0sftu0w0qspgjmf0vtfs-pckfdu.vtfs`je.uvtkpi/<uid>
+            实际: visionProfile.userId/<uid>
+
+            规则：每个字符 **-1**；`` ` `` → `_`；``\\`` / ``\\/`` → `_`
+
+        **值本身是明文**（实测 `user_name` 直接是"沈阳"），
+        只有 key 名需要还原 —— 这也是之前直接 grep 昵称得到 0 次的原因。
+
+        ## 登录态也能取到（实测）
+
+        另一份独立调查报告的结论是"只有游客态有 INIT_STATE"，
+        **实测不成立**：登录态下同样有，且值一致。
+        """
+        session = await self._get_session()
+        if session is None:
+            return None
+        try:
+            await session.page.goto(
+                f"{BASE}/profile/{uid}",
+                wait_until="domcontentloaded", timeout=60000,
+            )
+            await session.page.wait_for_timeout(3000)
+        except Exception as exc:
+            logger.info("[kuaishou] 打开主页取 INIT_STATE 失败：%s: %s",
+                        type(exc).__name__, str(exc)[:80])
+            return None
+
+        # ⚠️ 不要硬编码那个 key（尾部含 uid，且易被快手改动）；
+        #   直接在页面里找**属于 visionProfile 且含 userId** 的那个 key。
+        expr = (
+            "(() => { const s = window.INIT_STATE;"
+            " if (!s) return null;"
+            " for (const k of Object.keys(s)) {"
+            "   if (k.indexOf('tusjoh') === 0"
+            "       && k.indexOf('pckfdu') > 0"
+            "       && k.indexOf('vtfs') > 0) {"
+            "     return JSON.stringify(s[k]);"
+            "   }"
+            " } return null; })()"
+        )
+        try:
+            raw = await session.page.evaluate(expr)
+        except Exception as exc:
+            logger.info("[kuaishou] 读 INIT_STATE 失败：%s: %s",
+                        type(exc).__name__, str(exc)[:80])
+            return None
+
+        if not raw:
+            return None
+        try:
+            import json as _json
+
+            data = _json.loads(raw) if isinstance(raw, str) else raw
+        except Exception:
+            return None
+
+        up = (data or {}).get("userProfile") or {}
+        prof = up.get("profile") or {}
+        if not prof:
+            return None
+        # ⚠️ 必须校验 user_id 是**目标用户**（别拿到页面上别人的数据）
+        got = str(prof.get("user_id") or "")
+        if got and got != uid:
+            logger.warning(
+                "[kuaishou] INIT_STATE 的 user_id(%s) ≠ 请求的(%s) —— 丢弃",
+                got, uid,
+            )
+            return None
+        return prof
 
     async def get_user_videos(
         self,
