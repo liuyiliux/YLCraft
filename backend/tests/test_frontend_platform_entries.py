@@ -155,8 +155,8 @@ def test_kuaishou_backend_profile_can_query_others():
     #   名字和数字全是自己的。原因是校验只 logger.warning 然后照常返回；
     #   且 GraphQL 是在**当前页面**（可能正是自己主页）发的。
     # => 现在必须**硬拒绝**。
-    assert "if got_uid != uid:" in impl, "缺少硬校验"
-    _i = impl.index("if got_uid != uid:")
+    assert "uid not in ids" in impl, "必须两个 id 任一匹配（快手有 userId 数字 + userDefineId 字符串）"
+    _i = impl.index("uid not in ids:")
     assert "return None" in impl[_i:_i + 400], (
         "身份对不上必须 return None —— 只记警告会拿自己的资料冒充别人"
     )
