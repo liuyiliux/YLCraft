@@ -151,8 +151,15 @@ def test_kuaishou_backend_profile_can_query_others():
 
     impl = inspect.getsource(KuaishouClient._get_user_profile_impl)
     assert "uid=uid" in impl, "必须把目标 uid 传下去（签名在目标主页抓）"
-    # ⚠️ 必须校验返回的是目标用户，否则缓存串了会拿自己的资料冒充别人的
-    assert "与请求的" in impl, "没有校验「返回的用户 == 请求的用户」"
+    # !! 2026-10-07 线上事故：搜该用户显示的是**我自己账号**的数据（粉丝15 关注26）
+    #   名字和数字全是自己的。原因是校验只 logger.warning 然后照常返回；
+    #   且 GraphQL 是在**当前页面**（可能正是自己主页）发的。
+    # => 现在必须**硬拒绝**。
+    assert "if got_uid != uid:" in impl, "缺少硬校验"
+    _i = impl.index("if got_uid != uid:")
+    assert "return None" in impl[_i:_i + 400], (
+        "身份对不上必须 return None —— 只记警告会拿自己的资料冒充别人"
+    )
 
 
 def test_kuaishou_pages_for_uses_target_uid():
