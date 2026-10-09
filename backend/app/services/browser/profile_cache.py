@@ -53,9 +53,10 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from .persistent_profile import profiles_root
 
@@ -140,7 +141,28 @@ def _dir_size(path: Path) -> int:
 
 
 def list_platform_caches() -> List[PlatformCacheInfo]:
-    """列出所有平台的缓存占用。"""
+    """列出所有平台的缓存占用。
+
+    ## ⚠️ 2026-10-07：这个函数**很慢**，加了 30 秒短期缓存
+
+    实测 `/api/v1/browser-profiles/caches` 要 **2.3 秒**，而它是
+    「账号中心」加载时要调的接口之一 —— 整个页面因此变慢。
+
+    慢在 `_dir_size()`：浏览器 profile 里是**成千上万个文件**
+    （实测 xhs 单个 Cache 就有 4521 个文件 / 377MB），
+    而这里对**每个平台**要遍历两遍（CACHE_DIRS 各一次 + 整个目录一次），
+    全是**同步阻塞**的磁盘 IO。
+
+    但它的用途只是**给人看**"缓存占多少、要不要清理"，
+    不需要每次打开页面都精确到字节 ⇒ 缓存 30 秒足够。
+
+    ⚠️ `clear_*` 之后会主动失效这个缓存（见 `_invalidate_cache`），
+    所以"清理完立刻看到新数字"不受影响。
+    """
+    cached = _list_caches_cached()
+    if cached is not None:
+        return cached
+
     root = profiles_root()
     out: List[PlatformCacheInfo] = []
     try:
@@ -169,7 +191,30 @@ def list_platform_caches() -> List[PlatformCacheInfo]:
                 pass
         info.total_bytes = _dir_size(entry)
         out.append(info)
+
+    _CACHES_SNAPSHOT["value"] = out
+    _CACHES_SNAPSHOT["at"] = time.monotonic()
     return out
+
+
+# 30 秒短期缓存：够挡住"打开页面时重复调"，又不至于让数字太旧
+_CACHE_TTL_SECONDS = 30.0
+_CACHES_SNAPSHOT: Dict[str, Any] = {"value": None, "at": 0.0}
+
+
+def _list_caches_cached() -> Optional[List[PlatformCacheInfo]]:
+    v = _CACHES_SNAPSHOT.get("value")
+    if v is None:
+        return None
+    if time.monotonic() - _CACHES_SNAPSHOT.get("at", 0.0) > _CACHE_TTL_SECONDS:
+        return None
+    return v
+
+
+def _invalidate_cache() -> None:
+    """清缓存/清理磁盘后调用，让下次统计重新算。"""
+    _CACHES_SNAPSHOT["value"] = None
+    _CACHES_SNAPSHOT["at"] = 0.0
 
 
 @dataclass
@@ -219,6 +264,8 @@ def clear_platform_cache(platform: str) -> ClearResult:
         raise ValueError("平台名非法")
 
     result = ClearResult(platform=safe)
+    # ⚠️ 清理后必须让统计缓存失效，否则 30 秒内还会显示**清理前**的数字
+    _invalidate_cache()
     if not root.exists():
         result.skipped["profile"] = "该平台没有 profile 目录"
         return result

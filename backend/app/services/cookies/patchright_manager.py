@@ -465,9 +465,22 @@ class PatchrightAcquisitionManager:
                 conn.acquisition_method = AcquisitionMethod.PATCHRIGHT  # ✅ 改为 PATCHRIGHT
                 conn.status = ConnectionStatus.ACTIVE
                 conn.error_message = None
-                if account_info.get("account_name"):
+                # ⚠️⚠️ 2026-10-07 修：同"新建"分支的 bug，用户手填名被丢。
+                #
+                # 原来有两个问题：
+                #  ① `if account_info.get("account_name"):` —— 只有**自动提取到**
+                #     昵称才更新。而快手这类平台**常常提取不到**
+                #     （GraphQL 用数字 id 取昵称会 result=None），
+                #     于是**用户手填的名字一次都存不进去**。
+                #  ② 即使提取到了，也直接覆盖，忽略手填值。
+                #
+                # ⇒ 手填优先；手填为空时才用自动提取的值。
+                _typed = (session.connector_name or "").strip()
+                _auto = (account_info.get("account_name") or "").strip()
+                _name = _typed or _auto
+                if _name or account_info.get("account_id"):
                     conn.account_id = account_info.get("account_id")
-                    conn.account_name = account_info.get("account_name")
+                    conn.account_name = _name
                     conn.account_avatar = account_info.get("account_avatar")
                     conn.account_url = account_info.get("account_url")
                 conn.update_timestamp()
@@ -487,7 +500,19 @@ class PatchrightAcquisitionManager:
                     domains=get_platform_domains(platform),
                     test_url=get_platform_test_url(platform),
                     account_id=account_info.get("account_id"),
-                    account_name=account_info.get("account_name"),
+                    # ⚠️⚠️ 2026-10-07 修：**用户手填的名字被丢掉了**
+                    #
+                    # 原来只写 `account_name=account_info.get("account_name")`
+                    # —— 只用**自动提取**的昵称，完全忽略 `session.connector_name`
+                    # （前端「账号名称」输入框传的就是它）。
+                    # 用户填了「珠宝」，保存出来却是空 —— 界面显示不出这个名字。
+                    #
+                    # 优先级：**用户手填 > 自动提取**（手填是明确意图，
+                    # 而且自动提取常失败，如快手 GraphQL 拿数字 id 取不到昵称）。
+                    account_name=(
+                        (session.connector_name or "").strip()
+                        or account_info.get("account_name")
+                    ),
                     account_avatar=account_info.get("account_avatar"),
                     account_url=account_info.get("account_url"),
                 )
