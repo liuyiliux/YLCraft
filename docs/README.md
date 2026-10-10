@@ -54,6 +54,10 @@
 
 ## 当前主线状态
 
+> **2026-10-11 update（最新）:** 快手（Kuaishou）采集**全部打通**：搜索博主 / 搜索作品 / 博主详情（昵称·头像·简介）/ 粉丝·关注·作品 **精确值** / **获赞** / 作品列表，均在界面实测确认（样例 uid `3xep6p7wbnqcvj6`：粉丝 12544、关注 8、作品 176、获赞 55169，与快手页面一致）。关键实现：`__NS_hxfalcon` 签名无法伪造、只能抓浏览器请求，而 **`profile/user` 这个路径页面从不发 ⇒ 借 `profile/get` 的签名只换路径**——这是唯一能拿到精确值与获赞的路（GraphQL 只能给四舍五入的 `"1.3万"`，且无获赞）。事实来源 `docs/platform/KUAISHOU_GUIDE.md`，其中记录了**六条已证伪的结论**（"未登录不发签名""INIT_STATE 是明文""无头被挡"等）及方法论教训：**"接口能返回数据" ≠ "我们能调它"**，前提是拿得到签名；遇到"取不到"要做对照实验而非猜测。
+>
+> 同轮并清理：4 个遗留的 `git commit -F` 提交信息文件、`esbuild_story.err`、`tmp/`；`check_mobile.py` 移入 `tools/` 并补依赖说明（唯一移动端布局回归工具）。
+
 > **2026-09-25 update:** `triposr-connector-migration` is no longer planning-only: its connector migration and focused tests are complete, while the real-provider smoke remains unverified because no key is available. `unirig-local-rigging-service` has completed tasks 1-3 (pinned revision/license/checkpoints, sidecar contract, connector mapping); Phase 2+ is deferred because the current machine has 6GB VRAM, below the upstream 8GB minimum, and the user is not buying a supported GPU now.
 
 最近更新：2026-09-25。本轮归档五条线：`user-authentication` 18/18（服务端会话 + HttpOnly Cookie、外部 Agent `ylk_` Key 任一通过、`owner_user_id` 可空的平滑迁移；认证/归属后端测试重跑 14 例通过）、`asset-library-list-performance` 16/16、`task-detail-diagnostics-normalization` 25/25、`previs-ai-copilot` 13/14（3.2 / 3.3 真浏览器验收已完成；2.5「程序化模型本期不做」明确保留未勾）、`legacy-owner-backfill` 7/7（五张历史归属表已复核归到本地 `root`，并新增默认 dry-run、显式 `--apply`、幂等测试的运维入口）。归档目录为 `openspec/changes/archive/2026-09-25-*`。`3d-rigging-digital-human` 的任务 13 / 14 已拆到独立 change `unirig-local-rigging-service` 与 `triposr-connector-migration`。`triposr-connector-migration` 已切到配置驱动连接器，focused tests 通过，真实供应商 smoke 因当前没有可用 key 仍未验证；`unirig-local-rigging-service` 已完成任务 1-3（上游 revision、MIT 许可、权重校验值、sidecar 契约、连接器字段映射），Phase 2+ 因当前机器 6GB 显存低于官方 8GB 最低要求、用户暂不购买设备而暂缓。
