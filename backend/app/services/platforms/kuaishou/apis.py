@@ -46,6 +46,14 @@ SEARCH_FEED = "/rest/v/search/feed"
 SEARCH_USER = "/rest/v/search/user"
 # 「我的数据」——来自调研报告的 SIG4_WHITELIST + 实测（页面自己会请求它）
 PROFILE_GET = "/rest/v/profile/get"
+# ⚠️ 2026-10-10 独立实测发现：**真正可用的是 `POST /rest/v/profile/user`**。
+# `profile/get` 未登录恒 `{"result":109}`，拿不到任何东西（死路）。
+# 参见 `F:\workspace\简单脚本\调查报告2.md` 与实测响应 `ks_profile_user.json`：
+#     POST /rest/v/profile/user?__NS_hxfalcon=<签名>&caver=2
+#     body: {"user_id":"<URL 里的字符串 id>"}
+#     → {"result":1,"userProfile":{"profile":{..., "ownerCount":
+#            {"fan":12548,"like":55165,"follow":8,"photo_public":176}}}}
+PROFILE_USER = "/rest/v/profile/user"
 # 用户作品列表（同属白名单，未实测）
 PROFILE_FEED = "/rest/v/profile/feed"
 NEW_RECO = "/new-reco"
@@ -112,6 +120,17 @@ def build_user_body(keyword: str, pcursor: str = "") -> Dict[str, Any]:
         "pcursor": pcursor or "",
         "searchSessionId": "",
     }
+
+
+def build_profile_user_body(user_id: str) -> Dict[str, Any]:
+    """构造 `POST /rest/v/profile/user` 的请求体（2026-10-10 实测）。
+
+        {"user_id": "<URL 里那个字符串 id>"}
+
+    ⚠️ **只吃字符串 id**（实测 2026-10-10）：
+    传"快手号"（如 1578058299）→ `{"result":21 参数格式错误}`。
+    """
+    return {"user_id": str(user_id or "")}
 
 
 def pick_video_url(photo: Dict[str, Any]) -> str:
