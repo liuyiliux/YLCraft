@@ -682,6 +682,15 @@ class KuaishouClient(BasePlatformClient):
         if extra_query:
             sep = "&" if "?" in signed else "?"
             signed = f"{signed}{sep}{extra_query}"
+            # ⚠️ 诊断：把最终 URL 的**参数名**打出来（不打印签名值本身），
+            # 确认 userId 真的被拼上去了 —— 否则会误判成"接口不认这个参数"。
+            logger.info(
+                "[kuaishou] 追加查询参数 → %s（最终参数名：%s）",
+                extra_query,
+                ",".join(sorted(
+                    p.split("=")[0] for p in signed.split("?")[-1].split("&")
+                )),
+            )
 
         # ⚠️⚠️ 2026-10-10 **修**：`Page.evaluate: Execution context was destroyed,
         # most likely because of a navigation.`
@@ -1526,34 +1535,25 @@ class KuaishouClient(BasePlatformClient):
                 logger.warning("[kuaishou] GraphQL 异常：%s: %s",
                                type(exc).__name__, exc)
 
-        # ---- ⚠️⚠️ 2026-10-07：**不再调用 `/rest/v/profile/get`**（实测证明有害）
+        # ---- ⚠️ 关于身份字段（昵称/头像/简介）与「获赞」----
         #
-        # 我之前用它取"昵称/头像/简介"，结果它是**所有麻烦的根源**：
+        # 两条路都试过了，如实记下**能力边界**：
         #
-        #   ① 它**只能查自己** —— 签名是会话级的，userId 不在 body 也不在
-        #      query（只在**页面 URL** 上）。实测请求目标 uid 时，
-        #      返回的永远是**登录账号自己**（日志实测：
-        #        `profile/get id 不符：请求 uid=3xep…，返回 ids=['2695872552']`
-        #        —— 2695872552 就是我自己的 userId）
-        #   ② 为此我加了「先跳转目标主页」的步骤，而它**经常失败**
-        #      （实测 `打开 https://www.kuaishou.com/profile/3xep… 失败：Error`），
-        #      失败还会连带让 `profile/feed` 的签名抓不到 ⇒ **作品列表也挂**
-        #   ③ 于是又得加"id 校验"防冒充 —— 而它必然触发，整个功能不可用
+        #   · `profile/get`：签名抓得到，但**只返回登录账号自己** ——
+        #     实测带 `?userId=<目标 id>` 也一样（线上日志：返回 2695872552）。
+        #   · `profile/user`：**能返回目标用户的完整资料**（含 `like` 获赞），
+        #     但**页面不发这个路径** ⇒ 抓不到签名 ⇒ 我们调不了。
+        #     ⚠️ "接口能返回数据" ≠ "我们能调它"，前提是拿到它的签名。
         #
-        # **实测证明它本来就不必要**（同一次请求里）：
-        #     [kuaishou] GraphQL 3xep6p7wbnqcvj6 → 粉丝=0 关注=8 作品=0
-        # 「关注 8」正是「沈阳」的真实值（与 B站/快手页面一致）⇒
-        # **GraphQL 自带 userId 参数，本来就查的是目标用户**，
-        # 不需要跳转页面，也不需要 profile/get 兜底。
+        # ⇒ 所以身份字段只能来自**搜索结果**（前端本来就有，见
+        #   `frontend/src/pages/platform-users/index.tsx` 的快手分支），
+        #   这里返回空**不会**覆盖它。
         #
-        # 身份字段（昵称/头像/简介）怎么办？
-        #   · 前端**已经先用搜索结果渲染**了（昵称/头像/简介都在，见
-        #     `frontend/src/pages/platform-users/index.tsx` 的快手分支）
-        #   · GraphQL 的 `VisionUserProfile` 上**实测没有任何身份字段**
-        #     （name/headurl/userText/id/verified 全部 `Cannot query field`，
-        #       只有 ownerCount）—— 所以身份只能来自搜索结果。
-        #
-        # ⇒ 所以这里**只返回 GraphQL 的数字**，身份留空由上层合并。
+        # ⇒ 而「获赞」**确实拿不到**：GraphQL 的 ownerCount 只有
+        #   `fan`/`photo`/`follow`/`photo_public`，**没有 like**。
+        #   页面上的「获赞 5.5万」来自别处（未找到可用路径）。
+        #   返回 0 会让前端按"真实 0"显示 —— 所以这里是 0，
+        #   但前端对快手该字段应显示「—」（已在 UI 层处理）。
         if not counts:
             logger.info(
                 "[kuaishou] GraphQL 没取到 %s 的统计（登录态失效？）—— "
@@ -1563,16 +1563,16 @@ class KuaishouClient(BasePlatformClient):
 
         return UserProfile(
             id=uid,
-            # ⚠️ 身份字段留空：GraphQL 没有，`profile/get` 只能查自己。
-            #   上层（前端）会用搜索结果补齐，这里返回空**不会**覆盖它。
             name="",
             avatar="",
             platform="kuaishou",
+            # ⚠️ GraphQL 给的是**四舍五入**值（实测 fan="1.3万" → 13000，
+            #    而真实是 12548）。这里如实返回解析值，注释说明精度损失。
             followers=counts.get("fan", 0),
             following=counts.get("follow", 0),
             total_videos=counts.get("photo", 0),
-            # ⚠️ GraphQL **没有获赞字段** ⇒ 恒为 0。
-            #   前端据此显示「—」而不是"0 获赞"（那是谎报）。
+            # ⚠️ GraphQL 没有获赞字段 ⇒ 恒 0。
+            #   前端据此显示「—」而不是"0 获赞"（0 是谎报）。
             total_likes=0,
             desc="",
             raw_data={"_graphql": counts, "_source": "graphql"},
