@@ -1037,13 +1037,13 @@ export default function PlatformUserPage() {
                         { label: '关注', value: profile.following, color: '#22d3ee' },
                         {
                           label: profile.platform === 'xiaohongshu' ? '获赞与收藏' : '获赞',
-                          // ⚠️⚠️ 快手**没有获赞这个数据**（2026-10-10 实测确认）：
-                          //   能取到数字的接口只有 GraphQL，而它的 ownerCount
-                          //   **没有 like 字段**（只有 fan/photo/follow/photo_public）。
-                          //   页面上的「获赞 5.5万」来自别的通道，我们没找到可用路径。
-                          // ⇒ 传 null 让它显示「—」，**不能显示 0**
-                          //   （0 是谎报"这博主 0 获赞"）。
-                          value: platform === 'kuaishou' ? null : profile.total_likes,
+                          // ⚠️ 2026-10-11：**删掉**原来硬编码的
+                          //   `platform === 'kuaishou' ? null : …` ——
+                          //   当时以为"快手没有获赞数据"，但后来
+                          //   `profile/user` 实测能拿到（55169，与页面 5.5万 一致）。
+                          //   那行会把真数据强制变 null ⇒ 显示「—」。
+                          //   取不到时后端本来就返回 0/空，自然显示「—」。
+                          value: profile.total_likes,
                           color: '#ec4899',
                         },
                         { label: '作品', value: profile.total_videos, color: '#10b981' },
