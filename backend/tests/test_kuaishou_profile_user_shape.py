@@ -120,13 +120,37 @@ def test_no_two_shape_branch():
     assert "扁平(profile/get)" not in code
 
 
-def test_validates_user_define_id():
-    """必须用 `userDefineId`（= URL 字符串 id）校验，防冒充。"""
+def test_validates_using_profile_user_id():
+    """⚠️ 必须用 `profile.user_id` 校验，**不能**用 `userDefineId`。
+
+    两个 id 是不同东西（我在这上面错了一次）：
+
+        请求的 uid               = `3xep6p7wbnqcvj6`（URL 字符串 id）
+        userProfile.profile.user_id = `3xep6p7wbnqcvj6`  ← 同一个，用它
+        userProfile.userDefineId    = `1578058299`       ← 快手号，**另一个**
+
+    我写成 `userDefineId or profile.user_id`（快手号优先）⇒
+    线上日志 `profile/user 返回 1578058299 ≠ 请求的 3xep… —— 丢弃`
+    —— 数据明明拿到了，却被自己的校验扔掉。
+    """
     from app.services.platforms.kuaishou.client import KuaishouClient
 
     src = inspect.getsource(KuaishouClient._post_profile_user)
-    assert "userDefineId" in src
+    code = re.sub(r"#.*", "", src)
+    code = re.sub(r'""".*?"""', "", code, flags=re.S)
+
+    assert 'prof.get("user_id") or up.get("userDefineId")' in code, (
+        "必须 profile.user_id 优先 —— 快手号(userDefineId)与请求 uid 不是同一个"
+    )
     assert "≠ 请求的" in src
+
+
+def test_real_response_fixture_has_distinct_ids():
+    """真实响应里两个 id 确实不同（防止有人再搞混）。"""
+    up = REAL_RESPONSE["userProfile"]
+    assert up["profile"]["user_id"] == "3xep6p7wbnqcvj6"
+    assert up["userDefineId"] == "1578058299"
+    assert up["profile"]["user_id"] != up["userDefineId"]
 
 
 def test_no_bili_helper():
