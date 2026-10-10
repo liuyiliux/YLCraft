@@ -127,19 +127,23 @@ def test_kuaishou_calls_profile_api_but_degrades_gracefully():
     assert "..." in branch, "应用 {...prev, ...res.data} 合并，别丢掉搜索结果的字段"
 
 
-def test_kuaishou_backend_profile_uses_graphql_only():
-    """**2026-10-07**：`get_user_profile` 现在**只用 GraphQL**。
+def test_kuaishou_backend_profile_uses_profile_get_with_userid():
+    """**2026-10-10**：`get_user_profile` 用 `profile/get?userId=`。
 
-    起因是一次线上事故链：
-      · `/rest/v/profile/get` **只能查自己**（实测请求目标 uid 时返回
-        登录账号自己的 `ids=['2695872552']`）
-      · 为此我加了「先跳转目标主页」，而它**经常失败**，失败还连带
-        让 `profile/feed` 签名抓不到 ⇒ **作品列表一起挂**
-      · 又得加 id 校验防冒充 ⇒ 功能整体不可用
+    两次修正的经过（都有实测依据）：
 
-    ⚠️ 实测证明这一切都不必要：同一次日志里
-        `GraphQL 3xep6p7wbnqcvj6 -> 关注=8` 正是目标用户的真实值
-    ⇒ `visionProfile(userId:...)` 自带 userId，不需要跳转，也不需要 profile/get。
+    ① 曾改走 `POST /rest/v/profile/user` —— 独立调查实测它能返回资料，
+       **但线上日志证明页面根本不发这个路径**，签名永远抓不到：
+           抓到 4 个路径的签名：profile/feed, profile/get,
+                               search/feed, search/user
+           抓到签名但 profile/user **不在其中** → 500
+       ⇒ 「接口能返回数据」≠「我们能调它」——前提是拿到它的签名。
+
+    ② `profile/get` 以前被判"只能查自己"，是**参数位置错了**：
+       独立实测要 `?userId=<URL 字符串 id>`（query），
+       而项目历史上只发空 body、不带 query。
+
+    ⇒ 现在：能抓到签名的 profile/get + 正确的 ?userId=。
     """
     from app.services.platforms.kuaishou.client import KuaishouClient
     import inspect
@@ -147,9 +151,14 @@ def test_kuaishou_backend_profile_uses_graphql_only():
     assert "NotImplementedError" not in inspect.getsource(KuaishouClient.get_user_profile)
 
     impl = inspect.getsource(KuaishouClient._get_user_profile_impl)
-    assert "PROFILE_GET" not in impl, "profile/get 只能查自己，不该再用"
+    assert "PROFILE_GET" in impl, "应用 profile/get（它的签名抓得到）"
+    assert 'extra_query=f"userId={uid}"' in impl, "必须带 ?userId="
+    assert "PROFILE_USER" not in impl, (
+        "不要用 profile/user —— 线上日志证明页面不发该路径"
+    )
     assert "page.goto(" not in impl, "不该为 GraphQL 跳转页面（它自带 userId）"
-    assert "/graphql" in impl and "visionProfile" in impl, "应走 GraphQL"
+    assert "/graphql" in impl and "visionProfile" in impl, "应保留 GraphQL 兜底"
+
 def test_kuaishou_pages_for_uses_target_uid():
     """`_pages_for` 传了 uid 就必须去**那个人的**主页。"""
     from app.services.platforms.kuaishou.client import KuaishouClient

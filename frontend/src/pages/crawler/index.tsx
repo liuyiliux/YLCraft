@@ -368,14 +368,16 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
     // （和 xhs 那次一模一样的错）。等抓到真实排序参数再加回来。
     //
     // 注：搜索本身是通的（实测 result=1、可翻多页），这里只是没有排序维度。
+    //
+    // ⚠️ 2026-10-10 **「用户」已移除**（用户要求）。
+    //   理由与微博那条一致：**用户搜索归「博主中心」**——
+    //   那边有专门的用户列表（能显示粉丝数/头像/简介、点进详情看作品），
+    //   而「内容搜索」页的用户 tab 只是把同一个接口换个地方摆，
+    //   既没有详情也没有作品，属于重复入口。
+    //   ⇒ 删掉，让"搜人"只有博主中心一个入口，避免用户两边找。
     searchTypes: [
       {
         value: 'note', label: '视频', icon: <VideoCameraOutlined />,
-        sortOptions: [],
-        defaultSort: '',
-      },
-      {
-        value: 'user', label: '用户', icon: <UserOutlined />,
         sortOptions: [],
         defaultSort: '',
       },

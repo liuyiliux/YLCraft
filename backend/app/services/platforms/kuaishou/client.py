@@ -602,6 +602,7 @@ class KuaishouClient(BasePlatformClient):
 
     async def _post(
         self, uri: str, body: Dict[str, Any], uid: str = "",
+        extra_query: str = "",
     ) -> Optional[Dict[str, Any]]:
         """在页面上下文里 POST（用**该路径自己的**签名）。
 
@@ -673,6 +674,14 @@ class KuaishouClient(BasePlatformClient):
         session = await self._get_session()
         if session is None:
             raise RuntimeError("[kuaishou] 没有可用的浏览器会话")
+
+        # ⚠️ 2026-10-10：支持给带签名的 URL **追加查询参数**。
+        # 独立实测发现 `profile/get` 需要 `?userId=<URL 字符串 id>`
+        # （见 `_get_user_profile_impl`）；签名本身只覆盖 `__NS_hxfalcon`
+        # 那一串，追加参数不影响它。
+        if extra_query:
+            sep = "&" if "?" in signed else "?"
+            signed = f"{signed}{sep}{extra_query}"
 
         # ⚠️⚠️ 2026-10-10 **修**：`Page.evaluate: Execution context was destroyed,
         # most likely because of a navigation.`
@@ -1375,64 +1384,58 @@ class KuaishouClient(BasePlatformClient):
         if not uid:
             return None
 
-        # ---- ★ 首选：`POST /rest/v/profile/user`（2026-10-10 独立实测确认）----
+        # ---- ★ 首选：`GET /rest/v/profile/get?userId=<uid>` ----
         #
-        # 真实响应（`ks_profile_user.json`）：
-        #   {"result":1,"userProfile":{"profile":{
-        #      "user_name":"沈阳", "headurl":"…", "user_text":"…",
-        #      "ownerCount":{"fan":12548,"like":55165,
-        #                     "follow":8,"photo_public":176},
-        #      "userDefineId":"1578058299", "user_id":"3xep6p7wbnqcvj6"}}}
+        # ⚠️⚠️ 2026-10-10 **再一次修正**（这次有线上日志作证据）：
         #
-        # ⚠️⚠️ 这一路替换掉了我之前两个**都错**的做法：
+        # 上一版改用 `POST /rest/v/profile/user`，但线上日志显示
+        # **页面根本不发这个路径**，签名永远抓不到：
+        #     抓到 4 个路径的签名：/rest/v/profile/feed, /rest/v/profile/get,
+        #                          /rest/v/search/feed, /rest/v/search/user
+        #     抓到签名但 /rest/v/profile/user **不在其中**
+        #     → 未能获取 /rest/v/profile/user 的接口签名 → 500
+        #   （我已经把主页 + 搜索页都开了，四个页面都没有它。）
         #
-        # ① `/rest/v/profile/get` —— 实测未登录恒 `{"result":109}`，是死路。
-        #    我曾拿它取"目标用户资料"，拿回的永远是登录账号自己
-        #    （日志实测 `ids=['2695872552']`），并为此绕了很远。
-        # ② `window.INIT_STATE` —— 独立实测证明那些数据是**搜索页缓存残留**：
-        #    SSR HTML 里 8 个关键词（昵称/快手号/fan/photo_public…）**全 0 命中**，
-        #    全量抓包里该页**从未**发出过资料请求。key 名确实是移位加密的，
-        #    但"能读到明文"是假象 —— 读到的很可能是上一个页面留下的。
-        #    ⚠️ 而且它的数值**会漂移**（12551→12548、55163→55165）。
+        # 而 **`profile/get` 的签名是抓得到的**（就在上面那四个里）。
+        # 它以前被判"只能查自己"，是因为**参数位置错了**：
+        #   独立调查实测（`调查报告2.md`）——
+        #       GET /rest/v/profile/get?userId=3xep6p7wbnqcvj6&__NS_hxfalcon=…
+        #   userId 在 **query** 里。而本项目历史上一直只发空 body、不带 query，
+        #   于是拿回的永远是登录账号自己（日志实测 `ids=['2695872552']`）。
         #
-        # body 只有 `{"user_id": "<URL 里的字符串 id>"}`；
-        # 传"快手号"（1578058299）→ `result:21 参数格式错误`。
-        payload = await self._post(
-            PROFILE_USER, build_profile_user_body(uid), uid=uid,
+        # ⇒ 现在：用**能抓到签名的** `profile/get` + **正确的 `?userId=`**。
+        profile = await self._post(
+            PROFILE_GET, {}, uid=uid, extra_query=f"userId={uid}",
         )
-        if payload:
-            prof = ((payload.get("userProfile") or {}).get("profile") or {})
-            # ⚠️ 校验 user_id 是**目标用户**（别拿页面上别人的数据）
-            got = str(prof.get("user_id") or "")
+        if profile:
+            got = str(profile.get("userDefineId") or "")
+            # ⚠️ 校验返回的是**目标用户**（`userDefineId` 就是 URL 里的字符串 id）
             if got and got != uid:
                 logger.warning(
-                    "[kuaishou] profile/user 返回 %s ≠ 请求的 %s —— 丢弃",
+                    "[kuaishou] profile/get 返回 %s ≠ 请求的 %s —— 丢弃（防冒充）",
                     got, uid,
                 )
             else:
-                oc = prof.get("ownerCount") or {}
                 logger.info(
-                    "[kuaishou] profile/user %s → 粉丝=%s 关注=%s 作品=%s 获赞=%s",
-                    uid, oc.get("fan"), oc.get("follow"),
-                    oc.get("photo_public"), oc.get("like"),
+                    "[kuaishou] profile/get %s → 粉丝=%s 关注=%s 获赞=%s",
+                    uid, profile.get("fans"), profile.get("follows"),
+                    profile.get("like"),
                 )
                 return UserProfile(
                     id=uid,
-                    name=str(prof.get("user_name") or ""),
-                    avatar=self._fix_bili_url(str(prof.get("headurl") or "")),
+                    name=str(profile.get("userName") or ""),
+                    avatar=self._fix_bili_url(str(profile.get("userHead") or "")),
                     platform="kuaishou",
-                    followers=_to_int(oc.get("fan")),
-                    following=_to_int(oc.get("follow")),
-                    total_videos=_to_int(oc.get("photo_public")),
-                    # ⚠️ `like` 是**获赞总数**（实测 55165 = 页面的 5.5万）
-                    total_likes=_to_int(oc.get("like")),
-                    desc=str(prof.get("user_text") or ""),
-                    verified=bool(prof.get("verified")),
-                    raw_data={"_source": "profile/user", "profile": prof},
+                    followers=_to_int(profile.get("fans")),
+                    # ⚠️ 快手叫 `follows`（关注数），不是 `following`
+                    following=_to_int(profile.get("follows")),
+                    total_likes=_to_int(profile.get("like")),
+                    desc=str(profile.get("userTex") or ""),
+                    raw_data={"_source": "profile/get", "profile": profile},
                 )
         logger.info(
-            "[kuaishou] profile/user 没取到 %s —— 改用 GraphQL 兜底"
-            "（数字会被四舍五入）", uid,
+            "[kuaishou] profile/get 没取到 %s —— 改用 GraphQL 兜底（数字会四舍五入）",
+            uid,
         )
 
         # ---- 兜底：GraphQL（数字是**四舍五入**的展示值）----
