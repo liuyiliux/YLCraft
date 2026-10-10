@@ -243,15 +243,27 @@ def test_session_key_matches_base_format():
 
 
 def test_session_is_headless():
-    """**回归**：搜索会话要**无头**（不弹窗）。
+    """**回归**：搜索会话默认**无头**（不弹窗）。
 
     用户反馈过"为啥个人中心的微博老是打开浏览器了" ——
     搜索这类后台操作不该弹窗。
+
+    ⚠️ 2026-10-10：断言从字面量 `headless=True` 改成
+    **默认值检查** —— 现在 headless 由 `YLCRAFT_KS_HEADLESS` 控制
+    （默认 "1" = 无头；设 "0" 才弹窗）。
+
+    背景：我曾据一次未复现的实验把默认改成有头，随后又被自己的测试
+    推翻（无头也能正常抓到签名）⇒ "无头被挡"**未复现**，
+    不该据此给用户弹窗。改回无头默认。
     """
     from app.services.platforms.kuaishou import client as ks
 
     src = inspect.getsource(ks.KuaishouClient._get_session)
-    assert "headless=True" in src
+    assert 'YLCRAFT_KS_HEADLESS", "1"' in src, (
+        "默认必须是无头（YLCRAFT_KS_HEADLESS 未设时取 '1'）—— "
+        "后台操作不该弹浏览器窗口"
+    )
+    assert "headless=headless" in src, "应把变量传给 new_context"
 
 
 def test_sets_has_more():
