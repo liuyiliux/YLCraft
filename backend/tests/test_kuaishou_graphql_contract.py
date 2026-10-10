@@ -1,38 +1,46 @@
 """快手取博主资料的**契约**测试（不联网）。
 
-## 最终方案的由来（三次修正，每次都有实测依据）
+## 最终方案（2026-10-11，从那份独立调查的脚本反推出来的）
 
-**当前做法**：`GET /rest/v/profile/get?userId=<URL 字符串 id>`，
-签名从「目标主页 / 搜索页」抓。
+**`profile/user` + 借用 `profile/get` 的签名。**
 
-### 为什么不是 `POST /rest/v/profile/user`
+### 证据链
 
-独立调查报告实测它带 cookie 能返回完整资料，我据此改过一次。
-**但线上日志证明它不可用**：
+1. 那份调查拿到的是**精确值**（fan:12548 / like:55165）+ 昵称/简介，
+   做法写在它的 `e_profileuser.js` 里：
+   ```js
+   const sig = 'HUDR_sFnX-DtsGEFXsbDPT3TMP-sk0is6A6ZH7E4…';   // 硬编码现成签名
+   const url = '…/profile/user?__NS_hxfalcon=' + sig + '&caver=2';
+   ```
+   **它没有从 `profile/user` 抓签名**（页面根本不发那个路径），
+   而是**拿现成签名改了路径** —— 快手接受了。
 
-    抓到 4 个路径的签名：/rest/v/profile/feed, /rest/v/profile/get,
-                        /rest/v/search/feed, /rest/v/search/user
-    抓到签名但 /rest/v/profile/user **不在其中** → 500
+2. 线上日志证明 `profile/get` 的签名**抓得到**：
+   `抓到 3 个路径的签名：/rest/v/profile/get, /rest/v/search/feed, /rest/v/search/user`
 
-⇒ **快手页面根本不发这个路径**，签名永远抓不到。
-   （我已同时打开主页和搜索页，四个页面都没有它。）
-⇒ **"这个接口能返回数据" ≠ "我们能调它"** —— 前提是能拿到它的签名。
-   这是本轮最贵的一课。
+3. 线上日志同时证明 `profile/get` **只返回登录账号自己** ——
+   即使正确拼上 `?userId=` 也一样：
+   `追加查询参数 → …（最终参数名：__NS_hxfalcon,caver,userId）`
+   `profile/get 返回 2695872552 ≠ 请求的 3xep6p7wbnqcvj6`
 
-### 为什么 `profile/get` 又可以了
+⇒ 所以：**能抓到签名的路径（profile/get）借签名 + 能返回目标用户的路径
+   （profile/user）**，两者组合。
 
-它以前被判"只能查自己"，原因是**参数位置错了**：
-独立实测是 `?userId=<id>`（**query**），而本项目历史上只发空 body、
-不带 query ⇒ 拿回的永远是登录账号自己（日志 `ids=['2695872552']`）。
+### ⚠️ 这条推翻了本项目一条老结论
 
-⇒ 现在：**能抓到签名的接口（profile/get）+ 正确的 `?userId=`**。
+"签名绑路径 —— 用 A 的签名调 B → `result:2`"（2026-09-30 实测）
+**至少不适用于 profile/user**（否则那份精确数据拿不到）。
 
-### 字段（`get_self_profile` 实测的顶层扁平结构）
+### 为什么值得做
 
-    userId / userDefineId / userName / userHead / fans / follows / like / userTex
+| | GraphQL（之前的兜底） | profile/user（现在） |
+|---|---|---|
+| 粉丝 | 四舍五入 `13000`（真实 12548） | **精确 12548** |
+| 获赞 | **没有该字段** | **55165** |
+| 昵称/头像/简介 | 没有 | 有 |
 
-⚠️ 注意是 `fans` / `follows` / `like`，
-**不是** GraphQL 的 `fan` / `follow` / `photo_public`。
+⚠️ **但这条尚未在本项目里跑通验证** —— 是"有强证据的尝试"，
+   失败会自动退 GraphQL，不会让功能不可用。
 """
 from __future__ import annotations
 
@@ -46,24 +54,72 @@ def _impl_source() -> str:
     return inspect.getsource(KuaishouClient._get_user_profile_impl)
 
 
+def _helper_source() -> str:
+    from app.services.platforms.kuaishou.client import KuaishouClient
+
+    return inspect.getsource(KuaishouClient._post_profile_user)
+
+
 # =============================================================================
-# 主路径
+# 主路径：profile/user + 借签名
 # =============================================================================
 
-def test_uses_profile_get_with_userid_query():
-    """★ 必须调 `profile/get` **并带 `?userId=`**（两半缺一不可）。
+def test_uses_profile_user_with_borrowed_signature():
+    """★ 必须调 `profile/user`，且**借用别的路径的签名**。
 
-    · 只用 `profile/get` 不带 userId → 返回的是**登录账号自己**
-      （历史日志实测 `ids=['2695872552']`）
-    · 只用 `profile/user` → **抓不到签名**，线上 500（见模块 docstring）
+    ⚠️ `profile/user` 页面从不请求 ⇒ 永远抓不到"它自己的"签名；
+       必须像那份调查那样**改路径复用**。
     """
     src = _impl_source()
-    assert "PROFILE_GET" in src, "应用 profile/get（它的签名抓得到）"
-    assert "extra_query=f\"userId={uid}\"" in src, (
-        "必须带 ?userId= —— 否则拿回的是登录账号自己"
+    assert "PROFILE_USER" in src, "应用 profile/user（唯一能返回目标用户资料的）"
+    assert "PROFILE_GET" in src, "应把 profile/get 作为**借签名**的来源"
+    assert "_post_profile_user" in src, "应走借签名的专用方法"
+
+
+def test_helper_rewrites_path_keeps_signature():
+    """借签名的实现：**换路径、留签名**。"""
+    src = _helper_source()
+    assert "PROFILE_USER" in src, "要把路径换成 profile/user"
+    assert "__NS_hxfalcon" in src or "re.sub" in src, "要保留签名串（只换路径）"
+    assert '"user_id": uid' in src or "user_id" in src, (
+        "body 要带 user_id（且只吃 URL 字符串 id）"
     )
-    assert "PROFILE_USER" not in src, (
-        "不要用 profile/user —— 线上日志证明**页面不发该路径**，签名抓不到"
+
+
+def test_helper_validates_user_id():
+    """必须校验 `user_id == 目标 uid`，避免拿到登录账号自己的数据。"""
+    src = _helper_source()
+    assert 'prof.get("user_id")' in src, "缺少 user_id 校验"
+    assert "≠ 请求的" in src, "身份不符时应记录并丢弃"
+
+
+def test_parses_owner_count_fields():
+    """解析 `ownerCount` 的四个字段（这份响应是嵌套结构）。
+
+    实测真实响应：
+        ownerCount = {fan:12548, like:55165, follow:8, photo_public:176}
+    ⚠️ 注意 `like`（获赞）**只有这条能拿到**，GraphQL 没有该字段。
+    """
+    src = _helper_source()
+    for f in ('oc.get("fan")', 'oc.get("follow")',
+              'oc.get("photo_public")', 'oc.get("like")'):
+        assert f in src, f"缺字段 {f}"
+    # 身份字段来自 profile 的嵌套结构
+    for f in ('prof.get("user_name")', 'prof.get("headurl")',
+              'prof.get("user_text")'):
+        assert f in src, f"缺身份字段 {f}"
+
+
+def test_falls_back_to_graphql():
+    """借签名失败时**退 GraphQL**，不能让功能不可用。
+
+    ⚠️ 这条新路径**尚未在本项目验证过**，所以兜底是必需的。
+    """
+    src = _impl_source()
+    assert "visionProfile" in src, "应保留 GraphQL 兜底"
+    assert "_parse_cn_count" in src, 'GraphQL 的 fan 是 "1.3万" 这类字符串'
+    assert '"photo": _parse_cn_count(oc.get("photo_public"))' in src, (
+        "GraphQL 兜底也要用 photo_public —— 实测 photo 返回 null"
     )
 
 
@@ -76,32 +132,17 @@ def test_does_not_read_init_state():
     )
 
 
-def test_profile_get_ranked_before_graphql():
-    """`profile/get` 应排在 GraphQL 兜底**之前**（数字精确、且含获赞）。"""
-    src = _impl_source()
-    call = "profile = await self._post("
-    assert call in src, "找不到 profile/get 调用"
-    i_get = src.index(call)
-    i_gql = src.index("--- 兜底：GraphQL")
-    assert i_get < i_gql, "profile/get 必须优先于 GraphQL 兜底"
+def test_does_not_use_bare_profile_get():
+    """⚠️ **不能**只靠 `profile/get` 取目标用户 —— 它只返回登录账号自己。
 
-
-def test_field_names_match_profile_get():
-    """字段名用 `fans`/`follows`/`like`（profile/get 的顶层扁平结构）。
-
-    ⚠️ 别和 GraphQL 的 `fan`/`follow`/`photo_public` 搞混 —— 两套不一样。
+    线上日志（带正确 `?userId=` 也一样）：
+        追加查询参数 → …（最终参数名：__NS_hxfalcon,caver,userId）
+        profile/get 返回 2695872552 ≠ 请求的 3xep6p7wbnqcvj6
     """
     src = _impl_source()
-    for f in ('profile.get("fans")', 'profile.get("follows")',
-              'profile.get("like")', 'profile.get("userName")'):
-        assert f in src, f"缺字段 {f}（profile/get 的顶层字段）"
-
-
-def test_profile_get_validates_user_define_id():
-    """必须校验 `userDefineId == 目标 uid`，避免拿到登录账号自己的数据。"""
-    src = _impl_source()
-    assert 'profile.get("userDefineId")' in src, "缺少 userDefineId 校验"
-    assert "≠ 请求的" in src, "身份不符时应记录并丢弃"
+    assert "extra_query=f\"userId={uid}\"" not in src, (
+        "不要再用 profile/get + userId —— 实测它仍返回登录账号自己"
+    )
 
 
 # =============================================================================
@@ -109,15 +150,11 @@ def test_profile_get_validates_user_define_id():
 # =============================================================================
 
 def test_pages_for_tries_multiple_pages():
-    """`_pages_for(uid)` 必须返回**多个**候选页面。
-
-    线上日志证明单开主页只有 feed+get；搜索页另有 search/feed+search/user。
-    多列候选才能凑齐不同路径的签名（循环是"抓到目标就停"）。
-    """
+    """`_pages_for(uid)` 必须返回**多个**候选页面（凑齐不同路径的签名）。"""
     from app.services.platforms.kuaishou.client import KuaishouClient
 
     src = inspect.getsource(KuaishouClient._pages_for)
-    assert "BASE}/profile/{uid}" in src, "应包含目标主页（唯一发 profile/feed 的）"
+    assert "BASE}/profile/{uid}" in src, "应包含目标主页"
     assert "search_page_url" in src, "应同时包含搜索页"
 
 
@@ -132,13 +169,7 @@ def test_videos_passes_uid_for_signature():
 
 
 def test_post_retries_on_navigation_destroy():
-    """**回归**：`evaluate` 被导航打断时要**重试**（2026-10-10 线上 bug）。
-
-    日志：`Page.evaluate: Execution context was destroyed,
-           most likely because of a navigation.`
-    ⇒ 抓签名会 `goto`，并发/翻页时把另一次 evaluate 的上下文销毁。
-      加重试后线上验证通过（`作品 -> 20 条`）。
-    """
+    """**回归**：`evaluate` 被导航打断时要**重试**（2026-10-10 线上 bug）。"""
     from app.services.platforms.kuaishou.client import KuaishouClient
 
     src = inspect.getsource(KuaishouClient._post)
@@ -157,11 +188,7 @@ def test_signature_cache_key_matches_between_store_and_read():
 
 
 def test_headless_configurable_without_asserting_conclusion():
-    """headless 应**可配置**，注释里**不许把未证实的结论写成定论**。
-
-    2026-10-10 我先测出"无头失败"、改成有头，**随后又测出无头成功**，
-    两次自相矛盾 ⇒ 该结论未复现，不该据此改变默认行为（会弹用户窗口）。
-    """
+    """headless 应**可配置**，注释里**不许把未证实的结论写成定论**。"""
     from app.services.platforms.kuaishou.client import KuaishouClient
 
     src = inspect.getsource(KuaishouClient._get_session)
