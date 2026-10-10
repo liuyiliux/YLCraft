@@ -7,6 +7,34 @@ Verifies the problems reported from the user's screenshot:
   4. page-level horizontal overflow
   5. mobile filter collapse can be reopened
 
+## 怎么跑（2026-10-11 补）
+
+⚠️ 本脚本**有前置条件**，直接跑会失败：
+
+  1. **后端 + 前端都要在跑**（默认访问 `http://127.0.0.1:3000`，见 `BASE`）
+  2. **需要一个能登录的账号**，写在 `_mob_cred.txt`（与脚本同目录）：
+
+        第一行：用户名
+        第二行：密码
+
+     缺这个文件会直接 `return 2` 并提示 `missing _mob_cred.txt`。
+     ⚠️ 该文件含凭据，**不要提交**（`.gitignore` 有 `_mob_*` 规则覆盖）。
+  3. 依赖 `playwright` + 本机安装的 Chrome（用 `channel="chrome"`，
+     不是 Playwright 自带的 chromium）。
+
+        python tools/check_mobile.py
+
+输出：截图与 `report.txt` 写到 `_mobile_shots/`。
+退出码：0 = 全部通过；1 = 有布局问题；2 = 环境/登录失败。
+
+## 为什么挪到这里
+
+原在仓库根目录（另一位贡献者遗留），根目录不适合放脚本；
+仓库已有 `tools/` 放这类运维/验证脚本，故移入。
+
+⚠️ 它是目前**唯一**的移动端布局自动回归工具 —— 改前端布局后跑一遍，
+能自动发现"手机上又溢出 / 按钮压住了"这类问题。**别删。**
+
 Report goes to a UTF-8 file (the Windows console is GBK and
 chokes on non-ASCII, which silently swallowed the whole report).
 """
