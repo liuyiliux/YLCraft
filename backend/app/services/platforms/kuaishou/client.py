@@ -1647,15 +1647,26 @@ class KuaishouClient(BasePlatformClient):
         name = prof.get("user_name")
         head = prof.get("headurl")
         desc = prof.get("user_text")
-        got_id = up.get("userDefineId") or prof.get("user_id")
+        # ⚠️️ **两个 id 不是一回事**（我在这上面又错了一次）：
+        #
+        #     请求的 uid           = URL 里的字符串 id  = `3xep6p7wbnqcvj6`
+        #     userProfile.profile.user_id     = `3xep6p7wbnqcvj6`  ← 同一个
+        #     userProfile.userDefineId        = `1578058299`       ← **快手号，另一个**
+        #
+        # 我上一版写成 `up.get("userDefineId") or prof.get("user_id")`
+        # （userDefineId 优先）⇒ 永远 1578058299 ≠ 3xep6p7wbnqcvj6
+        # ⇒ 线上日志：`profile/user 返回 1578058299 ≠ 请求的 3xep… —— 丢弃`
+        #    明明拿到了正确数据，却被自己的校验扔掉。
+        #
+        # ⇒ **必须用 `profile.user_id` 优先校验**。
+        got_id = prof.get("user_id") or up.get("userDefineId")
         fans = oc.get("fan")
         follows = oc.get("follow")
         photos = oc.get("photo_public")
         likes = oc.get("like")
         shape = "userProfile{profile+ownerCount}"
 
-        # ⚠️ 校验是**目标用户**：`userDefineId` 就是 URL 里的字符串 id。
-        #   （`user_id` 也在 profile 里，两者一致；优先用 userDefineId。）
+        # ⚠️ 校验用 `profile.user_id`（= URL 字符串 id），**不能**用 userDefineId（快手号）。
         got = str(got_id or "")
         if got and got != uid:
             logger.warning(
