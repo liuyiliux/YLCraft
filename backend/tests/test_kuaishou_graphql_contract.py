@@ -118,6 +118,37 @@ def test_profile_user_validates_user_id():
 # 签名 / GraphQL 兜底
 # =============================================================================
 
+def test_not_headless():
+    """★ **快手对无头浏览器返回空白页** ⇒ 必须有头（2026-10-10 根因实测）。
+
+    对照实验（同一 URL、同一流程，唯一变量是有无头）：
+
+        无头：cookie=[]   页面正文 63 字符、标题为空   带签名请求 **0 个**
+        有头：cookie=6 个  页面正文 1037 字符         带签名请求 **3 个**
+
+    ⇒ 无头下快手返回 HTTP 200 但 **JS 根本不跑**，一个请求都不发
+      （连不带签名的都没有）⇒ 签名**必然**抓不到。
+
+    ⚠️ 这与登录态、与用哪个 URL **都无关**。此前我先后猜过
+      "未登录不发""风控""cookie 过期"——**全部错误**。
+    ⇒ 抓不到签名时**先查无头这个变量**，别再猜。
+    """
+    import inspect
+
+    from app.services.platforms.kuaishou.client import KuaishouClient
+
+    src = inspect.getsource(KuaishouClient._get_session)
+    code = re.sub(r"#.*", "", src)          # 去掉注释，只看代码
+    code = re.sub(r'""".*?"""', "", code, flags=re.S)
+    assert "headless=True" not in code, (
+        "不能写死 headless=True —— 实测快手对无头浏览器返回**空白页**"
+        "（正文 63 字符、零请求），签名必定抓不到"
+    )
+    assert "YLCRAFT_KS_HEADLESS" in src, (
+        "应通过环境变量控制，且默认有头（恢复无头需显式设 YLCRAFT_KS_HEADLESS=1）"
+    )
+
+
 def test_uses_graphql_as_fallback():
     """GraphQL 只作兜底，其数字是**四舍五入**的（`"1.3万"`）。"""
     src = _impl_source()
