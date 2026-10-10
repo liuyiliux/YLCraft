@@ -1393,57 +1393,35 @@ class KuaishouClient(BasePlatformClient):
         if not uid:
             return None
 
-        # ---- ★ 首选：`GET /rest/v/profile/get?userId=<uid>` ----
+        # ---- ★ 首选：`profile/user` —— **借用别的路径的签名** ----
         #
-        # ⚠️⚠️ 2026-10-10 **再一次修正**（这次有线上日志作证据）：
+        # ⚠️⚠️⚠️ 2026-10-11 **关键发现**（由那份独立调查的脚本反推出来）：
         #
-        # 上一版改用 `POST /rest/v/profile/user`，但线上日志显示
-        # **页面根本不发这个路径**，签名永远抓不到：
-        #     抓到 4 个路径的签名：/rest/v/profile/feed, /rest/v/profile/get,
-        #                          /rest/v/search/feed, /rest/v/search/user
-        #     抓到签名但 /rest/v/profile/user **不在其中**
-        #     → 未能获取 /rest/v/profile/user 的接口签名 → 500
-        #   （我已经把主页 + 搜索页都开了，四个页面都没有它。）
+        # 那份调查拿到的是**精确值**（fan:12548 / like:55165）+ 昵称/简介，
+        # 而它的做法写在 `e_profileuser.js` 里：
         #
-        # 而 **`profile/get` 的签名是抓得到的**（就在上面那四个里）。
-        # 它以前被判"只能查自己"，是因为**参数位置错了**：
-        #   独立调查实测（`调查报告2.md`）——
-        #       GET /rest/v/profile/get?userId=3xep6p7wbnqcvj6&__NS_hxfalcon=…
-        #   userId 在 **query** 里。而本项目历史上一直只发空 body、不带 query，
-        #   于是拿回的永远是登录账号自己（日志实测 `ids=['2695872552']`）。
+        #     const sig = 'HUDR_sFnX-DtsGEFXsbDPT3TMP-sk0is6A6ZH7E4…';  // 硬编码
+        #     const url = '…/profile/user?__NS_hxfalcon=' + sig + '&caver=2';
+        #     fetch(url, {credentials:'include', body:{user_id:'<uid>'}})
         #
-        # ⇒ 现在：用**能抓到签名的** `profile/get` + **正确的 `?userId=`**。
-        profile = await self._post(
-            PROFILE_GET, {}, uid=uid, extra_query=f"userId={uid}",
-        )
+        # ⇒ 它**没有从 `profile/user` 抓签名**（那个路径页面根本不发），
+        #   而是**拿现成的签名改了路径** —— 而且**快手接受了**。
+        #
+        # ⚠️ 这与本项目里一条老结论**冲突**：
+        #     "签名绑路径 —— 用 A 路径的签名调 B 路径 → result:2（2026-09-30 实测）"
+        #   那条规则**至少不适用于 profile/user**（否则那份数据拿不到）。
+        #
+        # ⇒ 所以这里：先按 `profile/user` 抓签名；**抓不到就借用**
+        #   `profile/get` 的签名（换路径）。两步都失败才退 GraphQL。
+        profile = None
+        for uri_for_sig in (PROFILE_USER, PROFILE_GET):
+            profile = await self._post_profile_user(uid, sig_from=uri_for_sig)
+            if profile:
+                break
         if profile:
-            got = str(profile.get("userDefineId") or "")
-            # ⚠️ 校验返回的是**目标用户**（`userDefineId` 就是 URL 里的字符串 id）
-            if got and got != uid:
-                logger.warning(
-                    "[kuaishou] profile/get 返回 %s ≠ 请求的 %s —— 丢弃（防冒充）",
-                    got, uid,
-                )
-            else:
-                logger.info(
-                    "[kuaishou] profile/get %s → 粉丝=%s 关注=%s 获赞=%s",
-                    uid, profile.get("fans"), profile.get("follows"),
-                    profile.get("like"),
-                )
-                return UserProfile(
-                    id=uid,
-                    name=str(profile.get("userName") or ""),
-                    avatar=self._fix_bili_url(str(profile.get("userHead") or "")),
-                    platform="kuaishou",
-                    followers=_to_int(profile.get("fans")),
-                    # ⚠️ 快手叫 `follows`（关注数），不是 `following`
-                    following=_to_int(profile.get("follows")),
-                    total_likes=_to_int(profile.get("like")),
-                    desc=str(profile.get("userTex") or ""),
-                    raw_data={"_source": "profile/get", "profile": profile},
-                )
+            return profile
         logger.info(
-            "[kuaishou] profile/get 没取到 %s —— 改用 GraphQL 兜底（数字会四舍五入）",
+            "[kuaishou] profile/user 没取到 %s —— 改用 GraphQL 兜底（数字会四舍五入）",
             uid,
         )
 
@@ -1576,6 +1554,100 @@ class KuaishouClient(BasePlatformClient):
             total_likes=0,
             desc="",
             raw_data={"_graphql": counts, "_source": "graphql"},
+        )
+
+    async def _post_profile_user(
+        self, uid: str, sig_from: str,
+    ) -> Optional[UserProfile]:
+        """调 `profile/user` 取**目标用户**资料，签名**借用** `sig_from` 的。
+
+        ## 为什么可以借用签名（2026-10-11 实测线索）
+
+        那份独立调查（`e_profileuser.js`）拿到精确数据的方式是：
+        把**现成的签名**拼到 `profile/user` 路径上 ——
+        而 `profile/user` **页面从不请求**，所以它不可能有"自己的"签名。
+
+        ⚠️ 这推翻了本项目一条老结论（"签名绑路径，跨路径必 result:2"）：
+           那条规则**至少不适用于 profile/user**。
+
+        ## 返回
+
+        成功时返回 `UserProfile`（含**精确**粉丝数与**获赞** ——
+        这两样 GraphQL 都给不了：GraphQL 的 fan 是四舍五入的"1.3万"、
+        且没有 like 字段）。
+        失败返回 None，由调用方换一条路或退 GraphQL。
+        """
+        signed = await self._ensure_signed_url(sig_from, uid=uid)
+        if not signed:
+            logger.info("[kuaishou] 借不到 %s 的签名（要调 profile/user）", sig_from)
+            return None
+
+        # ⚠️ 关键：把签名 URL 的**路径**换成 profile/user，
+        #    签名串本身保留（`__NS_hxfalcon=…`）。
+        target = re.sub(r"/rest/v/[^?]+", PROFILE_USER, signed, count=1)
+        if PROFILE_USER not in target:
+            target = re.sub(r"^(https://[^/]+)/.*?(\?|$)",
+                            rf"\1{PROFILE_USER}\2", signed, count=1)
+
+        session = await self._get_session()
+        if session is None:
+            return None
+        try:
+            raw = await session.page.evaluate(
+                _JS_POST,
+                {"url": target, "body": {"user_id": uid}},
+            )
+            import json as _json
+
+            env = _json.loads(raw) if isinstance(raw, str) else (raw or {})
+            if env.get("_error"):
+                logger.info("[kuaishou] profile/user 请求失败：%s", env["_error"])
+                return None
+            data = _json.loads(env.get("body") or "{}")
+        except Exception as exc:
+            logger.info("[kuaishou] profile/user 异常：%s: %s",
+                        type(exc).__name__, str(exc)[:80])
+            return None
+
+        res = data.get("result")
+        prof = ((data.get("userProfile") or {}).get("profile") or {})
+        if res != 1 or not prof:
+            logger.info(
+                "[kuaishou] profile/user（借 %s 的签名）result=%s —— 没拿到资料",
+                sig_from, res,
+            )
+            return None
+
+        # ⚠️ 校验是**目标用户**（`user_id` 就是 URL 里的字符串 id）
+        got = str(prof.get("user_id") or "")
+        if got and got != uid:
+            logger.warning(
+                "[kuaishou] profile/user 返回 %s ≠ 请求的 %s —— 丢弃（防冒充）",
+                got, uid,
+            )
+            return None
+
+        oc = prof.get("ownerCount") or {}
+        logger.info(
+            "[kuaishou] profile/user（借 %s 的签名）%s → 粉丝=%s 关注=%s "
+            "作品=%s **获赞=%s** ✅ 精确值",
+            sig_from, uid, oc.get("fan"), oc.get("follow"),
+            oc.get("photo_public"), oc.get("like"),
+        )
+        return UserProfile(
+            id=uid,
+            name=str(prof.get("user_name") or ""),
+            avatar=self._fix_bili_url(str(prof.get("headurl") or "")),
+            platform="kuaishou",
+            # ⚠️ 这三个是**精确值**（不是 GraphQL 的四舍五入）
+            followers=_to_int(oc.get("fan")),
+            following=_to_int(oc.get("follow")),
+            total_videos=_to_int(oc.get("photo_public")),
+            # ⚠️ **获赞** —— GraphQL 没有这个字段，只有这条路能拿到
+            total_likes=_to_int(oc.get("like")),
+            desc=str(prof.get("user_text") or ""),
+            verified=bool(prof.get("verified")),
+            raw_data={"_source": f"profile/user(借 {sig_from})", "profile": prof},
         )
 
     async def get_user_videos(
