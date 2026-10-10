@@ -1617,48 +1617,50 @@ class KuaishouClient(BasePlatformClient):
             )
             return None
 
-        # ⚠️⚠️ 2026-10-11 **实测发现响应有两种形状**，必须都认（线上日志为证）：
+        # ⚠️⚠️⚠️ 2026-10-11 **真正的 bug**（回头核对 ks_profile_user.json 才发现）：
         #
-        #   它打的是 `粉丝=None 关注=None 作品=None` —— 说明**走了 else 分支**，
-        #   即响应体**不是** `{"userProfile":{"profile":{…,"ownerCount":{…}}}}` 这种嵌套，
-        #   而是 **profile/get 那种顶层扁平**结构（`fans`/`follows`/`like`/`userName`/…）。
+        # 真实响应结构（那份调查存的 `ks_profile_user.json`，原样）：
+        #   {"result":1,"userProfile":{
+        #       "profile":   {"user_name":"沈阳","headurl":"…","user_text":"…"},
+        #       "ownerCount":{"fan":12548,"like":55165,"follow":8,"photo_public":176},
+        #       "userDefineId":"1578058299","isFollowing":false,"gender":"M", …}}
         #
-        # ⇒ 按 `ownerCount` 是否嵌套来区分，别硬套一种。
-        nested = (data.get("userProfile") or {}).get("profile")
-        if isinstance(nested, dict) and (nested.get("ownerCount") or nested.get("user_name")):
-            # 形状 A：嵌套（那份调查的 ks_profile_user.json 就是这个）
-            prof = nested
-            oc = prof.get("ownerCount") or {}
-            name = prof.get("user_name")
-            head = prof.get("headurl")
-            desc = prof.get("user_text")
-            got_id = prof.get("user_id")
-            fans = oc.get("fan")
-            follows = oc.get("follow")
-            photos = oc.get("photo_public")
-            likes = oc.get("like")
-            shape = "嵌套(profile)"
-        else:
-            # 形状 B：顶层扁平（profile/get 结构）
-            prof = data
-            oc = {}
-            name = data.get("userName")
-            head = data.get("userHead")
-            desc = data.get("userTex")
-            got_id = data.get("userDefineId")
-            fans = data.get("fans")
-            follows = data.get("follows")
-            photos = data.get("photo_public")
-            likes = data.get("like")
-            shape = "扁平(profile/get)"
+        # ⇒ **`ownerCount` 是 `profile` 的「兄弟」，在 `userProfile` 这一层，
+        #    不在 `profile` 里面！**
+        #    我原来写成 `prof.get("ownerCount")`（prof = userProfile.profile）
+        #    ⇒ 永远取不到 ⇒ 线上日志 `粉丝=None 关注=None 作品=None`。
+        #
+        # ⚠️ 而且**只有一种形状**（没有"扁平"那回事）——
+        #    "走了扁平分支"是我误判：真实原因是取错了层级。
+        #    所以这里统一按 `userProfile` 下取 `profile` + `ownerCount`。
+        up = data.get("userProfile") or {}
+        prof = up.get("profile") or {}
+        oc = up.get("ownerCount") or {}
+        if not prof and not oc:
+            logger.info(
+                "[kuaishou] profile/user（借 %s 的签名）响应里既无 profile 也无 "
+                "ownerCount，顶层键=%s —— 没拿到资料",
+                sig_from, sorted(data.keys())[:12],
+            )
+            return None
 
-        # ⚠️ 校验是**目标用户**：两种形状里 id 字段名不同，
-        #   都应等于请求的 URL 字符串 id（userDefineId 就是它）。
+        name = prof.get("user_name")
+        head = prof.get("headurl")
+        desc = prof.get("user_text")
+        got_id = up.get("userDefineId") or prof.get("user_id")
+        fans = oc.get("fan")
+        follows = oc.get("follow")
+        photos = oc.get("photo_public")
+        likes = oc.get("like")
+        shape = "userProfile{profile+ownerCount}"
+
+        # ⚠️ 校验是**目标用户**：`userDefineId` 就是 URL 里的字符串 id。
+        #   （`user_id` 也在 profile 里，两者一致；优先用 userDefineId。）
         got = str(got_id or "")
         if got and got != uid:
             logger.warning(
-                "[kuaishou] profile/user[%s] 返回 %s ≠ 请求的 %s —— 丢弃（防冒充）",
-                shape, got, uid,
+                "[kuaishou] profile/user 返回 %s ≠ 请求的 %s —— 丢弃（防冒充）",
+                got, uid,
             )
             return None
 
