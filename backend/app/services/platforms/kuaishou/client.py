@@ -140,9 +140,24 @@ class KuaishouClient(BasePlatformClient):
         所以抓 `profile/feed` 的签名必须去用户主页。
         没有 uid 时先取自己的（`profile/get` 能拿到）。
         """
-        # ⚠️ 指定了目标用户 → 必须去**他的**主页，否则抓到的签名对应的是自己
+        # ⚠️⚠️ 2026-10-10 **修**：光去主页**抓不到 `profile/user`**。
+        #
+        # 线上日志实测（uid=3xep6p7wbnqcvj6）：
+        #     抓到 2 个路径的签名：/rest/v/profile/feed, /rest/v/profile/get
+        #     抓到签名但 /rest/v/profile/user **不在其中**
+        # ⇒ **目标主页根本不发 `profile/user`**（它只发 feed 和 get）。
+        #
+        # 而 `profile/user` 才是**真正能取到资料**的接口
+        # （独立实测确认：带 cookie → result:1 + 完整资料）。
+        # ⇒ 只开一个页面必然抓不到，必须**多开几个页面**收集签名的**并集**。
+        #   （`_ensure_signed_url` 的循环是"抓到目标就停"，
+        #     所以这里按优先级列出候选页面，且**主页排前面**
+        #      —— 它是唯一能发 `profile/feed` 的页面。）
         if uid:
-            return [f"{BASE}/profile/{uid}"]
+            return [
+                f"{BASE}/profile/{uid}",      # → profile/feed, profile/get（也应含 user）
+                search_page_url("美食"),       # → search/feed, search/user, profile/user？
+            ]
         if uri == PROFILE_FEED:
             own = _self_uid_cache.get(self.config.conn_id or "-")
             if own:
@@ -659,7 +674,41 @@ class KuaishouClient(BasePlatformClient):
         if session is None:
             raise RuntimeError("[kuaishou] 没有可用的浏览器会话")
 
-        raw = await session.page.evaluate(_JS_POST, {"url": signed, "body": body})
+        # ⚠️⚠️ 2026-10-10 **修**：`Page.evaluate: Execution context was destroyed,
+        # most likely because of a navigation.`
+        #
+        # 线上日志实测：作品列表报这个错（同一时刻 profile 那边正在 goto 页面）。
+        # 原因：`_ensure_signed_url` 会 `page.goto(...)` 去抓签名，
+        # 而**翻页/并发调用**时，另一次导航会把正在执行的 `evaluate` 上下文销毁。
+        # ⇒ 加**重试**（等导航安定后重发），别让用户看到这个底层报错。
+        raw = None
+        last_exc: Optional[Exception] = None
+        for attempt in range(3):
+            try:
+                raw = await session.page.evaluate(
+                    _JS_POST, {"url": signed, "body": body},
+                )
+                break
+            except Exception as exc:
+                last_exc = exc
+                msg = str(exc)
+                if "Execution context was destroyed" not in msg:
+                    raise
+                logger.info(
+                    "[kuaishou] evaluate 被导航打断（第 %d 次），等页面安定后重试",
+                    attempt + 1,
+                )
+                try:
+                    await session.page.wait_for_load_state(
+                        "domcontentloaded", timeout=15000)
+                except Exception:
+                    pass
+                await asyncio.sleep(1.0 * (attempt + 1))
+        if raw is None:
+            logger.warning("[kuaishou] evaluate 连续被导航打断：%s",
+                           str(last_exc)[:120])
+            return None
+
         import json as _json
 
         data = _json.loads(raw) if isinstance(raw, str) else (raw or {})
