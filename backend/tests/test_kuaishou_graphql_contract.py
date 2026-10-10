@@ -118,34 +118,47 @@ def test_profile_user_validates_user_id():
 # 签名 / GraphQL 兜底
 # =============================================================================
 
-def test_not_headless():
-    """★ **快手对无头浏览器返回空白页** ⇒ 必须有头（2026-10-10 根因实测）。
+def test_headless_configurable_without_asserting_conclusion():
+    """headless 应**可配置**，且注释里**不许断言**任何一边的结论。
 
-    对照实验（同一 URL、同一流程，唯一变量是有无头）：
+    ## 为什么没有"必须有头"这条断言
 
-        无头：cookie=[]   页面正文 63 字符、标题为空   带签名请求 **0 个**
-        有头：cookie=6 个  页面正文 1037 字符         带签名请求 **3 个**
+    2026-10-10 我先实测"无头下快手返回空白页（正文 63 字、零请求）"，
+    据此把默认值改成有头；**随后又测出无头也能抓到 4 个签名**，
+    两次结果**自相矛盾**。
 
-    ⇒ 无头下快手返回 HTTP 200 但 **JS 根本不跑**，一个请求都不发
-      （连不带签名的都没有）⇒ 签名**必然**抓不到。
+    ⇒ "无头被挡"**未复现**。既然不确定，就不该拿它改变默认行为
+      （那会平白给用户弹浏览器窗口），更不该写进注释当定论。
 
-    ⚠️ 这与登录态、与用哪个 URL **都无关**。此前我先后猜过
-      "未登录不发""风控""cookie 过期"——**全部错误**。
-    ⇒ 抓不到签名时**先查无头这个变量**，别再猜。
+    ## 这条测试真正要守的
+
+    防止再出现"凭一次没复现的实验就断言结论"——我今天就是这么翻车的，
+    而且已经害得 3 个错误结论（未登录/风控/cookie过期）被写进了代码注释。
     """
     import inspect
 
     from app.services.platforms.kuaishou.client import KuaishouClient
 
     src = inspect.getsource(KuaishouClient._get_session)
-    code = re.sub(r"#.*", "", src)          # 去掉注释，只看代码
-    code = re.sub(r'""".*?"""', "", code, flags=re.S)
-    assert "headless=True" not in code, (
-        "不能写死 headless=True —— 实测快手对无头浏览器返回**空白页**"
-        "（正文 63 字符、零请求），签名必定抓不到"
-    )
-    assert "YLCRAFT_KS_HEADLESS" in src, (
-        "应通过环境变量控制，且默认有头（恢复无头需显式设 YLCRAFT_KS_HEADLESS=1）"
+    assert "YLCRAFT_KS_HEADLESS" in src, "headless 应可通过环境变量配置"
+
+    # ⚠️ 注释里**不许把结论说成定论**。
+    #   允许"我曾以为 X、但已推翻"这种**明确标注未复现**的记述
+    #   （那是这轮的教训），只禁止"X 就是真的"这种断言式措辞。
+    #   ⚠️ 检查前先剥掉注释里"禁止把这些话当定论"的那段自我说明，
+    #      否则这句话自己会命中自己的黑名单。
+    prose = re.sub(r"#.*", "", src)            # 去行注释
+    prose = re.sub(r'""".*?"""', "", prose, flags=re.S)   # 去 docstring
+    banned = ["无头一定不行", "无头必然抓不到", "无头一定行"]
+    for wrong in banned:
+        assert wrong not in prose.replace("**", ""), (
+            f"代码注释里有断言式说法 {wrong!r} —— 该结论未复现/已自我推翻，"
+            "不能写成定论（要写就明确标注『未复现』）"
+        )
+    # 关键：默认值仍是无头（不拿未证实的结论去改变行为、弹用户窗口）
+    assert 'YLCRAFT_KS_HEADLESS", "1"' in prose, (
+        "默认应保持无头（该结论未经证实，不应据此弹浏览器窗口）；"
+        "需要时有头可用 YLCRAFT_KS_HEADLESS=0"
     )
 
 
