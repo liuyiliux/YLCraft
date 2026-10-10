@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 from typing import Any, Dict, List, Optional
 
@@ -269,24 +270,25 @@ class KuaishouClient(BasePlatformClient):
                     pass
 
             if not captured:
-                # ⚠️⚠️⚠️ 2026-10-10：**这里不要再归因成"需要登录"**。
+                # ⚠️⚠️⚠️ 2026-10-10 **这才是"抓不到签名"的真正原因**：
+                # **快手把无头浏览器挡了**。
                 #
-                # 实测（未登录会话抓包，uid=沈阳）：
-                #     POST /rest/v/search/user?__NS_hxfalcon=…  → result:1
-                #     GET  /rest/v/profile/get?__NS_hxfalcon=…  → 200
-                #     POST /s/w/c（加密）                        → 200
-                # ⇒ 未登录页面**照发**带签名请求。用户自己的浏览器从没登录
-                #   也一直能搜人（他本人确认 + 抓包双向验证）。
+                # 实测对照（同一 URL、同一流程，唯一变量是有无头）：
+                #     无头：cookie=[]  页面正文 63 字符、标题空   带签名请求 **0 个**
+                #     有头：cookie=6   页面正文 1037 字符         带签名请求 **3 个**
                 #
-                # ⚠️ 那"抓不到"到底是什么？**目前未查清**。
-                #   历史上有过"未登录不发""风控不发""cookie 过期"等多个假设，
-                #   **全部未经证实或已被证伪**。不要再随手补一个原因。
+                # ⇒ 无头下快手返回 HTTP 200 但**JS 根本不跑**（空白页），
+                #   **一个请求都不发**（连不带签名的都没有）⇒ 签名必然抓不到。
+                # ⇒ 与登录态、与用哪个 URL **都无关**。
+                #
+                # ⚠️ 此前我先后猜过"未登录不发""风控""cookie 过期"
+                #   ——**全部错误**。正确做法是**对照实验**，别猜。
                 logger.warning(
                     "[kuaishou] 打开页面后没抓到任何带 __NS_hxfalcon 的请求。\n"
-                    "   ⚠️ **未确定原因**（不要再归因成『需要登录』——实测未登录页面\n"
-                    "      同样会发带签名请求，搜索能正常返回 result:1）。\n"
-                    "   可能：页面结构/前端调用方式变了、该路径改由 XHR 触发、\n"
-                    "         或风控临时静默。建议重新抓一次包看实际发出了什么。"
+                    "   ⚠️ 已知原因：快手**对无头浏览器返回空白页**（实测正文仅 63 字符、\n"
+                    "      标题为空、零请求）。现在默认已改为**有头**模式。\n"
+                    "   若仍失败，请确认没有设 YLCRAFT_KS_HEADLESS=1。\n"
+                    "   ⚠️ 不要再归因成『需要登录』——实测未登录页面同样会发带签名请求。"
                 )
                 return None
 
@@ -333,8 +335,30 @@ class KuaishouClient(BasePlatformClient):
         from ...browser.patchright_runtime import get_patchright_runtime
 
         rt = get_patchright_runtime()
+        # ⚠️⚠️⚠️ 2026-10-10 **根因修复**：快手**把无头浏览器挡了**。
+        #
+        # 原来这里写死 `headless=True`（注释还写"无头：不弹窗"）。
+        # 实测对照（同一 URL、同一流程，唯一变量是有无头）：
+        #     无头：cookie=[]  页面正文 63 字符、标题为空  带签名请求 **0 个**
+        #     有头：cookie=6   页面正文 1037 字符           带签名请求 **3 个**
+        #
+        # ⇒ 无头模式下快手返回 HTTP 200 但**JS 根本不跑**（空白页），
+        #   于是**一个请求都不会发** —— 包括不带签名的。
+        #   签名抓不到，与登录态、与用哪个 URL **都无关**。
+        #
+        # 这解释了"用过一阵就失效"的**真正原因**：它其实**一直抓不到**，
+        # 偶尔能work只是赶上了持久 profile 里残留的旧签名缓存。
+        #
+        # ⚠️ 代价：会弹出浏览器窗口。
+        #   想恢复无头请设环境变量 YLCRAFT_KS_HEADLESS=1，但**很可能又抓不到**。
+        headless = os.environ.get("YLCRAFT_KS_HEADLESS", "") == "1"
+        if headless:
+            logger.warning(
+                "[kuaishou] YLCRAFT_KS_HEADLESS=1 → 启用无头模式。"
+                "⚠️ 实测**无头下快手返回空白页、一个请求都不发**，签名必定抓不到。"
+            )
         ctx = await rt.new_context(
-            headless=True,                       # 无头：不弹窗
+            headless=headless,
             viewport={"width": 1440, "height": 900},
             persistent_platform="kuaishou",
         )
