@@ -45,14 +45,19 @@ BASE = "https://www.kuaishou.com"
 SEARCH_FEED = "/rest/v/search/feed"
 SEARCH_USER = "/rest/v/search/user"
 # 「我的数据」——来自调研报告的 SIG4_WHITELIST + 实测（页面自己会请求它）
+#
+# ⚠️ 2026-10-10 线上日志实测（重要，别再走弯路）：
+#   · **`profile/get` 的签名抓得到**（主页会发它），但**它只返回登录账号自己** ——
+#     即使带上 `?userId=<目标 id>` 也一样：
+#         profile/get 返回 2695872552 ≠ 请求的 3xep6p7wbnqcvj6 —— 丢弃
+#     （2695872552 是登录者的 userId。所以它**确实只能查自己**，
+#      早期"传 userId 无效"的记录是对的。）
+#   · `profile/user` **能返回目标用户的资料**，但**页面不发这个路径**，
+#     签名永远抓不到 ⇒ 我们调不了（"接口能返回数据" ≠ "我们能调它"）。
+#
+#   ⇒ 结论：**快手没有"查别人资料"的可用 REST 路径**，
+#     只能退到 GraphQL（数字是四舍五入值、且**没有获赞**）。
 PROFILE_GET = "/rest/v/profile/get"
-# ⚠️ 2026-10-10 独立实测发现：**真正可用的是 `POST /rest/v/profile/user`**。
-# `profile/get` 未登录恒 `{"result":109}`，拿不到任何东西（死路）。
-# 参见 `F:\workspace\简单脚本\调查报告2.md` 与实测响应 `ks_profile_user.json`：
-#     POST /rest/v/profile/user?__NS_hxfalcon=<签名>&caver=2
-#     body: {"user_id":"<URL 里的字符串 id>"}
-#     → {"result":1,"userProfile":{"profile":{..., "ownerCount":
-#            {"fan":12548,"like":55165,"follow":8,"photo_public":176}}}}
 PROFILE_USER = "/rest/v/profile/user"
 # 用户作品列表（同属白名单，未实测）
 PROFILE_FEED = "/rest/v/profile/feed"
