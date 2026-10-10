@@ -1610,44 +1610,82 @@ class KuaishouClient(BasePlatformClient):
             return None
 
         res = data.get("result")
-        prof = ((data.get("userProfile") or {}).get("profile") or {})
-        if res != 1 or not prof:
+        if res != 1:
             logger.info(
                 "[kuaishou] profile/user（借 %s 的签名）result=%s —— 没拿到资料",
                 sig_from, res,
             )
             return None
 
-        # ⚠️ 校验是**目标用户**（`user_id` 就是 URL 里的字符串 id）
-        got = str(prof.get("user_id") or "")
+        # ⚠️⚠️ 2026-10-11 **实测发现响应有两种形状**，必须都认（线上日志为证）：
+        #
+        #   它打的是 `粉丝=None 关注=None 作品=None` —— 说明**走了 else 分支**，
+        #   即响应体**不是** `{"userProfile":{"profile":{…,"ownerCount":{…}}}}` 这种嵌套，
+        #   而是 **profile/get 那种顶层扁平**结构（`fans`/`follows`/`like`/`userName`/…）。
+        #
+        # ⇒ 按 `ownerCount` 是否嵌套来区分，别硬套一种。
+        nested = (data.get("userProfile") or {}).get("profile")
+        if isinstance(nested, dict) and (nested.get("ownerCount") or nested.get("user_name")):
+            # 形状 A：嵌套（那份调查的 ks_profile_user.json 就是这个）
+            prof = nested
+            oc = prof.get("ownerCount") or {}
+            name = prof.get("user_name")
+            head = prof.get("headurl")
+            desc = prof.get("user_text")
+            got_id = prof.get("user_id")
+            fans = oc.get("fan")
+            follows = oc.get("follow")
+            photos = oc.get("photo_public")
+            likes = oc.get("like")
+            shape = "嵌套(profile)"
+        else:
+            # 形状 B：顶层扁平（profile/get 结构）
+            prof = data
+            oc = {}
+            name = data.get("userName")
+            head = data.get("userHead")
+            desc = data.get("userTex")
+            got_id = data.get("userDefineId")
+            fans = data.get("fans")
+            follows = data.get("follows")
+            photos = data.get("photo_public")
+            likes = data.get("like")
+            shape = "扁平(profile/get)"
+
+        # ⚠️ 校验是**目标用户**：两种形状里 id 字段名不同，
+        #   都应等于请求的 URL 字符串 id（userDefineId 就是它）。
+        got = str(got_id or "")
         if got and got != uid:
             logger.warning(
-                "[kuaishou] profile/user 返回 %s ≠ 请求的 %s —— 丢弃（防冒充）",
-                got, uid,
+                "[kuaishou] profile/user[%s] 返回 %s ≠ 请求的 %s —— 丢弃（防冒充）",
+                shape, got, uid,
             )
             return None
 
-        oc = prof.get("ownerCount") or {}
         logger.info(
-            "[kuaishou] profile/user（借 %s 的签名）%s → 粉丝=%s 关注=%s "
-            "作品=%s **获赞=%s** ✅ 精确值",
-            sig_from, uid, oc.get("fan"), oc.get("follow"),
-            oc.get("photo_public"), oc.get("like"),
+            "[kuaishou] profile/user[%s]（借 %s 的签名）%s → 粉丝=%s 关注=%s "
+            "作品=%s 获赞=%s",
+            shape, sig_from, uid, fans, follows, photos, likes,
         )
         return UserProfile(
             id=uid,
-            name=str(prof.get("user_name") or ""),
-            avatar=self._fix_bili_url(str(prof.get("headurl") or "")),
+            name=str(name or ""),
+            # ⚠️ 别调 `_fix_bili_url` —— 那是 **B站客户端**的方法，
+            #    快手客户端没有（线上日志：`'KuaishouClient' object has no
+            #    attribute '_fix_bili_url'` → 500）。
+            #    快手返回的 headurl 本身就是完整 https，直接用。
+            avatar=str(head or ""),
             platform="kuaishou",
-            # ⚠️ 这三个是**精确值**（不是 GraphQL 的四舍五入）
-            followers=_to_int(oc.get("fan")),
-            following=_to_int(oc.get("follow")),
-            total_videos=_to_int(oc.get("photo_public")),
+            # ⚠️ 这几个是**精确值**（不是 GraphQL 的四舍五入）
+            followers=_to_int(fans),
+            following=_to_int(follows),
+            total_videos=_to_int(photos),
             # ⚠️ **获赞** —— GraphQL 没有这个字段，只有这条路能拿到
-            total_likes=_to_int(oc.get("like")),
-            desc=str(prof.get("user_text") or ""),
+            total_likes=_to_int(likes),
+            desc=str(desc or ""),
             verified=bool(prof.get("verified")),
-            raw_data={"_source": f"profile/user(借 {sig_from})", "profile": prof},
+            raw_data={"_source": f"profile/user(借 {sig_from})", "_shape": shape,
+                      "profile": prof},
         )
 
     async def get_user_videos(
