@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from ..base import BasePlatformClient, register_platform
 from ..types import (
@@ -423,4 +423,205 @@ class TwitterClient(BasePlatformClient):
         data = await fetch_user_tweets(
             uid, cookie_header=cookie, max_results=max_results
         )
-        return data.get("tweets") or []
+        tweets = data.get("tweets") or []
+        # ⚠️ **不给作品列表补浏览量**（2026-10-11 决定）
+        #
+        # `UserTweets` 不带 `views`（实测：连 `views` 键都没有），
+        # 逐条补能拿到，但代价与风险同上（每条多一次请求 + 限流风险）。
+        #
+        # ⚠️ 另一个坑也记一下：`UserTweets` 对**自己的**推文
+        #    会把 `favorite_count` 返回 **0**（真实值只在 TweetDetail 里）。
+        #    这不是我们能修的 —— 补它就等于逐条打请求。
+        #    所以作品列表里"自己的老推文显示 0 赞"可能是**平台行为**，
+        #    不一定是真的没人赞（点详情能看到真实值）。
+        return tweets
+
+    # =========================================================================
+    # 我点赞过的推文（2026-10-11 打通）
+    # =========================================================================
+
+    async def get_self_likes_page(
+        self,
+        max_results: int = 20,
+        cursor: str = "",
+    ) -> Dict[str, Any]:
+        """取**自己点赞过**的推文（一页，带游标）。
+
+        ## 与 `get_user_videos` 的区别
+
+        | | 作品列表 | 点赞列表 |
+        |---|---|---|
+        | 操作 | `UserTweets` | `Likes` |
+        | id | **任意**用户的数字 id | **只能是自己** |
+        | 含义 | TA 发布的 | TA 赞过的 |
+
+        ## ⚠️ X 的点赞是**私密**的
+
+        传别人的 id 不报错，但拿不到东西（X 不再公开他人点赞）。
+        所以这里**只取自己** —— 先用 `settings.json` 拿自己的数字 id，
+        再查 `Likes`。
+
+        ## 为什么保留 `cursor`
+
+        与 `/users/videos`（一次性取够）不同，点赞列表翻页**很常用**
+        （想一直往下翻自己赞过的）。所以这里如实把游标透出去，
+        由 `get_self_likes` 在需要更多时继续翻。
+
+        Returns:
+            {"tweets": [...], "cursor": "下一页游标或空", "has_more": bool}
+        """
+        from .search_http import fetch_user_likes
+
+        cookie = self.header_cookie()
+        if not cookie:
+            raise TwitterAuthError(
+                "[twitter] 取点赞列表需要登录态（auth_token + ct0）。"
+                "请在「账号中心」用浏览器方式登录一次 x.com。"
+            )
+
+        uid = await self._own_user_id(cookie)
+        if not uid:
+            raise TwitterAuthError(
+                "[twitter] 拿不到自己的 X 数字 ID（settings.json 未返回）。"
+                "登录态可能已失效，请在「账号中心」重新登录 x.com。"
+            )
+        data = await fetch_user_likes(
+            uid, cookie_header=cookie, max_results=max_results, cursor=cursor
+        )
+        # ⚠️ **不给点赞列表补浏览量**（2026-10-11 决定）
+        #
+        # `Likes` 确实不带 `views`（实测 16 条里 0 条有），
+        # 逐条补 TweetDetail 能拿到 —— 但**代价不划算**：
+        #
+        #   · 一页 20 条 = 多打 20 次请求（实测整页 ~11 秒）
+        #   · 每次都要生成 transaction-id，是**显眼的自动化特征**
+        #   · 有**限流风险**（用户明确反对："这个不要 容易触发限流吧"）
+        #
+        # ⇒ 宁可不显示这个数，也不冒被限流的风险。
+        #   列表里"观看数"缺失就缺失（前端为 0 时不渲染，不会显示误导的 0）。
+        return data
+
+    # =========================================================================
+    # 「正在关注」作品流（2026-10-11 加）
+    # =========================================================================
+
+    async def get_home_latest(
+        self,
+        max_results: int = 20,
+        cursor: str = "",
+    ) -> Dict[str, Any]:
+        """取「**正在关注**」作品流 —— 我关注的账号发的推文。
+
+        ## 与「我的点赞」「我的作品」的区别
+
+        | | 来源 | 谁发的 |
+        |---|---|---|
+        | 我的作品 | `UserTweets` | **我自己** |
+        | 我的点赞 | `Likes` | 别人（我赞的） |
+        | **正在关注** | `HomeLatestTimeline` | **我关注的人** |
+
+        ## ⚠️ 必须登录，且是 POST
+
+        实测（2026-10-11）：HTTP 200、33~35 条、翻页无重叠。
+
+        ⚠️ 返回**带游标**（首页那条时间线是要一直往下翻的），
+        与 `/users/likes` 的语义一致。
+        """
+        from .search_http import fetch_home_latest
+
+        cookie = self.header_cookie()
+        if not cookie:
+            raise TwitterAuthError(
+                "[twitter] 取「正在关注」需要登录态（auth_token + ct0）。"
+                "请在「账号中心」用浏览器方式登录一次 x.com。"
+            )
+        data = await fetch_home_latest(
+            cookie_header=cookie, max_results=max_results, cursor=cursor
+        )
+        # ⚠️ **不要给「正在关注」补浏览量**（2026-10-11 复核后删掉了）
+        #
+        # `HomeLatestTimeline` **原生就带 `views`** —— 实测 54/54 条都有
+        # 这个键（13/33 有具体数值，其余是 X 只给 `state: "Enabled"`）。
+        #
+        # 我之前"发现 views 恒为 0"是因为**只在小样本上测**就下了结论，
+        # 于是给它加了逐条补请求 —— 那是**白打 20 个请求**，
+        # 还平白增加限流风险（用户指出："这个不要 容易触发限流吧"）。
+        return data
+
+    async def get_self_likes(
+        self,
+        max_results: int = 20,
+    ) -> List[SearchResult]:
+        """取自己点赞过的推文（**自动翻页凑够 `max_results`**）。
+
+        实现为对 `get_self_likes_page` 的循环；与 `get_user_videos` 的
+        「一次给够」语义保持一致（`/users/likes` 的 `max_results` 也是
+        「要多少条」而不是「一页多大」，见该路由的 docstring）。
+        """
+        want = max(1, int(max_results or 20))
+        merged: Dict[str, SearchResult] = {}
+        cursor = ""
+        # 每页 20 条，翻页上限兜底（防止 X 给了游标却不给新数据时空转）
+        max_pages = max(1, (want + 19) // 20 + 1)
+
+        for _ in range(max_pages):
+            data = await self.get_self_likes_page(
+                max_results=20, cursor=cursor
+            )
+            page = data.get("tweets") or []
+            before = len(merged)
+            for t in page:
+                if t.id and t.id not in merged:
+                    merged[t.id] = t
+            cursor = str(data.get("cursor") or "")
+            if len(merged) >= want or not cursor:
+                break
+            if len(merged) == before:
+                # 有游标但没有新数据 —— 继续翻只会重复，直接停
+                logger.info("[twitter] Likes 翻页没有新增，停止")
+                break
+
+        out = list(merged.values())[:want]
+        logger.info("[twitter] 我的点赞 -> %d 条", len(out))
+        return out
+
+    async def _own_user_id(self, cookie: str) -> str:
+        """取自己的**数字 userId**（`settings.json` → `user_id`，兜底 `twid`）。
+
+        ⚠️ 为什么不直接解 `twid` cookie：
+        它形如 `u%3D1121792700456394753`，**能用**（实测），
+        但它是 cookie 格式的实现细节（要 URL 解码 + 去 `u=` 前缀），
+        解析失败时会**静默拿到空/错的 id**。
+        所以优先用 `settings.json` 的 `user_id` 字段（有就是权威值），
+        `twid` 只作兜底。
+        """
+        # ① settings.json（权威）
+        try:
+            from .search_http import cookie_map, _build_headers
+            from .xclid import make_transaction_id
+            import httpx
+
+            ck = cookie_map(cookie)
+            path = "/i/api/1.1/account/settings.json"
+            headers = _build_headers(
+                cookie, ck["ct0"],
+                await make_transaction_id(cookie, "GET", path),
+            )
+            async with httpx.AsyncClient(timeout=40, follow_redirects=True) as c:
+                r = await c.get(f"https://x.com{path}", headers=headers)
+            if r.status_code == 200 and r.text.lstrip().startswith("{"):
+                uid = str((r.json() or {}).get("user_id") or "")
+                if uid.isdigit():
+                    return uid
+        except Exception as exc:
+            logger.info("[twitter] settings.json 取 user_id 失败（%s），退回 twid",
+                        type(exc).__name__)
+
+        # ② twid cookie 兜底
+        import urllib.parse
+
+        from .search_http import cookie_map as _cm
+
+        twid = urllib.parse.unquote(_cm(cookie).get("twid", ""))
+        uid = twid.replace("u=", "").strip()
+        return uid if uid.isdigit() else ""

@@ -549,11 +549,22 @@ const PLATFORM_SEARCH_CONFIG: Record<string, PlatformSearchConfig> = {
         sortOptions: [],
         defaultSort: '',
       },
-      {
-        value: 'user', label: '用户', icon: <UserOutlined />,
-        sortOptions: [],
-        defaultSort: '',
-      },
+      // ⚠️ 2026-10-11 **「用户」已移除**（用户要求，沿用微博那条同一条规则）
+      //
+      // 理由与上面几个平台一致：**用户搜索归「博主中心」**——
+      // 那边有专门的用户列表（粉丝数/头像/简介、能点进详情看作品），
+      // 而「内容搜索」页的用户 tab 只是把同一个接口换个地方摆，
+      // 既没有详情也没有作品，属于**重复入口**。
+      //
+      // ⚠️ 而且 X 的这个 tab **本来就是坏的**：实测搜索返回 **0 条**
+      //    （同一关键词下 综合/最新/媒体 都正常有结果）。
+      //    根因：`TwitterClient.search()` **不判断 `search_type`**，
+      //    只会搜内容（只把 product 改成 People），
+      //    拿回的用户对象被当推文解析 → 一条都解析不出。
+      //    （B站 有 `if search_type == 'user': return self.search_users(...)`
+      //      的路由，所以它的用户 tab 是好的、**保留**。）
+      //
+      // ⇒ 移除比修复更合适：**博主中心已经是"搜人"的唯一入口**。
     ],
     defaultSearchType: 'note',
   },

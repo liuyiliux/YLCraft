@@ -1840,6 +1840,47 @@ export interface PlatformUserVideo {
   url: string
   type: string
   likes: number
+  /**
+   * 图集图片直链（2026-10-11 加）。
+   *
+   * ⚠️ 与搜索页（`/crawler/search`）**同一约定**：
+   * 预览/下载只认 `images` + `video_url` 这两个字段
+   * （见 `crawler/index.tsx::previewMediaUrls` / `previewVideoUrl`）。
+   * 没有就空数组 —— 后端**不兜底**（拿原文链接兜底会让图集被误判成视频）。
+   */
+  images?: string[]
+  /** 视频直链（没有则为空串）。同样不兜底。 */
+  video_url?: string
+  /**
+   * 详情抽屉要用的其余字段（2026-10-11 补）。
+   *
+   * ⚠️ 用户反馈：点赞的详情比**搜索页**少了「评论 / 分享 / 发布时间」，
+   * 平台还显示成「未知」。
+   *
+   * 根因不是取不到 —— 后端解析器早就解析了这些字段，
+   * 是组装响应时**只拷了 likes**，把数据丢在了最后一步。
+   *
+   * 现在 `/users/likes` 与 `/users/videos` 都会**原样透出**这些字段，
+   * 与搜索页的形状一致（搜索页给的是同样的键）。
+   */
+  comments?: number
+  shares?: number
+  views?: number
+  /**
+   * 收藏数（X 的 `bookmark_count`）—— 官方那排数字里的 🔖。
+   * 2026-10-11 补：用户对比官方截图发现我们少了这个数。
+   */
+  collects?: number
+  /** 引用数（X 的 `quote_count`）。 */
+  quote_count?: number
+  /** 发布时间（X 是 RFC2822 字符串；也可能是时间戳/"3天前"）。 */
+  create_time?: string
+  /** 平台标识（详情抽屉显示平台标签用；缺了会显示「未知」）。 */
+  platform?: string
+  /** 作者名 */
+  author?: string
+  /** 正文（`title` 是截断版，这里是完整描述） */
+  desc?: string
 }
 
 export const searchPlatformUsers = (platform: string, keyword: string, maxResults = 20) =>
@@ -1906,6 +1947,60 @@ export const getPlatformUserVideos = (
   if (opts.secUid) sp.set('sec_uid', opts.secUid)
   sp.set('max_results', String(opts.maxResults ?? 20))
   return request(`/users/videos?${sp}`)
+}
+
+/**
+ * 取**我自己点赞过**的内容（「我的数据」用）。
+ *
+ * ## ⚠️ 与 `getPlatformUserVideos` 的区别
+ *
+ * | | 作品列表 | 点赞列表 |
+ * |---|---|---|
+ * | 内容 | 我**发布**的 | 我**点赞**的 |
+ * | 对象 | 任何人 | **只能是自己**（X 的点赞是私密的） |
+ *
+ * 所以这里**故意不传 user_id** —— 后端只认连接自己的账号。
+ *
+ * ## 翻页
+ *
+ * `cursor` 传上一页返回的 `next_cursor` 即可拿下一页；
+ * 返回里的 `has_more=false`（或 `next_cursor` 为空）表示**到底了**。
+ *
+ * 目前只有 X（twitter/x/tw）支持；其他平台后端会返回 **501**
+ * （不是空列表 —— 空列表会被误读成「我没点过赞」）。
+ */
+export const getMyPlatformLikes = (
+  platform: string,
+  opts: { maxResults?: number; cursor?: string } = {},
+) => {
+  const sp = new URLSearchParams({ platform })
+  sp.set('max_results', String(opts.maxResults ?? 20))
+  if (opts.cursor) sp.set('cursor', opts.cursor)
+  return request(`/users/likes?${sp}`)
+}
+
+/**
+ * 取「**正在关注**」作品流 —— **我关注的账号**发的推文（目前只有 X）。
+ *
+ * ## 三个"我视角"接口的区别
+ *
+ * | 接口 | 内容 | 谁发的 |
+ * |---|---|---|
+ * | `getPlatformUserVideos` | 某个用户的作品 | 指定的人 |
+ * | `getMyPlatformLikes` | 我**点赞**的 | 别人（我赞的） |
+ * | **`getMyHomeFeed`** | **我关注的人发的** | 我关注的人 |
+ *
+ * 翻页同 `getMyPlatformLikes`：传上一页的 `next_cursor`。
+ * 其他平台后端返回 **501**。
+ */
+export const getMyHomeFeed = (
+  platform: string,
+  opts: { maxResults?: number; cursor?: string } = {},
+) => {
+  const sp = new URLSearchParams({ platform })
+  sp.set('max_results', String(opts.maxResults ?? 20))
+  if (opts.cursor) sp.set('cursor', opts.cursor)
+  return request(`/users/home-feed?${sp}`)
 }
 
 /** 获取单个连接详情 */

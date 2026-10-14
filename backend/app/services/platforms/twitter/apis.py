@@ -180,6 +180,73 @@ USER_TWEETS_AND_REPLIES_OP = "qUpkZU6eN8MbtQb7rC_pYg/UserTweetsAndReplies"
 # 只看媒体
 USER_MEDIA_OP = "VyudDWQnr9vJNw7GasFz2g/UserMedia"
 
+# =============================================================================
+# 点赞列表（Likes）—— 2026-10-11 实测打通
+# =============================================================================
+#
+# ## ⚠️ 这个 queryId **不在 twscrape 里**（那里根本没有 Likes 操作）
+#
+# 已逐行核对 twscrape（venv_win 里的 `twscrape/api.py`）全部 `OP_*` 常量：
+# 一共 21 个，**没有 Likes / LikedTweets** —— 所以**不能抄**，只能实测抓。
+#
+# ## 抓法（可复现）
+#
+# 访问已登录的 `https://x.com/home`，页面里的 JS bundle
+# （`abs.twimg.com/responsive-web/client-web/*.js`）内联了操作表：
+#
+#     queryId:"mu4us66Q6RRNOywVQhGtRg",operationName:"Likes"
+#
+# 三个 bundle 里搜 `operationName:"Likes"` 即可，2026-10-11 抓到的值就是上面这个。
+#
+# ## 实测结果（2026-10-11，用自己的号）
+#
+#     HTTP 200，单页 ~120KB，20 条/页
+#     响应路径与 UserTweets **完全一致**：
+#         data.user.result.timeline.timeline.instructions[].entries[]
+#         entryId 以 `tweet-` 开头；游标项 cursorType=Bottom
+#     翻页实测：第 1 页 vs 第 2 页**首条 id 各不相同**，
+#         cursor DAAHCgABHUcAGCa__-wLAAIAAAAT... → ..._9gLAAIAAAAT...
+#
+# ## ⚠️ 6 个 variables **一个都不能少**
+#
+# 少任何一个都返回 **HTTP 422 GRAPHQL_VALIDATION_FAILED**
+# （实测漏 `includePromotedContent` → 422 "must be defined"）——
+# 所以 `build_likes_variables` 里把它们全部写死并注释来源。
+LIKES_QUERY_ID = _os.environ.get(
+    "X_LIKES_QUERY_ID", "mu4us66Q6RRNOywVQhGtRg"
+)
+LIKES_OP = f"{LIKES_QUERY_ID}/Likes"
+
+
+def build_likes_variables(uid: str, count: int = 20,
+                          cursor: str = "") -> dict:
+    """构造 Likes 的 variables（实测形状，6 个字段全必填）。
+
+    ⚠️ 与 `build_user_tweets_variables` 的差别：
+      · `includePromotedContent` = **False**（点赞列表没有推广内容）
+      · 多两个字段 `withClientEventToken` / `withBirdwatchNotes`（都是 False）
+      · `withQuickPromoteEligibilityTweetFields` **不需要**
+
+    少字段会 422（见 `LIKES_QUERY_ID` 上面的说明）。
+
+    Args:
+        uid: **数字 userId**（不是 handle）—— 与 UserTweets 一样。
+        count: 每页条数（实测 20 稳定；X 内部也按 20 返回）。
+        cursor: 上一页的 `Bottom` 游标。
+    """
+    v: Dict[str, Any] = {
+        "userId": str(uid),
+        "count": max(1, min(int(count), 100)),
+        "includePromotedContent": False,
+        "withClientEventToken": False,
+        "withBirdwatchNotes": False,
+        "withVoice": True,
+        "withV2Timeline": True,
+    }
+    if cursor:
+        v["cursor"] = cursor
+    return v
+
 
 def build_user_tweets_variables(uid: str, count: int = 20,
                                 cursor: str = "") -> dict:
@@ -288,3 +355,118 @@ def build_search_variables(
     if cursor:
         variables["cursor"] = cursor
     return variables
+
+
+# =============================================================================
+# 「正在关注」作品流（HomeLatestTimeline）—— 2026-10-11 实测打通
+# =============================================================================
+#
+# 用户要求："官方x平台有正在关注作品，我们也加下"。
+#
+# ## ⚠️ 这个 queryId **不在 twscrape 里**（那里没有 home timeline）
+#
+# 已确认 twscrape 的 `OP_*` 里**没有 HomeTimeline / HomeLatestTimeline**。
+#
+# ## ⚠️ 而且它**不在 JS bundle 里**（与 Likes 不同！）
+#
+# Likes 能从 `abs.twimg.com/.../client-web/*.js` 里搜到，
+# 但 HomeLatestTimeline **搜不到** —— 它是运行时才用到的。
+#
+# 所以这次改用**抓真实网络请求**（browser-skill 的 debug capture）：
+# 打开 `https://x.com/home`，在「正在关注」页签上抓到的就是它。
+#
+# ## ⚠️ 与其它操作最大的不同：**它是 POST**（不是 GET）
+#
+# 搜索 / Likes / UserTweets 都是 `GET ?variables=...&features=...`，
+# 而 HomeLatestTimeline 是：
+#
+#     POST /i/api/graphql/{qid}/HomeLatestTimeline
+#     Content-Type: application/json
+#     body = {"variables": {...}, "features": {...},
+#             "fieldToggles": {...}, "queryId": "<qid>"}   ← queryId 也放 body 里
+#
+# ## 实测（2026-10-11）
+#
+#     POST → HTTP 200，body ~589KB，**35 条推文**
+#     响应路径：data.home.home_timeline_urt.instructions[].entries[]
+#               （注意是 `home_timeline_urt`，与 user timeline 不同）
+HOME_LATEST_QUERY_ID = _os.environ.get(
+    "X_HOME_LATEST_QUERY_ID", "NmDBT3APtNxDpMqIEauu7A"
+)
+HOME_LATEST_OP = f"{HOME_LATEST_QUERY_ID}/HomeLatestTimeline"
+
+# HomeLatestTimeline **必须带的一大坨 features**（实测抓的完整值）。
+#
+# ⚠️ 与 TweetDetail 的 `GQL_FEATURES` **不完全一样**（少了几个、
+#    多了 rweb_cashtags 等）—— **不要混用**，实测这份是照着真实请求抄的。
+HOME_LATEST_FEATURES: Dict[str, Any] = {
+    "rweb_video_screen_enabled": False,
+    "rweb_cashtags_enabled": True,
+    "profile_label_improvements_pcf_label_in_post_enabled": True,
+    "responsive_web_profile_redirect_enabled": True,
+    "rweb_tipjar_consumption_enabled": False,
+    "verified_phone_label_enabled": False,
+    "creator_subscriptions_tweet_preview_api_enabled": True,
+    "responsive_web_graphql_timeline_navigation_enabled": True,
+    "premium_content_api_read_enabled": False,
+    "communities_web_enable_tweet_community_results_fetch": True,
+    "c9s_tweet_anatomy_moderator_badge_enabled": True,
+    "responsive_web_grok_analyze_button_fetch_trends_enabled": False,
+    "responsive_web_grok_analyze_post_followups_enabled": True,
+    "rweb_cashtags_composer_attachment_enabled": True,
+    "responsive_web_jetfuel_frame": True,
+    "rweb_sports_post_context_enabled": True,
+    "responsive_web_grok_share_attachment_enabled": True,
+    "responsive_web_grok_annotations_enabled": True,
+    "articles_preview_enabled": True,
+    "responsive_web_edit_tweet_api_enabled": True,
+    "rweb_conversational_replies_downvote_enabled": False,
+    "graphql_is_translatable_rweb_tweet_is_translatable_enabled": True,
+    "view_counts_everywhere_api_enabled": True,
+    "longform_notetweets_consumption_enabled": True,
+    "responsive_web_twitter_article_tweet_consumption_enabled": True,
+    "content_disclosure_indicator_enabled": True,
+    "content_disclosure_ai_generated_indicator_enabled": True,
+    "responsive_web_grok_show_grok_translated_post": True,
+    "responsive_web_grok_analysis_button_from_backend": True,
+    "post_ctas_fetch_enabled": False,
+    "freedom_of_speech_not_reach_fetch_enabled": True,
+    "standardized_nudges_misinfo": True,
+    "tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled": True,
+    "longform_notetweets_rich_text_read_enabled": True,
+    "longform_notetweets_inline_media_enabled": False,
+    "responsive_web_nested_quote_preview_enabled": True,
+    "responsive_web_grok_image_annotation_enabled": True,
+    "responsive_web_grok_imagine_annotation_enabled": True,
+    "responsive_web_grok_community_note_auto_translation_is_enabled": True,
+    "responsive_web_enhance_cards_enabled": False,
+}
+
+
+def build_home_latest_variables(
+    count: int = 20,
+    cursor: str = "",
+    seen_tweet_ids: list | None = None,
+) -> Dict[str, Any]:
+    """构造 HomeLatestTimeline 的 variables（照真实请求抄的）。
+
+    Args:
+        count: 每页条数（实测 20）。
+        cursor: 翻页游标（`Bottom` 类型，与其它 timeline 一样）。
+        seen_tweet_ids: 已看过的推文 id —— X 用它**去重**。
+            实测首页请求带了一串；我们**传空**也能正常返回
+            （不传的话可能重复推送已看过的内容，但对我们"拉一批"的
+             用法没影响，反而避免把状态搞复杂）。
+
+    ⚠️ `requestContext` 实测是 `"launch"`，别改成别的（可能影响返回）。
+    """
+    v: Dict[str, Any] = {
+        "count": max(1, min(int(count), 100)),
+        "enableRanking": True,
+        "includePromotedContent": True,
+        "requestContext": "launch",
+        "seenTweetIds": list(seen_tweet_ids or []),
+    }
+    if cursor:
+        v["cursor"] = cursor
+    return v

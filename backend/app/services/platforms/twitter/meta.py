@@ -38,6 +38,18 @@ PLATFORM_META = {
         #       平台支不支持 —— 快手实测 reply_count 全 0，
         #       直接打接口却返回了真实数据。**字段是提示，接口才是事实。**
         "replies",           # 二级回复在同一棵树里，靠父 id 筛（但 X 未必下发）
+        # ⚠️ 2026-10-11 加：**自己点赞过**的推文列表。
+        #
+        # 与 `user_videos`（UserTweets，查**别人**发的）不同：
+        # 这是 `Likes` 操作，且 X 的点赞是**私密**的 —— 只对自己有效。
+        # queryId 实测抓取（twscrape 里没有这个操作），见 `apis.LIKES_QUERY_ID`。
+        "self_likes",
+        # ⚠️ 2026-10-11 加：「**正在关注**」作品流（我关注的账号发的推文）。
+        #
+        # 与 `self_likes` 一样是"我视角"的数据，但内容来自**别人**。
+        # 走 `HomeLatestTimeline`（**POST**；queryId 实测抓的 ——
+        # 它**不在 JS bundle 里**，是抓真实网络请求拿到的）。
+        "home_feed",
         "download",          # 有专用下载器
     ],
 }

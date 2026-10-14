@@ -166,6 +166,22 @@ cd backend && uvicorn app.main:app --reload --port 8000 --loop app.core.win_loop
 只输出优化后正文、不生图不落库，经 `POST /api/v1/images/optimize-prompt` 暴露给生图页；
 与地图生图提示词优化（`world_map_visual.optimize_map_visual_prompt`，需保留地名与坐标约束）同构但面向通用文生图。
 
+两条**按需生效、不给就完全保持接入前行为**的字段（2026-10-11 动图接入时补齐）：
+
+- **`motion_gif`**：按**多格图**思路优化（`MOTION_GIF_OPTIMIZE_SYSTEM`），而不是按单张图。
+  这不是锦上添花而是**修一条逻辑冲突**：动图前端在「已优化」状态下会**停止追加系统技术块**，
+  而那些块恰恰含多格图约束。若优化时不把动效类型/格数告诉 LLM，AI 会按静态图思路产出
+  「高清立绘、单张 8K」这种描述 —— **既丢多格图要求，又丢技术约束，两头落空**。
+- **`reference_images`**：图生图/动图时把参考图**按勾选顺序全传**给视觉模型，让它照着图写
+  而不是凭空描述（多模态格式沿用 `content_package_planner.build_outline_messages` 的
+  `[{"type":"text"}, {"type":"image_url", ...}]` 约定）。
+  仅当所选连接器声明 `support_vision_input=true` 时才真正带上，**不支持时静默降级为纯文本
+  而不是报错** —— 用户只是选了别的模型，不该因此整单失败。上限 6 张（图片进 prompt
+  显著增加 token 与耗时）。重发载荷只记 `reference_image_count`，**不记 base64**（会炸日志/DB）。
+
+动效写法提示**直接取** `services/image/motion_prompt` 里已有的规则（`_motion_rule_zh`），
+保证「优化时说的写法」与「实际追加的系统块」是**同一份来源** —— 两处各写一遍必然漂移。
+
 **任务记录（任务中心）与事件日志是两套**，不能指望自动收口：任务需要业务粒度（一次"地图成图"
 算一条，而不是每次模型调用一条），高频 chat 若自动建任务会把任务中心冲垮。长耗时的 AI 操作
 用 `ai_task(...)` 上下文（`services/ai/tracking.py`）一次完成「建任务 → 记开始 → 完成或失败 →
@@ -683,6 +699,335 @@ Live2D accepts uploads, character imagery and Asset Hub images as source materia
 - **批注本身是完整的修改指令，主提示词可留空**。「只圈一处说改眼睛颜色」不需要复述画面内容——那既是纯负担，抄得越细越容易让模型以为要重画整张图。因此校验是「既没提示词**又**没批注」才拦。
 - **图生图没有参考图要拦下来**。编辑台默认就是图生图，用户很容易空着手点生成；此时若放行，后端会当成文生图跑一趟（花钱且结果不对），所以前端直接提示要先放一张图。
 
+### 4.5.1 动图合成（motion GIF）
+
+把**一张多格图**（frame sheet，如 2×4 = 8 格）合成为可循环播放的 GIF / WebP / MP4。
+
+**前后端职责按「生成 / 加工」切开**（2026-10-11 拆页）：
+
+| 页面 | 职责 | 花钱 |
+| --- | --- | --- |
+| `/image-gen` | 只负责**生成**多格图：动效类型、排布、提示词、候选池 | **是** |
+| `/motion` | 只负责**加工**：图源、切帧、手动切格、每帧微调、合成、入库 | 否 |
+
+拆分的依据是**实测出来的**，不是"看着该分"：
+
+- `slice-preview` / `compose` **都不接受 `motion_kind`** —— 切图侧不需要动效类型；
+- 四类动效的提示词块中 `task` / `continuity` / `locked` / `output` **四类完全相同**，
+  只有 `motion` 那一块不同（7 行、0 行重合）。
+
+→ **动效类型 = 提示词配方，属于"生成"，不属于"切图"。**
+`/motion` 页因此**完全没有类型选择器** —— 不是漏了，是用不上。
+
+前端状态与行为收在 `components/motion-gif/useMotionGifWorkflow.ts`（hook）。
+拆分前动图逻辑散在生图页 14 个不相邻的块、约 535 行；拆分后 7 块 246 行。
+两页共用同一份逻辑，**不是复制粘贴**。
+
+**项目血缘必须跨页传递**：`save` 要 `project_id` / `content_id`，
+拆页后由生图页经 query 传过去，否则动图入库会断掉与创作项目的关联。
+多格图路径本身走 sessionStorage（`motionDraft`）—— 路径可能很长，query 会被截断。
+
+**「新生成一批」入口已从切图侧移除**（生成归生图页）。留一个生图入口等于
+又把两件事混回来，也会让同一张图在页面上多显示一次。
+
+**原理**：动图不是"生成一段视频"，而是**一次性画好多格连续画面**，再按节奏连起来播。逐帧生成会漂移（越画越不像），一次画完则前后一致——这是整个方案成立的前提。
+
+| 层 | 位置 | 职责 |
+| --- | --- | --- |
+| 公共切片组件 | `services/image/slicing.py` | 按 rows×cols 切格（含**可拖分割线** `SheetGrid`）、统一裁切、**主体对齐**、每帧**像素微调** `FrameAdjust`、按来源解析帧。**纯函数、无 IO** |
+| 提示词 | `services/image/motion_prompt.py` | 四类动效 × 三种排布 × 中英双语的提示词块（**可被用户逐块改写**）；拼装最终提示词 |
+| 合成 | `services/image/motion_gif.py` | 补缝、帧时长、量化、体积阶梯、导出 GIF/WebP/MP4；**产物内容指纹** `revision` |
+| 编排 | `services/image/motion_gif_service.py` | 三段式流程的业务语义；产物路径与待入库 representation |
+| 接口 | `api/v1/motion_gif.py` | **只做参数转换与错误映射**（架构约定：API 层不承载复杂业务） |
+
+**公共切片组件的两个消费者**（这是它成为"公共"的实际依据，不是设计意图）：
+
+| 消费者 | 入口 | 说明 |
+| --- | --- | --- |
+| 动图切帧 | `motion_gif_service.py` | 均匀网格 + 可拖分割线 + 上传补位 + 每帧调色 |
+| **角色立绘九宫格** | `api/v1/characters.py::slice_character_portrait_grid` | 原本**内联写死** `round(col*width/cols)` + `image.crop`，与动图算法不同 |
+
+> 立绘原先的 `round()` 写法与 `slice_grid` 的**整除 + 余数并进末格**会算出不同边界，
+> 两边都"看起来正常"、不报错。已统一。回归见 `tests/test_character_slice_uses_shared.py`
+> （**读端点源码**断言它调用了公共组件、且没有内联 crop 残留）。
+
+**提示词块的"可编辑"是刻意的设计**，不是可选功能：
+
+这套规则是**按假设写的默认值**，而素材与用法千差万别。实测踩到两次：
+「表情包」写死"除表情外任何东西都不变"（用户实际要**表情变 + 小动作、主体不变**）；
+「连续性」四类共用一句"每格约 8.571 度"—— 那是 `60°÷7` 的**相机环绕专用**数值，
+表情包照抄会与"机位完全锁死"直接矛盾。
+
+所以：**给每类动效自己的变化量度量**（`MotionKindSpec.change_zh/change_en`），
+并让用户能通过 `block_overrides` 逐块改写（`apply_block_overrides`，
+**不改原对象** —— 否则「恢复默认」拿不回原文）。
+**预览与生成共用 `blocks_to_prompt`**，避免"预览改了、生成没改"的漂移。
+
+6 个端点：`options`（可选项）、`prompt-preview`（预览最终提示词）、`slice-preview`（切帧预览）、
+`upload-frame`（上传补位）、`compose`（只合成不落库）、`save`（**合成 + 入库**一步）。
+
+⚠️ **`compose` 与 `save` 的合成参数必须完全一致**（只允许 `save` 多出名称/提示词/
+node_id 等入库元信息）。踩过：`save_frames` 只加在 `MotionGifComposeRequest` 而漏了
+`MotionGifSaveRequest`，端点里读 `req.save_frames` → **AttributeError 500**。
+现象隐蔽（能合成、点存库才炸），且 service 层测试**完全测不到**。
+回归由 `TestEndpointModelsAreSelfConsistent` 钉住：抓端点源码里所有 `req.xxx`
+逐个断言模型上有该字段，并断言两模型的合成参数集合一致。
+
+**入库结构：一个动图 = 一个 AssetNode。** 列表里只占一行，详情里展开版本与格式。
+⚠️ **node metadata 的 `source` 必须是 `image_generation`**（和其余 AI 图片一致），
+不能自创 `motion_gif`。**"这是动图"由 tags(`motion-gif`) 与 `slice_config` 表达**；
+lineage 里的 `motion_gif` 是溯源信息，与筛选读的不是同一字段。
+`source_url` 也要写（素材卡预览靠它，见下节「来源枚举」）。
+- `AssetVersion.params_json.slice_config` 存**切帧配置**（帧顺序、删了哪些格、
+  循环方式、尺寸、帧时长）。**必须存**：没有它就无法复现上次的切法，
+  「关掉页面再回来改切帧重出」也无从谈起。
+- 多格图（frame sheet）作为**同一版本下的一个 representation**（`format="framesheet"`），
+  不是独立节点 —— 它既是重出依据，也应能被其它功能按 format 取用（用户要的「多方位数据」）。
+- `POST /motion-gif/save` 带 `node_id` 则**追加新版本**（改了切帧重新合成），不传则新建节点。
+
+**入库侧判断文件存在必须经 `resolve_asset_file()`**，不能直接 `Path(x).exists()`：
+`representations()` 返回的是**相对项目根**的路径，而进程 CWD 通常是 `backend/`。
+踩过一次：直接判会全部判成"不存在"→ **HTTP 200 + success=false +「没有任何可入库的产物表示」**，
+即"合成成功但什么都没存"。回归测试 `TestRepresentationPathsAreResolvable` 钉住这一点。
+
+### ⚠️ 产物是"原地覆写"，URL 必须带内容指纹
+
+**动图的产物目录由多格图路径派生**（`sheet-<hash>`），所以切帧小图
+（`frames/frame_02.png`）与成品（`animation.gif`）都是**同一个 URL 反复覆写**。
+
+浏览器有充分理由继续用旧副本 —— 表现为**"改了设置，预览却毫无变化"**。
+本项目为此栽了**三次**（切帧小图、合成成品、每帧调色），每一次都是
+"指纹漏了一个会改变像素的输入"：
+
+| 产物 | 指纹函数 | 必须覆盖的输入 |
+| --- | --- | --- |
+| 切帧小图 | `_preview_fingerprint` | 每帧尺寸、来源标识（原格号/上传号/自选框）、**`adjust` 调色参数**（排序后拼接） |
+| 合成成品 | `output_revision` | **文件内容 sha1**（不是 mtime —— 同参数重合成会重写文件，mtime 每次都变，导致缓存白失效） |
+
+前端把它们拼成 `?v=<指纹>`，**预览与下载都要带**。
+
+> **规则（改这块前先读）**：给缓存指纹列输入时，要按
+> **"哪些输入会改变输出像素"**逐个过一遍，而不是只列当下想到的几个。
+> 漏一个的症状都一样：**功能明明对了，用户却看不到变化**，且不报错。
+> 调色不改变尺寸，所以"只看尺寸"的指纹必然漏 —— 这是最典型的漏法。
+
+**⚠️ 各帧尺寸可能不同 —— 不要假设"第一帧的尺寸"代表全部。**
+
+拖过分割线之后，同一张图能切出 `402px` 与 `110px` 并存的列。凡是用
+`images[0].size` 当基准的操作都要先问这个问题：
+
+- `getpixel` / `crop` / `paste` 会**越界**（实测 `IndexError` → 接口 500）
+- 对齐用统一画布会把窄格**补边撑回最宽** → 用户刚拖出来的差异被抹掉
+
+当前语义：
+- **各帧尺寸不同时不做对齐**（对齐的前提就是"共用画布"；每格宽高比都不同时
+  谈"主体居中"没有参照，保住用户拖出来的真实几何更重要）
+- 合成画布按**众数尺寸**（而非第一帧）—— 否则第一格若恰好是被拖窄的那列，
+  整条 GIF 都会按窄画布做
+- 缩略图按**同一缩放系数**缩（而非同一长边），否则相对宽度会被抹平
+
+**主体对齐是有限的，别当成"治抖动"**：`slicing.align_frames_by_content` 按每帧自己的内容
+bbox 把主体**平移**到画布中心（只平移不缩放，缩放会引入插值糊化）。⚠️ 平移时**必须给 `fillcolor`** ——
+`Image.transform` 默认填纯黑，实测对齐后边框 2.3% 变黑边（GIF 里就是一圈黑框）；
+用边缘像素横向拉伸补边。⚠️ `Image.AFFINE` 的矩阵是**输出 → 输入**，
+要让主体朝画布中心移，取样偏移是 `+dx`（写反了会越对齐越偏）。
+但它**只对"格内还有移动空间"的情况有效**。实测两种真实素材：
+
+- 表情包 4×4（机位锁死）：原始抖动 3.8px，本来就无需对齐
+- 相机环绕 4×4：**行内 4 格完全一致、行间差 100+px** —— 模型把 4×4 当成了
+  **4 个独立画面组**而非一次连续环绕。**这是生成质量问题，切帧/合成修不了**
+
+所以「主体上下跳动」要分清是**切帧错位**（能修）还是**模型没画成连续动作**
+（只能改提示词/降格数/换模型）。`align_subject` 是开关（默认开），代价是背景横向补边。
+
+**默认不裁内容**（`trim=False`）：多格图每格本身已取好景，而「并集包围盒」是所有帧主体的
+最小公共框，裁了会切掉留白 —— 实测把蓝狗从 256×256 裁成 209×239，主体顶满画布、脚被切掉。
+需要去掉格内多余边距时才开 `trim`。
+
+**同路径文件被覆写时不能强缓存**：`GET /api/v1/assets/download` 用 `no-cache` +
+基于 **mtime/size 的 ETag**（`If-None-Match` → 304）。动图重新合成是**原地替换**
+`animation.gif`（帧数、尺寸全变）而 URL 不变；原实现无条件 `max-age=86400`，
+会一直返回 24 小时前那份（表现为"删了格、重新合成，下载到的还是旧文件"）。
+这条对所有「同路径内容会被覆写」的资产都生效。
+
+**切帧面板必须显示每帧小图**：`slice-preview` 与 `compose` 都把每帧存成小图（长边 ≤240）
+并回 `frame_urls` / `frame_paths`。只回尺寸与来源标签时，面板上是 8 个**黑框**，
+用户无法判断切得对不对，只能盲合成一次再看成品。存 PNG 是本地文件操作，不花钱。
+**上传补位传的是文件本身**，不是只记一个序号：`upload-frame` 存
+`backend/storage/motion_gifs/_uploads/<owner>/<序号>_<随机>.<ext>`，
+合成时按 owner 目录隔离（多机共享数据库时不互相覆盖），且**只读 order 里真正被引用**的那些
+（用户传了又删的不参与合成）。
+
+**三段式流程，②③不调用任何模型**：
+
+| 阶段 | 端点 | 花钱 | 作用 |
+| --- | --- | --- | --- |
+| ① 生成候选 | 复用 `POST /api/v1/images/generate` | **是** | 一次出 N 张多格图；同 prompt 多张质量差异大，候选**全部保留**供挑 |
+| ② 切帧预览 | `POST /motion-gif/slice-preview` | 否 | 拖动换顺序 / 删格 / 上传图片占一格 |
+| ③ 合成 | `POST /motion-gif/compose` | 否 | 出 GIF/WebP/MP4 |
+
+把切帧从生成里拆出来的原因就是**②③免费**：用户调切法、调顺序都不该重跑模型，而重跑模型是花钱且慢的。
+
+**切片是公共组件，不写在动图里**：角色立绘九宫格切片与动图切帧要的是同一件事——按 rows×cols
+切开并按用户指定的顺序与取舍重排。`slicing.py` 不认识 Asset Hub、不落库、不认识业务，
+落库与业务语义留给调用方。**立绘已迁过来**（`api/v1/characters.py` 改调 `slicing.slice_grid`）：
+此前它内联用 `round(col*width/cols)`，与 `slice_grid` 的整除算法不同，同一张图两种切法
+可能不一致。公共组件的边界由用户明确要求划齐：**基础功能做通用一点当公共组件，
+然后给高级功能用。**
+
+**手动切格用「规整网格 + 可拖分割线」（`SheetGrid`），不是自由框**：自由框要处理任意重叠、
+任意大小的框，交互立刻难懂（"这两格为什么叠一起了"）。规整 rows×cols 只让**分割线可拖**，
+拖一条线相邻两格同时变形，不可能出现空洞/重叠。**边界存归一化坐标（0..1）而非像素** ——
+换一张分辨率不同的多格图时同一组拖法能直接复用。
+`slice-preview` 回传它实际用的 `grid_edges`（做过夹紧/补齐），前端据此校正显示位置。
+⚠️ **边界数组有两种写法**（含两端点 `cols+1` 个 / 只含内部线 `cols-1` 个），
+后端两种都吃 —— 否则"回传 → 存 → 再发回"会让第一格塌成 0 宽（用户实测踩到，
+报"单格尺寸过小 0x0"）。**凡是存下来之后要原样发回后端的结构，都要能吃下自己输出的格式。**
+
+**每帧微调（`FrameAdjust`）只做像素级，明确不做重画**：亮度/对比度/饱和度/色相/旋转，
+零模型调用、零费用，用来抹掉"某格偏亮/偏色"导致的动图闪烁。
+重画/扩图/换背景会**花钱且可能与其它格对不上**（光照、角度、笔触都会变），
+所以放在面板里一个**单独的跳转按钮**，不塞进滑块区。
+越界的滑块值**夹回合法范围而不是报错** —— 前端可能带上旧值，宁可夹住也不要整单失败。
+
+**送进图片编辑器用独立的通用桥**（`/image-editor`，`components/canvas/bridge.ts`）：
+既有的 `CanvasImageEditorLaunch` 是**画布专用**（`documentId`/`sourceNodeId` 必填、
+返回写死跳 `/canvas`），动图切帧复用会逼着造假字段并把用户送到错页面。
+通用桥 `ImageEditorLaunch` 的**结果另存一个 key** —— `consumeCanvasImageEditorResults`
+是"先删 key 再过滤"，共用会互相偷吃结果（画布页调一次就把通用那批清空）。
+编辑器送回的结果**换成新的上传帧**而不是改原帧像素（帧顺序里存的是来源标识，
+像素在后端，data URL 后端取不到），并**丢掉该格原有的 adjust**（像素都换了）。
+认领哪一格靠 `payload.frameIndex` 而非序号 —— 用户能在编辑器里拖动帧顺序，
+回来时序号早漂了。
+
+**动图编辑态必须跨页存活**（`components/motion-gif/motionDraft.ts`）：
+`/image-gen` 是路由页，跳到 `/image-editor` 再跳回来是**组件重新挂载**，
+不保存的话待切分图、帧顺序、拖过的分割线、调过的颜色、素材库节点 id 全丢
+（表现为"回来是刚打开的样子"，而"已替换 N 帧"的提示还挂着 ——
+因为它在往空序列里替换）。用 **sessionStorage**（不是 localStorage：
+这份状态属于一次会话，持久化会让下次打开时看到上次那半张图）；
+**不存** `motionFrameUrls` 与 `motionOutput`（后端产物，重切/重合成不花钱，
+而存下的 URL 会指向已被原地覆写的旧文件）；只在**主动关掉动图开关**时清草稿。
+各 `useState` 的初始值取 `useMemo(() => loadMotionDraft(), [])`（只读一次）。
+
+**微调与分割线必须一起存进 `slice_config`**：只存行列的话，用户拖过的网格和调过的颜色
+下次打开就丢了，"改切帧出新版本"也无从谈起。
+
+**帧顺序用「来源」而不是「数组下标」表达**（`SliceRef`）：
+
+- `{kind: origin, index: 3, adjust?: {...}}` = 原多格图第 3 格（可带微调）
+- `{kind: upload, index: 1, adjust?: {...}}` = 用户上传补的第 1 张
+- `{kind: region, box: [...]}` = 自由裁切区域
+
+用户删掉第 3 格又补一张自己的图之后，"第 5 格来自原图第几格"才是他要核对的信息（下标会随操作漂移）。因此面板标签显示 `P3=原4`、`上传1号`，删掉的格会**显出缺口**。
+
+**核心约束：预览与生成共用 `motion_prompt.compose_final_prompt`**。与 `image_annotation` 同一条纪律——两份实现各写各的，预览就会与实际不一致。
+
+**`optimized=True` 时不再追加任何系统块**：AI 优化出的提示词已按该动效写法写全，再追加会**重复甚至冲突**（两段措辞打架会把模型带偏）。
+
+几处来自实测、不能随手改的结论（`gpt-image-2` 实测，见 `docs/devlog/`）：
+
+1. **禁止「每行重开一次」**。模型容易把 4×4 理解成"4 行 × 每行一次独立运动"，于是每换一行就跳回起点，播放出来是**左右来回摆**。必须显式写"第 N+cols 格接着第 N 格"。16 格实测换行跳变/行内 = 1.33x。
+2. **格数少更好**：8 格（2×4）换行跳变比降到 **1.05x**（≈无）、转动幅度反而更大，**8 格默认推荐**。
+3. **四类动效的写法不能互相照抄**：环绕要背景横移（否则转不显）、动作要背景锁死（照抄横移会把平涂底搅花）、表情类机位锁得最死（脸对 1% 横移极敏感，全身横移 1% 却看不出来）。
+4. **WebP 通常只有 GIF 的 1/10~1/24 体积**且满分辨率；高质量/透明素材应主推 WebP。
+5. **GIF 只有 1-bit 透明**，半透明残影会被压成实心色块——透明素材**必须**同时给 WebP，MP4 没有 alpha 也不该产出。
+6. **prompt 上限约 6000 字符**（实测 6449 可用、9213 被接口拒收）。
+
+**文生图也能做环绕/表情包**，只是模型每格都在重新构想同一主体、主体会越走越样；带参考图（图生图）才锁得住外观。因此只提示、**不禁用也不自动切模式**。
+
+**切帧之后必须保留多格图**（`framesheet.png`，作为附属 representation）：没有它就无法"改切帧重出"而不重新生成。它同时是可被其它功能按 `format=framesheet` 取用的素材。
+
+**前端结构**（`frontend/src/components/motion-gif/`）：
+
+| 文件 | 职责 |
+| --- | --- |
+| `motionGifConfig.ts` | 类型 + 切帧顺序的本地状态操作。**刻意不拼提示词** |
+| `api.ts` | 接口封装 |
+| `MotionGifOptionsPanel.tsx` | 生成前参数区：动效类型、格子排布、提示词语言 |
+| `MotionGifSlicePanel.tsx` | 切帧面板：拖动换序 / ✕ 删格 / ＋ 上传占一格 / 循环方式 |
+
+**动图是开关不是第三种模式**：`mode`（text2img/img2img）语义完全不动，
+`/image-gen` 在现有两个 Tab 下加一个 `🎞️ 生成动图` 开关，关掉时页面回到接入前的原样
+（反向提示词、高级设置、开始生成按钮、右栏「生成结果」都不动）。
+三段式全部**内嵌在右栏「生成结果」里、不用弹窗**——切帧是人工确认环节，
+弹窗会把页面切走，反复调整时来回开关很别扭；候选多格图**全部保留**，
+点缩略图即可换一张重切，不重新生成、不花钱。
+
+**「循环方式」只在切帧面板里**，不放在生成前：它是**合成**参数（决定 GIF 怎么拼帧），
+不影响模型画什么；生成前画面还没出来，用户没法判断哪种接缝自然。
+默认按动效类型给推荐值（环绕 `pingpong`、表情/动作 `cycle`）。
+
+**尺寸与格数的联动必须在界面上说清**（`MotionGifOptionsPanel` 的「单格像素」提示）：
+
+格子是**等分**出来的（不是"先出整图再缩小"），所以
+
+```
+单格宽 = 图宽 ÷ 列数
+```
+
+**非 1:1 比例（尤其 9:16）切出的格子又窄又高**，单格宽度不足时成品只能靠放大、
+必然发糊。实测对照（成品长边 480）：
+
+| 生成尺寸 | 8 格（2×4） | 16 格（4×4） |
+| --- | --- | --- |
+| 2048×2048 | 512×1024 ✅ | 512×512 ✅ |
+| 1024×1024 | 256×512 ❌ | 256×256 ❌ |
+| 864×1536（9:16） | 216×768 ❌ | 216×384 ❌ |
+
+所以界面**只提示不限制**（用户可能要竖版动图，禁了反而坏事），
+并给出建议：非 1:1 时改成 2048×2048 或减少格数。合成长边默认 **480**
+（实测验证过的组合；2048 撑 640px 那组**没实测过**，故不作默认）。
+
+**「批量数量」在动图模式下自动变义**为「多格图数量（候选）」，不另加控件。
+
+### 4.5.2 素材库「来源」枚举（source taxonomy）
+
+**唯一真相源**：`backend/app/services/asset_hub/source_taxonomy.py`。
+前端**不硬编码**，经 `GET /api/v1/assets/meta` 拉取选项与中文名。
+
+这个枚举此前在**三个地方各写一份** —— 后端入库写 node metadata 的 `source`、
+后端出卡把 `source` 映射成对外的 `source_type`、前端硬编码一份下拉与中文名。
+三份靠人记着同步，于是踩了：动图入库自创 `source="motion_gif"`，前端选项里没有 →
+卡片显示"未知来源"，一点「AI生成」筛选就被排除。后端一切正常、接口 success、
+数据库里躺着 —— 用户看到的是"**存入素材库成功，再查素材库怎么看不到**"。
+
+两个概念必须分清：
+
+- **入库值**（`source`，写进 node metadata）：表示"这条资产由哪条流程产生"。
+- **展示值**（`source_type`，对外与筛选用）：分组。**多个入库值可归到同一组**
+  （`image_generation` / `character_portrait` / `motion_gif` 都归 `ai_generated`）。
+
+**动图不是独立分组** —— 它是"AI 生成"下的子类，靠 tags(`motion-gif`) 与
+`slice_config` 区分。**给子类另立一个 `source` 值，就等于让它从筛选里消失。**
+
+两条刻意的行为：
+
+1. **未登记的值原样返回**，不硬塞进 `ai_generated`。塞进去更糟 —— 它会让这个
+   陌生值悄悄混进那个分组的筛选结果里，掩盖真正的"忘记登记"。
+2. **入库时 `assert_known_source` 主动抛错**。未登记的值不会自己报错，
+   只会让资产消失；等用户发现"存了但看不到"时，源头已经很难查了。
+
+回归测试 `backend/tests/test_asset_source_taxonomy.py` 锁三件事：枚举只有一处定义、
+经 `/assets/meta` 暴露、**前端页面里没有残留的硬编码副本**（含一条"扫描前端源码
+断言不再出现成片的枚举值"）。
+
+**资产类型（`asset_type`）同一处理**：`ASSET_TYPE_OPTIONS` 也在
+`source_taxonomy.py`，经同一个 `/assets/meta` 暴露。踩过：前端自己写的列表里有
+`article` / `document` 两个**后端根本不认**的值 —— 查询对未登记的 `asset_type`
+直接返回空，用户选了只看到空列表，以为是"这类素材没有"。未登记的 `source`
+会让资产**消失**，未登记的 `asset_type` 会让筛选**永远为空**，
+是同一种病（枚举两边各写一份）的两个症状。
+自检函数 `validate_asset_type_table()` 由测试用真实 `AssetType` 校验。
+
+**动图排布与循环选项同理**：事实来源是 `GET /images/motion-gif/options`
+（底层 `motion_prompt.GRID_LAYOUTS` / `MOTION_KINDS`）。前端页面此前硬编码了一份
+`MOTION_GRID_CELLS` / `MOTION_GRID_SHAPE` / `loopOptions` 文案，
+且自己写了"环绕类用 pingpong、其余用 cycle"这条规则 —— 而后端
+`MotionKindSpec.default_loop` 早就定义了同一件事。现统一走
+`components/motion-gif/useMotionGifOptions.ts`（**进程内缓存 Promise**，
+避免页面与面板各发一次请求），前端只保留兜底表用于"选项还没拉到时"。
+
 ### 4.6 平台事件日志
 
 文件：`backend/app/db/models/platform_log.py`，迁移 `017_add_platform_event_logs`。
@@ -718,13 +1063,14 @@ Live2D accepts uploads, character imagery and Asset Hub images as source materia
 | AI 连接器 | `/api/v1/ai/connectors` | `services/ai`、`services/ai_connector` | `/settings` | 已支持通用配置，仍需 UX 打磨。 |
 | 生图提示词参考库 | `/api/v1/image-prompts` | `services/image_prompt_reference` | `/prompt-library`、画布 picker、图片生成 picker | 后端、Agent 工具、独立浏览页、Picker、画布/生图集成已完成；已支持 IMI 三类大集合、双语 Prompt 字段、本地图片缓存、图片优先浏览页、多图详情切换、画布 metadata 持久化和实际生图入库血缘烟测。 |
 | 图片生成 | `/api/v1/images` | `services/image`、AI backends | `/image-gen` | 多后端和显式文生图/图生图能力配置可用；真实 provider 结果回流 Asset Hub。 |
+| 动图（motion GIF） | `/api/v1/images/motion-gif/*` | `services/image`（`slicing.py`、`motion_prompt.py`、`motion_gif.py`、`motion_gif_service.py`）、`asset_hub/facade.py::create_motion_gif` | `/image-gen` 动图开关 | 把一张多格图（frame sheet）合成为 GIF/WebP/MP4，**不调用任何图像模型**，因此反复调切帧不花钱。三段式：①生成候选（花钱）②切帧预览（免费）③合成（免费）。**一个动图 = 一个 AssetNode**、多格图作为附属 representation。前端已接入，详见下文「动图合成」。 |
 | 视频生成工作台 | `/api/v1/videos` | `services/ai/backends/video` + `platform_templates` | `/video-gen` | 独立文生/图生视频、模型选择、视频提示词模板和可恢复任务历史；图生视频可从 Asset Hub 选择图片作为首帧，异步结果由轮询写入 Asset Hub，项目来源额外回链分镜。 |
 | 下载/磁力 | `/api/v1/download`、`/api/v1/torrents` | `services/download`、`services/torrent` | `/download` | 本地化方向，不做自建云缓存。 |
 | 平台采集 | `/api/v1/crawler`、`/api/v1/bilibili` | `services/crawler`、`services/platforms` | `/crawler` | 统一检索小红书、抖音、快手、B站、微博、公众号、YouTube 与 Telegram（知乎已于 2026-10-01 移除：只有"登记"、无真实采集客户端，选了只能走 yt-dlp 兜底，结果不可靠）；支持详情、显式入素材库和画布媒体选择。有效的平台连接可作为服务端登录态用于搜索/详情，不向浏览器返回 Cookie；B站另提供更丰富的登录态能力。**YouTube / Telegram 免登录**：YouTube 走 yt-dlp（公开数据），Telegram 走 `t.me/s` 网页预览（含**频道内 `?q=` 关键词搜索**）；两者都**不需要**凭证，故 `auth_types` 标 `none`/`telegram` 而非 `cookie`。**Telegram 的登录是独立多步流程**（api_id/api_hash → 手机号 → 验证码 → 可选两步验证密码），走 `/api/v1/telegram/auth/*` 与 `/telegram-login` 页面，**不并进**账号中心的 cookie 流程；登录后额外获得"在已加入的频道里搜关键词 / 列出已加入频道 / 读私有频道"。⚠️ **它不是"全网搜索"** —— `messages.SearchGlobal` 只覆盖已加入的会话，真正跨频道搜要 `channels.SearchPosts`（需 Premium 且按 Stars 计费，本项目不做）。**未实现平台一律显式报 501，不得静默返回空**：判据是 `services/platforms.supported_platforms()` 注册表（不要维护第二份名单）。`/crawler/search-enhanced` 早有此守卫，但 `/crawler/search`（画布 platform_search 节点 + 博主中心"作品搜索"走它）**漏了**，导致选到未实现平台时返回 `HTTP 200 {"results":[],"message":"找到 0 条结果"}` 而非 501——2026-10-01 补齐，两个端点现在行为一致。**Cookie 格式规范化收在公共基类**：`PlatformConnection.cookie_content` 存的是 Netscape 文件格式（含 `# Netscape HTTP Cookie File` 注释头、字段制表符分隔），**不能直接放进 HTTP `Cookie` 头**（HTTP 头值禁止换行/制表符），因此由 `BasePlatformClient.header_cookie()` 统一用 `CookieManager.extract_raw()` 规范化，并在 `_init_http_client` 强制覆盖注入——单个平台客户端即便写回原文也会被纠正。历史上该处三种写法并存（番茄 `normalize_cookie(...)` 正确、B站与小红书直接赋原文均导致 API 模式全量请求失败），故不再留给各平台自行实现。 |
 | 采集：多图图文的储存结构 | 同上（`POST /api/v1/crawler/import`） | `services/crawler/service.py::_import_image_collection`、`_upgrade_to_collection` | `/crawler` | **多图图文按"集合 + 子图"两层入库**，不再只存一张封面（此前图集里的其它原图会全丢）。容器是 `AssetType.COLLECTION`，每张图一个 `IMAGE` 子节点挂在 `parent_id` 下，子节点用 `metadata.remote_url` 指向远端原图；判据 `is_multi_image_post()`（多图**且**无视频——有视频的多图是"视频+封面图"，不是图集）。用 `parent_id` 而非 `RelationType.CONTAINS` 关系表表达层级，避免同一信息存两份。采集阶段**只存 URL 不落盘**，用户点下载时再下载。**导入必须带 `owner_user_id`**：素材库列表按 owner 过滤，owner 为 NULL 的记录普通登录用户看不到（实测表现为"导入返回成功但素材库一直空的"），故 `crawler/import` 注入 `get_authenticated_principal_optional` 并逐层透传。**去重命中旧记录时要升级**：用户在「去水印解析」页解析会先建一条同 `source_url` 的单节点记录，之后导入若直接命中它并跳过，集合结构就永远建不起来——现在命中且判定为多图图文时，就地改成 COLLECTION（保留原 id，避免画布引用与发布记录失效）并补建缺失子图。 |
-| 用户查询（抖音 / 小红书） | `/api/v1/users/*` | `api/v1/users.py`、`services/platforms/{douyin,xiaohongshu}/` | `/platform-users`、`/my-platform-data` | 统一形状覆盖两平台的**用户搜索 / 用户资料 / 作品列表 / 查自己**，前端共用面板、按 `platform` 切换（B站仍走既有 `/bilibili/up/*`）。**平台差异必须记住**：抖音用户搜索走 `discover/search`（`search_channel=aweme_user_web`，**channel 与路径一一绑定**，传给 `general/search/single` 无效），用户资料/作品列表用 **`sec_uid`**（数字 uid 打开是空页面）；小红书用户搜索是 **POST + JSON body**（`search/usersearch`，需自造 `search_id`），资料在 `user/otherinfo`，**粉丝数在 `data.interactions[]` 里**（`basic_info` 没有）。**小红书所有 API 必须签名**（`xhshow` 纯 Python，依赖 cookie 的 `a1`）；抖音当前实测不需要签名。**抖音 UA 版本很关键**：Chrome/120 会让 `aweme/post` 返回**空 body（HTTP 200）**，Chrome/154 正常——空 body 与 403 都要报成"被拒绝"而不是"没有数据"（否则风控失败会被静默吞成"该用户没有作品"）。合集见 `docs/platform/{DOUYIN,XIAOHONGSHU}_GUIDE.md` 与 `docs/research/user_api_cross_validation.md`。 |
+| 用户查询（抖音 / 小红书 / X / YouTube） | `/api/v1/users/*` | `api/v1/users.py`、`services/platforms/{douyin,xiaohongshu,twitter}/` | `/platform-users`、`/my-platform-data` | 统一形状覆盖多平台的**用户搜索 / 用户资料 / 作品列表 / 查自己**，前端共用面板、按 `platform` 切换（B站仍走既有 `/bilibili/up/*`）。**平台差异必须记住**：抖音用户搜索走 `discover/search`（`search_channel=aweme_user_web`，**channel 与路径一一绑定**，传给 `general/search/single` 无效），用户资料/作品列表用 **`sec_uid`**（数字 uid 打开是空页面）；小红书用户搜索是 **POST + JSON body**（`search/usersearch`，需自造 `search_id`），资料在 `user/otherinfo`，**粉丝数在 `data.interactions[]` 里**（`basic_info` 没有）。**小红书所有 API 必须签名**（`xhshow` 纯 Python，依赖 cookie 的 `a1`）；抖音当前实测不需要签名。**抖音 UA 版本很关键**：Chrome/120 会让 `aweme/post` 返回**空 body（HTTP 200）**，Chrome/154 正常——空 body 与 403 都要报成"被拒绝"而不是"没有数据"（否则风控失败会被静默吞成"该用户没有作品"）。合集见 `docs/platform/{DOUYIN,XIAOHONGSHU}_GUIDE.md` 与 `docs/research/user_api_cross_validation.md`。⚠️ **「内容搜索」页不放「用户」tab（2026-10-10 定，2026-10-11 补 X）** —— 搜人**只走「博主中心」一个入口**（那边有粉丝数/头像/简介/作品，内容页那个 tab 是重复入口且没有详情）。已移除：微博 / 快手 / **X**；**保留** B站 / 抖音 / YouTube（它们的 `search_type=user` **真的能用**，实测有结果）。⚠️ 判断依据是"**该平台 `search()` 有没有消费 `search_type`**"：B站 有 `if search_type == 'user': return self.search_users(...)` 路由，而 **X 的 `search()` 只看 product** → 实测返回 **0 条**（同一关键词下综合/最新/媒体都正常）。**不能一刀切全删。** |
 | 采集：微博 | /api/v1/crawler/search{,-enhanced}?platform=weibo\|wb | `services/platforms/weibo/` | /crawler | 微博**必须走浏览器**，但原因与小红书不同：小红书要 **X-s 签名**，微博要 **Service Worker 上下文**。实测所有 httpx 直连方案都返回 ok=-100（直连 / 换访客 Cookie / 补 _T_WM·MLOGIN·XSRF / 换 UA / 加 sec-fetch 头 全部失败），而 sk debug 捕获显示 rom_service_worker=True —— 微博注册了 SW（m.weibo.cn/）由它代理请求并注入 httpx 复现不了的上下文。**真实浏览器里连登录都不需要**（ok=1, total=870）。所以走 Patchright + SessionPool，在页面上下文里 etch；_get_session 必须等 **9s** 让 SW 注册完成，太短会退化成无 SW 路径。搜索端点 `GET /api/container/getIndex?containerid=100103type={1综合\|61实时\|60热门\|64视频}&q={关键词}&page_type=searchall&page=N`，**关键词直接拼在 containerid 里**。**翻页有硬限制**：page=1 正常（约 9 条正文），page=2 返回 173 字节 HTML 错误页（真翻页依赖 since_id 游标）——所以翻页失败**不整体报错**，第 1 页数据有效（一开始抛错导致用户连第一页都看不到）。**图片取原图有规律**：pics[].large.url 是 /mw2000/，original_pic 是 /large/，**文件名 pid 相同** → 把尺寸段换成 /large/ 即得每张原图（实测 large 1.88MB vs mw2000 962KB）。**下载不需要 Cookie**（httpx 直连 200）。视频在 page_info.urls.mp4_720p_mp4 等，按 720p→hd→ld 取最高。平台别名 **wb 必须注册**（前端「内容搜索」页用的就是 wb）。详见 `docs/research/weibo_twitter_api.md`。 |
-| 采集：推特/X | `/api/v1/crawler/search{,-enhanced}?platform=twitter\|x\|tw` | `services/platforms/twitter/` | `/crawler` | **优先纯 HTTP（GraphQL），失败才回退浏览器 DOM**。早前我记录过「四种直连方案全失败、404 是 queryId 失效」——**那个归因是错的**：真正原因是**缺 `x-client-transaction-id` 请求头**（twscrape `queue_client.py` 与 Scweet `transaction.py` 都明确记录「没有这个头就 404」）。补上它 + `auth_token`/`ct0`（domain=`.x.com`）后，`SearchTimeline`（queryId `hyPfJYJ_XAtDYoslQc-Rgg`）实测 **HTTP 200**：要 20 条→20 条(9.1s)、要 50 条→50 条(19.3s)、cursor 翻页 4 页 85 条，**全程不开浏览器**。**transaction-id 生成**（`xclid.py`）：抓 `x.com/tesla` → 解析 JS bundle → `load_keys()` → `XClIdGen(vk, anim).calc(method, path)`；复用 twscrape 的解析/计算，但**不用它自带的 `XClIdGen.create()`**（那个内部用动态 UA `"@chrome"`，实测本机报 `ConnectError`；固定 UA 抓页面正常）。404 时**清缓存 + 重新生成 + 重试一次**（twscrape 同款策略）。**仍需登录**：「不用浏览器」≠「不用凭证」，必须有 `auth_token`+`ct0`；凭证失效时报可操作错误（去账号中心登录），**不返回「0 条结果」**。⚠️ **crawler 层不要再把 twitter 放进 BROWSER_ONLY** —— 否则 `BasePlatformClient` 会在 `search()` 之前为注入 cookie 而**白起一个浏览器**（实测看到 9 个 chrome 进程，而 HTTP 路径根本不需要）。DOM 路径（`search_dom.py`）保留为回退：它受推特**虚拟列表**限制（滚动回收离屏节点），只能「边滚边收集」——曾因此只有 9 条，修好后要多少给多少。`views`（浏览量）GraphQL 拿不到，留 0 **不编造**；图片原图按 `?name=orig` 推导。详见 `docs/research/weibo_twitter_api.md`。 |
+| 采集：推特/X | `/api/v1/crawler/search{,-enhanced}?platform=twitter\|x\|tw` | `services/platforms/twitter/` | `/crawler` | **优先纯 HTTP（GraphQL），失败才回退浏览器 DOM**。早前我记录过「四种直连方案全失败、404 是 queryId 失效」——**那个归因是错的**：真正原因是**缺 `x-client-transaction-id` 请求头**（twscrape `queue_client.py` 与 Scweet `transaction.py` 都明确记录「没有这个头就 404」）。补上它 + `auth_token`/`ct0`（domain=`.x.com`）后，`SearchTimeline`（queryId `hyPfJYJ_XAtDYoslQc-Rgg`）实测 **HTTP 200**：要 20 条→20 条(9.1s)、要 50 条→50 条(19.3s)、cursor 翻页 4 页 85 条，**全程不开浏览器**。**transaction-id 生成**（`xclid.py`）：抓 `x.com/tesla` → 解析 JS bundle → `load_keys()` → `XClIdGen(vk, anim).calc(method, path)`；复用 twscrape 的解析/计算，但**不用它自带的 `XClIdGen.create()`**（那个内部用动态 UA `"@chrome"`，实测本机报 `ConnectError`；固定 UA 抓页面正常）。404 时**清缓存 + 重新生成 + 重试一次**（twscrape 同款策略）。**仍需登录**：「不用浏览器」≠「不用凭证」，必须有 `auth_token`+`ct0`；凭证失效时报可操作错误（去账号中心登录），**不返回「0 条结果」**。⚠️ **crawler 层不要再把 twitter 放进 BROWSER_ONLY** —— 否则 `BasePlatformClient` 会在 `search()` 之前为注入 cookie 而**白起一个浏览器**（实测看到 9 个 chrome 进程，而 HTTP 路径根本不需要）。DOM 路径（`search_dom.py`）保留为回退：它受推特**虚拟列表**限制（滚动回收离屏节点），只能「边滚边收集」——曾因此只有 9 条，修好后要多少给多少。⚠️ **勘误（2026-10-11）**：此处原写"`views`（浏览量）GraphQL 拿不到，留 0 不编造"——**那个结论是错的**：`views` 就在**顶层** `t["views"]["count"]`（字符串），只是**不在 `legacy` 里**（当初只翻了 legacy 就下了结论）。各接口**给不给不一样**：`TweetDetail` 有、`HomeLatestTimeline` **原生也有**（54/54 有键）、`SearchTimeline`/`UserTweets`/`Likes` **没有**。⚠️ **不要为补齐而逐条调详情**（一页 20 条 = 多 20 次请求 + 限流风险，用户明确反对）。`quote_count`/`bookmark_count` 也在 `legacy` 里（官方那排数字共 5 个，见 `platform/capability_matrix.md`）。图片原图按 `?name=orig` 推导。详见 `docs/research/weibo_twitter_api.md`。 |
 | 采集：共享浏览器会话与结果缓存 | 同上 | `services/platforms/session_pool.py`、`services/platforms/xiaohongshu/cache.py` | `/crawler` | 小红书搜索必须走浏览器（接口需 `X-s`/`X-t` 签名，签名函数是混淆 JS 且跨域调用 406），单次成本 15~20 秒（开浏览器 2~3s + 预热首页 6s + 开搜索页 5~10s）。**两层缓存**把"翻页/切回"从 16 秒降到 0.4 秒：①结果缓存按 `平台+连接+关键词+类型+页码+每页数` 索引、TTL 10 分钟；②`SessionPool` 按 `平台+连接` 复用同一个 `BrowserContext`，**预热只做一次**，空闲 15 分钟回收。连接 ID 必须参与缓存键（不同账号结果不同）。两个易错点已钉测试：缓存必须加在共享入口（只加在自建浏览器分支会因实际走注入页分支而完全失效）；客户端退出时**不得**关闭已入池的会话（会关死复用中的会话，下次报 `TargetClosedError`）。 |
 | 内容发布 | `/api/v1/platforms/{conn_id}/publish`、`/api/v1/creative-projects/{project_id}/publish-to-fanqie` | `services/platforms/fanqie` | `/publish`、项目 Story 页 | 当前通用发布页只公开已验证的番茄章节草稿保存：需指定后台已创建的书籍、卷和章节目标，并可先 dry-run 预检；视频、图文等其他平台发布尚未接通，不在 UI 中伪装为可用。 |
 | 小说/书源 | `/api/v1/novels`、`/api/v1/book-sources` | `services/novel`、`services/reader` | `/novel-*` | 可作为创作素材源。全本下载已任务化（`novel_download`，落 `project_task_records` 并可在任务中心停止）：本地章节目录是事实来源，重下会**跳过已有章节**（断点续下，只抓缺失的）；已下载索引按**实际成功**的章节记账，熔断或失败不虚报，可用 `POST /novels/local-sync` 按磁盘文件重算索引（下载被中断、进程重启后无需重下）；抓取连续失败到阈值即熔断并上报首个真实错误（如反爬 403），不再让用户干等几百章；阅读器本地优先，本地没有该章才回退在线。 |

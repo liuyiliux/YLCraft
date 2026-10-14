@@ -1,5 +1,5 @@
 /**
- * 我的数据（抖音 / 小红书）
+ * 我的数据（抖音 / 小红书 / 微博 / X / 快手 / B站）
  *
  * ## 为什么单独开页面
  *
@@ -7,6 +7,16 @@
  * 独有能力）。抖音/小红书只有"自己的资料 + 自己的作品"两件事，
  * 后端已统一成 `/api/v1/users/me` + `/api/v1/users/videos`，所以这里
  * **一个页面 + 平台切换**就够。
+ *
+ * ## 三个面板（按平台显式启用，不用 `else` 兜底）
+ *
+ *     我的资料    /users/me              全部平台
+ *     我的作品    /users/videos          全部平台（B站走专属面板）
+ *     我的点赞    /users/likes           **只有 X**（2026-10-11 加）
+ *     创作者中心  /users/creator/*       只有抖音 / 小红书
+ *
+ * ⚠️ 每个面板都**显式白名单**判断。历史上因为 `else` 兜底，
+ * 选微博时显示过**抖音的创作者数据**（用户反馈过）。
  *
  * ## 实测（2026-09-27）
  *
@@ -17,11 +27,13 @@ import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   Card, Button, Select, Table, Tag, message, Space, Row, Col,
-  Typography, Empty, Image, Avatar, Spin, Statistic,
+  Typography, Empty, Image, Avatar, Spin, Statistic, Tooltip, Segmented,
 } from 'antd'
 import {
   UserOutlined, VideoCameraOutlined, LikeOutlined, TeamOutlined,
-  ReloadOutlined, LinkOutlined, HeartOutlined,
+  ReloadOutlined, LinkOutlined, HeartOutlined, EyeOutlined,
+  DownloadOutlined, PlayCircleOutlined, CommentOutlined, ShareAltOutlined,
+  StarOutlined,
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import {
@@ -32,6 +44,12 @@ import type {
 } from '../../api'
 import { useTheme } from '../../constants/theme'
 import CreatorCenterPanel from './CreatorCenterPanel'
+import MyLikesPanel, { LIKES_PLATFORMS } from './MyLikesPanel'
+import type { FeedMode } from './MyLikesPanel'
+// ⚠️ 列定义走**公共模块** —— 与点赞列表、查询页共用一份
+import { buildContentColumns } from './contentColumns'
+// 详情/预览的**公共组件**（非 B站）—— 与「查询」页共用同一套行为
+import { PlatformDetailDrawer } from '../../components/platform-detail'
 // B站「我的数据」直接复用原组件（含 6 个页签：概览/视频/收藏夹/历史/关注/付费课程）
 import MyDataPage from '../my-data'
 
@@ -75,16 +93,56 @@ function formatCount(n: number | undefined | null): string {
   return String(v)
 }
 
+/** 记住上次选的平台（与采集页的 `ylcraft_crawler_platform` 同一套做法）。 */
+const PLATFORM_STORAGE_KEY = 'ylcraft_my_platform_data_platform'
+
+/**
+ * 读初始平台，优先级：**URL 参数 > 上次记住的 > 默认抖音**。
+ *
+ * ⚠️ URL 参数优先，是为了让「从别处带着 platform 跳进来」仍然生效
+ *    （例如菜单/其他页面链接过来指定要看某个平台）。
+ */
+function initialPlatform(searchParams: URLSearchParams): string {
+  const fromUrl = searchParams.get('platform')
+  if (fromUrl) return fromUrl
+  try {
+    const saved = localStorage.getItem(PLATFORM_STORAGE_KEY)
+    if (saved) return saved
+  } catch {
+    // 隐私模式/禁用 storage 时读不了 —— 不是错误，退回默认值
+  }
+  return 'douyin'
+}
+
 export default function MyPlatformDataPage() {
   const { theme: THEME } = useTheme()
   const [searchParams] = useSearchParams()
 
-  const [platform, setPlatform] = useState<string>(searchParams.get('platform') || 'douyin')
+  const [platform, setPlatform] = useState<string>(() => initialPlatform(searchParams))
   const [conns, setConns] = useState<PlatformConnectionResponse[]>([])
   const [profile, setProfile] = useState<PlatformUserItem | null>(null)
   const [videos, setVideos] = useState<PlatformUserVideo[]>([])
   const [loading, setLoading] = useState(false)
   const [loadingVideos, setLoadingVideos] = useState(false)
+  // 作品详情抽屉（公共组件）
+  const [previewItem, setPreviewItem] = useState<PlatformUserVideo | null>(null)
+  // 「我的点赞」/「正在关注」切换（两块用同一个面板，只换数据源）
+  const [feedMode, setFeedMode] = useState<FeedMode>('likes')
+
+  // 记住平台选择 —— 下次打开页面直接回到上次看的平台
+  //
+  // ⚠️ 用户要求："我选了什么，下次打开就是哪个平台。"
+  //    与采集页（`ylcraft_crawler_platform`）**同一套做法**，保持一致。
+  //
+  // 用 try/catch 包住：隐私模式或禁用 storage 时 `setItem` 会抛，
+  // 那不该让整个页面挂掉（记不住就记不住，不影响看数据）。
+  useEffect(() => {
+    try {
+      localStorage.setItem(PLATFORM_STORAGE_KEY, platform)
+    } catch {
+      /* 存不了就算了，不影响使用 */
+    }
+  }, [platform])
 
   // 切平台时清空上次结果（否则会"用小红书标签展示抖音数据"）
   useEffect(() => {
@@ -174,45 +232,56 @@ export default function MyPlatformDataPage() {
     if (conns.length > 0 && usesGenericPanel) { void load() }
   }, [conns, load, usesGenericPanel])
 
+  // 「我的作品」的操作：查看详情 / 打开原文 / 去水印下载
+  // ⚠️ 与「查询」页、以及本页「我的点赞」**保持三件套一致**
+  //    （用户反馈过"和 x 平台搜索不一样"）。
+  // 「我的作品」的列：走**公共模块**（2026-10-11 收敛）
+  //
+  // ⚠️ 与「我的点赞」「查询」页**共用一份列定义** ——
+  //    各写一份正是"每次都差一点"的根因。
+  //    公共模块以**三接口字段并集**为准，有的填、没有的显示 `-`。
+  // ⚠️ 最后再加「操作」三件套（查看详情 / 打开原文 / 去水印下载）。
   const videoColumns: ColumnsType<PlatformUserVideo> = [
+    ...buildContentColumns({ contentTitle: '标题' }),
     {
-      title: '封面', dataIndex: 'cover', key: 'cover', width: 90,
-      render: (src: string) => (
-        <Image
-          src={src ? `/api/v1/proxy/image?url=${encodeURIComponent(src)}` : ''}
-          width={64} height={84} style={{ objectFit: 'cover', borderRadius: 4 }}
-          fallback="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NCIgaGVpZ2h0PSI4NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9Ijg0IiBmaWxsPSIjMWYyOTM3Ii8+PC9zdmc+"
-        />
-      ),
-    },
-    {
-      title: '标题', dataIndex: 'title', key: 'title',
-      render: (t: string, r) => (
-        <Space direction="vertical" size={2}>
-          <Text style={{ color: THEME.textPrimary }}>{t || '(无标题)'}</Text>
-          <Space size={6}>
-            {r.type === 'video'
-              ? <Tag color="blue" style={{ margin: 0 }}>视频</Tag>
-              : <Tag color="cyan" style={{ margin: 0 }}>图文</Tag>}
-            <Text style={{ fontSize: 12, color: THEME.textSecondary }}>
-              <LikeOutlined /> {formatCount(r.likes)}
-            </Text>
-          </Space>
+      title: '操作', key: 'action', width: 150,
+      render: (_: any, r: PlatformUserVideo) => (
+        <Space size={4}>
+          <Tooltip title="查看详情">
+            <Button
+              type="link" size="small" icon={<EyeOutlined />}
+              style={{ padding: 0 }}
+              onClick={() => setPreviewItem(r)}
+            />
+          </Tooltip>
+          {r.url && (
+            <Tooltip title="打开原文">
+              <Button
+                type="link" size="small" icon={<LinkOutlined />}
+                href={r.url} target="_blank" style={{ padding: 0 }}
+              />
+            </Tooltip>
+          )}
+          <Tooltip title="去水印下载">
+            <Button
+              type="link" size="small" icon={<DownloadOutlined />}
+              style={{ padding: 0 }}
+              disabled={!r.url}
+              onClick={() => {
+                if (!r.url) {
+                  message.warning('这条没有原文链接，无法去下载页')
+                  return
+                }
+                // 与查询页/点赞一致：**跳独立下载页**
+                window.location.href =
+                  `/download?url=${encodeURIComponent(r.url)}`
+              }}
+            />
+          </Tooltip>
         </Space>
       ),
     },
-    {
-      title: '操作', key: 'action', width: 90,
-      render: (_, r) => (
-        <Button
-          type="link" size="small" icon={<LinkOutlined />}
-          onClick={() => r.url && window.open(r.url, '_blank')}
-        >
-          打开
-        </Button>
-      ),
-    },
-  ]
+  ] as ColumnsType<PlatformUserVideo>
 
   const platformLabel = PLATFORMS.find((p) => p.value === platform)?.label || platform
 
@@ -344,6 +413,58 @@ export default function MyPlatformDataPage() {
             {(platform === 'douyin' || platform === 'xiaohongshu') && (
               <CreatorCenterPanel platform={platform} />
             )}
+
+            {/* 我的点赞：我**赞过**的（不是我发的）
+                ⚠️ **只有 X 实现了**（2026-10-11）——
+                其他平台后端返回 501，所以这里**显式列出支持的平台**，
+                不写 `else` 兜底（创作者中心那次就是 `else` 兜底兜出的错）。
+                未支持的平台**整块不渲染**，而不是给个空表格。 */}
+            {LIKES_PLATFORMS.includes(platform) && (
+              <>
+                {/* 「正在关注」：我**关注的账号**发的（2026-10-11 加）
+                    用户："官方x平台有正在关注作品，我们也加下"。
+                    与「我的点赞」用**同一个面板**（只换数据源），
+                    靠 `Segmented` 切换，不必堆成两块长表格。 */}
+                <Card
+                  style={{
+                    background: THEME.bgCard, border: `1px solid ${THEME.border}`,
+                    marginTop: 16, marginBottom: 0,
+                  }}
+                  bodyStyle={{ paddingBottom: 0 }}
+                >
+                  <Space>
+                    <Text style={{ color: THEME.textSecondary, fontSize: 13 }}>
+                      内容来源：
+                    </Text>
+                    <Segmented
+                      size="small"
+                      value={feedMode}
+                      onChange={(v) => setFeedMode(v as FeedMode)}
+                      options={[
+                        { label: '我的点赞', value: 'likes' },
+                        { label: '正在关注', value: 'home-feed' },
+                      ]}
+                    />
+                    <Text style={{ color: THEME.textDisabled, fontSize: 12 }}>
+                      {feedMode === 'likes'
+                        ? '我点赞过的推文'
+                        : '我关注的账号发布的推文'}
+                    </Text>
+                  </Space>
+                </Card>
+
+                <MyLikesPanel platform={platform} mode={feedMode} />
+              </>
+            )}
+
+            {/* 作品详情抽屉（**公共组件**）
+                ⚠️ 与「查询」页、点赞面板共用同一套：媒体预览 + 元数据 +
+                   去水印下载（跳独立下载页）+ 打开原文。 */}
+            <PlatformDetailDrawer
+              item={previewItem}
+              onClose={() => setPreviewItem(null)}
+              width={620}
+            />
           </>
         ) : (
           <Card style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}` }}>

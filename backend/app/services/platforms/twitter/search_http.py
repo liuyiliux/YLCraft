@@ -43,6 +43,7 @@ import httpx
 from ..types import LoginExpiredError, SearchParams, SearchResult, UserProfile
 from .apis import (
     GQL_URL,
+    LIKES_OP,
     REQUIRED_COOKIES,
     SEARCH_OP,
     USER_BY_SCREEN_NAME_FIELD_TOGGLES,
@@ -199,6 +200,81 @@ async def _request_page_raw(
     raise RuntimeError("[twitter] 重新生成 transaction-id 后仍失败。")
 
 
+async def _request_post_op(
+    cookie_header: str,
+    op: str,
+    variables: Dict[str, Any],
+    *,
+    features: Optional[Dict[str, Any]] = None,
+    field_toggles: Optional[Dict[str, Any]] = None,
+    retry_on_404: bool = True,
+) -> Dict[str, Any]:
+    """**POST** 一个 GraphQL 操作（HomeLatestTimeline 用）。
+
+    ## ⚠️ 为什么不能复用 `_request_page_raw`（2026-10-11）
+
+    它写的是 **GET**（`?variables=...&features=...`），而
+    **HomeLatestTimeline 是 POST**，且 —— 关键差别 ——
+    **`queryId` 要放在 JSON body 里**（不是只放 URL）：
+
+        POST /i/api/graphql/{qid}/HomeLatestTimeline
+        body = {"variables": {...}, "features": {...},
+                "fieldToggles": {...}, "queryId": "<qid>"}
+
+    实测（2026-10-11）：照真实请求这样发 → HTTP 200，35 条推文。
+
+    ⚠️ 404 的处理与 GET 一致：清 transaction-id 缓存 → 重新生成 → 重试一次
+    （404 通常是"缺/过期 transaction-id"，不是"没有结果"）。
+    """
+    ck = cookie_map(cookie_header)
+    missing = [n for n in REQUIRED_COOKIES if not ck.get(n)]
+    if missing:
+        raise TwitterAuthError(
+            f"[twitter] 缺少必要的 cookie：{', '.join(missing)}。"
+            "请在「账号中心」用浏览器方式登录一次 x.com。"
+        )
+
+    path = f"/i/api/graphql/{op}"
+    body: Dict[str, Any] = {"variables": variables}
+    if features:
+        body["features"] = features
+    if field_toggles:
+        body["fieldToggles"] = field_toggles
+    # ⚠️ queryId 也要在 body 里（实测真实请求就是这样）
+    body["queryId"] = op.split("/", 1)[0]
+
+    for attempt in (1, 2):
+        txid = await make_transaction_id(
+            cookie_header, "POST", path, force_refresh=(attempt == 2)
+        )
+        headers = _build_headers(cookie_header, ck["ct0"], txid)
+        headers["content-type"] = "application/json"
+
+        async with httpx.AsyncClient(timeout=60, follow_redirects=True) as c:
+            resp = await c.post(f"{GQL_URL}/{op}", json=body, headers=headers)
+
+        if resp.status_code == 200:
+            return resp.json()
+
+        if resp.status_code in (401, 403):
+            raise TwitterAuthError(
+                f"[twitter] X 拒绝请求（HTTP {resp.status_code}）。"
+                "登录态可能已失效 —— 请在「账号中心」重新登录一次 x.com。"
+            )
+
+        if resp.status_code == 404 and retry_on_404 and attempt == 1:
+            logger.info("[twitter] POST %s 404 —— 重新生成 transaction-id 后重试", op)
+            invalidate_xclid(cookie_header)
+            continue
+
+        raise RuntimeError(
+            f"[twitter] 接口 {op} 返回 HTTP {resp.status_code}。"
+            f"（body 前 120：{resp.text[:120]!r}）"
+        )
+
+    raise RuntimeError("[twitter] 重新生成 transaction-id 后仍失败。")
+
+
 def _walk(obj: Any, pred) -> Optional[Dict]:
     """深度优先找第一个满足条件的对象。"""
     if isinstance(obj, dict):
@@ -326,14 +402,17 @@ def parse_tweet_http(t: Dict[str, Any]) -> Optional[SearchResult]:
         likes=int(legacy.get("favorite_count") or 0),
         comments=int(legacy.get("reply_count") or 0),
         shares=int(legacy.get("retweet_count") or 0),
-        # views 实测拿不到 → 0（不编造）
-        views=0,
+        # ⚠️ 书签 / 浏览量 / 引用（2026-10-11 补）—— 与 `_parse_tweet_result`
+        #    保持一致（同一份数据两处解析，字段不能一边有一边没有）。
+        collects=int(legacy.get("bookmark_count") or 0),
+        views=_views_of(t),
         create_time=str(legacy.get("created_at") or ""),
         raw_data={
             "_images": images,
             "_video_url": video,
             "handle": handle,
             "lang": legacy.get("lang") or "",
+            "quote_count": int(legacy.get("quote_count") or 0),
             "http": t,
         },
     )
@@ -425,6 +504,31 @@ async def get_replies_via_http(
             continue
         core = (t.get("core") or {}).get("user_results") or {}
         u = (core.get("result") or {}) if isinstance(core, dict) else {}
+        # ⚠️ **作者名/handle 的新旧 schema**（2026-10-11 修）
+        #
+        # 原来只读**旧版扁平**字段 `u.name` / `u.screen_name` ——
+        # 而 X 现在给的是**新版嵌套**：
+        #
+        #     u.core.name         = "sara"          ← 昵称在这
+        #     u.core.screen_name  = "sarahsfek"     ← handle 也在这
+        #     u.name / u.screen_name = **None**     ← 旧的没了
+        #
+        # 症状：评论列表里**所有人都是「匿名」**（`author` 空串），
+        # 而 `author_id` / `avatar` 却正常 —— 因为那两个字段本来就
+        # 读的是 `rest_id` / `avatar.image_url`（新版路径）。
+        #
+        # 浏览器实测（修前）：19 条评论全部显示「匿名」。
+        #
+        # ⇒ 两套都读（与本文件 `parse_user_http` 的做法保持一致）。
+        ucore = u.get("core") if isinstance(u.get("core"), dict) else {}
+        ulegacy = u.get("legacy") if isinstance(u.get("legacy"), dict) else {}
+        author_name = (
+            ucore.get("name") or ulegacy.get("name") or u.get("name") or ""
+        )
+        author_handle = (
+            ucore.get("screen_name") or ulegacy.get("screen_name")
+            or u.get("screen_name") or ""
+        )
         # 评论图片：X 在 `legacy.extended_entities.media[]`（可能也有 entities）
         images: List[str] = []
         for holder in ("extended_entities", "entities"):
@@ -439,11 +543,11 @@ async def get_replies_via_http(
         out.append({
             "id": rid,
             "content": legacy.get("full_text") or "",
-            "author": (u.get("name") or "") or "",
+            "author": str(author_name),
             "author_id": str(u.get("rest_id") or legacy.get("user_id_str") or ""),
             # ⚠️ 作者 handle 在 screen_name，昵称在 name
             # ⚠️ 别自己加 "@" —— 实测 screen_name 有时已含（会出现 "@@xxx"）
-            "author_handle": (u.get("screen_name") or "").lstrip("@"),
+            "author_handle": str(author_handle).lstrip("@"),
             "avatar": (u.get("avatar") or {}).get("image_url") if isinstance(u.get("avatar"), dict) else (u.get("profile_image_url_https") or ""),
             "likes": int(legacy.get("favorite_count") or 0),
             # ⚠️ created_at 是 RFC2822 字符串（与微博一样），先原样返回
@@ -747,6 +851,101 @@ def _to_int(value: Any) -> int:
         return 0
 
 
+async def fetch_home_latest(
+    *,
+    cookie_header: str,
+    max_results: int = 20,
+    cursor: str = "",
+) -> Dict[str, Any]:
+    """取「**正在关注**」作品流（`HomeLatestTimeline`）—— 纯 HTTP。
+
+    ## 这是什么
+
+    就是 X 首页那个「正在关注」页签 —— **你关注的账号发的推文**。
+    用户要求："官方x平台有正在关注作品，我们也加下"。
+
+    ## ⚠️ 与其它 timeline 的三个不同
+
+    1. **它是 POST**（搜索/Likes/UserTweets 都是 GET），
+       `queryId` 要放在 body 里 —— 所以走 `_request_post_op`。
+    2. **响应路径不同**：
+           data.home.home_timeline_urt.instructions[].entries[]
+       （不是 `data.user.result.timeline...`）
+    3. **queryId 抓不到于 JS bundle** —— 它在 bundle 里搜不到，
+       改用抓真实网络请求（见 `apis.HOME_LATEST_QUERY_ID` 的说明）。
+
+    ## 实测（2026-10-11）
+
+        POST → HTTP 200，body ~589KB，**35 条推文**
+        首条能被 `_parse_tweet_result` 正常解析（正文/作者/互动都在）
+
+    Returns:
+        {"tweets": [...], "cursor": "下一页游标或空", "has_more": bool}
+    """
+    if not cookie_header:
+        raise TwitterAuthError("[twitter] 取「正在关注」需要登录态。")
+
+    from .apis import HOME_LATEST_FEATURES, HOME_LATEST_OP, build_home_latest_variables
+
+    variables = build_home_latest_variables(
+        count=max(1, min(int(max_results or 20), 100)),
+        cursor=cursor,
+    )
+    payload = await _request_post_op(
+        cookie_header,
+        HOME_LATEST_OP,
+        variables,
+        features=HOME_LATEST_FEATURES,
+        field_toggles={"withPayments": False},
+    )
+
+    # ⚠️ 路径是 `data.home.home_timeline_urt`（与 user timeline 不同）
+    home = ((payload.get("data") or {}).get("home") or {})
+    urt = home.get("home_timeline_urt") or {}
+    instructions = urt.get("instructions") or []
+
+    tweets: List[SearchResult] = []
+    next_cursor = ""
+    seen: set = set()
+
+    for ins in instructions:
+        if not isinstance(ins, dict):
+            continue
+        for e in (ins.get("entries") or []):
+            if not isinstance(e, dict):
+                continue
+            eid = str(e.get("entryId") or "")
+            content = e.get("content") or {}
+
+            # 游标项
+            if "cursor-bottom" in eid or content.get("cursorType") == "Bottom":
+                val = content.get("value")
+                if isinstance(val, str) and val:
+                    next_cursor = val
+                continue
+
+            if not eid.startswith("tweet-"):
+                continue
+            tr = ((content.get("itemContent") or {}).get("tweet_results") or {})
+            tw = tr.get("result") or {}
+            if tw.get("__typename") == "TweetWithVisibilityResults":
+                tw = tw.get("tweet") or {}
+            parsed = _parse_tweet_result(tw)
+            if parsed is not None and parsed.id not in seen:
+                seen.add(parsed.id)
+                tweets.append(parsed)
+
+    logger.info(
+        "[twitter] 正在关注 -> %d 条（cursor=%s）",
+        len(tweets), "有" if next_cursor else "无",
+    )
+    return {
+        "tweets": tweets,
+        "cursor": next_cursor,
+        "has_more": bool(next_cursor),
+    }
+
+
 async def fetch_user_tweets(
     uid: str,
     *,
@@ -790,8 +989,91 @@ async def fetch_user_tweets(
     payload = await _request_page_raw(
         cookie_header, USER_TWEETS_OP, variables
     )
+    tweets, next_cursor = _parse_user_timeline(payload)
 
-    # 路径：data.user.result.timeline.timeline.instructions[]
+    logger.info(
+        "[twitter] UserTweets uid=%s -> %d 条（cursor=%s）",
+        uid, len(tweets), "有" if next_cursor else "无",
+    )
+    return {
+        "tweets": tweets,
+        "cursor": next_cursor,
+        "has_more": bool(next_cursor),
+    }
+
+
+async def fetch_user_likes(
+    uid: str,
+    *,
+    cookie_header: str,
+    max_results: int = 20,
+    cursor: str = "",
+) -> Dict[str, Any]:
+    """取某个用户**点赞过**的推文列表（`Likes`）—— **纯 HTTP**。
+
+    ## queryId 来源（⚠️ 不是抄的，是实测抓的）
+
+    twscrape **没有** Likes 操作（已逐行核对它的 21 个 `OP_*`），
+    所以从已登录的 x.com JS bundle 里抓出来：
+    `queryId:"mu4us66Q6RRNOywVQhGtRg",operationName:"Likes"`
+    详见 `apis.LIKES_QUERY_ID`。
+
+    ## 实测（2026-10-11）
+
+        HTTP 200，单页 ~120KB，20 条/页
+        响应路径与 UserTweets **完全一致**（复用 `_parse_user_timeline`）
+        翻页实测：第 1 页 / 第 2 页首条 id 各不相同 ✅
+
+    ## ⚠️ 只能看**自己**的
+
+    X 的点赞列表是**私密**的 —— 传别人的 userId 不会报错，
+    但只会返回**空的或极少**的结果（X 不再公开他人点赞）。
+    所以这个接口的定位就是「我的数据」，不是「查别人赞了什么」。
+    调用方（`/users/likes`）**默认只用自己的 id**。
+
+    Returns:
+        {"tweets": [...], "cursor": "下一页游标或空", "has_more": bool}
+    """
+    if not cookie_header:
+        raise TwitterAuthError("[twitter] 取点赞列表需要登录态。")
+    if not uid:
+        raise RuntimeError("[twitter] 取点赞列表需要数字 userId。")
+
+    from .apis import build_likes_variables
+
+    variables = build_likes_variables(uid, count=max_results, cursor=cursor)
+    payload = await _request_page_raw(cookie_header, LIKES_OP, variables)
+    tweets, next_cursor = _parse_user_timeline(payload)
+
+    logger.info(
+        "[twitter] Likes uid=%s -> %d 条（cursor=%s）",
+        uid, len(tweets), "有" if next_cursor else "无",
+    )
+    return {
+        "tweets": tweets,
+        "cursor": next_cursor,
+        "has_more": bool(next_cursor),
+    }
+
+
+def _parse_user_timeline(payload: Dict[str, Any]) -> tuple:
+    """解析「用户维度 timeline」（`UserTweets` / `Likes` 共用）。
+
+    ## 为什么抽出来（2026-10-11）
+
+    Likes 的响应结构与 UserTweets **逐字段相同**（实测确认）：
+
+        data.user.result.timeline.timeline.instructions[].entries[]
+        推文项  entryId 以 `tweet-` 开头
+        游标项  entryId 含 `cursor-bottom-` 或 content.cursorType == "Bottom"
+
+    原来这段逻辑内联在 `fetch_user_tweets` 里。如果 Likes 再抄一份，
+    以后 X 改结构就要改两处 —— 本仓库「同一个东西两处定义、
+    只改一处」的坑已经踩过多次（见 `TwitterAuthError` 的双定义）。
+
+    Returns:
+        `(tweets, next_cursor)` 二元组。
+    """
     result = ((payload.get("data") or {}).get("user") or {}).get("result") or {}
     timeline = (result.get("timeline_v2") or result.get("timeline") or {})
     tl = timeline.get("timeline") or {}
@@ -829,15 +1111,7 @@ async def fetch_user_tweets(
             if parsed is not None:
                 tweets.append(parsed)
 
-    logger.info(
-        "[twitter] UserTweets uid=%s -> %d 条（cursor=%s）",
-        uid, len(tweets), "有" if next_cursor else "无",
-    )
-    return {
-        "tweets": tweets,
-        "cursor": next_cursor,
-        "has_more": bool(next_cursor),
-    }
+    return tweets, next_cursor
 
 
 def _parse_tweet_result(tw: Dict[str, Any]) -> Optional[SearchResult]:
@@ -909,7 +1183,22 @@ def _parse_tweet_result(tw: Dict[str, Any]) -> Optional[SearchResult]:
         id=tid,
         title=text[:80],
         desc=text,
-        author=handle,
+        # ⚠️ **昵称优先，handle 兜底**（2026-10-11 修）
+        #
+        # 这里原来写的是 `author=handle` —— 于是「我的点赞」「我的作品」
+        # 「正在关注」三个列表显示的全是 **@用户名**（如 `BassplayerSerge`），
+        # 而**查询页**显示的是**昵称**（如 `热爱分享`）。
+        #
+        # 用户问："作者能加中文吗 如果原来有昵称的" ——
+        # **昵称一直解析出来了**（就在上面 `handle` 那个块里算的
+        # `ucore2.get("screen_name")`），只是这里没用它。
+        #
+        # ⚠️ 实测同一条推文两个都有：
+        #     name        = '热爱分享'        ← 昵称（中文/emoji 都在这）
+        #     screen_name = 'xiaoma877'      ← handle
+        #
+        # ⇒ 昵称优先（更像"作者名"），handle 放 raw_data 备用。
+        author=_display_name_of(tw) or handle,
         author_id=handle,
         cover=images[0] if images else "",
         url=f"https://x.com/{handle}/status/{tid}" if handle else f"https://x.com/i/status/{tid}",
@@ -918,15 +1207,94 @@ def _parse_tweet_result(tw: Dict[str, Any]) -> Optional[SearchResult]:
         likes=int(legacy.get("favorite_count") or 0),
         comments=int(legacy.get("reply_count") or 0),
         shares=int(legacy.get("retweet_count") or 0),
-        views=0,   # 实测拿不到 → 0（不编造）
+        # ⚠️ **收藏数 / 浏览量 / 引用数**（2026-10-11 补）
+        #
+        # 用户拿 X 官方截图对比："原版是我们对比我们少了哪个数"。
+        # 官方一条推文显示 5 个数字，我们原来只有 3 个：
+        #
+        #     官方        X 字段                    原来
+        #     💬 380     legacy.reply_count        ✅
+        #     🔁 97      legacy.retweet_count      ✅
+        #     ♡ 3027     legacy.favorite_count     ✅
+        #     🔖 307     **legacy.bookmark_count**  ❌ 没取
+        #     👁 1.4万   **t.views.count**          ❌ 没取（写死 0）
+        #     （引用）    **legacy.quote_count**     ❌ 没取
+        #
+        # ⇒ 映射到通用字段：书签 → `collects`（语义一致），浏览量 → `views`。
+        #   引用数放进 raw_data（通用结构里没有对应字段）。
+        collects=int(legacy.get("bookmark_count") or 0),
+        views=_views_of(tw),
         create_time=str(legacy.get("created_at") or ""),
         raw_data={
             "_images": images,
             "_video_url": video,
             "handle": handle,
             "lang": legacy.get("lang") or "",
+            # 引用数（转推带评论）—— 通用结构没有，放 raw
+            "quote_count": int(legacy.get("quote_count") or 0),
         },
     )
+
+
+def _display_name_of(t: Dict[str, Any]) -> str:
+    """取推文作者的**昵称**（不是 handle）。
+
+    ## 为什么单独抽出来（2026-10-11）
+
+    用户："作者能加中文吗 如果原来有昵称的"。
+
+    X 的用户对象里**两个名字都有**，但位置在新旧 schema 里不同
+    （与 `parse_user_http` 遇到的是同一件事）：
+
+        新版嵌套：`core.user_results.result.core.name`
+        旧版扁平：`core.user_results.result.name` / `legacy.name`
+
+    实测同一条推文：
+
+        name        = '热爱分享'      ← **昵称**（中文/emoji 都在这）
+        screen_name = 'xiaoma877'    ← handle
+
+    `_parse_tweet_result` 原来直接 `author=handle`，所以三个列表
+    显示的全是 @用户名 —— 而**查询页**显示昵称，两边不一致。
+
+    ⚠️ 取不到就返回空串，由调用方兜底成 handle（**不编造**）。
+    """
+    core = t.get("core") if isinstance(t.get("core"), dict) else {}
+    ures = ((core.get("user_results") or {}).get("result") or {}
+            if isinstance(core.get("user_results"), dict) else {})
+    if not isinstance(ures, dict):
+        return ""
+    ucore = ures.get("core") if isinstance(ures.get("core"), dict) else {}
+    ulegacy = ures.get("legacy") if isinstance(ures.get("legacy"), dict) else {}
+    return str(
+        ucore.get("name") or ulegacy.get("name") or ures.get("name") or ""
+    )
+
+
+def _views_of(t: Dict[str, Any]) -> int:
+    """取浏览量（`views.count`）。
+
+    ## ⚠️ 修正了旧的结论（2026-10-11）
+
+    这里原来写着 `views=0  # 实测拿不到 → 0（不编造）` ——
+    **那个结论是错的**。浏览量确实拿不到于 `legacy`，但它在**顶层**：
+
+        t["views"] = {"count": "14478", "state": "EnabledWithCount"}
+
+    实测：`legacy` 里没有 views（所以当初看 legacy 就以为没有），
+    而顶层有，且 **count 是字符串**（要转 int）。
+
+    state 可能是 `EnabledWithCount` / `Enabled` / 其它；只有带 count
+    时才取，取不到就 0（**仍然不编造**）。
+    """
+    v = t.get("views")
+    if not isinstance(v, dict):
+        return 0
+    raw = v.get("count")
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 0
 
 
 async def get_self_profile_via_http(*, cookie_header: str) -> Optional[UserProfile]:
