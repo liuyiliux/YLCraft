@@ -6,9 +6,9 @@
 
 ## Summary
 
-- Router mounts: 64
-- Endpoints: 737
-- Public schema endpoints: 736
+- Router mounts: 65
+- Endpoints: 746
+- Public schema endpoints: 745
 - Hidden compatibility endpoints: 1
 
 ## Router Mounts
@@ -55,6 +55,7 @@
 | `/api/v1/image-editor` | Image Editor | `image_editor` | `backend/app/api/v1/image_editor.py` |
 | `/api/v1/image-prompts` | Image Prompt References | `image_prompts` | `backend/app/api/v1/image_prompts.py` |
 | `/api/v1/images` | Images | `images` | `backend/app/api/v1/images.py` |
+| `/api/v1/images` | Images | `motion_gif` | `backend/app/api/v1/motion_gif.py` |
 | `/api/v1/live2d` | Live2D Factory | `live2d` | `backend/app/api/v1/live2d.py` |
 | `/api/v1/llm` | LLM | `llm` | `backend/app/api/v1/llm.py` |
 | `/api/v1/logs` | Logs | `logs` | `backend/app/api/v1/logs.py` |
@@ -223,32 +224,33 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/assets` | 素材资产列表 | `list_assets` | `backend/app/api/v1/assets.py:771` |
-| `GET` | `/api/v1/assets/download` | 下载/预览本地文件 | `download_local_asset_file` | `backend/app/api/v1/assets.py:940` |
-| `GET` | `/api/v1/assets/file` | 预览本地文件 | `download_local_asset_file` | `backend/app/api/v1/assets.py:940` |
-| `GET` | `/api/v1/assets/tags` | 标签列表 | `list_tags` | `backend/app/api/v1/assets.py:1595` |
-| `POST` | `/api/v1/assets/tags` | 创建标签 | `create_tag` | `backend/app/api/v1/assets.py:1604` |
-| `POST` | `/api/v1/assets/upload` | 本地上传素材入库 | `upload_asset` | `backend/app/api/v1/assets.py:1338` |
-| `POST` | `/api/v1/assets/upload-model3d` | 上传 3D 模型（ZIP 或单文件）入库 | `upload_model3d` | `backend/app/api/v1/assets.py:1291` |
-| `DELETE` | `/api/v1/assets/versions/{version_id}` | 删除单个资产版本 | `delete_asset_version` | `backend/app/api/v1/assets.py:1855` |
-| `GET` | `/api/v1/assets/{asset_id}` | 资产详情 | `get_asset` | `backend/app/api/v1/assets.py:1782` |
-| `PUT` | `/api/v1/assets/{asset_id}` | 更新资产 | `update_asset` | `backend/app/api/v1/assets.py:1814` |
-| `DELETE` | `/api/v1/assets/{asset_id}` | 删除资产 | `delete_asset` | `backend/app/api/v1/assets.py:1915` |
-| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/download` | 下载课程章节文件 | `download_course_episode_asset` | `backend/app/api/v1/assets.py:1561` |
-| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/sidecars/danmaku` | 读取课程章节弹幕 | `get_course_episode_danmaku` | `backend/app/api/v1/assets.py:1550` |
-| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/sidecars/subtitles/{subtitle_index}.vtt` | 读取课程章节字幕 | `get_course_episode_subtitle` | `backend/app/api/v1/assets.py:1538` |
-| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/stream` | 播放课程章节文件 | `stream_course_episode_asset` | `backend/app/api/v1/assets.py:1576` |
-| `POST` | `/api/v1/assets/{asset_id}/deep-watermark-detect` | 只读检测合成水印痕迹（CtrlRegen/SynthID，不修改文件） | `detect_asset_deep_watermark` | `backend/app/api/v1/assets.py:1072` |
-| `GET` | `/api/v1/assets/{asset_id}/download` | 下载资产文件 | `download_asset` | `backend/app/api/v1/assets.py:957` |
-| `GET` | `/api/v1/assets/{asset_id}/files/{filename:path}` | 下载/预览资产的配套文件 | `asset_sidecar_file` | `backend/app/api/v1/assets.py:974` |
-| `POST` | `/api/v1/assets/{asset_id}/provenance-clean` | 审计或清理 AI 来源标记与文件元数据 | `clean_asset_provenance` | `backend/app/api/v1/assets.py:1002` |
-| `POST` | `/api/v1/assets/{asset_id}/restore` | 恢复软删除的资产 | `restore_asset` | `backend/app/api/v1/assets.py:1935` |
-| `GET` | `/api/v1/assets/{asset_id}/sidecars/danmaku` | 读取资产弹幕 | `get_asset_danmaku` | `backend/app/api/v1/assets.py:1526` |
-| `GET` | `/api/v1/assets/{asset_id}/sidecars/subtitles/{subtitle_index}.vtt` | 读取资产字幕 | `get_asset_subtitle` | `backend/app/api/v1/assets.py:1513` |
-| `GET` | `/api/v1/assets/{asset_id}/stream` | 播放资产视频文件 | `stream_asset` | `backend/app/api/v1/assets.py:1385` |
-| `GET` | `/api/v1/assets/{asset_id}/thumbnail` | 代理加载封面图 | `proxy_thumbnail` | `backend/app/api/v1/assets.py:1747` |
-| `POST` | `/api/v1/assets/{asset_id}/thumbnail` | 设置资产缩略图 | `set_asset_thumbnail` | `backend/app/api/v1/assets.py:1722` |
-| `POST` | `/api/v1/assets/{asset_id}/watermark-remove` | 去除显性可见水印并生成派生副本（图片/视频，不覆盖原文件） | `remove_asset_visual_watermark` | `backend/app/api/v1/assets.py:1109` |
+| `GET` | `/api/v1/assets` | 素材资产列表 | `list_assets` | `backend/app/api/v1/assets.py:799` |
+| `GET` | `/api/v1/assets/download` | 下载/预览本地文件 | `download_local_asset_file` | `backend/app/api/v1/assets.py:968` |
+| `GET` | `/api/v1/assets/file` | 预览本地文件 | `download_local_asset_file` | `backend/app/api/v1/assets.py:968` |
+| `GET` | `/api/v1/assets/meta` | 素材库枚举（来源筛选选项与中文名） | `get_assets_meta` | `backend/app/api/v1/assets.py:776` |
+| `GET` | `/api/v1/assets/tags` | 标签列表 | `list_tags` | `backend/app/api/v1/assets.py:1640` |
+| `POST` | `/api/v1/assets/tags` | 创建标签 | `create_tag` | `backend/app/api/v1/assets.py:1649` |
+| `POST` | `/api/v1/assets/upload` | 本地上传素材入库 | `upload_asset` | `backend/app/api/v1/assets.py:1383` |
+| `POST` | `/api/v1/assets/upload-model3d` | 上传 3D 模型（ZIP 或单文件）入库 | `upload_model3d` | `backend/app/api/v1/assets.py:1336` |
+| `DELETE` | `/api/v1/assets/versions/{version_id}` | 删除单个资产版本 | `delete_asset_version` | `backend/app/api/v1/assets.py:1900` |
+| `GET` | `/api/v1/assets/{asset_id}` | 资产详情 | `get_asset` | `backend/app/api/v1/assets.py:1827` |
+| `PUT` | `/api/v1/assets/{asset_id}` | 更新资产 | `update_asset` | `backend/app/api/v1/assets.py:1859` |
+| `DELETE` | `/api/v1/assets/{asset_id}` | 删除资产 | `delete_asset` | `backend/app/api/v1/assets.py:1960` |
+| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/download` | 下载课程章节文件 | `download_course_episode_asset` | `backend/app/api/v1/assets.py:1606` |
+| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/sidecars/danmaku` | 读取课程章节弹幕 | `get_course_episode_danmaku` | `backend/app/api/v1/assets.py:1595` |
+| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/sidecars/subtitles/{subtitle_index}.vtt` | 读取课程章节字幕 | `get_course_episode_subtitle` | `backend/app/api/v1/assets.py:1583` |
+| `GET` | `/api/v1/assets/{asset_id}/course-episodes/{episode_index}/stream` | 播放课程章节文件 | `stream_course_episode_asset` | `backend/app/api/v1/assets.py:1621` |
+| `POST` | `/api/v1/assets/{asset_id}/deep-watermark-detect` | 只读检测合成水印痕迹（CtrlRegen/SynthID，不修改文件） | `detect_asset_deep_watermark` | `backend/app/api/v1/assets.py:1117` |
+| `GET` | `/api/v1/assets/{asset_id}/download` | 下载资产文件 | `download_asset` | `backend/app/api/v1/assets.py:1002` |
+| `GET` | `/api/v1/assets/{asset_id}/files/{filename:path}` | 下载/预览资产的配套文件 | `asset_sidecar_file` | `backend/app/api/v1/assets.py:1019` |
+| `POST` | `/api/v1/assets/{asset_id}/provenance-clean` | 审计或清理 AI 来源标记与文件元数据 | `clean_asset_provenance` | `backend/app/api/v1/assets.py:1047` |
+| `POST` | `/api/v1/assets/{asset_id}/restore` | 恢复软删除的资产 | `restore_asset` | `backend/app/api/v1/assets.py:1980` |
+| `GET` | `/api/v1/assets/{asset_id}/sidecars/danmaku` | 读取资产弹幕 | `get_asset_danmaku` | `backend/app/api/v1/assets.py:1571` |
+| `GET` | `/api/v1/assets/{asset_id}/sidecars/subtitles/{subtitle_index}.vtt` | 读取资产字幕 | `get_asset_subtitle` | `backend/app/api/v1/assets.py:1558` |
+| `GET` | `/api/v1/assets/{asset_id}/stream` | 播放资产视频文件 | `stream_asset` | `backend/app/api/v1/assets.py:1430` |
+| `GET` | `/api/v1/assets/{asset_id}/thumbnail` | 代理加载封面图 | `proxy_thumbnail` | `backend/app/api/v1/assets.py:1792` |
+| `POST` | `/api/v1/assets/{asset_id}/thumbnail` | 设置资产缩略图 | `set_asset_thumbnail` | `backend/app/api/v1/assets.py:1767` |
+| `POST` | `/api/v1/assets/{asset_id}/watermark-remove` | 去除显性可见水印并生成派生副本（图片/视频，不覆盖原文件） | `remove_asset_visual_watermark` | `backend/app/api/v1/assets.py:1154` |
 
 ### Authentication
 
@@ -323,39 +325,39 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/characters` | 列出角色 | `list_characters` | `backend/app/api/v1/characters.py:235` |
-| `POST` | `/api/v1/characters` | 创建角色 | `create_character` | `backend/app/api/v1/characters.py:279` |
-| `GET` | `/api/v1/characters/duplicate-candidates` | 查询角色重复候选 | `get_duplicate_candidates` | `backend/app/api/v1/characters.py:382` |
-| `GET` | `/api/v1/characters/meta/extract-origins` | 获取角色提取来源元数据 | `get_extract_origins` | `backend/app/api/v1/characters.py:368` |
-| `GET` | `/api/v1/characters/meta/roles` | 获取角色定位元数据 | `get_roles` | `backend/app/api/v1/characters.py:343` |
-| `GET` | `/api/v1/characters/meta/source-types` | 获取来源类型元数据 | `get_source_types` | `backend/app/api/v1/characters.py:331` |
-| `GET` | `/api/v1/characters/meta/workflow-sources` | 获取角色流程来源元数据 | `get_workflow_sources` | `backend/app/api/v1/characters.py:357` |
-| `GET` | `/api/v1/characters/relationships/graph` | 获取角色关系图谱 | `get_character_relationship_graph` | `backend/app/api/v1/characters.py:589` |
-| `GET` | `/api/v1/characters/tags/all` | 获取所有自定义标签 | `get_all_character_tags` | `backend/app/api/v1/characters.py:322` |
-| `GET` | `/api/v1/characters/{character_id}` | 获取角色详情 | `get_character` | `backend/app/api/v1/characters.py:736` |
-| `PUT` | `/api/v1/characters/{character_id}` | 更新角色 | `update_character` | `backend/app/api/v1/characters.py:750` |
-| `DELETE` | `/api/v1/characters/{character_id}` | 删除角色 | `delete_character` | `backend/app/api/v1/characters.py:797` |
-| `POST` | `/api/v1/characters/{character_id}/enrich` | AI 补全角色信息 | `enrich_character` | `backend/app/api/v1/characters.py:1571` |
-| `POST` | `/api/v1/characters/{character_id}/favorite` | 切换收藏状态 | `toggle_favorite` | `backend/app/api/v1/characters.py:423` |
-| `POST` | `/api/v1/characters/{character_id}/link-story` | 关联到故事项目 | `link_story` | `backend/app/api/v1/characters.py:438` |
-| `POST` | `/api/v1/characters/{character_id}/portrait/generate` | AI 生成角色立绘（资产中枢版） | `generate_character_portrait` | `backend/app/api/v1/characters.py:1718` |
-| `POST` | `/api/v1/characters/{character_id}/portrait/prompt-preview` | 预览角色立绘提示词 | `preview_character_portrait_prompt` | `backend/app/api/v1/characters.py:941` |
-| `GET` | `/api/v1/characters/{character_id}/portrait/slices` | 列出角色立绘九宫格切片子素材 | `list_character_portrait_slices` | `backend/app/api/v1/characters.py:1187` |
-| `POST` | `/api/v1/characters/{character_id}/portrait/upgrade` | 将现有立绘升级到资产中枢 | `upgrade_portrait_to_asset_hub` | `backend/app/api/v1/characters.py:2013` |
-| `GET` | `/api/v1/characters/{character_id}/portrait/versions` | 列出角色立绘版本 | `list_character_portrait_versions` | `backend/app/api/v1/characters.py:968` |
-| `POST` | `/api/v1/characters/{character_id}/portrait/versions/{version_id}/set-main` | 设置角色主立绘版本 | `set_character_main_portrait_version` | `backend/app/api/v1/characters.py:1076` |
-| `POST` | `/api/v1/characters/{character_id}/portrait/versions/{version_id}/slice-grid` | 将九宫格立绘版本切成可复用子素材 | `slice_character_portrait_grid` | `backend/app/api/v1/characters.py:1279` |
-| `GET` | `/api/v1/characters/{character_id}/prompt-pack` | 生成角色 Prompt 资产包 | `get_character_prompt_pack` | `backend/app/api/v1/characters.py:726` |
-| `GET` | `/api/v1/characters/{character_id}/relationships` | 列出角色关系 | `list_character_relationships` | `backend/app/api/v1/characters.py:632` |
-| `POST` | `/api/v1/characters/{character_id}/relationships` | 创建角色关系 | `create_character_relationship` | `backend/app/api/v1/characters.py:693` |
-| `PUT` | `/api/v1/characters/{character_id}/relationships/{relationship_id}` | 更新角色关系 | `update_character_relationship` | `backend/app/api/v1/characters.py:704` |
-| `DELETE` | `/api/v1/characters/{character_id}/relationships/{relationship_id}` | 删除角色关系 | `delete_character_relationship` | `backend/app/api/v1/characters.py:717` |
-| `GET` | `/api/v1/characters/{character_id}/state-timeline` | 获取角色在剧情中的状态变化轨迹 | `get_character_state_timeline` | `backend/app/api/v1/characters.py:506` |
-| `POST` | `/api/v1/characters/{character_id}/tags` | 添加自定义标签 | `add_character_tag` | `backend/app/api/v1/characters.py:401` |
-| `DELETE` | `/api/v1/characters/{character_id}/tags/{tag}` | 移除自定义标签 | `remove_character_tag` | `backend/app/api/v1/characters.py:412` |
-| `GET` | `/api/v1/characters/{character_id}/world-usages` | 列出角色在不同世界/项目中的使用 | `list_character_world_usages` | `backend/app/api/v1/characters.py:466` |
-| `PUT` | `/api/v1/characters/{character_id}/world-usages/{usage_id}` | 更新角色世界使用配置 | `update_character_world_usage` | `backend/app/api/v1/characters.py:476` |
-| `DELETE` | `/api/v1/characters/{character_id}/world-usages/{usage_id}` | 移除角色世界使用关系 | `delete_character_world_usage` | `backend/app/api/v1/characters.py:493` |
+| `GET` | `/api/v1/characters` | 列出角色 | `list_characters` | `backend/app/api/v1/characters.py:236` |
+| `POST` | `/api/v1/characters` | 创建角色 | `create_character` | `backend/app/api/v1/characters.py:280` |
+| `GET` | `/api/v1/characters/duplicate-candidates` | 查询角色重复候选 | `get_duplicate_candidates` | `backend/app/api/v1/characters.py:383` |
+| `GET` | `/api/v1/characters/meta/extract-origins` | 获取角色提取来源元数据 | `get_extract_origins` | `backend/app/api/v1/characters.py:369` |
+| `GET` | `/api/v1/characters/meta/roles` | 获取角色定位元数据 | `get_roles` | `backend/app/api/v1/characters.py:344` |
+| `GET` | `/api/v1/characters/meta/source-types` | 获取来源类型元数据 | `get_source_types` | `backend/app/api/v1/characters.py:332` |
+| `GET` | `/api/v1/characters/meta/workflow-sources` | 获取角色流程来源元数据 | `get_workflow_sources` | `backend/app/api/v1/characters.py:358` |
+| `GET` | `/api/v1/characters/relationships/graph` | 获取角色关系图谱 | `get_character_relationship_graph` | `backend/app/api/v1/characters.py:590` |
+| `GET` | `/api/v1/characters/tags/all` | 获取所有自定义标签 | `get_all_character_tags` | `backend/app/api/v1/characters.py:323` |
+| `GET` | `/api/v1/characters/{character_id}` | 获取角色详情 | `get_character` | `backend/app/api/v1/characters.py:737` |
+| `PUT` | `/api/v1/characters/{character_id}` | 更新角色 | `update_character` | `backend/app/api/v1/characters.py:751` |
+| `DELETE` | `/api/v1/characters/{character_id}` | 删除角色 | `delete_character` | `backend/app/api/v1/characters.py:798` |
+| `POST` | `/api/v1/characters/{character_id}/enrich` | AI 补全角色信息 | `enrich_character` | `backend/app/api/v1/characters.py:1566` |
+| `POST` | `/api/v1/characters/{character_id}/favorite` | 切换收藏状态 | `toggle_favorite` | `backend/app/api/v1/characters.py:424` |
+| `POST` | `/api/v1/characters/{character_id}/link-story` | 关联到故事项目 | `link_story` | `backend/app/api/v1/characters.py:439` |
+| `POST` | `/api/v1/characters/{character_id}/portrait/generate` | AI 生成角色立绘（资产中枢版） | `generate_character_portrait` | `backend/app/api/v1/characters.py:1713` |
+| `POST` | `/api/v1/characters/{character_id}/portrait/prompt-preview` | 预览角色立绘提示词 | `preview_character_portrait_prompt` | `backend/app/api/v1/characters.py:942` |
+| `GET` | `/api/v1/characters/{character_id}/portrait/slices` | 列出角色立绘九宫格切片子素材 | `list_character_portrait_slices` | `backend/app/api/v1/characters.py:1188` |
+| `POST` | `/api/v1/characters/{character_id}/portrait/upgrade` | 将现有立绘升级到资产中枢 | `upgrade_portrait_to_asset_hub` | `backend/app/api/v1/characters.py:2008` |
+| `GET` | `/api/v1/characters/{character_id}/portrait/versions` | 列出角色立绘版本 | `list_character_portrait_versions` | `backend/app/api/v1/characters.py:969` |
+| `POST` | `/api/v1/characters/{character_id}/portrait/versions/{version_id}/set-main` | 设置角色主立绘版本 | `set_character_main_portrait_version` | `backend/app/api/v1/characters.py:1077` |
+| `POST` | `/api/v1/characters/{character_id}/portrait/versions/{version_id}/slice-grid` | 将九宫格立绘版本切成可复用子素材 | `slice_character_portrait_grid` | `backend/app/api/v1/characters.py:1280` |
+| `GET` | `/api/v1/characters/{character_id}/prompt-pack` | 生成角色 Prompt 资产包 | `get_character_prompt_pack` | `backend/app/api/v1/characters.py:727` |
+| `GET` | `/api/v1/characters/{character_id}/relationships` | 列出角色关系 | `list_character_relationships` | `backend/app/api/v1/characters.py:633` |
+| `POST` | `/api/v1/characters/{character_id}/relationships` | 创建角色关系 | `create_character_relationship` | `backend/app/api/v1/characters.py:694` |
+| `PUT` | `/api/v1/characters/{character_id}/relationships/{relationship_id}` | 更新角色关系 | `update_character_relationship` | `backend/app/api/v1/characters.py:705` |
+| `DELETE` | `/api/v1/characters/{character_id}/relationships/{relationship_id}` | 删除角色关系 | `delete_character_relationship` | `backend/app/api/v1/characters.py:718` |
+| `GET` | `/api/v1/characters/{character_id}/state-timeline` | 获取角色在剧情中的状态变化轨迹 | `get_character_state_timeline` | `backend/app/api/v1/characters.py:507` |
+| `POST` | `/api/v1/characters/{character_id}/tags` | 添加自定义标签 | `add_character_tag` | `backend/app/api/v1/characters.py:402` |
+| `DELETE` | `/api/v1/characters/{character_id}/tags/{tag}` | 移除自定义标签 | `remove_character_tag` | `backend/app/api/v1/characters.py:413` |
+| `GET` | `/api/v1/characters/{character_id}/world-usages` | 列出角色在不同世界/项目中的使用 | `list_character_world_usages` | `backend/app/api/v1/characters.py:467` |
+| `PUT` | `/api/v1/characters/{character_id}/world-usages/{usage_id}` | 更新角色世界使用配置 | `update_character_world_usage` | `backend/app/api/v1/characters.py:477` |
+| `DELETE` | `/api/v1/characters/{character_id}/world-usages/{usage_id}` | 移除角色世界使用关系 | `delete_character_world_usage` | `backend/app/api/v1/characters.py:494` |
 
 ### Clip Operations
 
@@ -428,7 +430,7 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/comments` | 获取评论（统一入口） | `get_comments` | `backend/app/api/v1/comments.py:398` |
+| `GET` | `/api/v1/comments` | 获取评论（统一入口） | `get_comments` | `backend/app/api/v1/comments.py:408` |
 
 ### Cookie Acquisition
 
@@ -463,27 +465,27 @@
 | `POST` | `/api/v1/bilibili/comment/send` | 发送B站评论 | `send_comment` | `backend/app/services/platforms/bilibili/routes.py:716` |
 | `GET` | `/api/v1/bilibili/comments` | 获取B站评论 | `get_comments` | `backend/app/services/platforms/bilibili/routes.py:585` |
 | `GET` | `/api/v1/bilibili/danmaku` | 获取B站弹幕 | `get_danmaku` | `backend/app/services/platforms/bilibili/routes.py:532` |
-| `GET` | `/api/v1/bilibili/favorites` | 获取我的收藏夹列表 | `get_favorite_list` | `backend/app/services/platforms/bilibili/routes.py:949` |
-| `GET` | `/api/v1/bilibili/favorites/{media_id}` | 获取收藏夹详情 | `get_favorite_detail` | `backend/app/services/platforms/bilibili/routes.py:1006` |
-| `GET` | `/api/v1/bilibili/followings` | 获取关注列表 | `get_followings` | `backend/app/services/platforms/bilibili/routes.py:1191` |
-| `GET` | `/api/v1/bilibili/history` | 获取历史观看记录（游标浏览） | `get_watch_history` | `backend/app/services/platforms/bilibili/routes.py:1099` |
-| `GET` | `/api/v1/bilibili/history/search` | 搜索历史观看记录（时间筛选） | `search_watch_history` | `backend/app/services/platforms/bilibili/routes.py:1141` |
+| `GET` | `/api/v1/bilibili/favorites` | 获取我的收藏夹列表 | `get_favorite_list` | `backend/app/services/platforms/bilibili/routes.py:967` |
+| `GET` | `/api/v1/bilibili/favorites/{media_id}` | 获取收藏夹详情 | `get_favorite_detail` | `backend/app/services/platforms/bilibili/routes.py:1024` |
+| `GET` | `/api/v1/bilibili/followings` | 获取关注列表 | `get_followings` | `backend/app/services/platforms/bilibili/routes.py:1209` |
+| `GET` | `/api/v1/bilibili/history` | 获取历史观看记录（游标浏览） | `get_watch_history` | `backend/app/services/platforms/bilibili/routes.py:1117` |
+| `GET` | `/api/v1/bilibili/history/search` | 搜索历史观看记录（时间筛选） | `search_watch_history` | `backend/app/services/platforms/bilibili/routes.py:1159` |
 | `GET` | `/api/v1/bilibili/login-health` | B站登录态体检 | `check_login_health` | `backend/app/services/platforms/bilibili/routes.py:391` |
-| `GET` | `/api/v1/bilibili/paid-course/detail` | 获取付费课程详情和章节列表 | `get_paid_course_detail` | `backend/app/services/platforms/bilibili/routes.py:1500` |
-| `GET` | `/api/v1/bilibili/paid-course/download` | 下载付费课程章节 | `download_paid_course_episode` | `backend/app/services/platforms/bilibili/routes.py:1624` |
-| `POST` | `/api/v1/bilibili/paid-course/download-task` | 创建付费课程章节下载任务 | `create_paid_course_download_task` | `backend/app/services/platforms/bilibili/routes.py:1573` |
-| `GET` | `/api/v1/bilibili/paid-course/download-task/{task_id}` | 查询付费课程章节下载任务 | `get_paid_course_download_task` | `backend/app/services/platforms/bilibili/routes.py:1613` |
-| `GET` | `/api/v1/bilibili/paid-course/playurl` | 获取付费课程视频播放地址 | `get_paid_course_playurl` | `backend/app/services/platforms/bilibili/routes.py:1539` |
-| `GET` | `/api/v1/bilibili/paid-courses` | 获取付费课程列表 | `get_paid_courses` | `backend/app/services/platforms/bilibili/routes.py:1463` |
-| `GET` | `/api/v1/bilibili/series/{series_id}` | 获取合集详情 | `get_series_detail` | `backend/app/services/platforms/bilibili/routes.py:1035` |
+| `GET` | `/api/v1/bilibili/paid-course/detail` | 获取付费课程详情和章节列表 | `get_paid_course_detail` | `backend/app/services/platforms/bilibili/routes.py:1518` |
+| `GET` | `/api/v1/bilibili/paid-course/download` | 下载付费课程章节 | `download_paid_course_episode` | `backend/app/services/platforms/bilibili/routes.py:1642` |
+| `POST` | `/api/v1/bilibili/paid-course/download-task` | 创建付费课程章节下载任务 | `create_paid_course_download_task` | `backend/app/services/platforms/bilibili/routes.py:1591` |
+| `GET` | `/api/v1/bilibili/paid-course/download-task/{task_id}` | 查询付费课程章节下载任务 | `get_paid_course_download_task` | `backend/app/services/platforms/bilibili/routes.py:1631` |
+| `GET` | `/api/v1/bilibili/paid-course/playurl` | 获取付费课程视频播放地址 | `get_paid_course_playurl` | `backend/app/services/platforms/bilibili/routes.py:1557` |
+| `GET` | `/api/v1/bilibili/paid-courses` | 获取付费课程列表 | `get_paid_courses` | `backend/app/services/platforms/bilibili/routes.py:1481` |
+| `GET` | `/api/v1/bilibili/series/{series_id}` | 获取合集详情 | `get_series_detail` | `backend/app/services/platforms/bilibili/routes.py:1053` |
 | `GET` | `/api/v1/bilibili/stats` | 获取B站作品数据 | `get_stats` | `backend/app/services/platforms/bilibili/routes.py:556` |
 | `GET` | `/api/v1/bilibili/subtitle/download` | 下载B站字幕文件 | `download_subtitle` | `backend/app/services/platforms/bilibili/routes.py:641` |
 | `GET` | `/api/v1/bilibili/subtitles` | 获取B站字幕 | `get_subtitles` | `backend/app/services/platforms/bilibili/routes.py:618` |
 | `GET` | `/api/v1/bilibili/up/profile` | 获取UP主信息 | `get_up_profile` | `backend/app/services/platforms/bilibili/routes.py:758` |
-| `GET` | `/api/v1/bilibili/up/ranking` | 获取UP主热门视频排行 | `get_up_ranking` | `backend/app/services/platforms/bilibili/routes.py:898` |
+| `GET` | `/api/v1/bilibili/up/ranking` | 获取UP主热门视频排行 | `get_up_ranking` | `backend/app/services/platforms/bilibili/routes.py:916` |
 | `GET` | `/api/v1/bilibili/up/series` | 获取UP主合集列表 | `get_up_series` | `backend/app/services/platforms/bilibili/routes.py:871` |
 | `GET` | `/api/v1/bilibili/up/videos` | 获取UP主视频列表 | `get_up_videos` | `backend/app/services/platforms/bilibili/routes.py:812` |
-| `GET` | `/api/v1/bilibili/up/{uid}/favorites` | 获取UP主公开收藏夹列表 | `get_up_favorite_list` | `backend/app/services/platforms/bilibili/routes.py:980` |
+| `GET` | `/api/v1/bilibili/up/{uid}/favorites` | 获取UP主公开收藏夹列表 | `get_up_favorite_list` | `backend/app/services/platforms/bilibili/routes.py:998` |
 | `GET` | `/api/v1/bilibili/video/info` | 获取B站视频信息 | `get_video_info` | `backend/app/services/platforms/bilibili/routes.py:693` |
 
 ### Crawler — Douyin
@@ -694,19 +696,25 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/images/backends` | 可用图像后端列表 | `list_backends` | `backend/app/api/v1/images.py:523` |
-| `POST` | `/api/v1/images/generate` | 生成图片 | `generate_image` | `backend/app/api/v1/images.py:723` |
-| `POST` | `/api/v1/images/generate-batch` | 批量生成多平台图片 | `batch_generate_endpoint` | `backend/app/api/v1/images.py:1741` |
-| `POST` | `/api/v1/images/generate-batch/retry` | 单张图片重生成 | `batch_retry_endpoint` | `backend/app/api/v1/images.py:1672` |
-| `POST` | `/api/v1/images/generate-batch/topics` | 多主题批量生成 | `batch_topics_generate_endpoint` | `backend/app/api/v1/images.py:1778` |
-| `POST` | `/api/v1/images/generate-outline` | 多平台大纲生成 | `generate_outline_endpoint` | `backend/app/api/v1/images.py:1608` |
-| `POST` | `/api/v1/images/optimize-prompt` | 用 LLM 优化生图提示词 | `optimize_prompt` | `backend/app/api/v1/images.py:696` |
-| `GET` | `/api/v1/images/platform-templates` | 可用平台/Prompt 模板列表 | `list_platform_templates` | `backend/app/api/v1/images.py:1479` |
-| `POST` | `/api/v1/images/platform-templates` | 新增平台模板 | `create_platform_template` | `backend/app/api/v1/images.py:1510` |
-| `PUT` | `/api/v1/images/platform-templates/{template_id}` | 更新平台模板 | `update_platform_template` | `backend/app/api/v1/images.py:1540` |
-| `DELETE` | `/api/v1/images/platform-templates/{template_id}` | 删除平台模板 | `delete_platform_template` | `backend/app/api/v1/images.py:1578` |
-| `POST` | `/api/v1/images/prompt-preview` | 预览真正会发送的完整生图提示词（含系统自动拼接部分） | `preview_image_prompt` | `backend/app/api/v1/images.py:657` |
-| `GET` | `/api/v1/images/tasks/{task_id}` | 轮询图像生成任务 | `poll_image_task` | `backend/app/api/v1/images.py:1022` |
+| `GET` | `/api/v1/images/backends` | 可用图像后端列表 | `list_backends` | `backend/app/api/v1/images.py:534` |
+| `POST` | `/api/v1/images/generate` | 生成图片 | `generate_image` | `backend/app/api/v1/images.py:750` |
+| `POST` | `/api/v1/images/generate-batch` | 批量生成多平台图片 | `batch_generate_endpoint` | `backend/app/api/v1/images.py:1818` |
+| `POST` | `/api/v1/images/generate-batch/retry` | 单张图片重生成 | `batch_retry_endpoint` | `backend/app/api/v1/images.py:1749` |
+| `POST` | `/api/v1/images/generate-batch/topics` | 多主题批量生成 | `batch_topics_generate_endpoint` | `backend/app/api/v1/images.py:1855` |
+| `POST` | `/api/v1/images/generate-outline` | 多平台大纲生成 | `generate_outline_endpoint` | `backend/app/api/v1/images.py:1685` |
+| `POST` | `/api/v1/images/motion-gif/compose` | 合成动图 GIF / WebP / MP4（不调模型，不花钱） | `compose_motion_gif` | `backend/app/api/v1/motion_gif.py:447` |
+| `GET` | `/api/v1/images/motion-gif/options` | 动图可选项（动效类型 / 格子排布 / 循环方式） | `get_motion_gif_options` | `backend/app/api/v1/motion_gif.py:300` |
+| `POST` | `/api/v1/images/motion-gif/prompt-preview` | 预览真正会发送的完整动图提示词 | `preview_motion_prompt` | `backend/app/api/v1/motion_gif.py:340` |
+| `POST` | `/api/v1/images/motion-gif/save` | 把合成好的动图存入素材库（一个节点 + 多版本） | `save_motion_gif` | `backend/app/api/v1/motion_gif.py:593` |
+| `POST` | `/api/v1/images/motion-gif/slice-preview` | 切帧预览（只切不合成，不花钱） | `preview_slice` | `backend/app/api/v1/motion_gif.py:404` |
+| `POST` | `/api/v1/images/motion-gif/upload-frame` | 上传一张图片作为切帧补位（不调模型，不花钱） | `upload_motion_frame` | `backend/app/api/v1/motion_gif.py:533` |
+| `POST` | `/api/v1/images/optimize-prompt` | 用 LLM 优化生图提示词 | `optimize_prompt` | `backend/app/api/v1/images.py:713` |
+| `GET` | `/api/v1/images/platform-templates` | 可用平台/Prompt 模板列表 | `list_platform_templates` | `backend/app/api/v1/images.py:1556` |
+| `POST` | `/api/v1/images/platform-templates` | 新增平台模板 | `create_platform_template` | `backend/app/api/v1/images.py:1587` |
+| `PUT` | `/api/v1/images/platform-templates/{template_id}` | 更新平台模板 | `update_platform_template` | `backend/app/api/v1/images.py:1617` |
+| `DELETE` | `/api/v1/images/platform-templates/{template_id}` | 删除平台模板 | `delete_platform_template` | `backend/app/api/v1/images.py:1655` |
+| `POST` | `/api/v1/images/prompt-preview` | 预览真正会发送的完整生图提示词（含系统自动拼接部分） | `preview_image_prompt` | `backend/app/api/v1/images.py:674` |
+| `GET` | `/api/v1/images/tasks/{task_id}` | 轮询图像生成任务 | `poll_image_task` | `backend/app/api/v1/images.py:1099` |
 
 ### JianYing
 
@@ -1035,12 +1043,12 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/tasks` | 任务列表 | `list_tasks` | `backend/app/api/v1/tasks.py:786` |
-| `GET` | `/api/v1/tasks/stats` | 任务统计 | `get_task_stats` | `backend/app/api/v1/tasks.py:831` |
-| `GET` | `/api/v1/tasks/{task_id}` | 任务详情 | `get_task_detail` | `backend/app/api/v1/tasks.py:909` |
-| `DELETE` | `/api/v1/tasks/{task_id}` | 删除任务 | `delete_task` | `backend/app/api/v1/tasks.py:1118` |
-| `POST` | `/api/v1/tasks/{task_id}/cancel` | 取消任务 | `cancel_task` | `backend/app/api/v1/tasks.py:943` |
-| `POST` | `/api/v1/tasks/{task_id}/retry` | 重试失败任务 | `retry_task` | `backend/app/api/v1/tasks.py:1006` |
+| `GET` | `/api/v1/tasks` | 任务列表 | `list_tasks` | `backend/app/api/v1/tasks.py:842` |
+| `GET` | `/api/v1/tasks/stats` | 任务统计 | `get_task_stats` | `backend/app/api/v1/tasks.py:887` |
+| `GET` | `/api/v1/tasks/{task_id}` | 任务详情 | `get_task_detail` | `backend/app/api/v1/tasks.py:965` |
+| `DELETE` | `/api/v1/tasks/{task_id}` | 删除任务 | `delete_task` | `backend/app/api/v1/tasks.py:1174` |
+| `POST` | `/api/v1/tasks/{task_id}/cancel` | 取消任务 | `cancel_task` | `backend/app/api/v1/tasks.py:999` |
+| `POST` | `/api/v1/tasks/{task_id}/retry` | 重试失败任务 | `retry_task` | `backend/app/api/v1/tasks.py:1062` |
 
 ### Telegram
 
@@ -1079,14 +1087,16 @@
 
 | Method | Path | Summary | Handler | Source |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/v1/users/creator/overview` | 创作者中心：账号总览（仅号主可见的运营数据） | `get_creator_overview` | `backend/app/api/v1/users.py:442` |
-| `GET` | `/api/v1/users/creator/works` | 创作者中心：作品列表（含完播率等深度指标） | `get_creator_works` | `backend/app/api/v1/users.py:567` |
-| `GET` | `/api/v1/users/creator/xhs/fans` | 小红书创作服务平台：粉丝数据 | `get_xhs_creator_fans` | `backend/app/api/v1/users.py:544` |
-| `GET` | `/api/v1/users/creator/xhs/overview` | 小红书创作服务平台：账号总览 | `get_xhs_creator_overview` | `backend/app/api/v1/users.py:501` |
-| `GET` | `/api/v1/users/me` | 获取自己账号的资料（抖音/小红书） | `get_self_profile` | `backend/app/api/v1/users.py:368` |
-| `GET` | `/api/v1/users/profile` | 获取用户资料（抖音/小红书） | `get_user_profile` | `backend/app/api/v1/users.py:610` |
-| `GET` | `/api/v1/users/search` | 搜索用户（抖音/小红书） | `search_users` | `backend/app/api/v1/users.py:334` |
-| `GET` | `/api/v1/users/videos` | 获取用户作品列表（抖音/小红书/微博/X/B站） | `get_user_videos` | `backend/app/api/v1/users.py:647` |
+| `GET` | `/api/v1/users/creator/overview` | 创作者中心：账号总览（仅号主可见的运营数据） | `get_creator_overview` | `backend/app/api/v1/users.py:598` |
+| `GET` | `/api/v1/users/creator/works` | 创作者中心：作品列表（含完播率等深度指标） | `get_creator_works` | `backend/app/api/v1/users.py:723` |
+| `GET` | `/api/v1/users/creator/xhs/fans` | 小红书创作服务平台：粉丝数据 | `get_xhs_creator_fans` | `backend/app/api/v1/users.py:700` |
+| `GET` | `/api/v1/users/creator/xhs/overview` | 小红书创作服务平台：账号总览 | `get_xhs_creator_overview` | `backend/app/api/v1/users.py:657` |
+| `GET` | `/api/v1/users/home-feed` | 获取「正在关注」作品流（目前只有 X） | `get_home_feed` | `backend/app/api/v1/users.py:995` |
+| `GET` | `/api/v1/users/likes` | 获取我点赞过的内容（目前只有 X） | `get_my_likes` | `backend/app/api/v1/users.py:880` |
+| `GET` | `/api/v1/users/me` | 获取自己账号的资料（抖音/小红书） | `get_self_profile` | `backend/app/api/v1/users.py:524` |
+| `GET` | `/api/v1/users/profile` | 获取用户资料（抖音/小红书） | `get_user_profile` | `backend/app/api/v1/users.py:766` |
+| `GET` | `/api/v1/users/search` | 搜索用户（抖音/小红书） | `search_users` | `backend/app/api/v1/users.py:490` |
+| `GET` | `/api/v1/users/videos` | 获取用户作品列表（抖音/小红书/微博/X/B站） | `get_user_videos` | `backend/app/api/v1/users.py:803` |
 
 ### Videos
 

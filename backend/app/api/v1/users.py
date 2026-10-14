@@ -33,6 +33,11 @@ from app.services.platforms.login_health import (
 # 语义：需要用户**重新登录**（≠ 风控，风控是 PlatformUnavailableError）。
 # 详见 `platforms/types.py::LoginExpiredError` 的说明。
 from app.services.platforms.types import LoginExpiredError
+# ⚠️ **风控/平台封禁**的统一异常 —— 要映射成 503（不是 500）
+#
+# 语义：平台侧主动拒绝（不是我们的 bug，也不是用户参数错）。
+# 详见 `douyin/client.py::PlatformUnavailableError` 的说明。
+from app.services.platforms.types import RiskControlError
 
 logger = logging.getLogger("ylcraft.api.users")
 
@@ -179,6 +184,82 @@ class UserItem(BaseModel):
     raw_data: Dict[str, Any] = {}
 
 
+def _media_of(v) -> "UserVideoItem":
+    """把平台作品对象转成 `UserVideoItem`（**含媒体 + 详情字段**）。
+
+    ## 为什么要有这个函数（2026-10-11）
+
+    「我的作品」和「我的点赞」都要能预览/下载、并能打开**详情抽屉**，
+    两条路**必须给出相同的字段形状**。各写一份的话迟早漂移 ——
+    本仓库「同一个东西两处定义、只改一处」的坑踩过多次。
+
+    ## 媒体直链放在哪个键（与搜索页**统一约定**）
+
+        raw_data._images     → images      （图集，列表）
+        raw_data._video_url  → video_url   （视频，字符串）
+
+    这是 `crawler/index.tsx::previewMediaUrls` / `previewVideoUrl`
+    认的键。前端预览/下载**只认这两个**。
+
+    ## ⚠️ 详情要用的字段也要在这里透出去
+
+    用户反馈：点赞的详情比**搜索页**少了「评论 / 分享 / 发布时间」，
+    平台还显示成「未知」。
+
+    根因不是取不到 —— 解析器**早就解析了** `comments` / `shares` /
+    `create_time`，是这里组装时**只拷了 likes**，把数据丢在了最后一步。
+
+    ⇒ **详情抽屉要用什么，这里就得透什么。** 缺一个，前端就少一块。
+
+    ## ⚠️ 媒体**不兜底**
+
+    没有直链就留空（空列表 / 空串）—— **绝不**拿 `url`（原文链接）
+    兜底。兜底会让所有图集都有 `video_url`，前端据此把图集**误判成
+    视频**，渲染出 0:00 的空播放器。这个坑搜索页踩过一次。
+    """
+    raw = getattr(v, "raw_data", None) or {}
+    imgs = raw.get("_images")
+    # ⚠️ **详情要用的字段一个都别落下**（2026-10-11 补）
+    #
+    # 第一版这里只拷了 id/title/cover/url/type/likes + 媒体 ——
+    # 于是「我的点赞」「我的作品」的详情比**搜索页**少了
+    # 评论 / 分享 / 发布时间，平台还显示「未知」。
+    #
+    # 数据其实**一直在**（解析器早就给了），是这一步把它丢了。
+    # ⇒ 平台对象有什么就透什么，`getattr` 兜底（各平台字段不完全一样）。
+    return UserVideoItem(
+        id=v.id, title=v.title, cover=v.cover, url=v.url,
+        type=v.type, likes=v.likes,
+        images=[u for u in (imgs or []) if isinstance(u, str) and u],
+        video_url=str(raw.get("_video_url") or ""),
+        comments=int(getattr(v, "comments", 0) or 0),
+        shares=int(getattr(v, "shares", 0) or 0),
+        views=int(getattr(v, "views", 0) or 0),
+        # ⚠️ **收藏数 / 引用数**（2026-10-11 补）
+        #
+        # 用户拿 X 官方截图对比："原版是我们对比我们少了哪个数" ——
+        # 官方显示 5 个数字，我们只有 3 个。缺的正是**收藏(bookmark)**
+        # 和**浏览量**（浏览量走上面的 `views`）。
+        # 引用数在通用结构里没有对应字段，放 raw_data。
+        collects=int(getattr(v, "collects", 0) or 0),
+        quote_count=int((getattr(v, "raw_data", None) or {}).get("quote_count") or 0),
+        create_time=str(getattr(v, "create_time", "") or ""),
+        # ⚠️ 平台标识：没有它详情抽屉会显示「未知」（用户实测反馈）
+        #
+        # 优先用平台对象自己的 `platform`；实测 X 的解析器填的是
+        # "twitter"（与前端 PLATFORM_META 的键一致）。
+        platform=str(getattr(v, "platform", "") or ""),
+        author=str(getattr(v, "author", "") or ""),
+        # ⚠️ **昵称之外的 handle**（2026-10-11 加）
+        #
+        # `author` 现在是**昵称**（如"热爱分享"），handle 单独给，
+        # 前端可显示成「热爱分享 @xiaoma877」。
+        # 用户要求："作者能加中文吗 如果原来有昵称的"。
+        author_handle=str((getattr(v, "raw_data", None) or {}).get("handle") or ""),
+        desc=str(getattr(v, "desc", "") or ""),
+    )
+
+
 class UserSearchResponse(BaseModel):
     success: bool
     data: List[UserItem] = []
@@ -198,12 +279,80 @@ class UserVideoItem(BaseModel):
     url: str = ""
     type: str = ""
     likes: int = 0
+    # ⚠️ **媒体直链**（2026-10-11 加）—— 前端靠它做「预览」和「下载」。
+    #
+    # 与搜索页（`/crawler/search`）的约定保持一致：
+    #   图集图片 → `_images`（列表）
+    #   视频直链 → `_video_url`（字符串）
+    #
+    # 为什么必须透出：前端的预览/下载**只认这两个键**
+    # （见 `crawler/index.tsx::previewMediaUrls` / `previewVideoUrl`）。
+    # 不透出的话，点赞列表只能"看"，不能播也不能下载。
+    #
+    # ⚠️ **宁可留空也不兜底**（本仓库的铁律）：
+    #   没有直链就空列表/空串，**不要**用原文链接（`url`）兜底 ——
+    #   那会让前端把**图集误判成视频**、渲染出 0:00 的空播放器。
+    #   这个坑在搜索页已经踩过一次（见 crawler 的注释）。
+    images: List[str] = []
+    video_url: str = ""
+    # ⚠️ **详情抽屉要用的其余字段**（2026-10-11 补）
+    #
+    # 用户反馈：点赞的详情比搜索的详情**少了评论/分享/发布时间**，
+    # 平台还显示成「未知」。
+    #
+    # 根因：这些字段后端**本来就解析出来了**
+    # （`_parse_tweet_result` 给了 comments / shares / create_time），
+    # 但 `_media_of()` 组装时**只拷了 likes** —— 数据在最后一步被丢掉。
+    #
+    # ⇒ 详情要用什么，这里就得有什么。缺一个，前端就少显示一块。
+    comments: int = 0
+    shares: int = 0
+    # 播放量：X 现在**能拿到**了（顶层 `views.count`，2026-10-11 修）
+    views: int = 0
+    # 收藏数（X 的 bookmark_count）—— 官方那排数字里的 🔖
+    collects: int = 0
+    # 引用数（X 的 quote_count）—— 通用结构没有对应字段，单独给
+    quote_count: int = 0
+    # 发布时间：可能是 RFC2822 字符串（X/微博）或时间戳，"3天前" 也有。
+    # 前端交给 `formatTime` 统一处理，这里**原样**传。
+    create_time: str = ""
+    # 平台标识：详情抽屉靠它显示平台标签。
+    # ⚠️ 没有它就会显示「未知」（用户实测看到的就是这个）。
+    platform: str = ""
+    # 作者名（**昵称**，如"热爱分享"；不是 @handle）
+    author: str = ""
+    # 作者的 handle（@用户名）—— 与昵称配合显示
+    author_handle: str = ""
+    # 正文描述（与 `title` 可能不同：title 是截断过的）
+    desc: str = ""
 
 
 class UserVideosResponse(BaseModel):
     success: bool
     data: List[UserVideoItem] = []
     message: str = ""
+
+
+class UserLikesResponse(BaseModel):
+    """点赞列表的返回（比 `UserVideosResponse` 多**翻页游标**）。
+
+    ## ⚠️ 为什么要单独一个模型（2026-10-11）
+
+    第一版偷懒复用了 `UserVideosResponse` + `response_model=`，
+    结果 FastAPI **按模型过滤响应**，`next_cursor` / `has_more`
+    被**静默丢掉** —— 接口看起来 200 正常，但前端拿到的
+    `next_cursor` 永远是 `undefined`，于是「下一页」永远出不来。
+
+    这类"字段被 response_model 吃掉"的 bug **不报错、只丢字段**，
+    属于本仓库最费时间的一类。所以这里**显式声明**这两个字段。
+    """
+    success: bool
+    data: List[UserVideoItem] = []
+    message: str = ""
+    # 下一页游标；空串 = 到底了
+    next_cursor: str = ""
+    # 与 `next_cursor` 一致（前端更习惯看这个）
+    has_more: bool = False
 
 
 def _resolve(platform: str) -> Dict[str, str]:
@@ -712,19 +861,227 @@ async def get_user_videos(
     try:
         async with client:
             items = await client.get_user_videos(target, max_results=max_results)
+        # ⚠️ 与 `/users/likes` 一样**带上媒体直链**（2026-10-11）——
+        #    「我的作品」也要能预览/下载，不能只有点赞那条路有。
+        #    用同一个 `_media_of` 组装，避免两处各写一份（会漂移）。
         return UserVideosResponse(
             success=True,
-            data=[
-                UserVideoItem(
-                    id=v.id, title=v.title, cover=v.cover, url=v.url,
-                    type=v.type, likes=v.likes,
-                )
-                for v in items
-            ],
+            data=[_media_of(v) for v in items],
             message=f"获取到 {len(items)} 个作品",
         )
     except HTTPException:
         raise
+    except RiskControlError as exc:
+        # ⚠️ **风控要 503，不是 500**（2026-10-11 加）
+        #
+        # 语义不同：500 = 我们的代码/服务坏了（用户什么都做不了）；
+        # 503 = **平台侧暂时不可用**（不是这里的 bug，也不是用户操作错）。
+        #
+        # 实测抖音 `aweme/post`（作品列表）被网关**稳定封禁**：
+        # 同一登录态下 8/8 全部 403，而 `profile/self` / `profile/other`
+        # 都是 200。这种"平台封了某个接口"的情况，回 500 会让用户
+        # 以为是程序故障，回 503 + 原文案才说得清。
+        #
+        # 用**类型**判断（`RiskControlError`），不做字符串匹配 ——
+        # 字符串匹配在改文案时会静默失效（见该异常类的注释）。
+        logger.warning("[users/videos] %s 被平台风控/封禁: %s",
+                       platform, str(exc)[:200])
+        raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
         logger.error("[users/videos] %s %s 失败: %s", platform, target[:16], exc)
         raise HTTPException(status_code=500, detail=f"获取作品列表失败: {exc}")
+
+
+@router.get(
+    "/likes",
+    response_model=UserLikesResponse,
+    summary="获取我点赞过的内容（目前只有 X）",
+)
+async def get_my_likes(
+    platform: str = Query(..., description="平台：目前支持 twitter / x / tw"),
+    max_results: int = Query(20, ge=1, le=200),
+    cursor: str = Query("", description="翻页游标（上一页返回的 next_cursor）"),
+):
+    """取**当前登录账号点赞过**的内容（「我的数据」用）。
+
+    ## 与 `/users/videos` 的区别
+
+    | | `/users/videos` | `/users/likes` |
+    |---|---|---|
+    | 内容 | 该用户**发布**的 | 该用户**点赞**的 |
+    | 对象 | 任何人 | **只能是自己** |
+    | X 操作 | `UserTweets` | `Likes` |
+
+    ## ⚠️ 为什么不需要传 user_id
+
+    X 的点赞列表是**私密**的 —— 传别人的 id 不会报错，但也拿不到数据
+    （X 不再公开他人点赞）。所以这个接口**只认当前连接自己的账号**，
+    故意**不暴露 `user_id` 参数**（暴露了会让人以为能查别人）。
+
+    ## 为什么这个接口**有** `cursor`，而 `/users/videos` 没有
+
+    `/users/videos` 的语义是「一次给够 N 条」（内部自动翻页）；
+    点赞列表则常常要**一直往下翻**，所以这里如实透出游标：
+
+      · 不传 `cursor`      → 返回第一批 + `next_cursor`
+      · 传上一页的游标      → 返回下一页
+
+    **逐页翻**（推荐，快）：每页最多 20 条（X 的页大小），
+    把返回的 `next_cursor` 原样传回来即可拿下一页。
+
+    `next_cursor` 为空表示**到底了**（`has_more=false`）——
+    不谎报还能翻。调用方据此决定要不要显示「下一页」。
+
+    ## 实测（2026-10-11）
+
+        X  queryId=mu4us66Q6RRNOywVQhGtRg（实测抓取，非猜测）
+           HTTP 200，20 条/页，~120KB
+           翻页：第 1 页 vs 第 2 页首条 id 各不相同 ✅
+
+    ⚠️ 抖音/小红书/微博**没有**做这个能力 —— 传它们会得到 **501**
+    （不是空列表：空列表会被误读成「我没点过赞」）。能力用
+    `meta.py` 的 `self_likes` 声明判断，**不用 hasattr 猜**。
+    """
+    # ⚠️ 用 capabilities 声明判断（与 /users/me 的 self_profile 同一套规矩）——
+    #    `hasattr` 只说明方法存在，不代表实现了
+    from app.services.platforms.meta import get_meta as _get_meta, supports as _supports
+
+    if not _supports(platform, "self_likes"):
+        _m = _get_meta(platform)
+        _pname = _m.name if _m is not None else platform
+        raise HTTPException(
+            status_code=501,
+            detail=(
+                f"平台 {_pname!r} **没有实现「我点赞过的内容」这个能力**"
+                "（不是你的参数写错了）。\n"
+                "目前只有 X（twitter / x / tw）支持。"
+            ),
+        )
+
+    client = await _client_for(platform)
+
+    try:
+        # ⚠️ **两条路都要把真实游标透出去**（2026-10-11 修）
+        #
+        # 第一版写成「不带 cursor → 取够 N 条 → next_cursor = ""」，
+        # 结果 `has_more` 恒为 False —— **前端永远不显示「下一页」**，
+        # 尽管 X 明明还有更多（实测翻页正常）。
+        # 这与 skill 里记的「后端没设 has_more → 前端没有下一页」是同一个坑。
+        #
+        # 正确做法：**最后一页拿到的游标就是"还能不能继续"的唯一依据**，
+        # 不管这次是翻页还是首批。
+        if cursor:
+            async with client:
+                data = await client.get_self_likes_page(
+                    max_results=max_results, cursor=cursor
+                )
+            items = data.get("tweets") or []
+            next_cursor = str(data.get("cursor") or "")
+        else:
+            async with client:
+                data = await client.get_self_likes_page(
+                    max_results=min(max_results, 20)
+                )
+            items = data.get("tweets") or []
+            next_cursor = str(data.get("cursor") or "")
+    except HTTPException:
+        raise
+    except LoginExpiredError as exc:
+        # 与 /users/me 一致：**401 = 需要重新登录**（不是 500）
+        logger.warning("[users/likes] %s 登录态失效: %s", platform, str(exc)[:160])
+        raise HTTPException(status_code=401, detail=str(exc))
+    except Exception as exc:
+        logger.error("[users/likes] %s 失败: %s", platform, exc)
+        raise HTTPException(status_code=500, detail=f"获取点赞列表失败: {exc}")
+
+    # ⚠️ 返回结构显式声明（不能用 `UserVideosResponse` 复用 ——
+    #    那样 `next_cursor` / `has_more` / 媒体字段会被 response_model
+    #    静默过滤掉，见 `UserLikesResponse` 的说明）。
+    return {
+        "success": True,
+        "data": [_media_of(v) for v in items],
+        "message": f"获取到 {len(items)} 条点赞",
+        "next_cursor": next_cursor,
+        # 如实告诉前端还有没有下一页（空游标 = 到底了）
+        "has_more": bool(next_cursor),
+    }
+
+
+@router.get(
+    "/home-feed",
+    response_model=UserLikesResponse,
+    summary="获取「正在关注」作品流（目前只有 X）",
+)
+async def get_home_feed(
+    platform: str = Query(..., description="平台：目前支持 twitter / x / tw"),
+    max_results: int = Query(20, ge=1, le=100),
+    cursor: str = Query("", description="翻页游标（上一页返回的 next_cursor）"),
+):
+    """取「**正在关注**」作品流 —— **我关注的账号**发的推文。
+
+    ## 这是什么
+
+    就是 X 首页那个「正在关注」页签的内容。
+    用户要求："官方x平台有正在关注作品，我们也加下"。
+
+    ## 与相邻接口的区别
+
+    | 接口 | 内容 | 谁发的 |
+    |------|------|--------|
+    | `/users/videos` | 某个用户的作品 | 指定的人 |
+    | `/users/likes` | 我**点赞**的 | 别人（我赞的） |
+    | **`/users/home-feed`** | **我关注的人发的** | 我关注的人 |
+
+    ## ⚠️ 实现要点（实测 2026-10-11）
+
+    · 走 `HomeLatestTimeline`，**是 POST**（搜索/Likes 都是 GET），
+      且 `queryId` 要放在 JSON body 里
+    · 该 queryId **不在 JS bundle 里**（与 Likes 不同）——
+      是抓真实网络请求拿到的
+    · 响应路径 `data.home.home_timeline_urt.instructions[]`
+      （不是 `data.user.result.timeline...`）
+
+    实测：HTTP 200，33~35 条，**翻页无重叠**。
+
+    ## 翻页
+
+    与 `/users/likes` 一致：`next_cursor` 为空 = 到底了。
+    """
+    from app.services.platforms.meta import get_meta as _get_meta, supports as _supports
+
+    if not _supports(platform, "home_feed"):
+        _m = _get_meta(platform)
+        _pname = _m.name if _m is not None else platform
+        raise HTTPException(
+            status_code=501,
+            detail=(
+                f"平台 {_pname!r} **没有实现「正在关注作品流」这个能力**"
+                "（不是你的参数写错了）。\n"
+                "目前只有 X（twitter / x / tw）支持。"
+            ),
+        )
+
+    client = await _client_for(platform)
+    try:
+        async with client:
+            data = await client.get_home_latest(
+                max_results=max_results, cursor=cursor
+            )
+        items = data.get("tweets") or []
+        next_cursor = str(data.get("cursor") or "")
+    except HTTPException:
+        raise
+    except LoginExpiredError as exc:
+        logger.warning("[users/home-feed] %s 登录态失效: %s", platform, str(exc)[:160])
+        raise HTTPException(status_code=401, detail=str(exc))
+    except Exception as exc:
+        logger.error("[users/home-feed] %s 失败: %s", platform, exc)
+        raise HTTPException(status_code=500, detail=f"获取「正在关注」失败: {exc}")
+
+    return {
+        "success": True,
+        "data": [_media_of(v) for v in items],
+        "message": f"获取到 {len(items)} 条关注动态",
+        "next_cursor": next_cursor,
+        "has_more": bool(next_cursor),
+    }

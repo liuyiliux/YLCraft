@@ -375,6 +375,16 @@ def _normalize_generic_comment(raw: Dict[str, Any]) -> Dict[str, Any]:
         "id": str(raw.get("id") or ""),
         "author": raw.get("author") or "",
         "author_id": str(raw.get("author_id") or ""),
+        # ⚠️ **handle 也要透出去**（2026-10-11 补）
+        #
+        # 采集端（`twitter/search_http.py`）**早就产出了**
+        # `author_handle`（实测 X 的昵称常为空/纯 emoji，handle 才是
+        # 唯一可靠的标识），但下面这个白名单里**没有它** ——
+        # 于是被静默丢掉，前端只能显示「匿名」。
+        #
+        # 这正是本函数注释里警告过的坑（见下方 `is_author_reply`）：
+        # **加字段要同时看"采集端产出"和"归一化白名单"两处。**
+        "author_handle": raw.get("author_handle") or "",
         "avatar": raw.get("avatar") or "",
         "content": raw.get("content") or "",
         "likes": int(raw.get("likes") or 0),

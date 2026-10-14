@@ -76,6 +76,25 @@
 
 ## 三、搜索：各平台走哪条路
 
+### ⚠️ `search_type` 由**平台自己**路由（写错就静默返回 0 条）
+
+`_search_via_platforms()` 会把 `search_type` 传给平台客户端的 `search()`，
+但**各平台是否消费它，要看各自实现** —— 这是"筛选不生效"的来源。
+
+| 平台 | `search_type=user` | 说明 |
+|------|-------------------|------|
+| **B站** | ✅ 路由到 `search_users()` | `search()` 里有 `if search_type == 'user'` 分支 |
+| **YouTube** | ✅ | 实测返回结果 |
+| **X** | ❌ **不消费** | `search()` **只看 product**（改成 `People`），拿回的用户对象被当推文解析 → **0 条** |
+| 抖音 / 小红书 / 微博 | — | 用户搜索走 `/api/v1/users/search`（另一条路） |
+
+> **教训**：`search_type` 传下去了 ≠ 平台会用。
+> 排查"选了某个筛选没反应"时，**先 grep 平台 `search()` 里有没有消费这个参数**。
+
+⇒ 因此「内容搜索」页**对 X 移除了「用户」tab**（搜人归「博主中心」）；
+B站 / 抖音 / YouTube 保留（能用）。
+详见 `capability_matrix.md` 的「内容搜索页不放用户 tab」。
+
 ```
 前端 /crawler
     ↓ POST /api/v1/crawler/search-enhanced
@@ -148,6 +167,48 @@ CrawlerService._search_via_platforms()
 | **微博** | `containerid=100505{uid}` | Patchright | 登录态 |
 | **B站** | 官方 API | httpx | 无 |
 | **抖音** | 搜索结果里已含全部字段 | — | 前端直接用结果渲染 |
+
+### 路径 A2：「我点赞过的」（只有 X，2026-10-11 加）
+
+「我的数据」的第三条数据线 —— 前两条是 `users/me`（资料）和
+`users/videos`（我**发布**的），这条是**我点赞**的。
+
+| 平台 | 端点 | 传输 | 必需 |
+|------|------|------|------|
+| **X** | `Likes` GraphQL（queryId `mu4us66Q6RRNOywVQhGtRg`） | httpx | 同 X 搜索：`auth_token`+`ct0`+`x-client-transaction-id` |
+
+```text
+GET /api/v1/users/likes?platform=twitter[&cursor=...]
+    ↓ users.py::get_my_likes          （能力声明判断 → 否则 501）
+    ↓ TwitterClient.get_self_likes_page / get_self_likes
+    ↓ search_http.fetch_user_likes
+    ↓ apis.LIKES_OP  →  data.user.result.timeline.timeline.instructions[]
+    ↓ _parse_user_timeline           ← 与 UserTweets **共用**
+```
+
+⚠️ **三个与路径 A 不同的点**：
+
+1. **只能查自己** —— "我"来自登录态（先 `settings.json` 拿自己的数字 id），
+   **不接受 `user_id` 参数**。X 的点赞是私密的。
+2. **带 `cursor` 翻页**（`/users/videos` 没有 cursor，那个是"一次给够"）。
+   `next_cursor` 为空 = 到底了。
+3. **queryId 抄不到** —— twscrape 没有 Likes 操作，
+   实测从 `x.com` JS bundle 抓的（方法见 `ADDING_A_PLATFORM.md`）。
+
+### 路径 A2 的消费端：预览与下载（2026-10-11）
+
+拿到媒体直链后，**预览/下载复用已有的两条通路**（不新建管线）：
+
+```text
+预览视频  /api/v1/proxy/video?url=<video_url>   ← 剝 Referer + 透传 Range
+预览图片  /api/v1/proxy/image?url=<img>&w=800   ← 缩略尺寸
+下载图集  POST /api/v1/download/download-images  ← 返回 {saved[], failed[]}
+下载视频  POST /api/v1/download/batches          ← 后台队列（可续传）
+```
+
+⚠️ **媒体字段用 `images` / `video_url`**，与搜索页**同一约定**；
+后端 `users.py::_media_of()` 是唯一组装点（作品列表与点赞列表共用）。
+**不兜底**：没有直链就留空（兜底会让图集被误判成视频）。
 
 ### 路径 B：去水印解析（下载页）
 

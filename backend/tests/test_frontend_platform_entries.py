@@ -210,3 +210,103 @@ def test_client_alias_is_module_level():
     alias = users._CLIENT_ALIAS
     for k, v in (("xhs", "xiaohongshu"), ("wb", "weibo"), ("ks", "kuaishou")):
         assert alias.get(k) == v, f"别名 {k} → {v} 不对"
+
+
+# =============================================================================
+# 「内容搜索」页不该有「用户」tab（2026-10-11 补 X）
+# =============================================================================
+#
+# 用户指出："搜索作品页不放博主了，别的平台我记得已经去掉了"。
+#
+# ## 规则（2026-10-10 定）
+#
+# **用户搜索归「博主中心」** —— 那边有专门的用户列表
+# （粉丝数/头像/简介、能点进详情看作品）。「内容搜索」页的用户 tab
+# 只是把同一个接口换个地方摆，**既没有详情也没有作品**，属重复入口。
+#
+# 微博 / 快手 当时已移除，**X 漏了**。
+#
+# ## 而且 X 那个 tab 本来就是坏的（实测）
+#
+#     综合/最新/媒体 → 各有结果
+#     用户           → **0 条**
+#
+# 根因：`TwitterClient.search()` **不判断 `search_type`** ——
+# 只会搜内容（只把 product 改成 "People"），拿回的用户对象被当推文
+# 解析 → 一条都解析不出。
+# （B站 有 `if search_type == 'user': return self.search_users(...)`
+#   的路由，所以它的用户 tab 是好的、**保留**。）
+
+_CRAWLER_PAGE = (
+    Path(__file__).resolve().parents[2]
+    / "frontend" / "src" / "pages" / "crawler" / "index.tsx"
+)
+
+
+def _platform_block(src: str, key: str) -> str:
+    """取出 `PLATFORM_SEARCH_CONFIG` 里某个平台的配置块。
+
+    ⚠️ 必须**从 `PLATFORM_SEARCH_CONFIG` 之后**开始找 ——
+       文件里 `PLATFORM_TABS` 也有 `twitter: {`（值不一样），
+       直接全局搜会匹配到那一处（第一版就这么写错了）。
+    """
+    import re
+
+    anchor = src.find("const PLATFORM_SEARCH_CONFIG")
+    assert anchor != -1, "找不到 PLATFORM_SEARCH_CONFIG"
+    body = src[anchor:]
+
+    m = re.search(rf"^  {re.escape(key)}: \{{", body, re.M)
+    assert m is not None, f"找不到平台 {key} 的搜索配置块"
+    start = m.start()
+    # 到下一个同级键（平台名）或 `}` 收尾
+    nxt = re.search(r"^  \w+: \{", body[m.end():], re.M)
+    return body[start: m.end() + (nxt.start() if nxt else len(body))]
+
+
+def test_x_content_search_has_no_user_tab():
+    """**回归**：X 的「内容搜索」页不该有「用户」tab。
+
+    规则：用户搜索归「博主中心」（2026-10-10 定，微博/快手已移除）。
+    而且 X 这个 tab 实测返回 0 条（坏的）—— 移除比修复更合适。
+    """
+    src = _CRAWLER_PAGE.read_text(encoding="utf-8")
+    block = _platform_block(src, "twitter")
+
+    # 注释里会解释"为什么移除"，所以**只看代码行**
+    code = "\n".join(
+        ln for ln in block.splitlines()
+        if not ln.strip().startswith("//")
+    )
+    assert "value: 'user'" not in code, (
+        "X 的内容搜索页不该有「用户」tab —— 搜人归「博主中心」"
+    )
+    # 其余三个 tab 要保留
+    for v in ("'note'", "'latest'", "'media'"):
+        assert f"value: {v}" in code, f"X 少了 {v} tab"
+
+
+def test_bili_keeps_user_tab():
+    """**回归**：B站 的用户 tab 要**保留**（它真的能用）。
+
+    实测 B站 `search_type=user` 返回 1 条（yuppt）——
+    与 X 不同，B站 的 `search()` 有正确的路由分支。
+    **不能一刀切全删**。
+    """
+    src = _CRAWLER_PAGE.read_text(encoding="utf-8")
+    block = _platform_block(src, "bili")
+    code = "\n".join(
+        ln for ln in block.splitlines()
+        if not ln.strip().startswith("//")
+    )
+    assert "value: 'user'" in code, "B站 用户搜索是好的，不该被删"
+
+
+def test_user_search_lives_in_platform_users_page():
+    """「搜人」要有**唯一入口**：博主中心。
+
+    （移除内容搜索页的用户 tab 后，必须确认博主中心还在。）
+    """
+    p = (Path(__file__).resolve().parents[2]
+         / "frontend" / "src" / "pages" / "platform-users" / "index.tsx")
+    assert p.exists(), "博主中心页面不见了 —— 那用户就没法搜人了"

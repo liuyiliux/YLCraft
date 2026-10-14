@@ -174,8 +174,8 @@ class DouyinClient(BasePlatformClient):
 
         ## 为什么要单独识别 403（2026-09-27，调研发现）
 
-        抖音有个 **ArgusSecurityPlugin** 边缘网关，对**白名单路径**做概率性拦截
-        （社区实测约 5/8 被拦）。响应体是：
+        抖音有个 **ArgusSecurityPlugin** 边缘网关，对**白名单路径**做概率性拦截。
+        响应体是：
 
             Blocked by ArgusSecurityPlugin Uifid Not Found
             Blocked by ArgusSecurityPlugin Signature Not Found
@@ -184,9 +184,30 @@ class DouyinClient(BasePlatformClient):
         用户会看到"这个 UP 主没有作品"——把风控失败静默吞成空结果，
         属于最费时间的那类假阴性。
 
-        实测（我方环境，2026-09-27）：`aweme/post` 与 `profile/other`
-        目前**不带签名也能返回数据**（多次调用均 status_code=0），
-        所以这条分支暂时不会触发；但网关策略会变，必须提前区分。
+        ## ⚠️ 2026-10-11 实测：`aweme/post` 已从"概率拦截"变成"**稳定拦截**"
+
+        原来这里（以及 403 的报错文案）写的是"概率性拦截（社区实测约 5/8），
+        请稍后重试"。**这个说法现在会误导人** —— 实测连打 8 次：
+
+            aweme/post     403 × 8/8   ← 一次都没过
+            aweme/detail   403
+            profile/self   200 ✅          （登录态是好的！）
+            profile/other  200 ✅          （能看别人的资料）
+            comment/list   200 但空 body   （缺 a_bogus，另一个已知问题）
+
+        换 UA（Chrome/120、Chrome/154、空 UA）、补 `msToken`、
+        加 referer/sec-fetch 头、**加 a_bogus 签名**（164 字符，签名器正常）
+        —— **全部仍然 403**。甚至传一个**不存在的 sec_user_id** 也是 403。
+
+        ⇒ 结论：这是**网关按路径**拉黑（`aweme/post` + `aweme/detail`），
+          **不是**"概率波动"、**不是**登录态失效、**不是**缺签名。
+          "稍后重试"这条建议**不成立**（自动化重试只会白等）。
+
+        ⚠️ 注意与 apis.py 里"a_bogus 对**搜索**无用"的结论**不矛盾**：
+        这里是**另一个**端点、另一次实验，结论同样是"签名救不了"。
+
+        所以报错文案改成**如实说明**：这个功能当前被抖音封了，
+        重试无用；能用的部分是资料/搜索。
         """
         if self._http_client is None:
             await self._init_http_client()
@@ -195,10 +216,24 @@ class DouyinClient(BasePlatformClient):
 
         if resp.status_code == 403:
             body = (resp.text or "")[:200]
+            # ⚠️ 2026-10-11：文案改成**如实说"这条路走不通"**。
+            #
+            # 原文案说"概率性拦截……请稍后重试"，但实测 `aweme/post`
+            # 连打 8 次 **8/8 全拦**（换 UA/补 msToken/加 a_bogus 都无效），
+            # 且同一 cookie 下 `profile/self`、`profile/other` 都是 200
+            # —— 所以"重试"是**无效建议**，只会让用户白等。
+            #
+            # 另外要**明确区分**"登录态失效"：这里登录态往往是好的
+            # （资料能正常取），说"检查登录态"会把用户引到错的方向。
             raise PlatformUnavailableError(
-                f"[douyin] 请求 {path} 被风控拦截（HTTP 403）：{body}。"
-                "这是 ArgusSecurityPlugin 网关的概率性拦截（实测社区约 5/8），"
-                "**不是「该用户没有数据」**——请稍后重试，或检查登录态是否失效。"
+                f"[douyin] 请求 {path} 被抖音网关拦截（HTTP 403）：{body}。\n"
+                "这不是「该用户没有作品」，也不是你的登录态失效"
+                "（实测同一登录态下，用户资料接口正常返回 200）。\n"
+                "实测（2026-10-11）：该路径 **连续 8 次全部被拦**，"
+                "换 UA、补 msToken、加 a_bogus 签名均无效 —— "
+                "属于抖音按接口做的**稳定封禁**，**不是概率波动**。\n"
+                "⇒ 重试没有用。抖音的「作品列表 / 视频详情」暂时取不到；"
+                "「用户资料」「搜索」仍可正常使用。"
             )
 
         resp.raise_for_status()

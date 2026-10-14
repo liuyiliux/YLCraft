@@ -180,6 +180,117 @@ VPN 通了之后 `t.me` 也能访问了（HTTP 200），但 Telegram 有**两条
    必须走 `patchright`；抖音/B站则正常走 `api`。见
    `crawler/service.py::_search_via_platforms` 里的 mode 选择。
 
+## 「我自己的」这类能力（self-scoped）—— 2026-10-11 加
+
+上面所有能力都是「查**别人**」的。还有一类是「查**我自己**」：
+`self_profile`（我的资料）、`self_likes`（我点赞过的）。
+
+这类能力有**三个专属坑**，与查别人的能力完全不同：
+
+### ① 不传 `user_id`，且**故意不暴露**
+
+"我"由**当前连接的登录态**决定，不需要调用方给 id。
+`/users/likes` **故意没有 `user_id` 参数** —— 暴露了会让人以为
+"能查别人赞了什么"，而实际查不到，属误导。
+
+### ② 接口语义可能是「私密」的
+
+| 能力 | 语义 |
+|------|------|
+| 我的资料 / 我的作品 | **公开**数据（别人也看得到） |
+| **我的点赞** | ⚠️ **私密** —— 传别人的 id 不报错，但拿不到数据 |
+
+所以「传了 id 却有结果」**不能**证明这个接口对别人也有效。
+
+### ③ 未实现的平台要 **501**，不要返回空
+
+其他平台没有 `self_likes` → 必须 **501**。
+返回空列表会被上层理解成**"我没点过赞"**（假阴性），
+排查最费时间 —— 这正是本 skill 铁律 #2。
+
+判断用 `meta.py` 的**能力声明**（`supports(platform, "self_likes")`），
+**不要 `hasattr` 猜**（基类里每个平台都有这个方法，只是可能没实现）。
+
+### ⚠️ 两个「不报错只出错」的坑（这次都踩了）
+
+**坑 A：`response_model` 会静默吃掉字段**
+
+第一版 `/users/likes` 图省事，复用了 `UserVideosResponse`：
+
+```python
+@router.get("/likes", response_model=UserVideosResponse)   # ❌
+```
+
+结果 FastAPI **按模型过滤响应**，我加的 `next_cursor` / `has_more`
+**被静默丢掉** —— 接口 200 看着正常，但前端拿到的 `next_cursor`
+永远是 `undefined`，「下一页」永远出不来。
+
+⇒ 加字段就要**显式声明对应的 response 模型**（`UserLikesResponse`）。
+
+**坑 B：首批请求把游标写死成空串**
+
+```python
+if cursor:
+    next_cursor = data["cursor"]      # 翻页时有值
+else:
+    items = await client.get_self_likes(max_results)   # ❌ 取了数据
+    next_cursor = ""                  # ❌ 游标丢了 → has_more 恒 False
+```
+
+于是即使平台明明还有更多，前端也不显示「下一页」。
+**"还能不能翻"的唯一依据是这次响应里的游标** ——
+不管是首批还是翻页，都要如实透出去。
+
+> 这两个坑与 skill 里记的「后端没设 `has_more` → 前端没有下一页」
+> 是同一类：**都是静默的**，页面不报错，只是功能没了。
+
+### ⚠️ queryId 抄不到时：从浏览器 bundle 里抓
+
+X 的 `Likes` **不在 twscrape 里**（已逐行核对它的 21 个 `OP_*`，
+没有 `Likes` / `LikedTweets`）—— 所以**不能抄，也不能编**。
+
+可行做法（实测成功）：拿已登录的 cookie 请求 `https://x.com/home`，
+在页面引用的 JS bundle（`abs.twimg.com/responsive-web/client-web/*.js`）
+里正则搜：
+
+```
+queryId:"([^"]+)",operationName:"Likes"
+```
+
+⇒ `mu4us66Q6RRNOywVQhGtRg`
+
+⚠️ 抓到后**必须实测验证**（这里实测 HTTP 200 + 翻页 id 不同），
+并把抓取方法与日期写进代码注释 —— 下次轮换时才知道怎么重抓。
+
+### ⚠️ bundle 里也搜不到时：抓**真实网络请求**（2026-10-11 加）
+
+`HomeLatestTimeline`（「正在关注」作品流）就是这种情况：
+**JS bundle 里搜不到它**（bundle 里只有运行时用到的操作，
+首页时间线是**动态**拿到 queryId 的）。
+
+这时改用 browser-skill 抓真实请求：
+
+```sh
+bsk debug start --session <id> --name "x following feed"
+bsk navigate https://x.com/home --session <id>
+bsk debug requests --session <id> --kind business --url "/i/api/graphql"
+# → 拿到 .../NmDBT3APtNxDpMqIEauu7A/HomeLatestTimeline
+bsk debug request <request-id> --session <id> --part request   # 看完整 body
+```
+
+⇒ 从这个请求里能一次拿到**三样**（都是 bundle 给不了的）：
+
+    ① queryId        NmDBT3APtNxDpMqIEauu7A
+    ② **它是 POST**   且 queryId 在 JSON body 里（不是 URL）
+    ③ 完整的 features 列表（与 TweetDetail 那份**不一样**，不能混用）
+
+> **经验**：抓包比搜 bundle 更可靠 —— 它给的是**平台真实在用的**东西，
+> 包括方法（GET/POST）和完整参数。搜 bundle 只在操作恰好内联时有用。
+
+⚠️ 响应路径**每个操作都不一样**，别照抄别的：
+`HomeLatestTimeline` 是 `data.home.home_timeline_urt.instructions[]`，
+而 `UserTweets`/`Likes` 是 `data.user.result.timeline.timeline.instructions[]`。
+
 ## 数据/内容层的坑（2026-09-29 集中踩了一轮）
 
 登记层修好只保证"能跑起来"。**内容层还有一类坑：数据本身不对，但不报错。**

@@ -156,13 +156,28 @@ def test_reads_connections_not_data():
 
 
 def test_switch_platform_clears_results():
-    """切平台要清空上次结果，避免"小红书标签 + 抖音数据"。"""
+    """切平台要清空上次结果，避免"小红书标签 + 抖音数据"。
+
+    ⚠️ 不能用「第一个 `}, [platform])`」来定位（2026-10-11 修）：
+    页面里现在有**多个**依赖 `[platform]` 的 effect（还有一个"记住
+    平台选择"的），按顺序取第一个会**取错块**，测试变成假阳性/假阴性。
+
+    ⇒ 改成按**内容**定位：找同时包含 `setProfile(null)` 与
+      `setVideos([])` 的那个 effect。
+    """
     src = _read("pages/my-platform-data/index.tsx")
-    i = src.find("}, [platform])")
-    assert i != -1
-    seg = _strip_line_comments(src[max(0, i - 900):i])
-    assert "setProfile(null)" in seg
-    assert "setVideos([])" in seg
+    code = _strip_line_comments(src)
+
+    # 找到包含这两个清理调用的 effect 块
+    i_profile = code.find("setProfile(null)")
+    assert i_profile != -1, "没有清空 profile 的逻辑"
+
+    # 往后找这个 effect 的依赖数组结尾
+    i_end = code.find("}, [platform])", i_profile)
+    assert i_end != -1, "清理逻辑应在一个依赖 [platform] 的 effect 里"
+
+    seg = code[i_profile:i_end]
+    assert "setVideos([])" in seg, "清空 profile 的同一 effect 里也要清空 videos"
 
 
 def test_videos_use_sec_uid():
