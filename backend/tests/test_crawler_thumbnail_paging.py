@@ -48,12 +48,21 @@ import pytest
 
 FRONTEND = Path(__file__).resolve().parents[2] / "frontend" / "src"
 PAGE = FRONTEND / "pages" / "crawler" / "index.tsx"
+# ⚠️ 2026-10-14：列表封面的渲染搬进了**公共列库**，
+#    与「我的数据」共用。缩略图相关的断言要跟着指到那里。
+COLUMNS = FRONTEND / "components" / "content-columns" / "index.tsx"
 
 
 def _src() -> str:
     if not PAGE.exists():
         pytest.skip("搜索页不在预期位置")
     return PAGE.read_text(encoding="utf-8", errors="ignore")
+
+
+def _cols() -> str:
+    if not COLUMNS.exists():
+        pytest.skip("公共列库不在预期位置")
+    return COLUMNS.read_text(encoding="utf-8", errors="ignore")
 
 
 # =============================================================================
@@ -94,9 +103,19 @@ def test_main_preview_uses_medium_width():
 
 
 def test_list_cover_uses_thumbnail():
-    """列表封面也要用缩略图（24 张原图会很慢）。"""
+    """列表封面也要用缩略图（24 张原图会很慢）。
+
+    ⚠️ 2026-10-14：封面列搬进了公共列库（`img(ctx, cover, 240)`），
+       宽度 240 这个**不变量**必须继续守住 —— 否则列表会拖原图。
+    """
+    cols = _cols()
+    assert "img(ctx, cover, 240)" in cols, "列表封面应用 240px 缩略图"
+
+    # 查询页把**自己的**代理函数（带小红书 CDN 特判）注入给列库 —— 不能丢
     src = _src()
-    assert "proxyImageUrl(cover, 240)" in src, "列表封面应用 240px"
+    assert "proxyImage: (u?: string, width?: number) => proxyImageUrl(u, width)" in src, (
+        "查询页必须注入自己的 proxyImage（否则小红书特判失效）"
+    )
 
 
 def test_does_not_double_add_image_view2():
