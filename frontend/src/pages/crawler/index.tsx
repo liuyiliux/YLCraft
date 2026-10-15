@@ -36,6 +36,12 @@ import {
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
 import { useResizableColumns } from '../../hooks/useResizableColumns'
+// ⚠️ 列走**公共列库** —— 与「我的数据」共用同一批列实现（2026-10-14 收敛）
+import {
+  coverColumn, titleColumn, platformColumn, authorColumn, timeColumn,
+  userInfoColumn, wechatAccountColumn, wechatArticleColumn,
+  actionsColumn, contentColumnsList,
+} from '../../components/content-columns'
 // ⚠️ 移动端适配（2026-10-02）—— 之前**完全没有**响应式处理
 import { useIsMobile } from '../../hooks/useResponsive'
 import {
@@ -2766,257 +2772,65 @@ export default function CrawlerPage() {
     return ''
   }, [detailNote])
 
-  // ===== 列定义 =====
-  const columns: ColumnsType<CrawlerResult> = [
-    {
-      title: wrapColumnTitle('封面', 'cover'), dataIndex: 'cover', key: 'cover', width: colWidths['cover'],
-      render: (cover: string, r: CrawlerResult) => {
-        // 走统一的代理函数（含微信公众号 CDN / B站 / 小红书 / 抖音等）。
-        // ⚠️ 传宽度让它取缩略图 —— 小红书原图 1~2MB，
-        // 列表里几十张会加载很久（2026-09-29）。
-        const src = proxyImageUrl(cover, 240)
-        // 微信公众号头像 / 账号搜索结果用 1:1 圆形
-        const isWechatAccount = r.platform === 'wechat_mp' && searchType === 'account'
-        if (isWechatAccount) {
-          return src ? (
-            <div style={{
-              width: 48, height: 48, borderRadius: '50%',
-              overflow: 'hidden', border: `2px solid ${isDark ? '#2a2a3e' : '#f0f2f5'}`,
-              background: '#07C160', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <SafeImage src={src} alt={stripHtml(r.title)} dark={isDark} />
-            </div>
-          ) : (
-            <div style={{
-              width: 48, height: 48, borderRadius: '50%',
-              background: '#07C160', color: '#fff', fontWeight: 700, fontSize: 18,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              {stripHtml(r.title)?.[0] || '微'}
-            </div>
-          )
-        }
-        return (
-          <CoverCellImage src={src} alt={stripHtml(r.title)} dark={isDark} />
-        )
-      },
-    },
-    {
-      title: wrapColumnTitle(
-        searchType === 'user' ? '用户名' : (searchType === 'bangumi' || searchType === 'movie' ? '影视信息' : '标题'),
-        'title',
-      ),
-      dataIndex: 'title', key: 'title',
-      // 宽度由可拖拽的 colWidths 决定；不再设 minWidth，否则拖到比它窄会被 antd 忽略
-      width: colWidths['title'],
-      ellipsis: searchType !== 'bangumi' && searchType !== 'movie',
-      render: (text: string, r: CrawlerResult) => {
-        const isMedia = searchType === 'bangumi' || searchType === 'movie'
-        if (isMedia) {
-          const raw = r.raw_data || {}
-          const pubDate = r.create_time ? new Date(parseInt(r.create_time) * 1000).toLocaleDateString('zh-CN') : null
-          const metaParts = [raw.areas, raw.styles, pubDate, raw.index_show || (raw.ep_size ? `全${raw.ep_size}集` : null)].filter(Boolean)
-          return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px 0' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                {raw.season_type_name && (
-                  <Tag style={{ fontSize: 11, padding: '0 6px', lineHeight: '18px', margin: 0, borderRadius: 3, background: isDark ? 'rgba(251,114,153,0.15)' : 'rgba(251,114,153,0.08)', color: '#FB7299', borderColor: '#FB7299' }}>
-                    {raw.season_type_name}
-                  </Tag>
-                )}
-                <a href={r.url} target="_blank" rel="noreferrer" style={{ color: textPri, fontWeight: 500, fontSize: 13 }}>{stripHtml(text) || '无标题'}</a>
-              </div>
-              {metaParts.length > 0 && (
-                <Text style={{ fontSize: 11, color: textSec }}>{metaParts.join(' · ')}</Text>
-              )}
-              {r.desc && (
-                <Text style={{ fontSize: 11, color: textSec, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                  {stripHtml(r.desc)}
-                </Text>
-              )}
-              {r.likes > 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
-                  <span style={{ color: isDark ? '#f5a623' : '#fa8c16', fontWeight: 600 }}>⭐ {r.likes}分</span>
-                  {r.comments > 0 && <span style={{ color: textSec }}>{formatNum(r.comments)}人评分</span>}
-                </div>
-              )}
-            </div>
-          )
-        }
-        return (
-          <Tooltip title={searchType === 'user' ? (r.desc || '暂无简介') : stripHtml(text)}>
-            <a href={r.url} target="_blank" rel="noreferrer" style={{ color: textPri }}>{stripHtml(text) || '无标题'}</a>
-          </Tooltip>
-        )
-      },
-    },
-    {
-      title: wrapColumnTitle('平台', 'platform'), dataIndex: 'platform', key: 'platform', width: colWidths['platform'],
-      render: (pf: string) => {
-        const info = getPlatformInfo(pf)
-        return (
-          <Tag
-            icon={info.icon}
-            bordered
-            style={{
-              borderColor: info.color,
-              color: info.color,
-              background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.02)',
-              fontWeight: 500,
-              // 防止标签被挤变形
-              whiteSpace: 'nowrap',
-              maxWidth: '100%',
-            }}
-          >
-            {info.label}
-          </Tag>
-        )
-      },
-    },
-    ...(searchType === 'user' || searchType === 'bangumi' || searchType === 'movie'
-      ? []
-      : [{ title: wrapColumnTitle('作者', 'author'), dataIndex: 'author', key: 'author', width: colWidths['author'], ellipsis: true }]
-    ),
-    ...(searchType !== 'user' && searchType !== 'live' && searchType !== 'account' ? [{
-      title: wrapColumnTitle('发布时间', 'create_time'), dataIndex: 'create_time', key: 'create_time', width: colWidths['create_time'],
-      // ⚠️ 表头与内容都不换行（2026-10-02 审计修）
-      //
-      // `formatTime` 的实际输出：
-      //   · 相对时间「12分钟前」「3小时前」≈ 5 个中文字（~60px）
-      //   · 绝对时间 `toLocaleDateString('zh-CN')` = 「2026/10/1」（~70px）
-      //
-      // 而列宽默认只有 64px，**减去 antd 单元格左右各 16px padding
-      // 只剩 32px** —— 装不下任何一个 → 文字按字竖排
-      // （这正是用户截图里"表头变竖排单字"的同类问题）。
-      onHeaderCell: () => ({ style: { whiteSpace: 'nowrap' } }),
-      render: (create_time: any, r: CrawlerResult) => (
-        <span style={{ whiteSpace: 'nowrap' }}>
-          {formatTime(create_time, r.platform, searchType)}
-        </span>
-      ),
-    }] : []),
-    {
-      // 公众号账号列头改为「公众号信息」；其它维持原样
-      title: wrapColumnTitle(
-        searchType === 'user' ? '用户信息'
-          : (searchType === 'bangumi' || searchType === 'movie' ? '评分'
-          : (searchType === 'account' ? '公众号信息' : '互动')),
-        'stats',
-      ),
-      key: 'stats',
-      width: colWidths['stats'],
-      render: (_: any, r: CrawlerResult) => {
-        if (searchType === 'user') {
-          return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {r.desc && (
-                <Text style={{ fontSize: 12, color: textSec, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                  {r.desc}
-                </Text>
-              )}
-              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                <Text style={{ fontSize: 12, color: textSec }}>👥 {formatNum(r.followers || 0)}</Text>
-                <Text style={{ fontSize: 12, color: textSec }}>🎬 {formatNum(r.videos || 0)}</Text>
-                {r.raw_data?.level && (
-                  <Text style={{ fontSize: 12, color: isDark ? '#f5a623' : '#fa8c16', fontWeight: 600 }}>
-                    Lv.{r.raw_data.level}
-                  </Text>
-                )}
-              </div>
-            </div>
-          )
-        }
-        if (searchType === 'bangumi' || searchType === 'movie') {
-          return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {r.likes > 0 && (
-                <div style={{ fontSize: 12, color: isDark ? '#f5a623' : '#fa8c16', fontWeight: 600 }}>
-                  ⭐ {r.likes}分
-                </div>
-              )}
-              {r.comments > 0 && (
-                <Text style={{ fontSize: 11, color: textSec }}>{formatNum(r.comments)}人评分</Text>
-              )}
-              {r.views > 0 && (
-                <Text style={{ fontSize: 11, color: textSec }}>👁 {formatNum(r.views)}</Text>
-              )}
-            </div>
-          )
-        }
-        // 微信公众号账号：显示「简介 / 微信号」（其他信息需点进去看文章才能拿到）
-        if (r.platform === 'wechat_mp' && searchType === 'account') {
-          const raw: any = r.raw_data || {}
-          const alias = raw.alias ? `@${raw.alias}` : ''
-          return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <Text style={{ fontSize: 11, color: textSec, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {r.desc || '暂无简介'}
-              </Text>
-              {alias && (
-                <Text style={{ fontSize: 11, color: textSec, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {alias}
-                </Text>
-              )}
-            </div>
-          )
-        }
-        // 微信公众号文章：阅读 / 点赞 / 在看
-        if (r.platform === 'wechat_mp') {
-          const raw: any = r.raw_data || {}
-          const watch = r.shares ?? raw.share_count ?? raw.like_count ?? 0
-          return (
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <Tooltip title="阅读量">
-                <span style={{ color: '#07C160', fontSize: 12, fontWeight: 500 }}>
-                  <EyeOutlined /> {formatNum(r.views ?? raw.read_count)}
-                </span>
-              </Tooltip>
-              <Tooltip title="点赞">
-                <span style={{ color: '#FF9500', fontSize: 12, fontWeight: 500 }}>
-                  <LikeOutlined /> {formatNum(r.likes ?? raw.praise_count)}
-                </span>
-              </Tooltip>
-              <Tooltip title="在看 / 分享">
-                <span style={{ color: '#3478F6', fontSize: 12, fontWeight: 500 }}>
-                  <StarOutlined /> {formatNum(watch)}
-                </span>
-              </Tooltip>
-            </div>
-          )
-        }
-        return (
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-            <Text style={{ color: textSec, fontSize: 12 }}><HeartOutlined /> {formatNum(r.likes)}</Text>
-            <Text style={{ color: textSec, fontSize: 12 }}><StarOutlined /> {formatNum(r.comments)}</Text>
-            {r.shares > 0 && <Text style={{ color: textSec, fontSize: 12 }}><CommentOutlined /> {formatNum(r.shares)}</Text>}
-            {r.coins > 0 && <Text style={{ color: textSec, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-              <svg width="12" height="12" viewBox="0 0 28 28" fill="currentColor" style={{ verticalAlign: 'text-bottom' }}><path fillRule="evenodd" clipRule="evenodd" d="M14.045 25.5454C7.69377 25.5454 2.54504 20.3967 2.54504 14.0454C2.54504 7.69413 7.69377 2.54541 14.045 2.54541C20.3963 2.54541 25.545 7.69413 25.545 14.0454C25.545 17.0954 24.3334 20.0205 22.1768 22.1771C20.0201 24.3338 17.095 25.5454 14.045 25.5454ZM9.66202 6.81624H18.2761C18.2761 6.81624 18.825 6.22183 19.27 7.72216C19.27 8.22248 18.825 8.62807 18.2761 8.62807H14.95V10.2903C17.989 10.4444 20.3766 12.9487 20.3855 15.9916V17.1995C20.3854 17.6997 19.9799 18.1052 19.4796 18.1052C18.9793 18.1052 18.5738 17.6997 18.5737 17.1995V15.9916C18.5667 13.9478 16.9882 12.2535 14.95 12.1022V20.5574C14.95 21.0577 14.5444 21.4633 14.0441 21.4633C13.5437 21.4633 13.1382 21.0577 13.1382 20.5574V12.1022C11.1 12.2535 9.52148 13.9478 9.51448 15.9916V17.1995C9.5144 17.6997 9.10883 18.1052 8.60856 18.1052C8.1083 18.1052 7.70273 17.6997 7.70265 17.1995V15.9916C7.71158 12.9487 10.0992 10.4444 13.1382 10.2903V8.62807H9.66202C9.11309 8.62807 8.66809 8.22248 8.66809 7.72216C8.66809 7.22183 9.11309 6.81624 9.66202 6.81624Z" /></svg> {formatNum(r.coins)}
-            </Text>}
-          </div>
-        )
-      },
-    },
-    {
-      title: wrapColumnTitle('操作', 'actions'), key: 'actions', width: colWidths['actions'],
-      render: (_: any, r: CrawlerResult) => (
-        <Space size={4}>
-          <Tooltip title="查看详情">
-            <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => openDetail(r)} style={{ padding: 0 }} />
-          </Tooltip>
-          {r.url && (
-            <Tooltip title="打开原文">
-              <Button type="link" size="small" icon={<LinkOutlined />} href={r.url} target="_blank" style={{ padding: 0 }} />
-            </Tooltip>
-          )}
-          {r.platform !== 'wechat_mp' && searchType !== 'user' && searchType !== 'bangumi' && searchType !== 'movie' && searchType !== 'live' && (
-            <Tooltip title="去水印下载">
-              <Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => { window.location.href = `/download?url=${encodeURIComponent(r.url)}` }} style={{ padding: 0 }} />
-            </Tooltip>
-          )}
-        </Space>
-      ),
-    },
-  ]
+  // ===== 列定义（走**公共列库**）=====
+  //
+  // ⚠️ 2026-10-14 收敛：这一块原来 250 行手写列，和「我的数据」那份重复。
+  //    现在两处共用 `components/content-columns` 里的**同一批列实现**，
+  //    这里只负责**按 (平台, 搜索类型) 挑哪些列**。
+  //
+  //    改列的渲染逻辑 → 改公共库（两处一起生效）
+  //    改某种类型要哪些列 → 改下面的 `selectColumns`（只影响查询页）
+  const columnCtx = {
+    colWidths,
+    wrapTitle: wrapColumnTitle,
+    theme: { textPrimary: textPri, textSecondary: textSec },
+    platformInfo: (pf: string) => getPlatformInfo(pf),
+    // ⚠️ 查询页的代理有各平台 CDN 特判（小红书 imageView2 等），必须用它自己的
+    proxyImage: (u?: string, width?: number) => proxyImageUrl(u, width),
+    stripHtml,
+  }
+
+  const isMediaType = searchType === 'bangumi' || searchType === 'movie'
+  const isWechat = platform === 'wechat_mp'
+  const isWechatAccount = isWechat && searchType === 'account'
+  // 影视 / 直播 / 用户 没有可下载媒体（点了只会空转）
+  const canDownload = !isWechat && searchType !== 'user' && !isMediaType && searchType !== 'live'
+
+  const columns: ColumnsType<CrawlerResult> = (
+    searchType === 'user'
+      ? [
+          coverColumn(columnCtx),
+          titleColumn(columnCtx, { titleLabel: '用户名' }),
+          platformColumn(columnCtx),
+          userInfoColumn(columnCtx),
+          actionsColumn(columnCtx, { onDetail: openDetail, showDownload: false }),
+        ]
+      : isWechatAccount
+        ? [
+            coverColumn(columnCtx, { circle: true }),
+            titleColumn(columnCtx, { titleLabel: '标题' }),
+            platformColumn(columnCtx),
+            wechatAccountColumn(columnCtx),
+            actionsColumn(columnCtx, { onDetail: openDetail, showDownload: canDownload }),
+          ]
+        : isWechat
+          ? [
+              coverColumn(columnCtx),
+              titleColumn(columnCtx, { titleLabel: '标题' }),
+              platformColumn(columnCtx),
+              wechatArticleColumn(columnCtx),
+              actionsColumn(columnCtx, { onDetail: openDetail, showDownload: canDownload }),
+            ]
+          : contentColumnsList(columnCtx, {
+              titleLabel: isMediaType ? '影视信息' : '内容',
+              showPlatform: true,
+              showAuthor: true,
+              // ⚠️ 影视/番剧/直播**不放「发布时间」**（原来就是条件排除的，别改）
+              showTime: !isMediaType,
+              onDetail: openDetail,
+              showDownload: canDownload,
+            })
+  ) as ColumnsType<CrawlerResult>
 
   return (
     <div>

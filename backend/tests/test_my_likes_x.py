@@ -624,10 +624,21 @@ def test_likes_panel_uses_shared_component():
 
 
 def test_my_works_uses_shared_component_and_download_jump():
-    """「我的作品」也要用公共组件，下载同样跳下载页。"""
+    """「我的作品」也要用公共组件 + 公共列库，下载跳下载页。
+
+    ⚠️ 2026-10-14：下载跳转的实现搬进了公共列库的 `actionsColumn`
+       （三个列表共用），所以断言指向列库而不是页面文件。
+    """
     src = _code_only(_frontend_file("pages", "my-platform-data", "index.tsx"))
     assert "PlatformDetailDrawer" in src, "作品详情要用公共组件"
-    assert "/download?url=" in src, "作品下载要跳下载页（与查询页一致）"
+    assert "contentColumnsList" in src, "作品列表要用公共列库"
+
+    # 下载跳下载页：现在由公共列库统一实现
+    shared = _code_only(
+        _frontend_file("components", "content-columns", "index.tsx")
+    )
+    assert "/download?url=" in shared, "下载要跳独立下载页（与查询页一致）"
+    assert "encodeURIComponent(r.url)" in shared, "要传原文链接（不是 CDN 直链）"
 
 
 def test_download_targets_original_page_url_not_cdn():
@@ -1227,10 +1238,10 @@ def test_zero_stats_are_not_rendered():
 
     ⇒ 0 一律不显示 + 转推显式标标签。
 
-    ⚠️ 2026-10-11 重构后，这段逻辑搬到了**公共列模块**
-       （`contentColumns.tsx`）—— 测试跟着指到那里。
+    ⚠️ 2026-10-11 抽出、2026-10-14 迁入**公共列库**
+       （`components/content-columns/index.tsx`）—— 测试跟着指到那里。
     """
-    src = _code_only(_frontend_file("pages", "my-platform-data", "contentColumns.tsx"))
+    src = _code_only(_frontend_file("components", "content-columns", "index.tsx"))
     assert "stats.filter(([v]) => v > 0)" in src, (
         "互动数据要过滤掉 0 —— 光秃秃的 0 像数据缺失"
     )
@@ -1241,7 +1252,7 @@ def test_retweet_is_labeled():
 
     不然用户看到"转推条目 0 互动"会以为是我们的 bug。
     """
-    src = _code_only(_frontend_file("pages", "my-platform-data", "contentColumns.tsx"))
+    src = _code_only(_frontend_file("components", "content-columns", "index.tsx"))
     assert "isRetweet" in src, "要有转推判断"
     assert "RT @" in src, "判据用正文前缀（X 的转推格式）"
     assert "转推" in src, "要有转推标签"
@@ -1364,7 +1375,7 @@ def test_api_exposes_collects_and_quote():
 
 def test_frontend_shows_all_five_stats():
     """前端要显示全五个数字（赞/评/转/藏/看）。"""
-    src = _code_only(_frontend_file("pages", "my-platform-data", "contentColumns.tsx"))
+    src = _code_only(_frontend_file("components", "content-columns", "index.tsx"))
     assert "StarOutlined" in src, "要显示收藏数"
     assert "EyeOutlined" in src, "要显示浏览数"
     for f in ("r.collects", "r.views", "r.likes", "r.comments", "r.shares"):
@@ -1483,21 +1494,40 @@ def test_both_lists_show_author_and_time():
 
     用户看「查询」页有这两列，问我们为什么没有 —— **要与查询页对齐**。
 
-    ⚠️ 2026-10-11 重构后，列定义搬到了**公共模块**
-       （`contentColumns.tsx`）—— 两个面板都从它生成列。
+    ⚠️ 2026-10-14 重构后，列搬到了**公共列库**
+       （`components/content-columns/index.tsx`）——
+       「我的数据」与「查询」页都从它取列。
     """
     shared = _code_only(
-        _frontend_file("pages", "my-platform-data", "contentColumns.tsx")
+        _frontend_file("components", "content-columns", "index.tsx")
     )
-    assert "title: '作者'" in shared, "公共列里缺「作者」"
-    assert "title: '发布时间'" in shared, "公共列里缺「发布时间」"
+    # 列库是"工厂函数"，标题通过 `title()` 帮助函数生成，所以断言标题字符串
+    assert "title(ctx, '作者', 'author')" in shared, "列库里缺「作者」列"
+    assert "title(ctx, '发布时间', 'create_time')" in shared, "列库里缺「发布时间」列"
 
-    # 两个面板都**必须用**这个公共模块（否则列又会漂移）
+    # 两个面板都**必须用**这个列库（否则列又会漂移）
     for name in ("MyLikesPanel.tsx", "index.tsx"):
         src = _code_only(_frontend_file("pages", "my-platform-data", name))
-        assert "buildContentColumns" in src, (
-            f"{name}: 必须用公共列定义 —— 各写一份正是「每次都差一点」的根因"
+        assert "contentColumnsList" in src, (
+            f"{name}: 必须用公共列库 —— 各写一份正是「每次都差一点」的根因"
         )
+
+    # 查询页也要用同一个列库
+    crawler = _code_only(_frontend_file("pages", "crawler", "index.tsx"))
+    assert "contentColumnsList" in crawler or "coverColumn" in crawler, (
+        "查询页也必须用公共列库 —— 否则两处列会漂移"
+    )
+
+
+def test_crawler_columns_come_from_shared_library():
+    """**回归**：「查询」页的列**来自公共列库**（2026-10-14 收敛）。
+
+    原来查询页有 ~250 行手写列，与「我的数据」那份重复 ——
+    这正是"每次都差一点"的根因。现在两边共用同一批列实现。
+    """
+    crawler = _code_only(_frontend_file("pages", "crawler", "index.tsx"))
+    for fn in ("coverColumn(", "titleColumn(", "platformColumn(", "actionsColumn("):
+        assert fn in crawler, f"查询页的列应来自公共列库（缺 {fn}）"
 
 
 def test_lists_use_shared_format_time():
@@ -1507,7 +1537,7 @@ def test_lists_use_shared_format_time():
     又变成"和查询页不一样"（用户最初反馈的就是这类问题）。
     """
     shared = _code_only(
-        _frontend_file("pages", "my-platform-data", "contentColumns.tsx")
+        _frontend_file("components", "content-columns", "index.tsx")
     )
     assert "formatTime" in shared, "公共列要用共享的 formatTime"
     assert "utils/format" in shared, "从 utils/format 引入"
@@ -1523,7 +1553,7 @@ def test_time_column_has_nowrap():
     ⚠️ 列宽偏窄时中文会**竖排单字**（查询页已踩过这个坑）。
     """
     shared = _code_only(
-        _frontend_file("pages", "my-platform-data", "contentColumns.tsx")
+        _frontend_file("components", "content-columns", "index.tsx")
     )
     assert "nowrap" in shared, "时间列要 nowrap（否则中文竖排）"
 
@@ -1609,7 +1639,7 @@ def test_frontend_shows_nickname_and_handle():
     用户："改成 @那个账号和昵称都显示吧 这样更方便，包括列表和详情"。
     """
     shared = _code_only(
-        _frontend_file("pages", "my-platform-data", "contentColumns.tsx")
+        _frontend_file("components", "content-columns", "index.tsx")
     )
     assert "author_handle" in shared, "列表要读 author_handle"
     assert "authorLabel" in shared, "要有作者显示逻辑"

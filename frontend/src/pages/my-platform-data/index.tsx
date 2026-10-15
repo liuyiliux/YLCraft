@@ -46,10 +46,12 @@ import { useTheme } from '../../constants/theme'
 import CreatorCenterPanel from './CreatorCenterPanel'
 import MyLikesPanel, { LIKES_PLATFORMS } from './MyLikesPanel'
 import type { FeedMode } from './MyLikesPanel'
-// ⚠️ 列定义走**公共模块** —— 与点赞列表、查询页共用一份
-import { buildContentColumns } from './contentColumns'
+// ⚠️ 列走**公共列库** —— 与点赞列表、查询页共用一批列实现
+import { contentColumnsList } from '../../components/content-columns'
 // 详情/预览的**公共组件**（非 B站）—— 与「查询」页共用同一套行为
-import { PlatformDetailDrawer } from '../../components/platform-detail'
+import {
+  PlatformDetailDrawer, proxyImage,
+} from '../../components/platform-detail'
 // B站「我的数据」直接复用原组件（含 6 个页签：概览/视频/收藏夹/历史/关注/付费课程）
 import MyDataPage from '../my-data'
 
@@ -235,53 +237,22 @@ export default function MyPlatformDataPage() {
   // 「我的作品」的操作：查看详情 / 打开原文 / 去水印下载
   // ⚠️ 与「查询」页、以及本页「我的点赞」**保持三件套一致**
   //    （用户反馈过"和 x 平台搜索不一样"）。
-  // 「我的作品」的列：走**公共模块**（2026-10-11 收敛）
+  // 「我的作品」的列：走**公共列库**（2026-10-11 收敛）
   //
-  // ⚠️ 与「我的点赞」「查询」页**共用一份列定义** ——
+  // ⚠️ 与「我的点赞」「查询」页**共用一批列实现** ——
   //    各写一份正是"每次都差一点"的根因。
-  //    公共模块以**三接口字段并集**为准，有的填、没有的显示 `-`。
-  // ⚠️ 最后再加「操作」三件套（查看详情 / 打开原文 / 去水印下载）。
-  const videoColumns: ColumnsType<PlatformUserVideo> = [
-    ...buildContentColumns({ contentTitle: '标题' }),
+  const videoColumns = contentColumnsList(
     {
-      title: '操作', key: 'action', width: 150,
-      render: (_: any, r: PlatformUserVideo) => (
-        <Space size={4}>
-          <Tooltip title="查看详情">
-            <Button
-              type="link" size="small" icon={<EyeOutlined />}
-              style={{ padding: 0 }}
-              onClick={() => setPreviewItem(r)}
-            />
-          </Tooltip>
-          {r.url && (
-            <Tooltip title="打开原文">
-              <Button
-                type="link" size="small" icon={<LinkOutlined />}
-                href={r.url} target="_blank" style={{ padding: 0 }}
-              />
-            </Tooltip>
-          )}
-          <Tooltip title="去水印下载">
-            <Button
-              type="link" size="small" icon={<DownloadOutlined />}
-              style={{ padding: 0 }}
-              disabled={!r.url}
-              onClick={() => {
-                if (!r.url) {
-                  message.warning('这条没有原文链接，无法去下载页')
-                  return
-                }
-                // 与查询页/点赞一致：**跳独立下载页**
-                window.location.href =
-                  `/download?url=${encodeURIComponent(r.url)}`
-              }}
-            />
-          </Tooltip>
-        </Space>
-      ),
+      theme: { textPrimary: THEME.textPrimary, textSecondary: THEME.textSecondary },
+      proxyImage: (u, width) => (u ? proxyImage(u, width) : ''),
     },
-  ] as ColumnsType<PlatformUserVideo>
+    {
+      titleLabel: '标题',
+      showAuthor: true,
+      showTime: true,
+      onDetail: (r) => setPreviewItem(r as PlatformUserVideo),
+    },
+  ) as ColumnsType<PlatformUserVideo>
 
   const platformLabel = PLATFORMS.find((p) => p.value === platform)?.label || platform
 

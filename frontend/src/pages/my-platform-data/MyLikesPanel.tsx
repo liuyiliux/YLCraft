@@ -52,9 +52,9 @@ import type { ColumnsType } from 'antd/es/table'
 import { getMyPlatformLikes, getMyHomeFeed } from '../../api'
 import type { PlatformUserVideo } from '../../api'
 import { useTheme } from '../../constants/theme'
-// ⚠️ 列定义走**公共模块** —— 三个列表共用一份，不再各写各的
-import { buildContentColumns } from './contentColumns'
-import { PlatformDetailDrawer, resolveMedia } from '../../components/platform-detail'
+// ⚠️ 列走**公共列库** —— 与「查询」页共用同一批列实现
+import { contentColumnsList } from '../../components/content-columns'
+import { PlatformDetailDrawer, resolveMedia, proxyImage } from '../../components/platform-detail'
 
 const { Text } = Typography
 
@@ -316,44 +316,24 @@ export default function MyLikesPanel({
     [items],
   )
 
-  // 列定义走**公共模块**（2026-10-11 收敛）
+  // 列走**公共列库**（`components/content-columns`）
   //
   // ⚠️ 不要再在这里手写列 —— 那正是「每次都差一点」的根因：
-  //    三个列表各写一份，改一处必然漏另外两处。
-  //    公共模块以**三接口字段并集**为准，有的填、没有的显示 `-`。
-  const columns: ColumnsType<PlatformUserVideo> = [
-    ...buildContentColumns({ contentTitle: '内容' }),
+  //    多个列表各写一份，改一处必然漏另外几处。
+  //    「我的数据」与「查询」页现在是**同一批列实现**，只是挑哪些不同。
+  const columns = contentColumnsList(
     {
-      title: '操作', key: 'action', width: 150,
-      render: (_: any, r: PlatformUserVideo) => (
-        // 与「查询」页一致的三件套：查看详情 / 打开原文 / 去水印下载
-        <Space size={4}>
-          <Tooltip title="查看详情">
-            <Button
-              type="link" size="small" icon={<EyeOutlined />}
-              style={{ padding: 0 }}
-              onClick={() => setPreview(r)}
-            />
-          </Tooltip>
-          {r.url && (
-            <Tooltip title="打开原文">
-              <Button
-                type="link" size="small" icon={<LinkOutlined />}
-                href={r.url} target="_blank" style={{ padding: 0 }}
-              />
-            </Tooltip>
-          )}
-          <Tooltip title="去水印下载">
-            <Button
-              type="link" size="small" icon={<DownloadOutlined />}
-              style={{ padding: 0 }}
-              onClick={() => downloadOne(r)}
-            />
-          </Tooltip>
-        </Space>
-      ),
+      theme: { textPrimary: THEME.textPrimary, textSecondary: THEME.textSecondary },
+      // X 的图片不用 CDN 特判，走通用代理即可
+      proxyImage: (u, width) => (u ? proxyImage(u, width) : ''),
     },
-  ] as ColumnsType<PlatformUserVideo>
+    {
+      titleLabel: '内容',
+      showAuthor: true,      // 「正在关注」是别人发的，必须有作者
+      showTime: true,
+      onDetail: (r) => setPreview(r as PlatformUserVideo),
+    },
+  ) as ColumnsType<PlatformUserVideo>
 
   const pageNo = cursorStack.length
 
