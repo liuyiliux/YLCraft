@@ -1530,6 +1530,117 @@ def test_crawler_columns_come_from_shared_library():
         assert fn in crawler, f"查询页的列应来自公共列库（缺 {fn}）"
 
 
+# =============================================================================
+# 迁移时弄丢的「平台个性化」（2026-10-14 用户指出后修）
+# =============================================================================
+#
+# 用户原话：
+#
+# > "我怎么感觉你把好多之前平台个性化的去掉了？
+# >  1.拖动封面为什么没变大
+# >  2.以前b站是标题 改成了内容
+# >  检查下你还有没有这种情况 我们是一个抽象的公共组件 然后各平台要有个性化吧"
+#
+# ## 我的错误：把「个性」吃掉了
+#
+# 列库第一版把**个性写死**了（固定 64×84、默认「内容」），
+# 而不是**默认 + 可覆盖**。于是：
+#
+# ```text
+#   封面  100%宽+16:9（拖列宽跟着变大）→ 固定 64×84  ❌
+#   标题  默认「标题」                  → 默认「内容」   ❌
+#   时间  按平台实际有无决定             → 按 searchType 猜 ❌
+# ```
+#
+# ## ⚠️ 「发布时间」的正确判据是**数据**，不是 searchType（实测）
+#
+# ```text
+#   B站 video ✅ / live ❌ / user ❌
+#   公众号 文章 ✅ / 账号 ❌
+# ```
+#
+# 同一个平台内部就不一样 —— 所以既不能纯按平台，也不能纯按类型，
+# **只能看这批数据里有没有值**（`rowsHave`）。
+
+
+def test_cover_column_supports_fluid_mode():
+    """**回归**：封面列要有 `fluid` 模式（**占满列宽 + 16:9**）。
+
+    没有它，拖动封面列时图片纹丝不动（用户反馈"拖动封面为什么没变大"）。
+    """
+    shared = _code_only(
+        _frontend_file("components", "content-columns", "index.tsx")
+    )
+    assert "fluid" in shared, "封面列要支持 fluid 模式"
+    assert "aspectRatio" in shared, "fluid 模式要用 aspectRatio 自适应"
+    assert "'16 / 9'" in shared, "用 16:9（B站/抖音封面本身是横版）"
+
+    # 查询页必须开 fluid；「我的数据」保持固定竖图
+    crawler = _code_only(_frontend_file("pages", "crawler", "index.tsx"))
+    assert "fluidCover: true" in crawler, "查询页封面必须 fluid（可拖大）"
+
+
+def test_cover_has_failure_placeholder():
+    """**回归**：封面要有**有文字的占位块**。
+
+    破图图标会让"后端没跑"被误读成"平台防盗链"（2026-10-02 实测踩过）。
+    """
+    shared = _code_only(
+        _frontend_file("components", "content-columns", "index.tsx")
+    )
+    assert "图片加载失败" in shared, "加载失败要有文字占位"
+    assert "无图片" in shared, "无 src 也要有占位"
+
+
+def test_crawler_title_label_defaults_to_标题():
+    """**回归**：查询页标题列默认是「**标题**」，不是「内容」。
+
+    用户反馈："以前b站是标题 改成了内容"。
+    旧版映射：user→「用户名」/ 影视→「影视信息」/ 其余→「标题」。
+    """
+    crawler = _code_only(_frontend_file("pages", "crawler", "index.tsx"))
+    assert "'标题'" in crawler, "查询页标题列默认「标题」"
+    assert "'用户名'" in crawler, "用户类型→「用户名」"
+    assert "'影视信息'" in crawler, "影视类型→「影视信息」"
+
+
+def test_columns_are_data_driven_not_search_type_guessed():
+    """**回归**：作者/时间列要**按数据**决定，不按 `searchType` 硬编码。
+
+    实测：B站 live / user 的解析器**根本没有** `create_time`，
+    公众号「账号」没有、「文章」有 —— 同一平台内部就不一样，
+    所以只能看数据（`rowsHave`），不能猜。
+    """
+    shared = _code_only(
+        _frontend_file("components", "content-columns", "index.tsx")
+    )
+    assert "export function rowsHave" in shared, (
+        "列库要提供 rowsHave —— 让数据决定列的显示"
+    )
+
+    crawler = _code_only(_frontend_file("pages", "crawler", "index.tsx"))
+    assert "rowsHave(results, 'create_time')" in crawler, (
+        "发布时间列要按数据判断（不要写死 searchType 条件）"
+    )
+    assert "rowsHave(results, 'author')" in crawler, "作者列同样按数据判断"
+
+
+def test_platform_columns_come_from_data_not_type():
+    """**回归**：公共列库要提供**按平台**查字段的能力。
+
+    用户："你这还是按照类型来的，实际应该按照平台检查"。
+    `rowsHave(rows, key)` 让调用方能对**任一字段**做数据驱动判断。
+    """
+    shared = _code_only(
+        _frontend_file("components", "content-columns", "index.tsx")
+    )
+    # rowsHave 必须真的按字段取值，而不是接收固定 key
+    assert "rows.some" in shared, "rowsHave 要遍历数据"
+    assert "keyof ContentRow" in shared, (
+        "rowsHave 应接受任意 ContentRow 字段（各平台字段名不同）"
+    )
+
+
 def test_lists_use_shared_format_time():
     """**回归**：时间要用**与查询页同一个** `formatTime`。
 
