@@ -154,14 +154,32 @@ function clean(ctx: ColumnCtx, s: string): string {
 // 各个列（**独立工厂** —— 调用方按需挑选）
 // =============================================================================
 
-/** 封面列。微信公众号账号用 1:1 圆形（头像语义）。 */
-export function coverColumn(ctx: ColumnCtx, opts: { circle?: boolean } = {}): any {
+/** 封面列。
+ *
+ * ⚠️ **两种模式**（2026-10-14 修）
+ *
+ * - `fluid: false`（默认）：固定 64×84 竖图 —— 「我的数据」的封面多为竖版。
+ * - **`fluid: true`**：**宽度占满列 + 16:9 自适应** ——
+ *   查询页用这个，**拖动封面列时图片跟着变大变小**。
+ *
+ *   这是从查询页迁移时**弄丢的能力**：我第一版写死 64×84，
+ *   于是拖列宽图片纹丝不动（用户发现并指出）。
+ *   16:9 而非 4:3 —— B站/抖音封面本身就是横版，用 4:3 + cover 会裁掉两侧。
+ *
+ * `circle`：公众号账号的头像（1:1 圆形 + 绿色底 + 首字兜底）。
+ */
+export function coverColumn(
+  ctx: ColumnCtx,
+  opts: { circle?: boolean; fluid?: boolean } = {},
+): any {
   return {
     title: title(ctx, '封面', 'cover'),
     dataIndex: 'cover', key: 'cover', width: w(ctx, 'cover', 90),
     render: (cover: string, r: ContentRow) => {
       const src = img(ctx, cover, 240)
       const { video } = mediaOf(r)
+      const alt = clean(ctx, r?.title || '')
+
       if (opts.circle) {
         return (
           <div style={{
@@ -172,23 +190,37 @@ export function coverColumn(ctx: ColumnCtx, opts: { circle?: boolean } = {}): an
             {src
               ? <img src={src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               : <Text style={{ color: '#fff', fontWeight: 700 }}>
-                  {(clean(ctx, r?.title || '') || '?').slice(0, 1)}
+                  {(alt || '微').slice(0, 1)}
                 </Text>}
           </div>
         )
       }
-      return (
-        <div style={{ position: 'relative', width: 64, height: 84 }}>
-          <img
-            src={src}
-            alt=""
+
+      // 没有图片 → 有文字的占位块（**不要**只留浏览器默认的破图图标）
+      if (!src) {
+        return (
+          <div
+            title="无图片"
             style={{
-              width: 64, height: 84, objectFit: 'cover', borderRadius: 4,
-              background: '#1f2937',
+              width: opts.fluid ? '100%' : 64,
+              height: opts.fluid ? undefined : 84,
+              aspectRatio: opts.fluid ? '16 / 9' : undefined,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              borderRadius: 4, background: '#f0f2f5', color: '#8c8c8c', fontSize: 11,
             }}
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.visibility = 'hidden'
-            }}
+          >
+            无图片
+          </div>
+        )
+      }
+
+      return (
+        <div style={{ position: 'relative' }}>
+          <CoverCellImage
+            src={src}
+            alt={alt}
+            fluid={opts.fluid}
+            dark={ctx.theme.textPrimary !== '#1a1a2e'}
           />
           {video && (
             <PlayCircleOutlined
@@ -202,6 +234,65 @@ export function coverColumn(ctx: ColumnCtx, opts: { circle?: boolean } = {}): an
       )
     },
   }
+}
+
+/**
+ * 封面图片：失败时给**有文字的占位块**（不是浏览器默认的破图图标）。
+ *
+ * ## ⚠️ 为什么必须有文字（2026-10-02 实测踩坑）
+ *
+ * 用户从手机局域网访问时封面全是破图图标，第一反应是"平台 CDN 防盗链"，
+ * 但代理 URL 是相对路径，跟局域网**无关** —— 真实原因是后端没启动。
+ * 破图图标**不给任何提示**，会把"后端没跑"误读成"防盗链"，排查方向整个跑偏。
+ *
+ * ⚠️ 不去猜"是后端挂了还是源站挂了"：`onError` 拿不到 HTTP 状态码，
+ *    只如实显示"图片加载失败"，原因留给 `title`。**少说，不编造。**
+ */
+function CoverCellImage({
+  src, alt, fluid, dark,
+}: {
+  src: string
+  alt: string
+  fluid?: boolean
+  dark: boolean
+}) {
+  const [failed, setFailed] = React.useState(false)
+  // src 变化时重置 —— 否则上一张失败会让新图也显示占位
+  React.useEffect(() => { setFailed(false) }, [src])
+
+  if (failed) {
+    return (
+      <div
+        title="图片加载失败"
+        style={{
+          width: fluid ? '100%' : 64,
+          height: fluid ? undefined : 84,
+          aspectRatio: fluid ? '16 / 9' : undefined,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          borderRadius: 4, background: dark ? '#1a1a2e' : '#f0f2f5',
+          color: '#8c8c8c', fontSize: 11,
+        }}
+      >
+        图片加载失败
+      </div>
+    )
+  }
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      onError={() => setFailed(true)}
+      style={{
+        // fluid：宽度占满列、16:9 自适应 → **拖动列宽时跟着变大变小**
+        width: fluid ? '100%' : 64,
+        height: fluid ? undefined : 84,
+        aspectRatio: fluid ? '16 / 9' : undefined,
+        objectFit: 'cover', borderRadius: 4, display: 'block',
+        cursor: 'pointer', background: dark ? '#1a1a2e' : '#f0f2f5',
+      }}
+    />
+  )
 }
 
 /** 标题/内容列：类型标签 + 互动数据（为 0 不渲染）+ 转推标签。 */
@@ -498,10 +589,39 @@ export function actionsColumn(
 }
 
 // =============================================================================
-// 按 (平台, 搜索类型) 挑选列
+// 挑选列
 // =============================================================================
 
-/** 内容列表的通用列组合（视频 / 笔记 / 图文）。 */
+/**
+ * **看数据决定**要不要这一列 —— 而不是按 `searchType` 硬编码。
+ *
+ * ## ⚠️ 为什么不能按 searchType 写死（2026-10-14 用户指出后改）
+ *
+ * 我第一版写成 `searchType !== 'live' && !== 'account'` 才显示「发布时间」，
+ * 这是**猜**，而且猜错了：
+ *
+ *   · B站 **live / user** 的解析器**根本没有** `create_time` 字段
+ *   · 但公众号**文章**有，「账号」没有 —— 同一个平台内部就不一样
+ *
+ * 实测各平台（代码级确认）：
+ *
+ * ```text
+ *   B站 video/article/bangumi/movie ✅  |  live/live_user/user ❌
+ *   抖音/X/微博/YouTube/快手/小红书/Telegram ✅
+ *   公众号 文章 ✅ | 账号 ❌
+ * ```
+ *
+ * ⇒ **唯一可靠的判据是"这批数据里有没有值"**。
+ *   平台给就显示，不给就不显示 —— 列随数据走，不随我的猜测走。
+ */
+export function rowsHave(rows: ContentRow[], key: keyof ContentRow): boolean {
+  return rows.some((r) => {
+    const v = r?.[key]
+    return v !== undefined && v !== null && v !== ''
+  })
+}
+
+/** 内容列表的通用列组合。 */
 export function contentColumnsList(
   ctx: ColumnCtx,
   opts: {
@@ -509,12 +629,14 @@ export function contentColumnsList(
     showAuthor?: boolean
     showTime?: boolean
     titleLabel?: string
+    /** 封面是否占满列宽（可拖大）；默认固定 64×84。 */
+    fluidCover?: boolean
     onDetail: (r: ContentRow) => void
     showDownload?: boolean
     onDownload?: (r: ContentRow) => void
   },
 ): any[] {
-  const cols: any[] = [coverColumn(ctx)]
+  const cols: any[] = [coverColumn(ctx, { fluid: opts.fluidCover })]
   cols.push(titleColumn(ctx, { titleLabel: opts.titleLabel }))
   if (opts.showPlatform) cols.push(platformColumn(ctx))
   if (opts.showAuthor) cols.push(authorColumn(ctx))

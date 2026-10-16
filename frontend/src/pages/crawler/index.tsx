@@ -40,7 +40,7 @@ import { useResizableColumns } from '../../hooks/useResizableColumns'
 import {
   coverColumn, titleColumn, platformColumn, authorColumn, timeColumn,
   userInfoColumn, wechatAccountColumn, wechatArticleColumn,
-  actionsColumn, contentColumnsList,
+  actionsColumn, contentColumnsList, rowsHave,
 } from '../../components/content-columns'
 // ⚠️ 移动端适配（2026-10-02）—— 之前**完全没有**响应式处理
 import { useIsMobile } from '../../hooks/useResponsive'
@@ -2776,10 +2776,10 @@ export default function CrawlerPage() {
   //
   // ⚠️ 2026-10-14 收敛：这一块原来 250 行手写列，和「我的数据」那份重复。
   //    现在两处共用 `components/content-columns` 里的**同一批列实现**，
-  //    这里只负责**按 (平台, 搜索类型) 挑哪些列**。
+  //    这里只负责**按平台/数据挑哪些列** + 传入本页的个性化参数。
   //
-  //    改列的渲染逻辑 → 改公共库（两处一起生效）
-  //    改某种类型要哪些列 → 改下面的 `selectColumns`（只影响查询页）
+  //    改列的**渲染逻辑** → 改公共库（两处一起生效）
+  //    改本页的**显示哪些列 / 标题叫什么** → 改这里
   const columnCtx = {
     colWidths,
     wrapTitle: wrapColumnTitle,
@@ -2796,11 +2796,34 @@ export default function CrawlerPage() {
   // 影视 / 直播 / 用户 没有可下载媒体（点了只会空转）
   const canDownload = !isWechat && searchType !== 'user' && !isMediaType && searchType !== 'live'
 
+  // ===== 标题列的标签（**默认「标题」**，不是「内容」）=====
+  //
+  // ⚠️ 2026-10-14 修：第一版迁移时我写成默认「内容」，于是 B站/抖音等
+  //    平台的「标题」列被改名了（用户指出："以前b站是标题 改成了内容"）。
+  //    旧版的映射就是下面这条，照原样恢复。
+  const titleLabel =
+    searchType === 'user' ? '用户名'
+      : isMediaType ? '影视信息'
+        : '标题'
+
+  // ===== 作者 / 发布时间：**看数据里有没有**，不按 searchType 猜 =====
+  //
+  // ⚠️ 2026-10-14 修（用户指出"应该按照平台检查"）：
+  //    第一版写成 `searchType !== 'live' && !== 'account'` 才显示时间列，
+  //    那是**猜**，且漏了 —— 实测：
+  //
+  //      B站 live / user 的解析器**根本没有** `create_time` 字段
+  //      公众号「账号」没有，「文章」有
+  //
+  //    ⇒ 唯一可靠判据是"这批结果里有没有值"。平台给就显示，不给就不显示。
+  const hasTime = rowsHave(results, 'create_time')
+  const hasAuthor = rowsHave(results, 'author')
+
   const columns: ColumnsType<CrawlerResult> = (
     searchType === 'user'
       ? [
-          coverColumn(columnCtx),
-          titleColumn(columnCtx, { titleLabel: '用户名' }),
+          coverColumn(columnCtx, { fluid: true }),
+          titleColumn(columnCtx, { titleLabel }),
           platformColumn(columnCtx),
           userInfoColumn(columnCtx),
           actionsColumn(columnCtx, { onDetail: openDetail, showDownload: false }),
@@ -2808,25 +2831,29 @@ export default function CrawlerPage() {
       : isWechatAccount
         ? [
             coverColumn(columnCtx, { circle: true }),
-            titleColumn(columnCtx, { titleLabel: '标题' }),
+            titleColumn(columnCtx, { titleLabel }),
             platformColumn(columnCtx),
             wechatAccountColumn(columnCtx),
+            // 时间列：公众号账号没有 → 由 hasTime 决定是否显示
+            ...(hasTime ? [timeColumn(columnCtx)] : []),
             actionsColumn(columnCtx, { onDetail: openDetail, showDownload: canDownload }),
           ]
         : isWechat
           ? [
-              coverColumn(columnCtx),
-              titleColumn(columnCtx, { titleLabel: '标题' }),
+              coverColumn(columnCtx, { fluid: true }),
+              titleColumn(columnCtx, { titleLabel }),
               platformColumn(columnCtx),
               wechatArticleColumn(columnCtx),
+              ...(hasTime ? [timeColumn(columnCtx)] : []),
               actionsColumn(columnCtx, { onDetail: openDetail, showDownload: canDownload }),
             ]
           : contentColumnsList(columnCtx, {
-              titleLabel: isMediaType ? '影视信息' : '内容',
+              titleLabel,
               showPlatform: true,
-              showAuthor: true,
-              // ⚠️ 影视/番剧/直播**不放「发布时间」**（原来就是条件排除的，别改）
-              showTime: !isMediaType,
+              showAuthor: hasAuthor,
+              showTime: hasTime,
+              // ⚠️ 封面**占满列宽 + 16:9** —— 拖动列宽时图片跟着变大变小
+              fluidCover: true,
               onDetail: openDetail,
               showDownload: canDownload,
             })
