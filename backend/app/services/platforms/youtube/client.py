@@ -223,6 +223,10 @@ def _entry_to_result(e: Dict[str, Any]) -> Optional[SearchResult]:
         views=views,
         duration=duration,
         desc=(e.get("description") or "")[:300],
+        # ⚠️ 这里**必然是空的**：flat 搜索不返回任何日期字段
+        #    （实测 upload_date/timestamp/release_timestamp 全 None）。
+        #    不是漏取、也没法在快路径取到 —— 详见 `_fmt_upload_date` 的说明。
+        #    前端列是数据驱动的，会自动省略「发布时间」列。
         create_time=_fmt_upload_date(e.get("upload_date")),
         raw_data={"_source": "yt_dlp_flat", "entry": {k: e.get(k) for k in (
             "id", "title", "duration", "view_count", "channel", "channel_id",
@@ -232,7 +236,45 @@ def _entry_to_result(e: Dict[str, Any]) -> Optional[SearchResult]:
 
 
 def _fmt_upload_date(d: Optional[str]) -> str:
-    """yt-dlp 的 upload_date 是 'YYYYMMDD'，转 ISO。"""
+    """yt-dlp 的 upload_date 是 'YYYYMMDD'，转 ISO。
+
+    ## ⚠️ 搜索结果里这个字段**永远是空的**（2026-10-17 实测，别再试了）
+
+    本平台是**唯一套用第三方库（yt-dlp）的平台** —— 其它平台都是
+    我们自己直调官方 HTTP 接口。直调 YouTube 要 PO Token，两次尝试
+    都被挡（提交 `2de0baa9`「PO Token 也无效」、`2e623366`），
+    所以退而求其次用 yt-dlp。这是**历史决策**，不是随手选的。
+
+    **后果**：yt-dlp 的 **flat 搜索模式**（搜索用的快路径）
+    **不返回任何日期字段**，实测三个全空：
+
+    ```text
+        upload_date        = None
+        timestamp          = None
+        release_timestamp  = None    ← 有人以为 flat 下它有值，实测是错的
+    ```
+
+    （完整解析才有：`upload_date='20261016'`、`timestamp=1792113664`。）
+
+    ### 已否决的修法：逐条拉详情
+
+    ```text
+        flat（当前）        5.3s，拿不到时间
+        逐条拉详情          65.9s（慢 12 倍）且 5/5 报 DownloadError
+    ```
+
+    ⇒ **不要改成逐条拉详情** —— 慢 12 倍还 100% 失败。
+
+    ### 当前表现（正确）
+
+    前端列是**数据驱动**的（`rowsHave(results, 'create_time')`），
+    所以 YouTube 搜索结果会**自动省略「发布时间」列** ——
+    **不是空列**，是那一列根本不出现。界面不误导。
+
+    要真正拿到时间，只能把客户端**改成直调官方接口** ——
+    那是独立量级的重构，不该混在别的小改动里做。
+    详见 `docs/platform/capability_matrix.md`。
+    """
     if d and len(d) == 8 and d.isdigit():
         return f"{d[:4]}-{d[4:6]}-{d[6:]}"
     return ""
@@ -572,6 +614,8 @@ class YoutubeClient(BasePlatformClient):
             views=int(info.get("view_count") or 0),
             likes=int(info.get("like_count") or 0),
             comments=int(info.get("comment_count") or 0),
+            # ✅ 这里**能拿到**时间：yt-dlp 完整解析（`yt_dlp_full`）才填
+            #    `upload_date` —— 搜索用的 flat 路径拿不到（见 `_fmt_upload_date`）。
             create_time=_fmt_upload_date(info.get("upload_date")),
             tags=list((info.get("tags") or [])[:20]),
             raw_data={"_source": "yt_dlp_full", "_page_url": f"https://www.youtube.com/watch?v={vid}"},
