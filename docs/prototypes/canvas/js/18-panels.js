@@ -61,7 +61,14 @@ function renderLayerPanel(){
             <input type="range" class="le-r" min="0" max="1" step="0.01" value="${l.opacity}"
               oninput="setLayerOpacity('${l.id}', this.value)">
             <span class="lp-op-v" id="lpOpv">${Math.round(l.opacity*100)}%</span>
-          </div>` : ''}
+          </div>
+          <div class="lp-blend">
+            <span class="lp-op-l">混合</span>
+            <select class="lp-blend-sel" onchange="setLayerBlend('${l.id}', this.value)">
+              ${BLEND_MODES.map(m=>`<option value="${m.k}" ${(l.blend||'normal')===m.k?'selected':''}>${m.n}</option>`).join('')}
+            </select>
+          </div>
+          <div class="lp-blend-hint">${BLEND_MODES.find(m=>(l.blend||'normal')===m.k).d}</div>` : ''}
       `).join('')}
     </div>
     <div class="lp-add">
@@ -288,3 +295,54 @@ setTimeout(()=>{ if (!HISTORY.length) pushHistory('打开画布'); }, 1200);
   st.appendChild(lp);
 })();
 
+
+/* ===== 图层混合模式（PS 的 mix-blend-mode 对应实现） =====
+   🔴 为什么要这个：之前有图层但只能"正常"叠加，
+      等于半个图层系统 —— 分层的价值一半在混合方式。
+*/
+const BLEND_MODES = [
+  { k:'normal',    n:'正常',   d:'直接盖上去（默认）' },
+  { k:'multiply',  n:'正片叠底', d:'变暗：两个颜色相乘，适合压暗、上色' },
+  { k:'screen',    n:'滤色',   d:'变亮：反过来相乘，适合加光、去黑底' },
+  { k:'overlay',   n:'叠加',   d:'暗的更暗、亮的更亮 —— 增强对比' },
+  { k:'soft-light',n:'柔光',   d:'温和版的叠加，适合调氛围不伤细节' },
+  { k:'color',     n:'颜色',   d:'只取色相饱和度，保留下面的明暗' }
+];
+
+function setLayerBlend(id, mode){
+  const layers = layersOf(selId || DOC.items[0].id);
+  const l = layers.find(x=>x.id===id);
+  if (!l) return;
+  l.blend = mode;
+  renderLayerPanel();
+  // 把混合模式挂到画布上对应缩略图（如果该镜头是当前选中）
+  applyBlendPreview();
+  const m = BLEND_MODES.find(x=>x.k===mode);
+  toast('混合：' + (m?m.n:mode) + (m&&mode!=='normal' ? ' —— ' + m.d : ''));
+}
+
+/* 把当前镜头各层的混合模式套到缩略图上（视觉预览） */
+function applyBlendPreview(){
+  const sid = selId || (DOC.items[0] && DOC.items[0].id);
+  const layers = layersOf(sid);
+  const el = document.querySelector('.shot[data-id="' + sid + '"] .im');
+  if (!el) return;
+  const adj = layers.filter(l=>l.type!=='source' && l.visible && l.blend && l.blend!=='normal');
+  // 用一个叠加层表现混合效果
+  let ov = el.querySelector('.blendlayer');
+  if (!adj.length){
+    if (ov) ov.remove();
+    return;
+  }
+  if (!ov){
+    ov = document.createElement('div');
+    ov.className = 'blendlayer';
+    ov.style.cssText = 'position:absolute;inset:0;pointer-events:none;border-radius:inherit';
+    el.appendChild(ov);
+  }
+  // 取最上面那个非常规混合
+  const l = adj[adj.length-1];
+  ov.style.mixBlendMode = l.blend;
+  ov.style.background = 'linear-gradient(160deg, rgba(34,211,238,.45), rgba(120,40,200,.4))';
+  ov.style.opacity = String(l.opacity);
+}
