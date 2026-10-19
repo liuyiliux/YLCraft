@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YLCraft 原型 · 画布 / Agent</title>
+<style>
+  /* ============ 设计 Token（对齐 frontend/src/constants/theme.tsx 的 Deep 主题）============ */
+  :root{
+    --bg:            #09090b;      /* off-black，非纯黑 */
+    --bg-2:          #0c0c0f;
+    --surface:       #111114;
+    --surface-2:     #16161a;
+    --line:          rgba(255,255,255,.07);
+    --line-strong:   rgba(255,255,255,.12);
+    --text:          #ededf0;
+    --text-2:        #9a9aa5;
+    --text-3:        #66666f;
+    --accent:        #22d3ee;      /* 品牌青，唯一强调色 */
+    --accent-dim:    rgba(34,211,238,.12);
+    --ok:            #34d399;
+    --warn:          #fbbf24;
+    --danger:        #f87171;
+    --r-xs:4px; --r-sm:8px; --r-md:12px; --r-lg:16px; --r-xl:24px;
+    --shadow-card: 0 2px 8px -2px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.04);
+    --shadow-modal: 0 24px 64px -16px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.06);
+    --ease: cubic-bezier(.16,1,.3,1);
+    --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    --mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:var(--font); font-size:13px; line-height:1.6;
+    -webkit-font-smoothing:antialiased; overflow:hidden;
+  }
+
+  /* ============ 原型切换器（仅原型用，不属于产品）============ */
+  .proto-nav{
+    position:fixed; left:50%; bottom:18px; transform:translateX(-50%);
+    display:flex; gap:2px; padding:4px; z-index:999;
+    background:rgba(17,17,20,.86); backdrop-filter:blur(20px);
+    border:1px solid var(--line-strong); border-radius:999px;
+    box-shadow:var(--shadow-modal);
+  }
+  .proto-nav button{
+    font-family:inherit; font-size:12px; color:var(--text-2);
+    background:transparent; border:0; padding:7px 15px; border-radius:999px;
+    cursor:pointer; transition:all .3s var(--ease); white-space:nowrap;
+  }
+  .proto-nav button:hover{color:var(--text); background:rgba(255,255,255,.05)}
+  .proto-nav button.on{color:var(--bg); background:var(--accent); font-weight:600}
+
+  .screen{display:none; height:100vh}
+  .screen.on{display:block}
+
+  /* ============ 通用 ============ */
+  .icon{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.6;
+        stroke-linecap:round;stroke-linejoin:round;display:block;flex:0 0 auto}
+  .btn{
+    display:inline-flex; align-items:center; gap:6px;
+    font-family:inherit; font-size:12.5px; color:var(--text-2);
+    background:transparent; border:1px solid transparent;
+    padding:6px 10px; border-radius:var(--r-sm); cursor:pointer;
+    transition:all .25s var(--ease);
+  }
+  .btn:hover{color:var(--text); background:rgba(255,255,255,.05); text-decoration:none}
+  .btn:focus{outline:none}
+  .btn:active{transform:translateY(1px) scale(.985)}
+  .btn.ghost{border-color:var(--line); background:var(--surface)}
+  .btn.ghost:hover{border-color:var(--line-strong); background:var(--surface-2)}
+  .btn.primary{
+    color:#06272c; background:var(--accent); font-weight:600;
+    border-color:transparent;
+  }
+  .btn.primary:hover{background:#3ddef5}
+  .btn.primary:active{transform:translateY(1px) scale(.985)}
+  .tag{
+    display:inline-flex; align-items:center; gap:4px;
+    font-size:11px; padding:1px 7px; border-radius:var(--r-xs);
+    background:rgba(255,255,255,.06); color:var(--text-2);
+  }
+  .tag.ok{background:rgba(52,211,153,.12); color:var(--ok)}
+  .tag.warn{background:rgba(251,191,36,.12); color:var(--warn)}
+  .tag.danger{background:rgba(248,113,113,.12); color:var(--danger)}
+  .tag.accent{background:var(--accent-dim); color:var(--accent)}
+  .mono{font-family:var(--mono); font-variant-numeric:tabular-nums}
+
+  /* ============ 画布布局 ============ */
+  .canvas-wrap{display:grid; grid-template-columns:1fr 372px; height:100vh}
+  .canvas-wrap.nopanel{grid-template-columns:1fr}
+
+  .topbar{
+    position:absolute; top:0; left:0; right:0; height:52px; z-index:20;
+    display:flex; align-items:center; gap:10px; padding:0 14px;
+    border-bottom:1px solid var(--line);
+    background:linear-gradient(to bottom, rgba(9,9,11,.95), rgba(9,9,11,.7));
+    backdrop-filter:blur(12px);
+  }
+  .crumb{display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--text-3)}
+  .crumb b{color:var(--text); font-weight:600}
+  .crumb .sep{color:var(--text-3); opacity:.5}
+  .save-state{
+    display:inline-flex; align-items:center; gap:5px;
+    font-size:11.5px; color:var(--text-3); margin-left:4px;
+  }
+  .save-state .dot{width:5px;height:5px;border-radius:50%;background:var(--ok)}
+  .topbar-right{margin-left:auto; display:flex; align-items:center; gap:6px}
+
+  /* ============ 画布舞台 ============ */
+  .stage{position:relative; overflow:hidden; background:var(--bg)}
+  .grid-bg{
+    position:absolute; inset:0;
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(255,255,255,.055) 1px, transparent 0);
+    background-size:24px 24px;
+  }
+  .empty-hint{
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:5px; pointer-events:none;
+  }
+  .empty-hint .t{font-size:13.5px; color:var(--text-2)}
+  .empty-hint .s{font-size:12px; color:var(--text-3)}
+  .kbd{
+    font-family:var(--mono); font-size:11px; padding:1px 5px;
+    border:1px solid var(--line-strong); border-bottom-width:2px;
+    border-radius:var(--r-xs); color:var(--text-2); background:var(--surface);
+  }
+
+  /* 节点示例 */
+  .node{
+    position:absolute; border-radius:var(--r-md);
+    background:var(--surface); box-shadow:var(--shadow-card);
+    border:1px solid var(--line); transition:all .3s var(--ease);
+  }
+  .node.sel{border-color:var(--accent); box-shadow:0 0 0 1px var(--accent), 0 8px 24px -8px rgba(34,211,238,.35)}
+  .node .nh{
+    display:flex; align-items:center; gap:6px; padding:7px 10px;
+    border-bottom:1px solid var(--line); font-size:11.5px; color:var(--text-2);
+  }
+  .node .nb{padding:10px}
+  .node .thumb{
+    width:100%; border-radius:var(--r-sm); display:block;
+    background:linear-gradient(135deg,#1a1a1f,#101014);
+    aspect-ratio:16/9;
+  }
+  /* 端口 */
+  .port{
+    position:absolute; width:8px;height:8px;border-radius:50%;
+    background:var(--bg); border:1.5px solid var(--text-3); top:50%;
+    transform:translateY(-50%);
+  }
+  .port.l{left:-4.5px} .port.r{right:-4.5px}
+  .node.sel .port{border-color:var(--accent)}
+
+  /* 连线 */
+  svg.wires{position:absolute; inset:0; width:100%; height:100%; pointer-events:none}
+  .wire{stroke:rgba(255,255,255,.16); stroke-width:1.4; fill:none}
+  .wire.hi{stroke:var(--accent); stroke-width:1.8}
+
+  /* ============ 小地图 ============ */
+  .minimap{
+    position:absolute; right:16px; bottom:140px; width:164px; height:108px;
+    background:rgba(12,12,15,.82); backdrop-filter:blur(20px);
+    border:1px solid var(--line-strong); border-radius:var(--r-md);
+    box-shadow:var(--shadow-modal); overflow:hidden; z-index:15;
+  }
+  .minimap .mm-t{
+    position:absolute; top:6px; left:9px; font-size:10px; color:var(--text-3);
+    letter-spacing:.04em; text-transform:uppercase;
+  }
+  .minimap .viewport{
+    position:absolute; border:1px solid var(--accent); border-radius:2px;
+    background:rgba(34,211,238,.07);
+  }
+  .minimap .blip{position:absolute; background:rgba(255,255,255,.35); border-radius:1px}
+
+  /* ============ 底部工具条 ============ */
+  .toolbar{
+    position:absolute; left:50%; bottom:72px; transform:translateX(-50%);
+    display:flex; align-items:center; gap:2px; padding:4px;
+    background:rgba(17,17,20,.9); backdrop-filter:blur(20px);
+    border:1px solid var(--line-strong); border-radius:999px;
+    box-shadow:var(--shadow-modal); z-index:18;
+  }
+  .toolbar .tb{
+    width:32px;height:32px; display:flex;align-items:center;justify-content:center;
+    border-radius:50%; color:var(--text-2); background:transparent; border:0;
+    cursor:pointer; transition:all .25s var(--ease);
+  }
+  .toolbar .tb:hover{background:rgba(255,255,255,.08); color:var(--text)}
+  .toolbar .tb:active{transform:scale(.93)}
+  .toolbar .tb.on{background:var(--accent-dim); color:var(--accent)}
+  .toolbar .tb.plus{background:var(--accent); color:#06272c}
+  .toolbar .tb.plus:hover{background:#3ddef5}
+  .toolbar .divide{width:1px;height:18px;background:var(--line-strong);margin:0 4px}
+  .zoom{font-size:11.5px; color:var(--text-3); padding:0 8px; font-family:var(--mono)}
+
+  /* ============ 右侧面板：版本记录 ============ */
+  .panel{
+    display:flex; flex-direction:column; min-width:0;
+    background:var(--surface); border-left:1px solid var(--line);
+  }
+  .panel-h{
+    display:flex; align-items:center; gap:8px; padding:13px 14px;
+    border-bottom:1px solid var(--line);
+  }
+  .panel-h .ttl{font-size:13px; font-weight:600; color:var(--text)}
+  .panel-h .x{
+    margin-left:auto; width:26px;height:26px;display:flex;align-items:center;
+    justify-content:center; border-radius:var(--r-sm); color:var(--text-3);
+    background:transparent;border:0;cursor:pointer;transition:all .25s var(--ease);
+  }
+  .panel-h .x:hover{background:rgba(255,255,255,.06); color:var(--text)}
+
+  .search{
+    margin:10px 14px; display:flex; align-items:center; gap:7px;
+    padding:6px 10px; border:1px solid var(--line); border-radius:var(--r-sm);
+    background:var(--bg-2); color:var(--text-3); font-size:12px;
+  }
+
+  .vlist{flex:1; overflow-y:auto; padding:0 8px 16px}
+  .vlist::-webkit-scrollbar{width:6px}
+  .vlist::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1); border-radius:3px}
+
+  .vitem{
+    display:flex; gap:10px; padding:10px 8px; border-radius:var(--r-sm);
+    cursor:pointer; transition:background .2s var(--ease); position:relative;
+  }
+  .vitem:hover{background:rgba(255,255,255,.035)}
+  .vitem .rail{display:flex; flex-direction:column; align-items:center; padding-top:3px}
+  .vitem .rail .pt{
+    width:7px;height:7px;border-radius:50%;background:var(--text-3);
+    border:0; flex:0 0 auto;
+  }
+  .vitem.cur .rail .pt{background:var(--accent); box-shadow:0 0 0 3px var(--accent-dim)}
+  .vitem .rail .ln{width:1px; flex:1; background:var(--line); margin-top:4px}
+  .vitem:last-child .rail .ln{display:none}
+  .vbody{flex:1; min-width:0}
+  .vrow1{display:flex; align-items:baseline; gap:7px; margin-bottom:2px}
+  .vtime{font-size:12px; color:var(--text); font-weight:500; font-family:var(--mono)}
+  .vitem.cur .vtime{color:var(--accent)}
+  .vmeta{font-size:11px; color:var(--text-3); display:flex; align-items:center; gap:6px; flex-wrap:wrap}
+  .vdiff{font-family:var(--mono); font-size:10.5px}
+  .vdiff .add{color:var(--ok)} .vdiff .del{color:var(--danger)}
+  .vacts{display:flex; gap:4px; margin-top:6px; opacity:0; transition:opacity .2s var(--ease)}
+  .vitem:hover .vacts{opacity:1}
+  .vacts button{
+    font-family:inherit; font-size:11px; padding:2px 8px; border-radius:var(--r-xs);
+    color:var(--text-2); background:rgba(255,255,255,.06); border:0; cursor:pointer;
+    transition:all .2s var(--ease);
+  }
+  .vacts button:hover{background:rgba(255,255,255,.12); color:var(--text)}
+  .vacts button.restore:hover{background:var(--accent-dim); color:var(--accent)}
+
+  /* ============ 加入画布浮层 ============ */
+  .dim{position:fixed; inset:0; background:rgba(5,5,7,.72); backdrop-filter:blur(3px); z-index:100;
+       display:flex; align-items:center; justify-content:center}
+  .popover{
+    width:392px; background:var(--surface); border:1px solid var(--line-strong);
+    border-radius:var(--r-lg); box-shadow:var(--shadow-modal); overflow:hidden;
+    animation:pop .32s var(--ease);
+  }
+  @keyframes pop{from{opacity:0; transform:translateY(8px) scale(.98)} to{opacity:1; transform:none}}
+  .pop-h{padding:14px 16px 10px; font-size:13px; font-weight:600}
+  .pop-sec{padding:0 8px}
+  .pop-item{
+    display:flex; align-items:center; gap:9px; padding:9px 10px; border-radius:var(--r-sm);
+    cursor:pointer; transition:background .2s var(--ease);
+  }
+  .pop-item:hover{background:rgba(255,255,255,.05)}
+  .pop-item.on{background:var(--accent-dim)}
+  .pop-item .nm{font-size:12.5px; color:var(--text)}
+  .pop-item .sub{font-size:11px; color:var(--text-3)}
+  .pop-item .chk{margin-left:auto; color:var(--accent); opacity:0}
+  .pop-item.on .chk{opacity:1}
+  .pop-div{height:1px; background:var(--line); margin:8px 16px}
+  .pop-label{padding:0 16px 6px; font-size:10.5px; color:var(--text-3); letter-spacing:.05em; text-transform:uppercase}
+  .pop-f{padding:12px 16px; border-top:1px solid var(--line); display:flex; gap:8px; justify-content:flex-end;
+         background:rgba(255,255,255,.015)}
+
+  /* 产物卡片（用于演示加入画布）*/
+  .cards{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; padding:24px; max-width:760px}
+  .pcard{
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--r-md);
+    overflow:hidden; transition:all .3s var(--ease);
+  }
+  .pcard:hover{border-color:var(--line-strong); transform:translateY(-2px);
+    box-shadow:0 12px 28px -12px rgba(0,0,0,.7)}
+  .pcard .img{aspect-ratio:16/9; background:linear-gradient(135deg,#1c1c22,#0f0f13); position:relative}
+  .pcard .img::after{
+    content:''; position:absolute; inset:0;
+    background:radial-gradient(circle at 30% 40%, rgba(34,211,238,.10), transparent 62%);
+  }
+  .pcard .b{padding:9px 11px; display:flex; align-items:center; gap:7px}
+  .pcard .b .m{font-size:11px; color:var(--text-3); font-family:var(--mono)}
+  .pcard .b .addbtn{margin-left:auto}
+
+  /* ============ Agent 报告 ============ */
+  .agent-wrap{display:grid; grid-template-columns:1fr 460px; height:100vh}
+  .agpanel{display:flex; flex-direction:column; background:var(--surface); border-left:1px solid var(--line)}
+  .ag-tabs{display:flex; gap:2px; padding:8px 12px; border-bottom:1px solid var(--line)}
+  .ag-tabs .t{font-size:12px; padding:5px 11px; border-radius:var(--r-sm); color:var(--text-3); cursor:pointer}
+  .ag-tabs .t.on{background:rgba(255,255,255,.07); color:var(--text)}
+  .ag-body{flex:1; overflow-y:auto; padding:16px}
+  .ag-body::-webkit-scrollbar{width:6px}
+  .ag-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1); border-radius:3px}
+
+  .msg-u{
+    margin-left:auto; max-width:86%; background:rgba(255,255,255,.055);
+    border-radius:var(--r-md) var(--r-md) var(--r-xs) var(--r-md);
+    padding:9px 13px; font-size:12.5px; margin-bottom:16px;
+  }
+
+  /* 报告卡 */
+  .report{border:1px solid var(--line); border-radius:var(--r-md); overflow:hidden; background:var(--bg-2)}
+  .report .rh{
+    display:flex; align-items:center; gap:7px; padding:10px 13px;
+    border-bottom:1px solid var(--line); background:rgba(255,255,255,.02);
+  }
+  .report .rh .state{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600}
+  .report .rh .state.ok{color:var(--ok)}
+  .report .rh .dur{margin-left:auto;font-size:11px;color:var(--text-3);font-family:var(--mono)}
+
+  /* 报告四段 */
+  .rsec{padding:12px 13px; border-bottom:1px solid var(--line)}
+  .rsec:last-child{border-bottom:0}
+  .rsec .lab{
+    font-size:10.5px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--text-3); margin-bottom:7px; display:flex; align-items:center; gap:6px;
+  }
+  .rsec .lab .bar{width:2px;height:10px;background:var(--accent);border-radius:1px}
+  .rsec .verdict{font-size:12.5px; color:var(--text); line-height:1.65}
+  .rsec .verdict b{color:var(--accent); font-weight:600}
+  .rlist{list-style:none; display:flex; flex-direction:column; gap:5px}
+  .rlist li{
+    font-size:12px; color:var(--text-2); padding-left:13px; position:relative; line-height:1.6;
+  }
+  .rlist li::before{
+    content:''; position:absolute; left:3px; top:8px; width:3px;height:3px;
+    border-radius:50%; background:var(--text-3);
+  }
+  .rlist li b{color:var(--text); font-weight:500}
+  .rlist li code{
+    font-family:var(--mono); font-size:11px; background:rgba(255,255,255,.06);
+    padding:1px 4px; border-radius:3px; color:var(--text-2);
+  }
+  .action-box{
+    background:var(--accent-dim); border:1px solid rgba(34,211,238,.24);
+    border-radius:var(--r-sm); padding:9px 11px; display:flex; align-items:flex-start; gap:8px;
+  }
+  .action-box .ic{color:var(--accent); margin-top:1px}
+  .action-box .tx{font-size:12px; color:var(--text)}
+  .action-box .tx b{color:var(--accent)}
+
+  /* 改动规模 */
+  .chg{
+    display:flex; align-items:center; gap:8px; padding:9px 13px;
+    background:rgba(255,255,255,.025); border-top:1px solid var(--line);
+    font-size:11.5px; color:var(--text-3); cursor:pointer; transition:background .2s var(--ease);
+  }
+  .chg:hover{background:rgba(255,255,255,.045)}
+  .chg .n{color:var(--text-2)}
+  .chg .add{color:var(--ok); font-family:var(--mono)}
+  .chg .del{color:var(--danger); font-family:var(--mono)}
+
+  /* 边界提示 */
+  .caveat{
+    display:flex; gap:8px; padding:10px 13px; border-top:1px solid var(--line);
+    background:rgba(251,191,36,.05); font-size:11.5px; color:var(--text-2); line-height:1.6;
+  }
+  .caveat .ic{color:var(--warn); margin-top:1px; flex:0 0 auto}
+
+  /* 错误态 */
+  .errbox{
+    border:1px solid rgba(248,113,113,.28); background:rgba(248,113,113,.055);
+    border-radius:var(--r-md); padding:12px 13px; display:flex; gap:10px; align-items:flex-start;
+  }
+  .errbox .ic{color:var(--danger); margin-top:2px; flex:0 0 auto}
+  .errbox .body{flex:1; min-width:0}
+  .errbox .t{font-size:12.5px; color:var(--text); margin-bottom:3px; font-weight:500}
+  .errbox .d{font-size:11.5px; color:var(--text-2); line-height:1.6}
+  .errbox .actions{display:flex; gap:6px; margin-top:9px}
+  .errbox .tech{
+    margin-top:8px; font-family:var(--mono); font-size:10.5px; color:var(--text-3);
+    background:rgba(0,0,0,.3); border-radius:var(--r-xs); padding:6px 8px;
+    overflow-x:auto; white-space:nowrap; scrollbar-width:none;
+  }
+
+  .errbox .tech::-webkit-scrollbar{display:none}
+  .composer{border-top:1px solid var(--line); padding:12px}
+  .composer .box{
+    border:1px solid var(--line-strong); border-radius:var(--r-md); background:var(--bg-2);
+    transition:border-color .25s var(--ease);
+  }
+  .composer .box:focus-within{border-color:rgba(34,211,238,.5)}
+  .composer .ph{padding:11px 12px 6px; font-size:12.5px; color:var(--text-3)}
+  .composer .row{display:flex; align-items:center; gap:5px; padding:6px 8px 8px}
+  .composer .row .sp{margin-left:auto}
+  .composer .send{
+    width:28px;height:28px;border-radius:50%; background:var(--accent); color:#06272c;
+    display:flex;align-items:center;justify-content:center;border:0;cursor:pointer;
+    transition:all .25s var(--ease);
+  }
+  .composer .send:active{transform:scale(.92)}
+
+  .sec-h{font-size:11px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:12px}
+</style>
+</head>
+<body>
+
+<!-- ================= 原型切换 ================= -->
+<nav class="proto-nav">
+  <button class="on" onclick="go(0,this)">1 · 画布 + 版本记录</button>
+  <button onclick="go(1,this)">2 · 加入画布</button>
+  <button onclick="go(2,this)">3 · Agent 报告</button>
+  <button onclick="go(3,this)">4 · 错误说人话</button>
+</nav>
+
+<!-- ============================================================
+     屏 1：画布 + 版本记录面板 + 小地图
+     ============================================================ -->
+<section class="screen on" id="s0">
+  <div class="canvas-wrap">
+
+    <!-- 画布 -->
+    <div class="stage">
+      <div class="grid-bg"></div>
+
+      <!-- 顶栏 -->
+      <div class="topbar">
+        <div class="crumb">
+          <b>未命名画布</b>
+          <span class="sep">/</span>
+          <span>画布 3</span>
+        </div>
+        <div class="save-state"><span class="dot"></span>已保存到本地</div>
+        <div class="topbar-right">
+          <button class="btn ghost">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+            版本记录
+          </button>
+          <button class="btn ghost">
+            <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            自动整理
+          </button>
+          <button class="btn primary">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M5 3l14 9-14 9z"/></svg>
+            出片
+          </button>
+        </div>
+      </div>
+
+      <!-- 连线 -->
+      <svg class="wires">
+        <path class="wire" d="M 264 268 C 312 268, 312 466, 360 466"/>
+        <path class="wire hi" d="M 264 268 C 312 268, 312 216, 360 216"/>
+        <path class="wire" d="M 560 216 C 610 216, 610 290, 660 290"/>
+      </svg>
+
+      <!-- 节点 -->
+      <div class="node" style="left:96px; top:190px; width:168px;">
+        <div class="nh">
+          <svg class="icon" viewBox="0 0 24 24" style="color:#22d3ee"><path d="M4 5h16v14H4z"/><path d="M4 15l4-4 4 4 3-3 5 5"/></svg>
+          参考图 · 女主角
+        </div>
+        <div class="nb"><div class="thumb"></div></div>
+        <span class="port l"></span><span class="port r"></span>
+      </div>
+
+      <div class="node sel" style="left:360px; top:150px; width:200px;">
+        <div class="nh">
+          <svg class="icon" viewBox="0 0 24 24" style="color:#22d3ee"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M10 10l5 3-5 3z"/></svg>
+          镜头 2 · 中景推进
+          <span class="tag accent" style="margin-left:auto">已生成</span>
+        </div>
+        <div class="nb"><div class="thumb"></div></div>
+        <span class="port l"></span><span class="port r"></span>
+      </div>
+
+      <div class="node" style="left:360px; top:400px; width:200px;">
+        <div class="nh">
+          <svg class="icon" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M10 10l5 3-5 3z"/></svg>
+          镜头 1 · 开场窗边
+          <span class="tag warn" style="margin-left:auto">待生成</span>
+        </div>
+        <div class="nb"><div class="thumb"></div></div>
+        <span class="port l"></span><span class="port r"></span>
+      </div>
+
+      <div class="node" style="left:660px; top:230px; width:184px;">
+        <div class="nh">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+          分镜脚本 · 12 镜
+        </div>
+        <div class="nb">
+          <div style="font-size:11.5px;color:var(--text-2);line-height:1.9">
+            01 窗边独坐<br>02 中景推进<br>03 特写表情…
+          </div>
+        </div>
+        <span class="port l"></span><span class="port r"></span>
+      </div>
+
+      <!-- 空态提示（画布左下）-->
+      <div class="empty-hint" style="align-items:flex-start; justify-content:flex-end; padding:0 0 90px 120px">
+        <div class="t">双击画布 · 新建节点</div>
+        <div class="s">或按 <span class="kbd">Cmd</span> <span class="kbd">J</span> 让智能体搭草稿</div>
+      </div>
+
+      <!-- 小地图 -->
+      <div class="minimap">
+        <span class="mm-t">总览</span>
+        <div class="blip" style="left:22px;top:44px;width:26px;height:19px"></div>
+        <div class="blip" style="left:62px;top:38px;width:34px;height:25px"></div>
+        <div class="blip" style="left:62px;top:70px;width:34px;height:25px"></div>
+        <div class="blip" style="left:112px;top:52px;width:28px;height:21px"></div>
+        <div class="viewport" style="left:14px;top:30px;width:104px;height:74px"></div>
+      </div>
+
+      <!-- 底部工具条 -->
+      <div class="toolbar">
+        <button class="tb plus" title="添加节点">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <div class="divide"></div>
+        <button class="tb on" title="选择">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M4 3l7 17 2.5-6.5L20 11z"/></svg>
+        </button>
+        <button class="tb" title="连线">
+          <svg class="icon" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 8.5v6A3.5 3.5 0 0 0 9.5 18H15"/></svg>
+        </button>
+        <button class="tb on" title="显示连线">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"/><circle cx="12" cy="12" r="2.5"/></svg>
+        </button>
+        <button class="tb on" title="网格吸附">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+        </button>
+        <button class="tb" title="小地图">
+          <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><rect x="6" y="7" width="7" height="5" rx="1"/></svg>
+        </button>
+        <div class="zoom">100%</div>
+        <button class="tb" title="适应屏幕">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- 版本记录面板 -->
+    <aside class="panel">
+      <div class="panel-h">
+        <svg class="icon" viewBox="0 0 24 24" style="color:var(--text-2)"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/></svg>
+        <span class="ttl">版本记录</span>
+        <button class="x"><svg class="icon" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+
+      <div class="search">
+        <svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        搜索改动…
+      </div>
+
+      <div class="vlist">
+        <!-- 当前 -->
+        <div class="vitem cur">
+          <div class="rail"><span class="pt"></span><span class="ln"></span></div>
+          <div class="vbody">
+            <div class="vrow1"><span class="vtime">现在</span><span class="tag ok">当前</span></div>
+            <div class="vmeta">12 个节点 · 自动保存</div>
+          </div>
+        </div>
+
+        <!-- Agent 改动 -->
+        <div class="vitem">
+          <div class="rail"><span class="pt"></span><span class="ln"></span></div>
+          <div class="vbody">
+            <div class="vrow1"><span class="vtime">21:30</span><span class="tag accent">智能体</span></div>
+            <div class="vmeta">
+              修改了分镜脚本
+              <span class="vdiff"><span class="add">+6</span> <span class="del">−2</span></span>
+              · 12 节点
+            </div>
+            <div class="vacts">
+              <button>查看</button>
+              <button class="restore">恢复到此版本</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 手动 -->
+        <div class="vitem">
+          <div class="rail"><span class="pt"></span><span class="ln"></span></div>
+          <div class="vbody">
+            <div class="vrow1"><span class="vtime">20:15</span><span class="tag">手动</span></div>
+            <div class="vmeta">
+              新增 2 个镜头节点
+              <span class="vdiff"><span class="add">+2</span> <span class="del">−0</span></span>
+              · 8 节点
+            </div>
+            <div class="vacts">
+              <button>查看</button>
+              <button class="restore">恢复到此版本</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 自动 -->
+        <div class="vitem">
+          <div class="rail"><span class="pt"></span><span class="ln"></span></div>
+          <div class="vbody">
+            <div class="vrow1"><span class="vtime">19:40</span><span class="tag">自动</span></div>
+            <div class="vmeta">调整连线 · 8 节点</div>
+            <div class="vacts">
+              <button>查看</button>
+              <button class="restore">恢复到此版本</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 创建 -->
+        <div class="vitem">
+          <div class="rail"><span class="pt"></span><span class="ln"></span></div>
+          <div class="vbody">
+            <div class="vrow1"><span class="vtime">18:02</span><span class="tag">创建</span></div>
+            <div class="vmeta">初始 5 个节点</div>
+            <div class="vacts">
+              <button>查看</button>
+              <button class="restore">恢复到此版本</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ============================================================
+     屏 2：产物卡片 + 加入画布浮层
+     ============================================================ -->
+<section class="screen" id="s1">
+  <div style="padding:28px 32px 0">
+    <div class="sec-h">AI 图片 · 生成结果</div>
+  </div>
+  <div class="cards">
+    <div class="pcard">
+      <div class="img"></div>
+      <div class="b">
+        <span class="m">1024×1024</span>
+        <button class="btn ghost addbtn">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+          加入画布
+        </button>
+      </div>
+    </div>
+    <div class="pcard">
+      <div class="img"></div>
+      <div class="b">
+        <span class="m">1024×1024</span>
+        <button class="btn ghost addbtn">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+          加入画布
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 浮层 -->
+  <div class="dim">
+    <div class="popover">
+      <div class="pop-h">加入画布</div>
+      <div class="pop-label">选择画布</div>
+      <div class="pop-sec">
+        <div class="pop-item on">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M9 9h6v6H9z"/></svg>
+          <div>
+            <div class="nm">未命名画布 · 画布 3</div>
+            <div class="sub">当前正在编辑</div>
+          </div>
+          <svg class="icon chk" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+        </div>
+        <div class="pop-item">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M9 9h6v6H9z"/></svg>
+          <div>
+            <div class="nm">角色设定画布</div>
+            <div class="sub">2 小时前 · 8 节点</div>
+          </div>
+          <svg class="icon chk" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+        </div>
+      </div>
+      <div class="pop-div"></div>
+      <div class="pop-label">加入方式</div>
+      <div class="pop-sec">
+        <div class="pop-item on">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M4 15l4-4 4 4 3-3 5 5"/></svg>
+          <div>
+            <div class="nm">作为图片节点</div>
+            <div class="sub">独立摆在画布上，可被连线引用</div>
+          </div>
+          <svg class="icon chk" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+        </div>
+        <div class="pop-item">
+          <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v8M8 12h8"/></svg>
+          <div>
+            <div class="nm">作为参考素材</div>
+            <div class="sub">挂到某个生成节点的参考位上</div>
+          </div>
+          <svg class="icon chk" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+        </div>
+        <div class="pop-item">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+          <div>
+            <div class="nm">作为分镜的一镜</div>
+            <div class="sub">追加到分镜脚本表格，自动编号</div>
+          </div>
+          <svg class="icon chk" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+        </div>
+      </div>
+      <div class="pop-f">
+        <button class="btn">取消</button>
+        <button class="btn primary">加入</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     屏 3：Agent 报告（四段式 + 改动规模 + 能力边界）
+     ============================================================ -->
+<section class="screen" id="s2">
+  <div class="agent-wrap">
+    <div class="stage">
+      <div class="grid-bg"></div>
+      <div class="topbar">
+        <div class="crumb"><b>未命名画布</b><span class="sep">/</span><span>画布 3</span></div>
+        <div class="save-state"><span class="dot"></span>已保存到本地</div>
+      </div>
+      <div class="empty-hint">
+        <div class="t">智能体正在修改画布</div>
+        <div class="s">右侧查看它做了什么</div>
+      </div>
+    </div>
+
+    <aside class="agpanel">
+      <div class="ag-tabs">
+        <span class="t on">对话</span>
+        <span class="t">执行轨迹</span>
+        <span class="t">文件改动</span>
+      </div>
+
+      <div class="ag-body">
+        <div class="msg-u">帮我把分镜脚本的第 2 镜拆成两个镜头，中景和特写</div>
+
+        <div class="report">
+          <div class="rh">
+            <span class="state ok">
+              <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>
+              已完成
+            </span>
+            <span class="dur">用时 1 分 12 秒</span>
+          </div>
+
+          <!-- ① 定性 -->
+          <div class="rsec">
+            <div class="lab"><span class="bar"></span>结论</div>
+            <div class="verdict">
+              第 2 镜已拆成两个镜头。原节点保留，新节点接在它右边并继承同一参考图。
+              <b>没有触发任何生成</b>，只改了画布结构。
+            </div>
+          </div>
+
+          <!-- ② 做了什么 -->
+          <div class="rsec">
+            <div class="lab"><span class="bar"></span>做了什么</div>
+            <ul class="rlist">
+              <li>把「镜头 2 · 中景推进」拆成 <b>镜头 2A（中景）</b> 和 <b>镜头 2B（特写）</b></li>
+              <li>两个新节点都连到同一张参考图 <code>参考图 · 女主角</code></li>
+              <li>分镜脚本同步插入一行，镜号自动重排为 01–13</li>
+            </ul>
+          </div>
+
+          <!-- ③ 没做什么（关键） -->
+          <div class="rsec">
+            <div class="lab"><span class="bar" style="background:var(--warn)"></span>没做什么</div>
+            <ul class="rlist">
+              <li>没有生成视频，两个新节点仍是<b>待生成</b>状态</li>
+              <li>没有改其他 11 个镜头</li>
+              <li>没有调整画布布局位置（新节点位置是自动算的，你可能要挪一下）</li>
+            </ul>
+          </div>
+
+          <!-- ④ 需要你做什么 -->
+          <div class="rsec">
+            <div class="lab"><span class="bar"></span>需要你</div>
+            <div class="action-box">
+              <svg class="icon ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/></svg>
+              <div class="tx">
+                确认拆分方式对不对。如果 2B 应该用<span style="color:var(--accent)">更浅的景深</span>，
+                告诉我，我改提示词；如果要回退，点下面的「恢复」。
+              </div>
+            </div>
+          </div>
+
+          <!-- 自检 -->
+          <div class="rsec">
+            <div class="lab"><span class="bar" style="background:var(--ok)"></span>自检</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <span class="tag ok">节点连通无环</span>
+              <span class="tag ok">镜号连续</span>
+              <span class="tag ok">参考图未断</span>
+              <span class="tag warn">2 个节点位置待调整</span>
+            </div>
+          </div>
+
+          <!-- 改动规模 -->
+          <div class="chg">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+            <span class="n">更改了 3 个文件</span>
+            <span class="add">+18</span>
+            <span class="del">−4</span>
+            <svg class="icon" style="margin-left:auto" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+          </div>
+
+          <!-- 能力边界 -->
+          <div class="caveat">
+            <svg class="icon ic" viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17v.5"/></svg>
+            <div>
+              我用的模型不支持读图，<b>没法自己核对画面</b>。
+              生成出来的效果需要你亲眼看。位置是否合适也请你看一眼。
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:14px;display:flex;gap:6px">
+          <button class="btn ghost">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+            撤销这次改动
+          </button>
+          <button class="btn ghost">查看版本差异</button>
+        </div>
+      </div>
+
+      <div class="composer">
+        <div class="box">
+          <div class="ph">描述你的想法，或用 @ 引用素材</div>
+          <div class="row">
+            <button class="btn" title="附件">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M21 11l-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 1 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L16 6"/></svg>
+            </button>
+            <button class="btn" title="引用画布素材">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M12 3l2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg>
+            </button>
+            <button class="btn">选择技能</button>
+            <span class="sp"></span>
+            <button class="btn ghost" style="font-size:11.5px">当前画布 ▾</button>
+            <button class="send">
+              <svg class="icon" viewBox="0 0 24 24" style="stroke-width:2"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ============================================================
+     屏 4：错误说人话
+     ============================================================ -->
+<section class="screen" id="s3">
+  <div class="agent-wrap">
+    <div class="stage">
+      <div class="grid-bg"></div>
+      <div class="topbar">
+        <div class="crumb"><b>未命名画布</b><span class="sep">/</span><span>画布 3</span></div>
+        <div class="save-state"><span class="dot"></span>已保存到本地</div>
+      </div>
+    </div>
+
+    <aside class="agpanel">
+      <div class="ag-tabs"><span class="t on">对话</span><span class="t">执行轨迹</span></div>
+      <div class="ag-body">
+
+        <!-- 错误 1：模型鉴权 -->
+        <div class="errbox">
+          <svg class="icon ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/></svg>
+          <div class="body">
+            <div class="t">图像模型未通过鉴权</div>
+            <div class="d">
+              用的是「chybenzun / gpt-image-2」，服务端返回 403，说明这把 Key 没权限或已失效。
+              <b style="color:var(--text)">不是画布的问题</b>，画布结构没动。
+            </div>
+            <div class="actions">
+              <button class="btn primary" style="padding:4px 11px;font-size:11.5px">去检查模型配置</button>
+              <button class="btn ghost" style="padding:4px 11px;font-size:11.5px">换一个模型重试</button>
+              <button class="btn" style="padding:4px 11px;font-size:11.5px">复制错误详情</button>
+            </div>
+            <div class="tech">POST /v1/images/generations → 403 · provider=custom-chybenzun-01</div>
+          </div>
+        </div>
+
+        <div style="height:14px"></div>
+
+        <!-- 错误 2：任务超时 -->
+        <div class="errbox" style="border-color:rgba(251,191,36,.28);background:rgba(251,191,36,.055)">
+          <svg class="icon ic" style="color:var(--warn)" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/></svg>
+          <div class="body">
+            <div class="t">视频生成超过 20 分钟没返回</div>
+            <div class="d">
+              任务 <span class="mono" style="color:var(--text-2)">#a7f3</span> 仍在服务商队列里。
+              <b style="color:var(--text)">钱还没扣</b>，可以继续等，也可以取消。
+            </div>
+            <div class="actions">
+              <button class="btn ghost" style="padding:4px 11px;font-size:11.5px">继续等（后台会通知）</button>
+              <button class="btn" style="padding:4px 11px;font-size:11.5px">取消任务</button>
+            </div>
+            <div class="tech">task #a7f3 · provider=volcengine · 已等待 20m 14s · 状态=queued</div>
+          </div>
+        </div>
+
+        <div style="height:14px"></div>
+
+        <!-- 错误 3：并发冲突 -->
+        <div class="errbox" style="border-color:rgba(248,113,113,.28)">
+          <svg class="icon ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/></svg>
+          <div class="body">
+            <div class="t">画布已被改动，这次修改没生效</div>
+            <div class="d">
+              你在别处改了这个画布（版本 12 → 13），我的改动基于旧版本，所以<b style="color:var(--text)">没有强行覆盖</b>。
+              要我基于最新版本重做一次吗？
+            </div>
+            <div class="actions">
+              <button class="btn primary" style="padding:4px 11px;font-size:11.5px">基于最新版本重做</button>
+              <button class="btn" style="padding:4px 11px;font-size:11.5px">先看看别处改了什么</button>
+            </div>
+            <div class="tech">revision mismatch · expected 13, got 12</div>
+          </div>
+        </div>
+
+        <div style="height:18px"></div>
+        <div style="font-size:11px;color:var(--text-3);line-height:1.8;padding:0 2px">
+          原则：<br>
+          · 先说<b style="color:var(--text-2)">是不是我这边的错</b><br>
+          · 再说<b style="color:var(--text-2)">钱动没动</b><br>
+          · 每条错误都带<b style="color:var(--text-2)">能点的下一步</b><br>
+          · 技术细节折叠在最后，不挡人
+        </div>
+      </div>
+
+      <div class="composer">
+        <div class="box">
+          <div class="ph">描述你的想法，或用 @ 引用素材</div>
+          <div class="row">
+            <button class="btn"><svg class="icon" viewBox="0 0 24 24"><path d="M21 11l-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 1 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L16 6"/></svg></button>
+            <span class="sp"></span>
+            <button class="send"><svg class="icon" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<script>
+function go(i, el){
+  document.querySelectorAll('.screen').forEach((s,n)=>s.classList.toggle('on', n===i));
+  document.querySelectorAll('.proto-nav button').forEach(b=>b.classList.remove('on'));
+  el.classList.add('on');
+}
+</script>
+</body>
+</html>

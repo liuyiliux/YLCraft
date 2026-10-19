@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>YLCraft 画布 · 节点图原型</title>
+<style>
+  :root{
+    --bg:#08080a; --bg2:#0b0b0e; --s1:#101013; --s2:#16161a; --s3:#1c1c21;
+    --ln:rgba(255,255,255,.065); --ln2:rgba(255,255,255,.11); --ln3:rgba(255,255,255,.18);
+    --tx:#f0f0f3; --tx2:#9c9ca8; --tx3:#63636e;
+    --ac:#22d3ee; --acs:rgba(34,211,238,.13); --acl:rgba(34,211,238,.35);
+    --ok:#34d399; --oks:rgba(52,211,153,.12);
+    --wn:#fbbf24; --wns:rgba(251,191,36,.11);
+    --dg:#f87171; --dgs:rgba(248,113,113,.10);
+    --p-text:#60a5fa; --p-image:#22d3ee; --p-asset:#a78bfa; --p-json:#71717a;
+    --r1:5px;--r2:8px;--r3:12px;--r4:16px;
+    --sh3:0 18px 48px -12px rgba(0,0,0,.85),0 0 0 1px rgba(255,255,255,.06);
+    --ez:cubic-bezier(.16,1,.3,1);
+    --fs:'Inter',-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
+    --fm:'JetBrains Mono',Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--tx);font-family:var(--fs);font-size:13px;
+       line-height:1.55;-webkit-font-smoothing:antialiased;overflow:hidden;height:100vh}
+  button{font-family:inherit}
+  .ic{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.55;
+      stroke-linecap:round;stroke-linejoin:round;display:block;flex:0 0 auto}
+  .ic.sm{width:13px;height:13px;stroke-width:1.7}
+  .b{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--tx2);
+     background:transparent;border:1px solid transparent;padding:6px 10px;border-radius:var(--r2);
+     cursor:pointer;transition:all .26s var(--ez);white-space:nowrap;flex:0 0 auto}
+  .b:hover{color:var(--tx);background:var(--s3)}
+  .b.out{border-color:var(--ln);background:var(--s1)}
+  .b.solid{color:#04222a;background:var(--ac);font-weight:600}
+  .tag{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;padding:1.5px 7px;
+    border-radius:var(--r1);background:rgba(255,255,255,.07);color:var(--tx2)}
+  .tag.ok{background:var(--oks);color:var(--ok)}
+  .tag.wn{background:var(--wns);color:var(--wn)}
+  .tag.ac{background:var(--acs);color:var(--ac)}
+  .mono{font-family:var(--fm);font-variant-numeric:tabular-nums}
+
+  /* ===== 顶栏 ===== */
+  .top{position:absolute;top:0;left:0;right:0;height:52px;z-index:60;display:flex;align-items:center;
+    gap:10px;padding:0 14px;border-bottom:1px solid var(--ln);
+    background:linear-gradient(to bottom,rgba(8,8,10,.98),rgba(8,8,10,.8));
+    backdrop-filter:blur(18px);overflow:hidden}
+  .brand{display:flex;align-items:center;gap:7px;padding:5px 9px 5px 6px;border-radius:var(--r2);
+    background:var(--s1);border:1px solid var(--ln);flex:0 0 auto}
+  .brand .mk{width:20px;height:20px;border-radius:var(--r1);background:var(--ac);
+    display:flex;align-items:center;justify-content:center;color:#04222a;font-weight:800;font-size:11px}
+  .crumb{font-size:12px;color:var(--tx3);flex:0 0 auto}
+  .crumb b{color:var(--tx2);font-weight:500}
+  .saved{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--tx3);flex:0 0 auto}
+  .saved .d{width:5px;height:5px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px var(--oks)}
+  .seg{display:flex;gap:1px;padding:3px;background:var(--s1);border:1px solid var(--ln);border-radius:999px}
+  .seg button{font-size:12px;color:var(--tx3);background:0;border:0;padding:4px 13px;
+    border-radius:999px;cursor:pointer;transition:all .28s var(--ez)}
+  .seg button.on{background:#f2f2f5;color:#0a0a0c;font-weight:600}
+
+  /* ===== 左侧节点库 ===== */
+  .lib{position:absolute;left:0;top:52px;bottom:0;width:232px;z-index:50;
+    background:var(--s1);border-right:1px solid var(--ln);display:flex;flex-direction:column}
+  .lib .lh{padding:11px 13px;border-bottom:1px solid var(--ln);display:flex;align-items:center;gap:7px}
+  .lib .lh .t{font-size:12px;font-weight:600}
+  .lib .search{margin:9px 11px;display:flex;align-items:center;gap:7px;padding:6px 9px;
+    border:1px solid var(--ln);border-radius:var(--r2);background:var(--bg2);
+    color:var(--tx3);font-size:11.5px}
+  .lib .body{flex:1;overflow-y:auto;padding:0 7px 14px}
+  .lib .body::-webkit-scrollbar{width:5px}
+  .lib .body::-webkit-scrollbar-thumb{background:rgba(255,255,255,.08);border-radius:3px}
+  .grp{font-size:10px;color:var(--tx3);letter-spacing:.08em;text-transform:uppercase;
+    padding:11px 8px 5px}
+  .nitem{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:var(--r2);
+    cursor:grab;transition:all .2s var(--ez)}
+  .nitem:hover{background:var(--s3)}
+  .nitem .nic{width:24px;height:24px;border-radius:var(--r1);background:var(--s2);
+    display:flex;align-items:center;justify-content:center;flex:0 0 auto;color:var(--tx2);
+    border:1px solid var(--ln)}
+  .nitem .nn{font-size:11.5px;color:var(--tx2);line-height:1.4}
+  .nitem .nd{font-size:9.5px;color:var(--tx3);line-height:1.3}
+  .lib .lf{padding:9px 11px;border-top:1px solid var(--ln);font-size:10.5px;color:var(--tx3);line-height:1.6}
+
+  /* ===== 画布 ===== */
+  .stage{position:absolute;inset:52px 0 0 232px;overflow:hidden}
+  .dots{position:absolute;inset:0;
+    background-image:radial-gradient(circle at 1px 1px,rgba(255,255,255,.06) 1px,transparent 0);
+    background-size:24px 24px}
+  .wires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+
+  /* 节点 */
+  .node{position:absolute;width:206px;border-radius:var(--r3);background:var(--s2);
+    border:1px solid var(--ln);box-shadow:0 8px 26px -10px rgba(0,0,0,.8),0 0 0 1px rgba(255,255,255,.03);
+    transition:all .28s var(--ez)}
+  .node:hover{border-color:var(--ln2);transform:translateY(-1px)}
+  .node.sel{border-color:var(--acl);box-shadow:0 0 0 1.5px var(--acl),0 14px 40px -14px rgba(34,211,238,.45)}
+  .node.run{border-color:var(--acl);animation:pulse 1.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 1px var(--acl),0 0 18px -6px rgba(34,211,238,.5)}
+                   50%{box-shadow:0 0 0 2px var(--acl),0 0 30px -4px rgba(34,211,238,.75)}}
+  .node.err{border-color:rgba(248,113,113,.5);background:linear-gradient(180deg,rgba(248,113,113,.06),var(--s2))}
+  .node.skip{opacity:.4}
+  .node .hd{display:flex;align-items:center;gap:7px;padding:9px 11px 8px;border-bottom:1px solid var(--ln)}
+  .node .hd .t{font-size:11.5px;color:var(--tx2);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .node .hd .st{margin-left:auto;display:flex;align-items:center;gap:5px;font-size:10px;flex:0 0 auto}
+  .node .hd .dot{width:6px;height:6px;border-radius:50%;flex:0 0 auto}
+  .node.run .hd .dot{background:var(--ac);animation:blink 1s ease-in-out infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+  .node .bd{padding:9px 11px 10px}
+  .node .prev{width:100%;border-radius:var(--r2);aspect-ratio:16/10;
+    background:linear-gradient(140deg,#1d1d23,#101014);border:1px solid rgba(255,255,255,.035);
+    position:relative;overflow:hidden}
+  .node .prev.skeleton::after{content:'';position:absolute;inset:0;
+    background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.07) 50%,transparent 70%);
+    background-size:200% 100%;animation:sweep 1.5s linear infinite}
+  @keyframes sweep{from{background-position:150% 0}to{background-position:-50% 0}}
+  .node .params{display:flex;align-items:center;gap:6px;margin-top:8px;
+    font-size:10.5px;color:var(--tx3);font-family:var(--fm);white-space:nowrap;overflow:hidden}
+  .node .params .mid{color:var(--tx2)}
+  .node .meta{display:flex;align-items:center;gap:9px;margin-top:5px;font-size:10px;color:var(--tx3);
+    font-family:var(--fm)}
+  .node .meta .cost{color:var(--ac)}
+  .node .txt{font-size:11.5px;color:var(--tx2);line-height:1.7}
+  .node .txt .k{color:var(--tx3)}
+
+  /* 端口 */
+  .port{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--bg);
+    border:1.8px solid var(--tx3);top:50%;transform:translateY(-50%);transition:all .2s var(--ez)}
+  .port.l{left:-5px} .port.r{right:-5px}
+  .port.t-text{border-color:var(--p-text)} .port.t-image{border-color:var(--p-image)}
+  .port.t-json{border-color:var(--p-json)} .port.t-asset{border-color:var(--p-asset)}
+  .port .pl{position:absolute;left:14px;top:-3px;font-size:9.5px;color:var(--tx3);white-space:nowrap;
+    opacity:0;transition:opacity .2s}
+  .node:hover .port .pl{opacity:1}
+  .port.r .pl{left:auto;right:14px}
+
+  /* 连线 */
+  .wire{fill:none;stroke-width:1.6;transition:all .26s var(--ez)}
+  .wire.w-text{stroke:rgba(96,165,250,.55)} .wire.w-image{stroke:rgba(34,211,238,.55)}
+  .wire.w-json{stroke:rgba(113,113,122,.55)}
+  .wire.hi{stroke-width:2.4;filter:drop-shadow(0 0 4px currentColor)}
+  .wire.w-image.hi{stroke:var(--p-image)} .wire.w-text.hi{stroke:var(--p-text)}
+
+  /* 小地图 */
+  .mm{position:absolute;right:16px;bottom:78px;width:158px;height:104px;z-index:40;
+    background:rgba(12,12,15,.88);backdrop-filter:blur(22px);border:1px solid var(--ln2);
+    border-radius:var(--r3);box-shadow:var(--sh3);overflow:hidden}
+  .mm .lb{position:absolute;top:6px;left:9px;font-size:9px;color:var(--tx3);
+    letter-spacing:.09em;text-transform:uppercase}
+  .mm .vp{position:absolute;border:1px solid var(--acl);border-radius:2px;background:rgba(34,211,238,.06)}
+  .mm .bl{position:absolute;background:rgba(255,255,255,.28);border-radius:2px}
+
+  /* 运行时日志 */
+  .log{position:absolute;left:0;right:0;bottom:0;z-index:45;background:rgba(12,12,15,.97);
+    backdrop-filter:blur(24px);border-top:1px solid var(--ln2)}
+  .log .lh{display:flex;align-items:center;gap:9px;padding:8px 14px;cursor:pointer}
+  .log .lh .t{font-size:11.5px;font-weight:600}
+  .log .lh .sum{font-size:10.5px;color:var(--tx3);font-family:var(--fm)}
+  .log .lh .x{margin-left:auto;display:flex;gap:5px}
+  .log .lb2{padding:0 14px 10px;display:none;flex-direction:column;gap:3px}
+  .log.open .lb2{display:flex}
+  .lrow{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--tx2);
+    padding:3px 0;font-family:var(--fm)}
+  .lrow .dot{width:5px;height:5px;border-radius:50%;flex:0 0 auto}
+  .lrow .tm{color:var(--tx3);font-size:10px;min-width:52px}
+  .lrow .nm{color:var(--tx2);min-width:96px}
+
+  /* 底部工具条 */
+  .bar{position:absolute;left:248px;bottom:70px;z-index:44;display:flex;align-items:center;gap:2px;
+    padding:4px;background:rgba(16,16,19,.95);backdrop-filter:blur(24px);
+    border:1px solid var(--ln2);border-radius:999px;box-shadow:var(--sh3)}
+  .tb{width:30px;height:30px;display:flex;align-items:center;justify-content:center;
+    border-radius:var(--r2);color:var(--tx2);background:0;border:0;cursor:pointer;transition:all .24s var(--ez)}
+  .tb:hover{background:var(--s3);color:var(--tx)}
+  .tb.on{background:var(--acs);color:var(--ac)}
+  .bar .div{width:1px;height:15px;background:var(--ln2);margin:0 3px}
+  .bar .z{font-size:10.5px;color:var(--tx3);padding:0 7px;font-family:var(--fm)}
+
+  /* 成本 chip */
+  .costchip{position:absolute;right:16px;bottom:16px;z-index:44;display:flex;align-items:center;gap:7px;
+    padding:7px 12px;background:rgba(16,16,19,.95);backdrop-filter:blur(24px);
+    border:1px solid var(--ln2);border-radius:999px;box-shadow:var(--sh3);
+    font-size:11.5px;color:var(--tx2);cursor:pointer;transition:all .24s var(--ez)}
+  .costchip:hover{border-color:var(--line3,var(--ln3))}
+  .costchip .v{color:var(--ac);font-family:var(--fm);font-weight:600}
+</style>
+</head>
+<body>
+
+<!-- 顶栏 -->
+<div class="top">
+  <div class="brand"><span class="mk">YL</span><span style="font-size:12.5px;font-weight:600">YLCraft</span></div>
+  <div class="crumb"><b>我的短剧</b> / 画布 3</div>
+  <div class="saved"><span class="d"></span>已保存到本地</div>
+  <div class="seg" style="margin-left:8px"><button class="on">编辑</button><button>运行</button></div>
+  <div style="margin-left:auto;display:flex;gap:6px">
+    <button class="b out"><svg class="ic" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/></svg>版本记录</button>
+    <button class="b out"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>自动整理</button>
+    <button class="b solid"><svg class="ic" viewBox="0 0 24 24"><path d="M5 3l14 9-14 9z"/></svg>运行</button>
+  </div>
+</div>
+
+<!-- 左侧节点库 -->
+<div class="lib">
+  <div class="lh">
+    <svg class="ic sm" viewBox="0 0 24 24" style="color:var(--tx2)"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    <span class="t">节点库</span>
+  </div>
+  <div class="search">
+    <svg class="ic sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.4-3.4"/></svg>
+    搜索节点…
+  </div>
+  <div class="body">
+    <div class="grp">输入</div>
+    <div class="nitem"><div class="nic"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 6h16M4 12h10"/></svg></div>
+      <div><div class="nn">文本</div><div class="nd">text</div></div></div>
+    <div class="nitem"><div class="nic"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 5h16v10H8l-4 4z"/></svg></div>
+      <div><div class="nn">提示词</div><div class="nd">prompt</div></div></div>
+    <div class="nitem"><div class="nic"><svg class="ic sm" viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 12l9 4 9-4"/></svg></div>
+      <div><div class="nn">素材</div><div class="nd">asset</div></div></div>
+
+    <div class="grp">能力</div>
+    <div class="nitem"><div class="nic"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></div>
+      <div><div class="nn">大模型</div><div class="nd">llm</div></div></div>
+    <div class="nitem"><div class="nic"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M4 15l4-4 4 4 3-3 5 5"/></svg></div>
+      <div><div class="nn">生图模型</div><div class="nd">image_model</div></div></div>
+    <div class="nitem"><div class="nic"><svg class="ic sm" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M10 10.5l5 2.5-5 2.5z"/></svg></div>
+      <div><div class="nn">生视频</div><div class="nd">video_model · 待补</div></div></div>
+    <div class="nitem"><div class="nic"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18"/></svg></div>
+      <div><div class="nn">批量生图</div><div class="nd">image_batch</div></div></div>
+    <div class="nitem"><div class="nic"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/></svg></div>
+      <div><div class="nn">图片处理</div><div class="nd">image_transform</div></div></div>
+    <div class="nitem"><div class="nic"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.4-3.4"/></svg></div>
+      <div><div class="nn">平台搜索</div><div class="nd">platform_search</div></div></div>
+
+    <div class="grp">产物</div>
+    <div class="nitem"><div class="nic"><svg class="ic sm" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="9" cy="9" r="1.5"/><path d="M4 17l5-5 4 4 3-3 4 4"/></svg></div>
+      <div><div class="nn">图片</div><div class="nd">image</div></div></div>
+  </div>
+  <div class="lf">拖到画布上，或选中节点后按 Tab</div>
+</div>
+
+<!-- 画布 -->
+<div class="stage">
+  <div class="dots"></div>
+
+  <svg class="wires">
+    <!-- 文本 → 提示词 -->
+    <path class="wire w-text hi" d="M 250 140 C 262 140, 262 258, 274 258"/>
+    <!-- 提示词 → 生图 -->
+    <path class="wire w-text" d="M 480 258 C 508 258, 508 200, 534 200"/>
+    <!-- 生图 → 图片 -->
+    <path class="wire w-image" d="M 740 176 C 768 176, 768 238, 790 238"/>
+    <!-- 素材 → 生图(参考) -->
+    <path class="wire w-image" d="M 250 448 C 400 448, 400 330, 534 330"/>
+  </svg>
+
+  <!-- 节点：文本 -->
+  <div class="node sel" style="left:44px;top:96px">
+    <div class="hd">
+      <svg class="ic sm" viewBox="0 0 24 24" style="color:var(--p-text)"><path d="M4 6h16M4 12h10"/></svg>
+      <span class="t">场景描述</span>
+      <span class="st" style="color:var(--ok)"><span class="dot" style="background:var(--ok)"></span>就绪</span>
+    </div>
+    <div class="bd">
+      <div class="txt">女主角站在窗边，午后暖光，浅景深<span class="k">…</span></div>
+    </div>
+    <span class="port r t-text"><span class="pl">文本</span></span>
+  </div>
+
+  <!-- 节点：素材 -->
+  <div class="node" style="left:44px;top:360px">
+    <div class="hd">
+      <svg class="ic sm" viewBox="0 0 24 24" style="color:var(--p-asset)"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 12l9 4 9-4"/></svg>
+      <span class="t">角色参考图</span>
+      <span class="st" style="color:var(--ok)"><span class="dot" style="background:var(--ok)"></span>就绪</span>
+    </div>
+    <div class="bd"><div class="prev"></div></div>
+    <span class="port r t-image"><span class="pl">图片</span></span>
+  </div>
+
+  <!-- 节点：提示词 -->
+  <div class="node" style="left:274px;top:214px">
+    <div class="hd">
+      <svg class="ic sm" viewBox="0 0 24 24" style="color:var(--p-text)"><path d="M4 5h16v10H8l-4 4z"/></svg>
+      <span class="t">组装提示词</span>
+      <span class="st" style="color:var(--ok)"><span class="dot" style="background:var(--ok)"></span>就绪</span>
+    </div>
+    <div class="bd">
+      <div class="txt" style="font-size:11px">角色一致性前缀 + 场景描述 + 画质词</div>
+      <div class="params"><span class="mid">模板</span> · 电影感 · 1024</div>
+    </div>
+    <span class="port l t-text"><span class="pl">上下文</span></span>
+    <span class="port r t-text"><span class="pl">Prompt</span></span>
+  </div>
+
+  <!-- 节点：生图（运行中）-->
+  <div class="node run" style="left:534px;top:140px">
+    <div class="hd">
+      <svg class="ic sm" viewBox="0 0 24 24" style="color:var(--ac)"><path d="M4 5h16v14H4z"/><path d="M4 15l4-4 4 4 3-3 5 5"/></svg>
+      <span class="t">生图模型</span>
+      <span class="st" style="color:var(--ac)"><span class="dot"></span>生成中</span>
+    </div>
+    <div class="bd">
+      <div class="prev skeleton"></div>
+      <div class="params"><span class="mid">GPT Image 2</span> · 16:9 · 1 张</div>
+      <div class="meta"><span>⏱ 3.4s</span><span class="cost">⚡14</span></div>
+    </div>
+    <span class="port l t-text"><span class="pl">Prompt</span></span>
+    <span class="port l t-image" style="top:72%"><span class="pl">参考图</span></span>
+    <span class="port r t-image"><span class="pl">图片</span></span>
+  </div>
+
+  <!-- 节点：图片（成功）-->
+  <div class="node" style="left:790px;top:170px">
+    <div class="hd">
+      <svg class="ic sm" viewBox="0 0 24 24" style="color:var(--p-image)"><rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="9" cy="9" r="1.5"/><path d="M4 17l5-5 4 4 3-3 4 4"/></svg>
+      <span class="t">成图</span>
+      <span class="st" style="color:var(--ok)"><span class="dot" style="background:var(--ok)"></span>成功</span>
+    </div>
+    <div class="bd">
+      <div class="prev" style="background:linear-gradient(165deg,#4a3520,#2a1d12 45%,#17110b);
+           box-shadow:inset 0 0 40px rgba(255,214,150,.18)">
+        <div style="position:absolute;left:46%;top:16%;width:15%;height:70%;
+             background:linear-gradient(175deg,#e8d5bd,#a8825c);border-radius:42% 42% 20% 20%/16% 16% 8% 8%"></div>
+      </div>
+      <div class="params"><span class="mid">1024×576</span> · PNG</div>
+      <div class="meta"><span>双击打开图层编辑</span></div>
+    </div>
+    <span class="port l t-image"><span class="pl">图片</span></span>
+  </div>
+
+  <!-- 节点：错误示例 -->
+  <div class="node err" style="left:534px;top:430px">
+    <div class="hd">
+      <svg class="ic sm" viewBox="0 0 24 24" style="color:var(--dg)"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M10 10.5l5 2.5-5 2.5z"/></svg>
+      <span class="t">生视频</span>
+      <span class="st" style="color:var(--dg)"><span class="dot" style="background:var(--dg)"></span>失败</span>
+    </div>
+    <div class="bd">
+      <div style="font-size:11px;color:var(--tx2);line-height:1.65">
+        模型未通过鉴权，返回 403。<b style="color:var(--tx)">不是画布的问题</b>。
+      </div>
+      <div style="display:flex;gap:5px;margin-top:8px">
+        <button class="b out" style="padding:3px 8px;font-size:10.5px">检查配置</button>
+        <button class="b out" style="padding:3px 8px;font-size:10.5px">重试</button>
+      </div>
+    </div>
+    <span class="port l t-image"><span class="pl">首图</span></span>
+  </div>
+
+  <!-- 底部工具条 -->
+  <div class="bar">
+    <button class="tb" title="加节点"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+    <button class="tb on" title="选择"><svg class="ic" viewBox="0 0 24 24"><path d="M4 3l7 17 2.5-6.5L20 11z"/></svg></button>
+    <button class="tb" title="连线"><svg class="ic" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M6 8.4v5.6A3.4 3.4 0 0 0 9.4 17.4H15.6"/></svg></button>
+    <div class="div"></div>
+    <button class="tb on" title="显示连线"><svg class="ic" viewBox="0 0 24 24"><path d="M2 12s3.6-6.2 10-6.2S22 12 22 12s-3.6 6.2-10 6.2S2 12 2 12z"/><circle cx="12" cy="12" r="2.4"/></svg></button>
+    <button class="tb on" title="网格吸附"><svg class="ic" viewBox="0 0 24 24"><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg></button>
+    <div class="div"></div>
+    <span class="z">100%</span>
+    <button class="tb" title="适应屏幕"><svg class="ic" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+  </div>
+
+  <!-- 运行日志 -->
+  <div class="log">
+    <div class="lh">
+      <svg class="ic sm" viewBox="0 0 24 24" style="color:var(--ac)"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      <span class="t">运行日志</span>
+      <span class="sum">4 个节点 · 1 运行中 · 1 失败 · 已用 ⚡14</span>
+      <div class="x">
+        <button class="b" style="padding:2px 7px;font-size:10.5px">重跑失败项</button>
+        <button class="tb" style="width:24px;height:24px"><svg class="ic sm" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+      </div>
+    </div>
+    <div class="lb2">
+      <div class="lrow"><span class="dot" style="background:var(--ok)"></span><span class="tm">14:02:11</span><span class="nm">场景描述</span><span style="color:var(--tx3)">就绪 0.1s</span></div>
+      <div class="lrow"><span class="dot" style="background:var(--ok)"></span><span class="tm">14:02:11</span><span class="nm">组装提示词</span><span style="color:var(--tx3)">完成 0.3s</span></div>
+      <div class="lrow"><span class="dot" style="background:var(--ac)"></span><span class="tm">14:02:12</span><span class="nm">生图模型</span><span style="color:var(--ac)">生成中… 3.4s</span></div>
+      <div class="lrow"><span class="dot" style="background:var(--dg)"></span><span class="tm">14:02:12</span><span class="nm">生视频</span><span style="color:var(--dg)">失败 · 403 未鉴权</span></div>
+    </div>
+  </div>
+
+  <!-- 成本 chip -->
+  <div class="costchip">
+    <svg class="ic sm" viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>
+    本次 <span class="v">⚡14</span> · ≈$0.14
+  </div>
+</div>
+
+</body>
+</html>
