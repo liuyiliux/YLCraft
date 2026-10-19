@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>YLCraft 画布巡检 · 原型 v12</title>
+<style>
+  :root{
+    --bg:#08080a; --bg2:#0b0b0e; --s1:#101013; --s2:#16161a; --s3:#1c1c21;
+    --ln:rgba(255,255,255,.065); --ln2:rgba(255,255,255,.11); --ln3:rgba(255,255,255,.18);
+    --tx:#f0f0f3; --tx2:#9c9ca8; --tx3:#63636e;
+    --ac:#22d3ee; --acs:rgba(34,211,238,.13); --acl:rgba(34,211,238,.4);
+    --ok:#34d399; --oks:rgba(52,211,153,.12); --okl:rgba(52,211,153,.4);
+    --wn:#fbbf24; --wns:rgba(251,191,36,.11); --wnl:rgba(251,191,36,.4);
+    --dg:#f87171; --dgs:rgba(248,113,113,.1); --dgl:rgba(248,113,113,.4);
+    --r1:5px;--r2:8px;--r3:12px;--r4:16px;
+    --sh2:0 6px 22px -8px rgba(0,0,0,.85);
+    --sh3:0 24px 70px -20px rgba(0,0,0,.95),0 0 0 1px rgba(255,255,255,.07);
+    --ez:cubic-bezier(.16,1,.3,1);
+    --fs:'Inter',-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
+    --fm:'JetBrains Mono',Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--tx);font-family:var(--fs);font-size:13px;
+       line-height:1.55;-webkit-font-smoothing:antialiased;overflow:hidden;
+       -webkit-user-select:none;user-select:none}
+  button{font-family:inherit}
+  .hidden{display:none!important}
+  .ic{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.55;
+      stroke-linecap:round;stroke-linejoin:round;display:block;flex:0 0 auto}
+  .ic.sm{width:13px;height:13px;stroke-width:1.7}
+  .b{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--tx2);
+     background:transparent;border:1px solid transparent;padding:6px 10px;border-radius:var(--r2);
+     cursor:pointer;transition:all .22s var(--ez);white-space:nowrap;flex:0 0 auto}
+  .b:hover{color:var(--tx);background:var(--s3)}
+  .b.out{border-color:var(--ln);background:var(--s1)}
+  .b.solid{color:#04222a;background:var(--ac);font-weight:600}
+
+  /* 顶栏 */
+  .top{position:fixed;top:0;left:0;right:0;height:52px;z-index:60;display:flex;align-items:center;
+    gap:10px;padding:0 14px;border-bottom:1px solid var(--ln);
+    background:linear-gradient(to bottom,rgba(8,8,10,.99),rgba(8,8,10,.86));backdrop-filter:blur(18px)}
+  .brand{display:flex;align-items:center;gap:7px;padding:5px 9px 5px 6px;border-radius:var(--r2);
+    background:var(--s1);border:1px solid var(--ln);flex:0 0 auto}
+  .brand .mk{width:20px;height:20px;border-radius:var(--r1);background:var(--ac);
+    display:flex;align-items:center;justify-content:center;color:#04222a;font-weight:800;font-size:11px}
+  .crumb{font-size:12px;color:var(--tx3);flex:0 0 auto}
+  .crumb b{color:var(--tx2);font-weight:500}
+  .saved{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--tx3)}
+  .saved .d{width:5px;height:5px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px var(--oks)}
+  .modechip{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--ac);
+    background:var(--acs);border:1px solid var(--acl);border-radius:999px;padding:3px 10px}
+  /* 巡检按钮（顶栏，对应 Lovart 对话框上方 Arti 入口） */
+  .inspectbtn{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;
+    color:var(--tx);background:var(--s2);border:1px solid var(--ln2);
+    border-radius:999px;padding:5px 12px;cursor:pointer;transition:all .22s var(--ez)}
+  .inspectbtn:hover{border-color:var(--acl);background:var(--acs);color:var(--ac)}
+  .inspectbtn .dot{width:5px;height:5px;border-radius:50%;background:var(--ac)}
+  .inspectbtn.alert{border-color:var(--wnl);background:var(--wns);color:var(--wn)}
+  .inspectbtn.alert .dot{background:var(--wn)}
+
+  #main{position:fixed;top:52px;left:0;right:0;bottom:0;display:flex}
+
+  /* 画布 */
+  .cv{flex:1;position:relative;overflow:hidden;min-width:0}
+  .dots{position:absolute;inset:0;pointer-events:none;
+    background-image:radial-gradient(circle at 1px 1px,rgba(255,255,255,.055) 1px,transparent 0);
+    background-size:26px 26px}
+
+  /* 扫描线 */
+  .scanline{position:absolute;left:0;right:0;height:2px;z-index:40;pointer-events:none;
+    background:linear-gradient(90deg,transparent,rgba(34,211,238,.85),transparent);
+    box-shadow:0 0 18px 4px rgba(34,211,238,.35);opacity:0}
+  .scanning .scanline{opacity:1;animation:scan 1.5s linear infinite}
+  @keyframes scan{0%{top:0}100%{top:100%}}
+
+  .shot{position:absolute;border-radius:10px;cursor:pointer;z-index:10;
+    transition:box-shadow .3s var(--ez),transform .3s var(--ez),opacity .3s}
+  .shot .im{width:100%;height:100%;border-radius:9px;overflow:hidden;position:relative;
+    box-shadow:var(--sh2);outline:1px solid rgba(255,255,255,.09);outline-offset:-1px}
+  .shot:hover .im{outline-color:rgba(255,255,255,.2)}
+  .shot.sel .im{outline:2px solid var(--ac);outline-offset:0;box-shadow:0 0 0 4px rgba(34,211,238,.14),var(--sh2)}
+  /* 巡检问题态 */
+  .shot.bad .im{outline:2px solid var(--wnl);outline-offset:0;
+    box-shadow:0 0 0 4px rgba(251,191,36,.12),var(--sh2)}
+  .shot.focused .im{outline:2px solid var(--wn);outline-offset:0;
+    box-shadow:0 0 0 5px rgba(251,191,36,.22),0 0 40px -6px rgba(251,191,36,.5)}
+  .shot.dimmed{opacity:.42;filter:saturate(.6)}
+  .shot.fixed .im{outline:2px solid var(--okl);outline-offset:0}
+  /* 镜号 */
+  .shot .idx{position:absolute;left:0;top:-19px;font-size:10.5px;color:var(--tx3);
+    font-family:var(--fm);white-space:nowrap}
+  .shot .idx b{color:var(--tx2);font-weight:600}
+  /* 问题标记 */
+  .mark{position:absolute;border:1.5px dashed var(--wn);border-radius:6px;z-index:15;
+    pointer-events:none;background:rgba(251,191,36,.06)}
+  .mark::after{content:attr(data-n);position:absolute;left:-8px;top:-8px;width:17px;height:17px;
+    border-radius:50%;background:var(--wn);color:#1a1400;font-size:10.5px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;font-family:var(--fm)}
+  .mark.ok{border-color:var(--okl);background:rgba(52,211,153,.07)}
+  .mark.ok::after{background:var(--ok);color:#04221a}
+
+  .g1{background:linear-gradient(165deg,#4a3520,#2a1d12 45%,#17110b)}
+  .g2{background:linear-gradient(165deg,#1e2a35,#0d141b)}
+  .g3{background:linear-gradient(165deg,#2b2440,#141020)}
+  .g4{background:linear-gradient(165deg,#243027,#111a15)}
+  .fig{position:absolute;left:46%;top:22%;width:15%;height:60%;
+    background:linear-gradient(175deg,#e8d5bd,#a8825c);border-radius:42% 42% 20% 20%/16% 16% 8% 8%}
+  .glow{position:absolute;inset:0;
+    background:radial-gradient(circle at 62% 32%,rgba(255,214,150,.24),transparent 55%)}
+  /* 光位差异：g2 主光在左 */
+  .glow.left{background:radial-gradient(circle at 26% 40%,rgba(150,200,255,.28),transparent 55%)}
+
+  /* Agent 面板 */
+  .ag{width:480px;flex:0 0 480px;background:var(--s1);border-left:1px solid var(--ln);
+    display:flex;flex-direction:column;z-index:25;min-height:0;overflow:hidden}
+  .agh{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--ln)}
+  .agh .t{font-size:12px;font-weight:600}
+  .agh .m{margin-left:auto;font-size:10px;color:var(--tx3);font-family:var(--fm)}
+  .agb{flex:1;overflow-y:auto;padding:14px;min-height:0}
+  .agb::-webkit-scrollbar{width:6px}
+  .agb::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:3px}
+
+  .msg{margin-bottom:14px}
+  .msg.me{display:flex;justify-content:flex-end}
+  .msg.me .bubble{background:var(--s3);border:1px solid var(--ln);
+    border-radius:var(--r2) var(--r2) 3px var(--r2);padding:10px 13px;font-size:12.5px;
+    color:var(--tx);line-height:1.65;max-width:340px}
+  .msg.ai .who{font-size:10px;color:var(--tx3);margin-bottom:6px}
+  .msg.ai .bubble{background:var(--bg2);border:1px solid var(--ln);
+    border-radius:var(--r2) var(--r2) var(--r2) 3px;padding:12px 14px;
+    font-size:12.5px;color:var(--tx2);line-height:1.75}
+  .msg.ai .bubble b{color:var(--tx);font-weight:600}
+
+  /* 巡检报告 */
+  .rep{background:var(--bg2);border:1px solid var(--ln);border-radius:var(--r3);overflow:hidden}
+  .rep .rh{display:flex;align-items:center;gap:8px;padding:10px 13px;border-bottom:1px solid var(--ln)}
+  .rep .rh .t{font-size:12.5px;font-weight:600;color:var(--tx)}
+  .rep .rh .c{margin-left:auto;font-size:10.5px;color:var(--tx3);font-family:var(--fm)}
+  .rep .sum{padding:10px 13px;font-size:12px;color:var(--tx2);line-height:1.7;
+    border-bottom:1px solid var(--ln)}
+  .rep .sum b{color:var(--tx)}
+
+  /* 问题卡 */
+  .issue{padding:11px 13px;border-bottom:1px solid var(--ln);cursor:pointer;
+    transition:background .2s var(--ez);position:relative}
+  .issue:last-child{border-bottom:0}
+  .issue:hover{background:rgba(255,255,255,.028)}
+  .issue.focused{background:rgba(251,191,36,.06)}
+  .issue.done{opacity:.5}
+  .issue .ih{display:flex;align-items:center;gap:7px;margin-bottom:5px}
+  .issue .n{width:17px;height:17px;border-radius:50%;background:var(--wn);color:#1a1400;
+    font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center;
+    flex:0 0 auto;font-family:var(--fm)}
+  .issue .ti{font-size:12px;color:var(--tx);font-weight:500;flex:1}
+  .issue .sev{font-size:9.5px;padding:1px 6px;border-radius:var(--r1);
+    background:var(--wns);color:var(--wn);flex:0 0 auto}
+  .issue .sev.ok{background:var(--oks);color:var(--ok)}
+  .issue .body{font-size:11.5px;color:var(--tx2);line-height:1.7;padding-left:24px}
+  .issue .body b{color:var(--tx)}
+  .issue .body .ev{display:block;margin-top:4px;font-family:var(--fm);font-size:10.5px;
+    color:var(--tx3);background:rgba(255,255,255,.04);border-radius:var(--r1);
+    padding:4px 7px;line-height:1.6}
+  .issue .acts{display:flex;gap:6px;margin-top:8px;padding-left:24px}
+  .issue .acts .b{font-size:11px;padding:4px 10px}
+
+  /* 扫描中 */
+  .working{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--tx2);
+    padding:14px;background:var(--bg2);border:1px solid var(--ln);border-radius:var(--r3)}
+  .spin{width:15px;height:15px;border-radius:50%;border:2px solid var(--acl);
+    border-top-color:var(--ac);animation:spin .9s linear infinite;flex:0 0 auto}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .cmp{border-top:1px solid var(--ln);padding:9px 12px 11px;background:rgba(8,8,10,.5)}
+  .cmp .bx{background:var(--bg2);border:1px solid var(--ln2);border-radius:var(--r3);padding:9px 10px;
+    display:flex;align-items:center;gap:8px}
+  .cmp textarea{flex:1;background:0;border:0;color:var(--tx);font-family:inherit;
+    font-size:12.5px;resize:none;outline:none;line-height:1.6;max-height:60px}
+  .cmp textarea::placeholder{color:var(--tx3)}
+  .cmp .snd{width:26px;height:26px;border-radius:var(--r2);background:var(--ac);border:0;
+    color:#04222a;display:flex;align-items:center;justify-content:center;cursor:pointer}
+
+  .toast{position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:500;
+    display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--tx);
+    background:rgba(16,16,19,.97);backdrop-filter:blur(24px);
+    border-radius:999px;padding:7px 15px;box-shadow:0 12px 34px -10px rgba(0,0,0,.9);
+    animation:toastIn .3s var(--ez)}
+  @keyframes toastIn{from{opacity:0;transform:translate(-50%,-8px)}to{opacity:1;transform:translate(-50%,0)}}
+
+  .hint{position:fixed;left:50%;bottom:10px;transform:translateX(-50%);z-index:60;
+    font-size:11px;color:var(--tx3);background:rgba(16,16,19,.9);backdrop-filter:blur(20px);
+    border:1px solid var(--ln2);border-radius:999px;padding:5px 14px;pointer-events:none}
+  .hint b{color:var(--tx2)}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="brand"><span class="mk">YL</span><span style="font-size:12.5px;font-weight:600">YLCraft</span></div>
+  <div class="crumb"><b>我的短剧</b> / 第 3 集</div>
+  <div class="saved"><span class="d"></span>已保存到本地</div>
+  <div class="modechip"><svg class="ic sm" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>镜头墙</div>
+
+  <button class="inspectbtn" id="btnInspect" onclick="startInspect()">
+    <span class="dot"></span>
+    <svg class="ic sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.4-3.4"/></svg>
+    巡检这批图
+  </button>
+
+  <div style="margin-left:auto;display:flex;gap:6px">
+    <button class="b out"><svg class="ic sm" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/></svg>版本记录</button>
+    <button class="b out"><svg class="ic sm" viewBox="0 0 24 24"><path d="M5 3l14 9-14 9z"/></svg>出片</button>
+  </div>
+</div>
+
+<div id="main">
+  <div class="cv" id="cv">
+    <div class="dots"></div>
+    <div class="scanline"></div>
+    <!-- 镜头由 JS 渲染 -->
+  </div>
+
+  <aside class="ag">
+    <div class="agh">
+      <svg class="ic sm" viewBox="0 0 24 24" style="color:var(--ac)"><path d="M21 12a8 8 0 0 1-8 8H7l-4 3V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z"/></svg>
+      <span class="t">智能体</span>
+      <span class="m">gpt-image-2</span>
+    </div>
+
+    <div class="agb" id="agb">
+      <div class="msg ai">
+        <div class="who">智能体</div>
+        <div class="bubble">第 3 集的 4 个镜头出完了。<b>单张看都还行</b>，但整套放一起可能有对不上的地方 —— 要我巡检一遍吗？</div>
+      </div>
+    </div>
+
+    <div class="cmp">
+      <div class="bx">
+        <textarea id="ta" rows="1" placeholder="或者直接说：这 4 个镜头有什么问题"></textarea>
+        <button class="snd" onclick="startInspect()"><svg class="ic sm" viewBox="0 0 24 24" style="stroke-width:2"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<div class="hint" id="hintBar">点顶部「<b>巡检这批图</b>」，或跟智能体说一句话</div>
+
+<script>
+/* ============ 数据 ============ */
+const SHOTS = [
+  {id:'s1', idx:'01', name:'中景推进', x: 14, y: 46, w:172, h:240, cls:'g1', glow:'', role:'女主角', res:'1024×1536', light:'右'},
+  {id:'s2', idx:'02', name:'特写',    x:198, y: 46, w:172, h:240, cls:'g2', glow:'left', role:'女主角', res:'1024×1536', light:'左'},
+  {id:'s3', idx:'03', name:'侧身回头', x:382, y: 46, w:172, h:240, cls:'g3', glow:'', role:'女主角?', res:'1024×1536', light:'右'},
+  {id:'s4', idx:'04', name:'过场',    x:566, y: 46, w:172, h:172, cls:'g4', glow:'', role:'—', res:'1024×1024', light:'右'}
+];
+
+/* 巡检发现的问题（模拟真实检查结果） */
+const ISSUES = [
+  {
+    n:1, shot:'s3', sev:'要修', title:'角色脸和前面不一致',
+    body:'镜头 3 的女主角和镜头 1 对比，<b>五官比例和发际线差异明显</b>，看起来不像同一个人。',
+    ev:'人脸相似度 0.62（阈值 0.85）· 参照 镜头 1',
+    fix:'用镜头 1 的角色参考重出这一镜',
+    box:{l:38,t:14,w:26,h:30}
+  },
+  {
+    n:2, shot:'s2', sev:'要修', title:'主光方向反了',
+    body:'这一场其他镜头主光都在<b>右上方</b>，只有镜头 2 在<b>左上方</b>，剪在一起会跳。',
+    ev:'光源方向 左 210° / 其余 右 35°',
+    fix:'按其余镜头的光位重新打光',
+    box:{l:6,t:8,w:34,h:52}
+  },
+  {
+    n:3, shot:'s4', sev:'建议', title:'分辨率和其他不一致',
+    body:'其他三个镜头都是 <b>1024×1536</b>，这张是 <b>1024×1024</b>，出片时要裁切。',
+    ev:'1024×1024 → 需要 1024×1536',
+    fix:'扩图到 1024×1536',
+    box:{l:16,t:16,w:68,h:68}
+  }
+];
+
+let selShot = null;
+let focusedIssue = null;
+const cv = document.getElementById('cv');
+const agb = document.getElementById('agb');
+
+/* ============ 渲染画布 ============ */
+function renderShots(){
+  cv.querySelectorAll('.shot,.mark').forEach(e=>e.remove());
+  SHOTS.forEach(s=>{
+    const el = document.createElement('div');
+    el.className = 'shot' + (selShot===s.id?' sel':'');
+    el.dataset.id = s.id;
+    el.style.cssText = `left:${s.x}px;top:${s.y}px;width:${s.w}px;height:${s.h}px`;
+    el.innerHTML =
+      `<div class="im ${s.cls}"><div class="glow ${s.glow}"></div>`
+      + `<div class="fig"${s.id==='s3'?' style="background:linear-gradient(175deg,#e0cbb2,#9e7850)"':''}></div></div>`
+      + `<div class="idx"><b>${s.idx}</b> ${s.name}</div>`;
+    el.addEventListener('click', ()=> focusShot(s.id));
+    cv.appendChild(el);
+  });
+}
+
+/* ============ 巡检 ============ */
+function startInspect(){
+  // 清掉旧结果
+  document.querySelectorAll('.issue').forEach(()=>{});
+  resetStates();
+
+  const w = document.createElement('div');
+  w.className = 'msg ai';
+  w.id = 'workingMsg';
+  w.innerHTML = `<div class="who">智能体</div>
+    <div class="working"><div class="spin"></div>
+      <div>正在巡检 4 个镜头…<br><span style="font-size:11px;color:var(--tx3)">检查角色一致性、光影方向、分辨率、画面内容</span></div>
+    </div>`;
+  agb.appendChild(w);
+  agb.scrollTop = agb.scrollHeight;
+
+  cv.classList.add('scanning');
+  document.getElementById('hintBar').innerHTML = '巡检中…';
+  document.getElementById('btnInspect').classList.add('hidden');
+
+  setTimeout(()=>{
+    cv.classList.remove('scanning');
+    const wm = document.getElementById('workingMsg');
+    if (wm) wm.remove();
+    renderReport();
+  }, 2200);
+}
+
+function resetStates(){
+  selShot = null; focusedIssue = null;
+  document.querySelectorAll('.issue').forEach(e=>e.remove());
+  document.querySelectorAll('.rep').forEach(e=>e.remove());
+  cv.querySelectorAll('.shot').forEach(e=>{
+    e.classList.remove('bad','focused','dimmed','fixed');
+  });
+  cv.querySelectorAll('.mark').forEach(e=>e.remove());
+  // 恢复光照（修复后）
+  const s2 = cv.querySelector('.shot[data-id="s2"] .glow');
+  if (s2) { s2.className='glow left'; }
+}
+
+function renderReport(){
+  const d = document.createElement('div');
+  d.className = 'msg ai';
+  d.innerHTML = `<div class="who">智能体</div>
+    <div class="rep" id="rep">
+      <div class="rh">
+        <svg class="ic sm" viewBox="0 0 24 24" style="color:var(--wn)"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17v.5"/></svg>
+        <span class="t">巡检完成 · 发现 3 个问题</span>
+        <span class="c">4 个镜头 · 2.1s</span>
+      </div>
+      <div class="sum">
+        单独看都还行，<b>放一起有 3 处对不上</b>。<br>
+        其中 <b>2 处会明显影响观感</b>（换镜时会跳），1 处出片前处理就行。
+      </div>
+      <div id="issueList"></div>
+      <div style="padding:10px 13px;border-top:1px solid var(--ln);display:flex;gap:6px">
+        <button class="b solid" style="flex:1;justify-content:center;font-size:11.5px" onclick="fixAll()">
+          <svg class="ic sm" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>全部修复
+        </button>
+        <button class="b out" style="font-size:11.5px" onclick="dismissReport()">先不管</button>
+      </div>
+    </div>`;
+  agb.appendChild(d);
+  agb.scrollTop = agb.scrollHeight;
+
+  // 问题卡
+  const list = document.getElementById('issueList');
+  ISSUES.forEach(it=>{
+    const el = document.createElement('div');
+    el.className = 'issue';
+    el.dataset.n = it.n;
+    el.dataset.shot = it.shot;
+    el.innerHTML = `
+      <div class="ih">
+        <span class="n">${it.n}</span>
+        <span class="ti">${it.title}</span>
+        <span class="sev">${it.sev}</span>
+      </div>
+      <div class="body">${it.body}<span class="ev">${it.ev}</span></div>
+      <div class="acts">
+        <button class="b out" onclick="event.stopPropagation();focusIssue(${it.n})">在画布上看看</button>
+        <button class="b out" onclick="event.stopPropagation();fixIssue(${it.n})">${it.fix}</button>
+      </div>`;
+    el.addEventListener('click', ()=> focusIssue(it.n));
+    list.appendChild(el);
+  });
+
+  // 画布上标记问题
+  ISSUES.forEach(it=>{
+    const shotEl = cv.querySelector(`.shot[data-id="${it.shot}"]`);
+    if (shotEl) shotEl.classList.add('bad');
+    addMark(it);
+  });
+
+  document.getElementById('btnInspect').classList.add('alert');
+  document.getElementById('btnInspect').innerHTML =
+    '<span class="dot"></span>3 个问题';
+  document.getElementById('btnInspect').classList.remove('hidden');
+  document.getElementById('hintBar').innerHTML =
+    '点问题卡片 → 画布会<b>定位到那一镜</b> · 或直接「全部修复」';
+}
+
+function addMark(it){
+  const s = SHOTS.find(x=>x.id===it.shot);
+  if (!s) return;
+  const m = document.createElement('div');
+  m.className = 'mark';
+  m.dataset.n = it.n;
+  m.dataset.shot = it.shot;
+  m.dataset.n2 = it.n;
+  m.setAttribute('data-n', it.n);
+  m.style.cssText = `left:${s.x + s.w*it.box.l/100}px;top:${s.y + s.h*it.box.t/100}px;`
+    + `width:${s.w*it.box.w/100}px;height:${s.h*it.box.h/100}px`;
+  cv.appendChild(m);
+}
+
+/* ============ 定位 ============ */
+function focusShot(id){
+  selShot = id;
+  cv.querySelectorAll('.shot').forEach(e=> e.classList.toggle('sel', e.dataset.id===id));
+}
+function focusIssue(n){
+  const it = ISSUES.find(x=>x.n===n);
+  if (!it) return;
+  focusedIssue = n;
+  selShot = it.shot;
+
+  cv.querySelectorAll('.shot').forEach(e=>{
+    const on = e.dataset.id === it.shot;
+    e.classList.toggle('sel', on);
+    e.classList.toggle('focused', on);
+    e.classList.toggle('dimmed', !on);
+  });
+  document.querySelectorAll('.issue').forEach(e=>{
+    e.classList.toggle('focused', +e.dataset.n === n);
+  });
+  document.getElementById('hintBar').innerHTML =
+    `已定位：<b>镜头 ${SHOTS.find(x=>x.id===it.shot).idx}</b> · 黄色虚线框是问题位置`;
+  // 滚到问题卡
+  const card = document.querySelector(`.issue[data-n="${n}"]`);
+  if (card) card.scrollIntoView({block:'nearest', behavior:'smooth'});
+}
+function clearFocus(){
+  focusedIssue = null;
+  cv.querySelectorAll('.shot').forEach(e=>e.classList.remove('dimmed','focused'));
+  document.querySelectorAll('.issue').forEach(e=>e.classList.remove('focused'));
+}
+
+/* ============ 修复 ============ */
+function fixIssue(n){
+  const it = ISSUES.find(x=>x.n===n);
+  if (!it) return;
+  const shotEl = cv.querySelector(`.shot[data-id="${it.shot}"]`);
+  const mark = cv.querySelector(`.mark[data-n="${n}"]`);
+  const card = document.querySelector(`.issue[data-n="${n}"]`);
+
+  if (shotEl){
+    shotEl.classList.remove('bad','focused','dimmed');
+    shotEl.classList.add('fixed');
+    // 具体修复效果
+    const im = shotEl.querySelector('.im');
+    if (it.shot === 's2'){          // 光位纠正
+      const g = shotEl.querySelector('.glow');
+      if (g) g.className = 'glow';
+    }
+    if (it.shot === 's3'){          // 脸重出 → 色调统一
+      const f = shotEl.querySelector('.fig');
+      if (f) f.style.background = 'linear-gradient(175deg,#e8d5bd,#a8825c)';
+    }
+    if (it.shot === 's4'){          // 扩图 → 尺寸变高
+      const s = SHOTS.find(x=>x.id==='s4');
+      s.h = 225;
+      shotEl.style.height = '225px';
+    }
+    setTimeout(()=> shotEl.classList.remove('fixed'), 1400);
+  }
+  if (mark){ mark.classList.add('ok'); }
+  if (card){
+    card.classList.add('done');
+    const sev = card.querySelector('.sev');
+    if (sev){ sev.className='sev ok'; sev.textContent='已修复'; }
+    const acts = card.querySelector('.acts');
+    if (acts) acts.innerHTML = '<span style="font-size:11px;color:var(--ok);display:flex;align-items:center;gap:5px">'
+      + '<svg class="ic sm" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>已修复并更新画布</span>';
+  }
+  toast('已修复：'+it.title);
+  checkAllFixed();
+}
+
+function fixAll(){
+  const pending = ISSUES.filter(x=>{
+    const c = document.querySelector(`.issue[data-n="${x.n}"]`);
+    return c && !c.classList.contains('done');
+  });
+  pending.forEach((it,i)=> setTimeout(()=>fixIssue(it.n), i*700));
+}
+function checkAllFixed(){
+  const left = ISSUES.filter(x=>{
+    const c = document.querySelector(`.issue[data-n="${x.n}"]`);
+    return c && !c.classList.contains('done');
+  });
+  if (left.length === 0){
+    const bi = document.getElementById('btnInspect');
+    bi.classList.remove('alert');
+    bi.innerHTML = '<span class="dot" style="background:var(--ok)"></span>再巡检一次';
+    bi.onclick = function(){
+      bi.innerHTML = '<span class="dot"></span>巡检这批图';
+      bi.onclick = startInspect;
+      startInspect();
+    };
+    document.getElementById('hintBar').innerHTML = '3 个问题都修好了 · <b>再巡检一次确认</b>？';
+    const d = document.createElement('div');
+    d.className = 'msg ai';
+    d.innerHTML = `<div class="who">智能体</div>
+      <div class="bubble">3 个都修好了。画面已经更新在画布上，你可以对比着看。<br><br>
+      建议<b>再巡检一遍</b>确认没有引入新问题。</div>`;
+    agb.appendChild(d); agb.scrollTop = agb.scrollHeight;
+    const foot = document.querySelector('#rep > div:last-child');
+    if (foot && foot.querySelector('button')) {
+      foot.innerHTML = '<span style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ok)">'
+        + '<svg class="ic sm" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>3 个问题已全部处理</span>';
+    }
+  }
+}
+function dismissReport(){
+  document.getElementById('hintBar').innerHTML = '报告收起了 · 随时可以再点「巡检」';
+  toast('已收起巡检报告');
+}
+
+function toast(t){
+  const old = document.querySelector('.toast'); if (old) old.remove();
+  const d = document.createElement('div'); d.className='toast';
+  d.innerHTML = '<svg class="ic sm" viewBox="0 0 24 24" style="color:var(--ac)"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>'+t;
+  document.body.appendChild(d);
+  setTimeout(()=>{ d.style.opacity='0'; d.style.transition='opacity .4s'; }, 2200);
+  setTimeout(()=> d.remove(), 2700);
+}
+
+renderShots();
+</script>
+</body>
+</html>

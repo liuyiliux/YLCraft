@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>YLCraft 分层画布 · 原型 v4</title>
+<style>
+  :root{
+    --bg:#08080a; --bg2:#0b0b0e; --s1:#101013; --s2:#16161a; --s3:#1c1c21;
+    --ln:rgba(255,255,255,.065); --ln2:rgba(255,255,255,.11); --ln3:rgba(255,255,255,.18);
+    --tx:#f0f0f3; --tx2:#9c9ca8; --tx3:#63636e;
+    --ac:#22d3ee; --acs:rgba(34,211,238,.13); --acl:rgba(34,211,238,.35);
+    --ok:#34d399; --oks:rgba(52,211,153,.12);
+    --wn:#fbbf24; --wns:rgba(251,191,36,.11);
+    --dg:#f87171;
+    --r1:5px;--r2:8px;--r3:12px;--r4:16px;
+    --sh2:0 4px 14px -4px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.04);
+    --sh3:0 18px 48px -12px rgba(0,0,0,.85),0 0 0 1px rgba(255,255,255,.06);
+    --ez:cubic-bezier(.16,1,.3,1);
+    --fs:'Inter',-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
+    --fm:'JetBrains Mono',Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--tx);font-family:var(--fs);font-size:13px;
+       line-height:1.55;-webkit-font-smoothing:antialiased;overflow:hidden;height:100vh}
+  button{font-family:inherit}
+  .ic{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.55;
+      stroke-linecap:round;stroke-linejoin:round;display:block;flex:0 0 auto}
+  .ic.sm{width:13px;height:13px;stroke-width:1.7}
+  .b{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--tx2);
+     background:transparent;border:1px solid transparent;padding:7px 11px;border-radius:var(--r2);
+     cursor:pointer;transition:all .26s var(--ez);white-space:nowrap;flex:0 0 auto}
+  .b:hover{color:var(--tx);background:var(--s3)}
+  .b:active{transform:translateY(1px) scale(.985)}
+  .b.out{border-color:var(--ln);background:var(--s1)}
+  .b.solid{color:#04222a;background:var(--ac);font-weight:600}
+  .tag{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;padding:1.5px 7px;
+    border-radius:var(--r1);background:rgba(255,255,255,.07);color:var(--tx2)}
+  .tag.ok{background:var(--oks);color:var(--ok)}
+  .tag.wn{background:var(--wns);color:var(--wn)}
+  .tag.ac{background:var(--acs);color:var(--ac)}
+  .mono{font-family:var(--fm);font-variant-numeric:tabular-nums}
+
+  /* ===== 画布容器 ===== */
+  .canvas{position:absolute;inset:0;overflow:hidden;background:var(--bg)}
+  .dots{position:absolute;inset:0;
+    background-image:radial-gradient(circle at 1px 1px,rgba(255,255,255,.06) 1px,transparent 0);
+    background-size:26px 26px}
+
+  /* ===== 顶栏 ===== */
+  .top{position:absolute;top:0;left:0;right:0;height:52px;z-index:40;display:flex;align-items:center;
+    gap:10px;padding:0 14px;border-bottom:1px solid var(--ln);
+    background:linear-gradient(to bottom,rgba(8,8,10,.98),rgba(8,8,10,.78));
+    backdrop-filter:blur(18px);overflow:hidden}
+  .brand{display:flex;align-items:center;gap:7px;padding:5px 9px 5px 6px;border-radius:var(--r2);
+    background:var(--s1);border:1px solid var(--ln);flex:0 0 auto}
+  .brand .mk{width:20px;height:20px;border-radius:var(--r1);background:var(--ac);
+    display:flex;align-items:center;justify-content:center;color:#04222a;font-weight:800;font-size:11px}
+  .crumb{font-size:12px;color:var(--tx3);flex:0 0 auto}
+  .crumb b{color:var(--tx2);font-weight:500}
+  .saved{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--tx3);flex:0 0 auto}
+  .saved .d{width:5px;height:5px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px var(--oks)}
+
+  /* ===== 🔴 顶部图层条 ===== */
+  .layerbar{position:absolute;top:64px;left:50%;transform:translateX(-50%);z-index:35;
+    display:flex;align-items:center;gap:8px;
+    background:rgba(16,16,19,.94);backdrop-filter:blur(24px);
+    border:1px solid var(--ln2);border-radius:var(--r4);box-shadow:var(--sh3);
+    padding:8px 10px}
+  .layerbar .lb-lbl{font-size:10.5px;color:var(--tx3);letter-spacing:.06em;padding:0 4px 0 2px;
+    writing-mode:horizontal-tb;white-space:nowrap}
+  .lchip{display:flex;align-items:center;gap:8px;padding:6px 10px 6px 6px;border-radius:var(--r2);
+    cursor:pointer;border:1px solid transparent;transition:all .24s var(--ez);position:relative}
+  .lchip:hover{background:rgba(255,255,255,.05)}
+  .lchip.on{background:var(--acs);border-color:var(--acl)}
+  .lchip .tn{width:38px;height:26px;border-radius:var(--r1);overflow:hidden;position:relative;flex:0 0 auto;
+    border:1px solid var(--ln2)}
+  .lchip .tn .checker{position:absolute;inset:0;
+    background-image:linear-gradient(45deg,#1a1a1f 25%,transparent 25%),
+      linear-gradient(-45deg,#1a1a1f 25%,transparent 25%),
+      linear-gradient(45deg,transparent 75%,#1a1a1f 75%),
+      linear-gradient(-45deg,transparent 75%,#1a1a1f 75%);
+    background-size:8px 8px;background-position:0 0,0 4px,4px -4px,-4px 0;background-color:#0f0f12}
+  .lchip .nm{font-size:11.5px;color:var(--tx2);line-height:1.3}
+  .lchip.on .nm{color:var(--tx);font-weight:500}
+  .lchip .z{font-size:9.5px;color:var(--tx3);font-family:var(--fm);line-height:1.3}
+  .lchip .eye{position:absolute;right:5px;top:5px;opacity:0;transition:opacity .2s}
+  .lchip:hover .eye{opacity:.7}
+  .layerbar .sepv{width:1px;height:26px;background:var(--ln2);margin:0 2px}
+  .layerbar .add{width:30px;height:30px;border-radius:var(--r2);background:var(--s3);border:1px solid var(--ln);
+    color:var(--tx2);display:flex;align-items:center;justify-content:center;cursor:pointer}
+
+  /* ===== 镜头画框 ===== */
+  .frame{position:absolute;left:50%;top:148px;transform:translateX(-50%);
+    height:min(60vh,470px);aspect-ratio:16/9;
+    border-radius:var(--r3);overflow:hidden;
+    box-shadow:0 30px 80px -30px rgba(0,0,0,.9),0 0 0 1px var(--ln2)}
+  .frame .bg{position:absolute;inset:0;
+    background:linear-gradient(165deg,#4a3520 0%,#2a1d12 40%,#17110b 100%)}
+  .frame .bg::after{content:'';position:absolute;inset:0;
+    background:radial-gradient(circle at 62% 34%,rgba(255,214,150,.30),transparent 52%),
+               radial-gradient(circle at 18% 76%,rgba(0,0,0,.42),transparent 46%)}
+  /* 角色层 */
+  .frame .char{position:absolute;left:44%;top:16%;width:16%;height:74%;
+    transition:all .4s var(--ez)}
+  .frame .char .body{position:relative;width:100%;height:100%;filter:blur(.3px)}
+  .frame .char .body .head{position:absolute;left:50%;top:0;transform:translateX(-50%);
+    width:46%;aspect-ratio:1;border-radius:50%;
+    background:radial-gradient(circle at 42% 34%,#ffeeda,#e2c0a0 52%,#b98f6a 100%);
+    box-shadow:0 2px 10px rgba(0,0,0,.25)}
+  .frame .char .body .hair{position:absolute;left:50%;top:-3%;transform:translateX(-50%);
+    width:56%;aspect-ratio:1.15;border-radius:52% 52% 34% 34%;
+    background:linear-gradient(170deg,#3a2a1e,#1d140e);
+    clip-path:polygon(0 0,100% 0,100% 62%,78% 52%,50% 60%,22% 52%,0 62%)}
+  .frame .char .body .torso{position:absolute;left:50%;top:23%;transform:translateX(-50%);
+    width:100%;bottom:0;
+    background:linear-gradient(175deg,#e8d5bd 0%,#cfa87e 42%,#8a6746 78%,#4a3524 100%);
+    border-radius:42% 42% 20% 20%/16% 16% 8% 8%;
+    box-shadow:inset 0 -30px 40px -30px rgba(0,0,0,.6)}
+  /* 选中框 */
+  .frame .sel{position:absolute;inset:-6px;border:1.5px dashed var(--ac);border-radius:var(--r2);
+    pointer-events:none}
+  .frame .sel::before,.frame .sel::after{content:'';position:absolute;width:7px;height:7px;
+    border:1.5px solid var(--ac);background:var(--bg)}
+  .frame .sel::before{left:-4px;top:-4px}
+  .frame .sel::after{right:-4px;bottom:-4px}
+  .frametag{position:absolute;left:50%;transform:translateX(-50%);bottom:-24px;font-size:11px;
+    color:var(--tx3);white-space:nowrap;font-family:var(--fm)}
+
+  /* 拖动提示 */
+  .dragtip{position:absolute;left:50%;top:12px;transform:translateX(-50%);
+    display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ac);
+    background:rgba(34,211,238,.10);border:1px solid var(--acl);border-radius:999px;
+    padding:4px 11px;white-space:nowrap}
+
+  /* ===== 右侧操作 ===== */
+  .actions{position:absolute;right:16px;top:64px;z-index:36;display:flex;flex-direction:column;gap:7px;
+    width:184px}
+  .actions .card{background:rgba(16,16,19,.94);backdrop-filter:blur(24px);border:1px solid var(--ln2);
+    border-radius:var(--r3);box-shadow:var(--sh3);overflow:hidden}
+  .actions .ch{padding:9px 12px;border-bottom:1px solid var(--ln);font-size:11px;color:var(--tx3);
+    letter-spacing:.05em}
+  .actions .cb{padding:8px;display:flex;flex-direction:column;gap:5px}
+  .actions .b{justify-content:flex-start}
+  .actions .b.prime{color:#04222a;background:var(--ac);font-weight:600;justify-content:center}
+  .actions .b.prime:hover{background:#45ddf2}
+
+  /* ===== 底部工具条 ===== */
+  .bar{position:absolute;left:16px;bottom:16px;z-index:36;display:flex;align-items:center;gap:2px;
+    padding:4px;background:rgba(16,16,19,.94);backdrop-filter:blur(24px);
+    border:1px solid var(--ln2);border-radius:999px;box-shadow:var(--sh3)}
+  .tb{width:31px;height:31px;display:flex;align-items:center;justify-content:center;
+    border-radius:var(--r2);color:var(--tx2);background:0;border:0;cursor:pointer;transition:all .24s var(--ez)}
+  .tb:hover{background:var(--s3);color:var(--tx)}
+  .tb.on{background:var(--acs);color:var(--ac)}
+  .bar .div{width:1px;height:16px;background:var(--ln2);margin:0 3px}
+  .bar .z{font-size:11px;color:var(--tx3);padding:0 8px;font-family:var(--fm)}
+
+  /* ===== 已保存 toast ===== */
+  .toast{position:absolute;right:16px;bottom:16px;z-index:50;
+    display:flex;align-items:center;gap:9px;padding:9px 11px 9px 13px;
+    background:var(--ok);color:#05231a;font-size:12px;font-weight:600;
+    border-radius:var(--r2);box-shadow:0 8px 26px -8px rgba(52,211,153,.55)}
+  .toast .m{opacity:.75;font-weight:400;font-size:11px}
+  .toast .x{width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.14);border:0;
+    color:#05231a;display:flex;align-items:center;justify-content:center;cursor:pointer}
+</style>
+</head>
+<body>
+
+<div class="canvas">
+  <div class="dots"></div>
+
+  <!-- 顶栏 -->
+  <div class="top">
+    <div class="brand"><span class="mk">YL</span><span style="font-size:12.5px;font-weight:600">YLCraft</span></div>
+    <div class="crumb"><b>我的短剧</b> / 分镜 3</div>
+    <div class="saved"><span class="d"></span>已保存到本地</div>
+    <div style="margin-left:auto;display:flex;gap:6px">
+      <button class="b out"><svg class="ic" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/></svg>版本记录</button>
+      <button class="b solid"><svg class="ic" viewBox="0 0 24 24"><path d="M5 3l14 9-14 9z"/></svg>出片</button>
+    </div>
+  </div>
+
+  <!-- 🔴 顶部图层条 -->
+  <div class="layerbar">
+    <span class="lb-lbl">图层</span>
+
+    <div class="lchip">
+      <div class="tn" style="background:linear-gradient(160deg,rgba(0,0,0,.55),transparent)"></div>
+      <div>
+        <div class="nm">暗角</div>
+        <div class="z">z 20</div>
+      </div>
+    </div>
+
+    <div class="lchip on">
+      <div class="tn">
+        <div class="checker"></div>
+        <div style="position:absolute;left:50%;top:52%;transform:translate(-50%,-50%);
+                    width:14px;height:18px;border-radius:46% 46% 40% 40%/38% 38% 62% 62%;
+                    background:linear-gradient(160deg,#ffeeda,#c9a37b)"></div>
+      </div>
+      <div>
+        <div class="nm">角色 · 女主角</div>
+        <div class="z">z 10 · 透明底</div>
+      </div>
+      <svg class="ic sm eye" viewBox="0 0 24 24"><path d="M2 12s3.6-6.2 10-6.2S22 12 22 12s-3.6 6.2-10 6.2S2 12 2 12z"/><circle cx="12" cy="12" r="2.4"/></svg>
+    </div>
+
+    <div class="lchip">
+      <div class="tn" style="background:linear-gradient(165deg,#4a3520,#17110b)"></div>
+      <div>
+        <div class="nm">背景 · 窗边</div>
+        <div class="z">z 0</div>
+      </div>
+    </div>
+
+    <div class="sepv"></div>
+    <button class="add" title="加一层"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+  </div>
+
+  <!-- 镜头画框 -->
+  <div class="frame">
+    <div class="bg"></div>
+    <div class="dragtip">
+      <svg class="ic sm" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-2.5 2.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/></svg>
+      拖动角色层 · 只动这一层，背景不动
+    </div>
+    <div class="char">
+      <div class="body">
+        <div class="torso"></div>
+        <div class="head"></div>
+        <div class="hair"></div>
+      </div>
+      <div class="sel"></div>
+    </div>
+    <div class="frametag">分镜 3 · 16:9 · 2160×1215 · 3 层</div>
+  </div>
+
+  <!-- 右侧操作 -->
+  <div class="actions">
+    <div class="card">
+      <div class="ch">当前：角色 · 女主角</div>
+      <div class="cb">
+        <button class="b"><svg class="ic sm" viewBox="0 0 24 24"><path d="M21 11l-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 1 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L16 6"/></svg>换一张角色图</button>
+        <button class="b"><svg class="ic sm" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></svg>重新打光</button>
+        <button class="b"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/></svg>局部精修</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="ch">这个镜头</div>
+      <div class="cb">
+        <button class="b prime">
+          <svg class="ic sm" viewBox="0 0 24 24"><path d="M4 4h16v6H4zM4 14h16v6H4z"/></svg>
+          保存到素材库
+        </button>
+        <button class="b out"><svg class="ic sm" viewBox="0 0 24 24"><path d="M5 3l14 9-14 9z"/></svg>送去出片</button>
+        <button class="b out"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>拿去 Live2D</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部工具条 -->
+  <div class="bar">
+    <button class="tb on" title="选择"><svg class="ic" viewBox="0 0 24 24"><path d="M4 3l7 17 2.5-6.5L20 11z"/></svg></button>
+    <button class="tb" title="平移"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-2.5 2.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/></svg></button>
+    <div class="div"></div>
+    <button class="tb" title="显示图层"><svg class="ic" viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 12l9 4 9-4"/></svg></button>
+    <button class="tb on" title="显示连线"><svg class="ic" viewBox="0 0 24 24"><path d="M2 12s3.6-6.2 10-6.2S22 12 22 12s-3.6 6.2-10 6.2S2 12 2 12z"/><circle cx="12" cy="12" r="2.4"/></svg></button>
+    <button class="tb on" title="网格吸附"><svg class="ic" viewBox="0 0 24 24"><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg></button>
+    <div class="div"></div>
+    <span class="z">100%</span>
+    <button class="tb" title="适应屏幕"><svg class="ic" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+  </div>
+
+  <!-- 已保存 toast -->
+  <div class="toast">
+    <svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>
+    已存到素材库
+    <span class="m">分镜 3 · 3 层 · 可跨项目复用</span>
+    <button class="x"><svg class="ic sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+</div>
+
+</body>
+</html>

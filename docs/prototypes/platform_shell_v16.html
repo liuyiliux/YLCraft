@@ -1,0 +1,1564 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>YLCraft 平台壳 · v16</title>
+<style>
+  :root{
+    --bg:#08080a; --bg2:#0b0b0e; --s1:#101013; --s2:#16161a; --s3:#1c1c21;
+    --ln:rgba(255,255,255,.065); --ln2:rgba(255,255,255,.11); --ln3:rgba(255,255,255,.18);
+    --tx:#f0f0f3; --tx2:#9c9ca8; --tx3:#63636e;
+    --ac:#22d3ee; --acs:rgba(34,211,238,.13); --acl:rgba(34,211,238,.4);
+    --ok:#34d399; --wn:#fbbf24; --wnl:rgba(251,191,36,.45); --dg:#f87171;
+    --r1:5px;--r2:8px;--r3:12px;--r4:16px;
+    --sh2:0 6px 22px -8px rgba(0,0,0,.85);
+    --sh3:0 24px 70px -20px rgba(0,0,0,.95),0 0 0 1px rgba(255,255,255,.07);
+    --ez:cubic-bezier(.16,1,.3,1);
+    --fs:'Inter',-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
+    --fm:'JetBrains Mono',Consolas,monospace;
+    --nav:216px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--tx);font-family:var(--fs);font-size:13px;
+       line-height:1.55;-webkit-font-smoothing:antialiased;overflow:hidden;
+       -webkit-user-select:none;user-select:none}
+  button{font-family:inherit}
+  .hidden{display:none!important}
+  .ic{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.55;
+      stroke-linecap:round;stroke-linejoin:round;display:block;flex:0 0 auto}
+  .ic.sm{width:14px;height:14px;stroke-width:1.7}
+  .b{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--tx2);
+     background:transparent;border:1px solid transparent;padding:6px 10px;border-radius:var(--r2);
+     cursor:pointer;transition:all .22s var(--ez);white-space:nowrap;flex:0 0 auto}
+  .b:hover{color:var(--tx);background:var(--s3)}
+  .b.out{border-color:var(--ln);background:var(--s1)}
+  .b.solid{color:#04222a;background:var(--ac);font-weight:600}
+
+  /* ================= 左侧导航 ================= */
+  .shell{display:flex;height:100vh}
+  .nav{width:var(--nav);flex:0 0 var(--nav);background:var(--bg2);border-right:1px solid var(--ln);
+    display:flex;flex-direction:column;min-height:0;z-index:30}
+  .navtop{padding:12px 12px 8px;display:flex;align-items:center;gap:8px;flex:0 0 auto}
+  .brand{display:flex;align-items:center;gap:8px;padding:5px 9px 5px 6px;border-radius:var(--r2);
+    background:var(--s1);border:1px solid var(--ln);flex:1;min-width:0}
+  .brand .mk{width:20px;height:20px;border-radius:var(--r1);background:var(--ac);
+    display:flex;align-items:center;justify-content:center;color:#04222a;font-weight:800;font-size:11px;flex:0 0 auto}
+  .brand .bn{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  /* 用户 + 花费 */
+  .userbox{margin:0 12px 10px;padding:7px 9px;border-radius:var(--r3);background:var(--s1);
+    border:1px solid var(--ln);display:flex;align-items:center;gap:8px;cursor:pointer;
+    transition:all .2s var(--ez);flex:0 0 auto}
+  .userbox:hover{border-color:var(--ln2);background:var(--s2)}
+  .avt{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-size:10px;font-weight:700;color:#0a0a0c;flex:0 0 auto}
+  .avt.sm{width:18px;height:18px;font-size:9px}
+  .ub-i{flex:1;min-width:0}
+  .ub-n{font-size:11.5px;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ub-c{font-size:10px;font-family:var(--fm);color:var(--ac);margin-top:1px}
+
+  .navscroll{flex:1;overflow-y:auto;padding:0 6px 12px;min-height:0}
+  .navscroll::-webkit-scrollbar{width:5px}
+  .navscroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:3px}
+
+  .ngroup{margin-bottom:2px}
+  .nhead{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:var(--r2);
+    font-size:12.5px;color:var(--tx2);cursor:pointer;transition:all .18s var(--ez)}
+  .nhead:hover{background:var(--s2);color:var(--tx)}
+  .nhead.open{color:var(--tx)}
+  .nhead.active{background:var(--acs);color:var(--ac);font-weight:600}
+  .nhead .chev{margin-left:auto;transition:transform .22s var(--ez);opacity:.5}
+  .nhead.open .chev{transform:rotate(90deg)}
+  .nhead .cnt{font-size:9.5px;font-family:var(--fm);color:var(--tx3);margin-left:auto}
+  .nhead.open .cnt{display:none}
+  .nsub{padding-left:6px;overflow:hidden}
+  .nitem{display:flex;align-items:center;gap:8px;padding:5px 9px 5px 26px;border-radius:var(--r1);
+    font-size:11.5px;color:var(--tx3);cursor:pointer;transition:all .16s var(--ez)}
+  .nitem:hover{background:var(--s2);color:var(--tx2)}
+  .nitem.on{background:var(--s2);color:var(--tx)}
+  .nitem .dot{width:4px;height:4px;border-radius:50%;background:currentColor;opacity:.5;flex:0 0 auto}
+  .nitem.on .dot{opacity:1;background:var(--ac)}
+  .nitem .tag{font-size:8.5px;color:var(--wn);border:1px solid var(--wnl);border-radius:3px;
+    padding:0 3px;margin-left:auto;flex:0 0 auto}
+
+  .navfoot{border-top:1px solid var(--ln);padding:8px 6px;flex:0 0 auto}
+  .nitem.plain{padding-left:9px}
+
+  /* ================= 右侧内容 ================= */
+  .main{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+
+  /* 画布：整屏嵌 iframe */
+  .frame{flex:1;border:0;width:100%;height:100%;display:block;background:var(--bg)}
+
+  /* 普通页面 */
+  .page{flex:1;overflow-y:auto;padding:24px 28px;min-height:0}
+  .page::-webkit-scrollbar{width:8px}
+  .page::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:4px}
+  .ph{display:flex;align-items:flex-start;gap:14px;margin-bottom:18px}
+  .ph h1{font-size:17px;font-weight:600;letter-spacing:-.01em}
+  .ph p{font-size:12px;color:var(--tx3);margin-top:4px;line-height:1.6;max-width:660px}
+  .ph p b{color:var(--tx2)}
+  .ph .sp{margin-left:auto;display:flex;gap:8px}
+
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+  .card{background:var(--s1);border:1px solid var(--ln);border-radius:var(--r3);padding:14px;
+    cursor:pointer;transition:all .22s var(--ez)}
+  .card:hover{border-color:var(--ln2);transform:translateY(-2px);box-shadow:var(--sh2)}
+  .card .ci{width:30px;height:30px;border-radius:var(--r2);background:var(--s3);color:var(--tx2);
+    display:flex;align-items:center;justify-content:center;font-size:14px;margin-bottom:10px}
+  .card:hover .ci{background:var(--ac);color:#04222a}
+  .card .cn{font-size:12.5px;color:var(--tx);margin-bottom:3px}
+  .card .cd{font-size:10.5px;color:var(--tx3);line-height:1.55}
+  .card .cm{font-size:10px;font-family:var(--fm);color:var(--ac);margin-top:8px}
+
+  .secttl{font-size:11px;color:var(--tx3);letter-spacing:.05em;margin:20px 0 9px;
+    display:flex;align-items:center;gap:8px}
+  .secttl::after{content:'';flex:1;height:1px;background:var(--ln)}
+
+  .emptyhint{background:var(--s1);border:1px dashed var(--ln2);border-radius:var(--r3);
+    padding:26px;text-align:center;color:var(--tx3);font-size:12px;line-height:1.7}
+  .emptyhint b{color:var(--tx2)}
+
+  .toast{position:fixed;left:50%;top:18px;transform:translateX(-50%);z-index:500;
+    display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--tx);
+    background:rgba(16,16,19,.97);backdrop-filter:blur(24px);border-radius:999px;
+    padding:7px 15px;box-shadow:0 12px 34px -10px rgba(0,0,0,.9);animation:ti .3s var(--ez)}
+  @keyframes ti{from{opacity:0;transform:translate(-50%,-8px)}to{opacity:1;transform:translate(-50%,0)}}
+
+  /* 知识库 v2 */
+  .kbtop{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+  .kbbrain{display:flex;align-items:center;gap:8px;background:var(--s1);border:1px solid var(--ln);
+    border-radius:var(--r2);padding:5px 11px}
+  .kbbrain-ic{color:var(--ac);font-size:11px}
+  .kbbrain select{background:0;border:0;color:var(--tx);font-family:inherit;font-size:12px;
+    outline:none;cursor:pointer;padding-right:4px}
+  .kbbrain select option{background:var(--s1);color:var(--tx)}
+  .kbdim{font-size:9.5px;font-family:var(--fm);color:var(--tx3);padding-left:8px;
+    border-left:1px solid var(--ln)}
+  .kbtabs{display:flex;gap:1px;padding:2px;background:var(--s1);border:1px solid var(--ln);border-radius:var(--r2)}
+  .kbtab{font-size:11.5px;color:var(--tx3);background:0;border:0;padding:4px 12px;
+    border-radius:var(--r1);cursor:pointer;transition:all .18s var(--ez)}
+  .kbtab.on{background:var(--s3);color:var(--tx);font-weight:500}
+  .kbfoot{font-size:10.5px;color:var(--tx3);margin-top:14px;padding-top:10px;border-top:1px solid var(--ln)}
+  .kbfoot b{color:var(--wn)}
+
+  .kbsearch2{margin-bottom:10px}
+  .kbsbox{display:flex;align-items:center;gap:8px;background:var(--s1);border:1px solid var(--ln);
+    border-radius:var(--r2);padding:7px 12px}
+  .kbsbox input{flex:1;background:0;border:0;outline:none;color:var(--tx);font-family:inherit;font-size:12px}
+  .kbsbox input::placeholder{color:var(--tx3)}
+  .kbhybrid{font-size:9.5px;color:var(--ac);border:1px solid var(--acl);border-radius:3px;
+    padding:1px 6px;flex:0 0 auto}
+
+  .kbrow2{display:flex;gap:12px;align-items:flex-start}
+  .kbside{width:158px;flex:0 0 158px}
+  .ksg{font-size:9.5px;color:var(--tx3);letter-spacing:.05em;padding:10px 6px 5px}
+  .ksi{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:var(--r1);
+    font-size:11.5px;color:var(--tx3);cursor:pointer;transition:all .16s var(--ez)}
+  .ksi:hover{background:var(--s2);color:var(--tx2)}
+  .ksi.on{background:var(--acs);color:var(--ac)}
+  .ksc{margin-left:auto;font-size:10px;font-family:var(--fm);opacity:.7}
+  .kstags{display:flex;flex-wrap:wrap;gap:4px;padding:2px 6px}
+  .kstag{font-size:10px;color:var(--tx3);background:var(--s2);border-radius:3px;
+    padding:2px 7px;cursor:pointer;transition:all .16s var(--ez)}
+  .kstag:hover{background:var(--s3);color:var(--tx2)}
+  .kblist2{flex:1;min-width:0}
+  .kbfilters2{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:9px}
+  .kbf{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--tx3);
+    background:var(--s1);border:1px solid var(--ln);border-radius:999px;padding:4px 10px;
+    cursor:pointer;transition:all .18s var(--ez)}
+  .kbf:hover{color:var(--tx2);border-color:var(--ln2)}
+  .kbf.on{color:var(--tx);border-color:var(--acl);background:var(--acs)}
+  .kbd{width:5px;height:5px;border-radius:50%;flex:0 0 auto}
+  .kbunread{width:5px;height:5px;border-radius:50%;background:var(--ac);display:inline-block}
+
+  /* 条目行（共用） */
+  .kbrow{display:flex;align-items:flex-start;gap:11px;padding:11px 13px;background:var(--s1);
+    border:1px solid var(--ln);border-radius:var(--r3);cursor:pointer;transition:all .2s var(--ez);
+    margin-bottom:6px}
+  .kbrow:hover{border-color:var(--ln2);background:var(--s2);transform:translateX(2px)}
+  .kbic{width:28px;height:28px;border-radius:var(--r2);border:1px solid;display:flex;
+    align-items:center;justify-content:center;font-size:13px;flex:0 0 auto}
+  .kbi{flex:1;min-width:0}
+  .kbt{font-size:12.5px;color:var(--tx);display:flex;align-items:center;gap:7px}
+  .kbpend{font-size:9px;color:var(--wn);border:1px solid var(--wnl);border-radius:3px;padding:0 4px}
+  .kbf2{font-size:10.5px;color:var(--tx3);margin-top:2px}
+  .kbtags{display:flex;gap:4px;margin-top:5px;flex-wrap:wrap}
+  .kbtag{font-size:9px;color:var(--tx3);background:var(--s3);border-radius:3px;padding:1px 5px}
+  .kbsrc{font-size:10px;flex:0 0 auto;opacity:.85}
+
+  /* 问答视图 */
+  .kbqa2{background:var(--s1);border:1px solid var(--ln);border-radius:var(--r3);padding:16px 18px}
+  .kqq{font-size:13px;color:var(--tx);margin-bottom:8px}
+  .kqa2{font-size:11.5px;color:var(--tx2);line-height:1.7;margin-bottom:14px}
+  .kqa2 b{color:var(--tx)}
+  .kbhit2{background:var(--bg2);border:1px solid var(--ln);border-radius:var(--r2);
+    padding:10px 12px;margin-bottom:7px}
+  .kbhit2.weak{opacity:.75;border-style:dashed}
+  .kbhh2{display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--tx3);margin-bottom:5px}
+  .kbnum{font-family:var(--fm);color:var(--ac)}
+  .kbsco{font-family:var(--fm);font-size:10px;color:var(--ok);background:rgba(52,211,153,.12);
+    border-radius:3px;padding:0 5px}
+  .kbsco.w{color:var(--wn);background:rgba(251,191,36,.12)}
+  .kbht2{color:var(--tx2);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
+  .kbhp2{margin-left:auto;flex:0 0 auto;font-size:10px;opacity:.7}
+  .kbsrc2{font-size:10px;flex:0 0 auto}
+  .kbhx{font-size:11.5px;color:var(--tx2);line-height:1.65}
+  .kbhw{font-size:9.5px;color:var(--wn);margin-top:5px}
+  .kbnote2{margin-top:12px;padding:10px 12px;border-radius:var(--r2);font-size:10.5px;
+    line-height:1.7;color:var(--tx3);background:var(--acs);border:1px solid var(--acl)}
+  .kbnote2 b{color:var(--tx2)}
+  .kbqafoot{margin-top:11px;font-size:10px;color:var(--tx3);padding-top:9px;border-top:1px solid var(--ln)}
+
+  /* 条目详情扩展：标注 / 引用记录 */
+  .kbd3tip{margin-top:12px;padding:9px 11px;border-radius:var(--r2);font-size:10.5px;
+    line-height:1.65;color:var(--tx3);background:var(--bg2);border:1px solid var(--ln)}
+  .kbd3tip b{color:var(--tx2)}
+  .kbd3tip.ref{background:var(--acs);border-color:var(--acl)}
+  .kbusetag{font-size:8.5px;color:var(--ac);border:1px solid var(--acl);border-radius:3px;
+    padding:0 4px;margin-left:4px}
+  .kbempty{padding:22px 18px;text-align:center}
+  .kbempty-t{font-size:12.5px;color:var(--tx2);margin-bottom:6px}
+  .kbempty-s{font-size:11px;color:var(--tx3);line-height:1.75}
+  .kbempty-s b{color:var(--tx2)}
+  /* 标注 */
+  .kbann{background:var(--bg2);border-left:2px solid var(--wn);border-radius:0 var(--r2) var(--r2) 0;
+    padding:10px 12px;margin-bottom:8px}
+  .kbann-q{font-size:11.5px;color:var(--tx2);line-height:1.6;margin-bottom:6px;
+    font-style:normal}
+  .kbann-seg{font-size:9.5px;color:var(--tx3);font-family:var(--fm);margin-left:6px}
+  .kbann-n{font-size:11.5px;color:var(--tx);line-height:1.7;padding-top:6px;
+    border-top:1px dashed var(--ln)}
+  .kbann-m{font-size:9.5px;color:var(--tx3);margin-top:6px;font-family:var(--fm)}
+  /* 引用记录 */
+  .kbref{background:var(--bg2);border:1px solid var(--ln);border-radius:var(--r2);
+    padding:10px 12px;margin-bottom:7px}
+  .kbref-h{display:flex;align-items:baseline;gap:8px;margin-bottom:5px}
+  .kbref-q{font-size:12px;color:var(--tx);flex:1;min-width:0;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .kbref-s{font-size:10px;font-family:var(--fm);color:var(--ok);
+    background:rgba(52,211,153,.12);border-radius:3px;padding:0 5px;flex:0 0 auto}
+  .kbref-m{font-size:10.5px;color:var(--tx3)}
+  .kbref-m b{color:var(--tx2)}
+
+  /* 测验 */
+  .qzintro{background:var(--s1);border:1px solid var(--ln);border-radius:var(--r3);padding:18px 20px;margin-bottom:14px}
+  .qzin-h{font-size:14px;font-weight:600;margin-bottom:4px}
+  .qzin-s{font-size:11.5px;color:var(--tx3);line-height:1.7;margin-bottom:16px}
+  .qzin-s b{color:var(--tx2)}
+  .qzin-row{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  .qzin-k{font-size:11px;color:var(--tx3);flex:0 0 62px}
+  .qzchips{display:flex;gap:5px;flex-wrap:wrap}
+  .qzchip{font-size:11px;color:var(--tx3);background:var(--s2);border:1px solid var(--ln);
+    border-radius:999px;padding:4px 11px;cursor:pointer;transition:all .18s var(--ez)}
+  .qzchip:hover{color:var(--tx2);border-color:var(--ln2)}
+  .qzchip.on{color:var(--tx);border-color:var(--acl);background:var(--acs)}
+  .qzin-foot{display:flex;align-items:center;gap:8px;padding-top:13px;border-top:1px solid var(--ln)}
+  .qzin-tip{font-size:10px;color:var(--tx3);flex:1}
+
+  /* 题目卡片 */
+  .qzcard{background:var(--s1);border:1px solid var(--ln);border-radius:var(--r3);
+    padding:18px 20px;margin-bottom:14px}
+  .qzh{display:flex;align-items:center;gap:9px;margin-bottom:14px}
+  .qzno{font-size:10.5px;font-family:var(--fm);color:var(--ac)}
+  .qztype{font-size:9.5px;color:var(--tx3);background:var(--s3);border-radius:3px;padding:1px 6px}
+  .qzprog{display:flex;gap:3px;margin-left:auto}
+  .qzpd{width:16px;height:3px;border-radius:2px;background:var(--s3)}
+  .qzpd.done{background:var(--ok)}
+  .qzpd.cur{background:var(--ac)}
+  .qzq{font-size:14px;color:var(--tx);line-height:1.65;margin-bottom:14px}
+  .qzopts{display:flex;flex-direction:column;gap:7px;margin-bottom:14px}
+  .qzopt{display:flex;align-items:center;gap:10px;padding:10px 13px;background:var(--bg2);
+    border:1px solid var(--ln);border-radius:var(--r2);cursor:pointer;
+    transition:all .18s var(--ez);font-size:12px;color:var(--tx2)}
+  .qzopt:hover{border-color:var(--ln2);background:var(--s2);color:var(--tx)}
+  .qzopt.right{border-color:rgba(52,211,153,.55);background:rgba(52,211,153,.1);color:var(--tx)}
+  .qzopt.wrong{border-color:rgba(248,113,113,.55);background:rgba(248,113,113,.09);color:var(--tx)}
+  .qzo-dot{width:20px;height:20px;border-radius:50%;background:var(--s3);color:var(--tx3);
+    display:flex;align-items:center;justify-content:center;font-size:10px;
+    font-family:var(--fm);flex:0 0 auto}
+  .qzopt.right .qzo-dot{background:var(--ok);color:#04222a}
+  .qzopt.wrong .qzo-dot{background:var(--dg);color:#1a0808}
+  .qzo-t{flex:1}
+  .qzo-m{font-size:12px;flex:0 0 auto}
+  .qzo-m.ok{color:var(--ok)}
+  .qzo-m.no{color:var(--dg)}
+
+  /* 答题反馈 */
+  .qzfb{border-radius:var(--r2);padding:12px 14px;margin-bottom:12px;
+    border-left:2px solid;background:var(--bg2)}
+  .qzfb.ok{border-left-color:var(--ok);background:rgba(52,211,153,.06)}
+  .qzfb.bad{border-left-color:var(--dg);background:rgba(248,113,113,.06)}
+  .qzfb-h{font-size:11.5px;font-weight:600;margin-bottom:6px}
+  .qzfb.ok .qzfb-h{color:var(--ok)}
+  .qzfb.bad .qzfb-h{color:var(--dg)}
+  .qzfb-w{font-size:11.5px;color:var(--tx2);line-height:1.7;margin-bottom:9px}
+  .qzfb-r{font-size:10px;color:var(--tx3);display:flex;align-items:center;gap:8px}
+  .qzfb-link{color:var(--ac);cursor:pointer}
+  .qzfoot{display:flex;align-items:center;gap:8px}
+  .qztip{font-size:10px;color:var(--tx3);flex:1}
+
+  /* 结果 */
+  .qzresult{background:var(--s1);border:1px solid var(--ln);border-radius:var(--r3);
+    padding:26px 20px;text-align:center;margin-bottom:14px}
+  .qzr-big{font-size:32px;font-weight:600;font-family:var(--fm);color:var(--tx);
+    letter-spacing:-.02em}
+  .qzr-sub{font-size:12px;color:var(--tx3);margin-top:5px}
+  .qzr-bar{width:min(280px,80%);height:4px;border-radius:2px;background:var(--s3);
+    margin:14px auto 16px;overflow:hidden}
+  .qzr-bar span{display:block;height:100%;background:var(--ok);border-radius:2px}
+  .qzr-acts{display:flex;gap:8px;justify-content:center}
+
+  /* 错题本 */
+  .qzwrong{background:var(--s1);border:1px solid var(--ln);border-radius:var(--r3);
+    padding:14px 16px;margin-top:14px}
+  .qzwh{display:flex;align-items:center;gap:8px;padding-bottom:10px;border-bottom:1px solid var(--ln)}
+  .qzwh-t{font-size:12.5px;color:var(--tx);font-weight:600}
+  .qzwh-c{font-size:10px;font-family:var(--fm);color:var(--dg);
+    background:rgba(248,113,113,.12);border-radius:3px;padding:1px 6px}
+  .qzwitem{padding:11px 0;border-bottom:1px solid var(--ln)}
+  .qzwitem:last-child{border-bottom:0;padding-bottom:0}
+  .qzwq{font-size:12px;color:var(--tx);line-height:1.6;margin-bottom:6px}
+  .qzwl{display:flex;gap:14px;font-size:10.5px;margin-bottom:5px}
+  .qzwl .bad{color:var(--dg)}
+  .qzwl .good{color:var(--ok)}
+  .qzwr{font-size:10px;color:var(--tx3);display:flex;align-items:center;gap:8px}
+  .qzwlink{color:var(--ac);cursor:pointer}
+  .qzwrongempty{background:var(--s1);border:1px dashed var(--ln2);border-radius:var(--r3);
+    padding:16px 18px}
+  .qzwe-t{font-size:12.5px;color:var(--tx);font-weight:600;margin-bottom:4px}
+  .qzwe-s{font-size:11px;color:var(--tx3);line-height:1.6}
+  .qzwe-s b{color:var(--tx2)}
+
+  /* 处理设置 */
+  .kbprov{background:var(--s1);border:1px solid var(--ln);border-radius:var(--r3);padding:4px 4px 0}
+  .kbpnotice{margin:10px 12px 12px;padding:9px 11px;border-radius:var(--r2);font-size:10.5px;
+    line-height:1.7;color:var(--tx3);background:rgba(251,191,36,.08);border:1px solid var(--wnl)}
+  .kbpnotice b{color:var(--tx2)}
+  .kbprow{display:flex;align-items:center;gap:12px;padding:9px 12px;border-top:1px solid var(--ln)}
+  .kbpk{font-size:11px;color:var(--tx3);flex:0 0 76px}
+  .kbpm{font-size:11.5px;color:var(--tx2);flex:0 0 150px;font-family:var(--fm)}
+  .kbpm.unset{color:var(--dg);font-family:inherit}
+  .kbpd{font-size:10px;color:var(--tx3);flex:1;min-width:0}
+  .kbprow.warn{background:rgba(248,113,113,.04)}
+  .kbpfoot{padding:11px 12px;font-size:10px;color:var(--tx3);border-top:1px solid var(--ln);
+    line-height:1.6}
+  .kbpfoot b{color:var(--tx2)}
+
+  /* 详情 */
+  .kbd3{width:min(600px,92vw);max-height:86vh;display:flex;flex-direction:column;
+    background:var(--s1);border:1px solid var(--ln2);border-radius:var(--r4);
+    box-shadow:var(--sh3);overflow:hidden;animation:pop .24s var(--ez)}
+  .kbd3h{display:flex;align-items:flex-start;gap:11px;padding:14px 16px;border-bottom:1px solid var(--ln)}
+  .kbd3t{font-size:13px;color:var(--tx)}
+  .kbd3s{font-size:10.5px;color:var(--tx3);margin-top:2px;word-break:break-all}
+  .kbd3tabs{display:flex;gap:14px;padding:0 16px;border-bottom:1px solid var(--ln);flex:0 0 auto}
+  .kbd3tabs span{font-size:11.5px;color:var(--tx3);padding:8px 0;cursor:pointer;
+    border-bottom:1.5px solid transparent}
+  .kbd3tabs span.on{color:var(--tx);border-bottom-color:var(--ac)}
+  .kbd3b{flex:1;overflow-y:auto;padding:14px 16px;min-height:0}
+  .kbd3b::-webkit-scrollbar{width:6px}
+  .kbd3b::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:3px}
+  .kbd3pend{padding:20px;text-align:center;font-size:12px;color:var(--wn);
+    background:rgba(251,191,36,.07);border-radius:var(--r2);line-height:1.9}
+  .kbsim{margin-bottom:14px}
+  .kbsimt{font-size:10.5px;color:var(--tx3);margin-bottom:6px}
+  .kbsimp{font-size:11.5px;color:var(--tx2);line-height:1.75;white-space:pre-wrap;
+    background:var(--bg2);border:1px solid var(--ln);border-radius:var(--r2);padding:11px 12px;
+    font-family:var(--fm);font-size:10.5px}
+  .kbchunk{display:flex;gap:9px;padding:6px 0;border-bottom:1px solid var(--ln)}
+  .kbcn{font-size:9.5px;font-family:var(--fm);color:var(--ac);flex:0 0 16px;padding-top:2px}
+  .kbcx{font-size:11.5px;color:var(--tx2)}
+  .kbcv{font-size:9.5px;color:var(--tx3);margin-top:2px}
+  .kbd3meta{display:flex;gap:14px;flex-wrap:wrap;font-size:10px;color:var(--tx3);
+    padding-top:10px;border-top:1px solid var(--ln)}
+  .kbd3f{display:flex;gap:8px;justify-content:flex-end;padding:11px 16px;
+    border-top:1px solid var(--ln);flex:0 0 auto}
+  /* 添加 */
+  .kbadd{width:min(460px,92vw);background:var(--s1);border:1px solid var(--ln2);
+    border-radius:var(--r4);box-shadow:var(--sh3);overflow:hidden;animation:pop .24s var(--ez)}
+  .kbaddb{padding:8px}
+  .kbaddrow{display:flex;align-items:flex-start;gap:11px;padding:10px 11px;border-radius:var(--r2);
+    cursor:pointer;transition:background .16s var(--ez)}
+  .kbaddrow:hover{background:var(--s2)}
+  .kbaddi{width:26px;height:26px;border-radius:var(--r2);background:var(--s2);display:flex;
+    align-items:center;justify-content:center;font-size:13px;flex:0 0 auto}
+  .kbaddn{font-size:12px;color:var(--tx)}
+  .kbaddd{font-size:10px;color:var(--tx3);margin-top:2px;line-height:1.5}
+
+  /* 用户菜单 */
+  .ov{position:fixed;inset:0;z-index:350;background:rgba(4,4,6,.82);backdrop-filter:blur(6px);
+    display:flex;align-items:center;justify-content:center;animation:fade .2s var(--ez)}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  @keyframes pop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .umenu{width:min(330px,92vw);background:var(--s1);border:1px solid var(--ln2);
+    border-radius:var(--r4);box-shadow:var(--sh3);overflow:hidden;animation:pop .24s var(--ez)}
+  .umh{font-size:9.5px;color:var(--tx3);letter-spacing:.05em;padding:11px 16px 6px}
+  .umcur{display:flex;align-items:center;gap:10px;padding:2px 16px 12px}
+  .umn{font-size:12.5px;color:var(--tx)}
+  .ums{font-size:10.5px;color:var(--tx3);margin-top:1px}
+  .umitem{display:flex;align-items:center;gap:9px;padding:7px 16px;font-size:12px;
+    color:var(--tx2);cursor:pointer;transition:background .16s var(--ez)}
+  .umitem:hover{background:rgba(255,255,255,.06);color:var(--tx)}
+  .umitem.on{background:var(--acs);color:var(--tx)}
+  .umc{margin-left:auto;font-size:10px;font-family:var(--fm);color:var(--tx3)}
+  .umnote{margin:10px 16px 0;padding:8px 10px;border-radius:var(--r2);font-size:10px;
+    line-height:1.6;color:var(--tx3);background:rgba(251,191,36,.09);border:1px solid var(--wnl)}
+  .umnote b{color:var(--tx2)}
+  .umfoot{padding:11px 16px;display:flex;justify-content:flex-end;border-top:1px solid var(--ln);margin-top:11px}
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <!-- ================= 导航 ================= -->
+  <nav class="nav">
+    <div class="navtop">
+      <div class="brand"><span class="mk">YL</span><span class="bn">YLCraft</span></div>
+    </div>
+
+    <div class="userbox" onclick="openUserMenu()">
+      <span class="avt" id="ubAv">梅</span>
+      <div class="ub-i">
+        <div class="ub-n" id="ubName">我（梅）</div>
+        <div class="ub-c" id="ubCost">今日 ¥0</div>
+      </div>
+      <svg class="ic sm" viewBox="0 0 24 24" style="opacity:.4"><path d="M8 9l4-4 4 4M8 15l4 4 4-4"/></svg>
+    </div>
+
+    <div class="navscroll" id="navScroll"></div>
+
+    <div class="navfoot">
+      <div class="nitem plain" onclick="go('settings')">
+        <svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+        设置
+      </div>
+    </div>
+  </nav>
+
+  <!-- ================= 内容 ================= -->
+  <div class="main" id="main">
+    <iframe id="canvasFrame" class="frame hidden" src="canvas_unified_v14.html?embed=1"></iframe>
+    <div class="page hidden" id="pageView"></div>
+  </div>
+</div>
+
+<div id="overlayHost"></div>
+
+<script>
+/* ================= 信息架构：6 项 + 学习 ================= */
+const NAV = [
+  { key:'canvas', t:'画布', ic:'grid', desc:'所有内容都在这一块画布上',
+    sub:[
+      { k:'canvas',   n:'我的画布', page:'canvas' },
+      { k:'skills',   n:'快速开始', page:'skills', tag:'新' }
+    ]},
+  { key:'project', t:'项目', ic:'book', desc:'一整部片子 / 一本书',
+    sub:[
+      { k:'story',    n:'创作项目' },
+      { k:'board',    n:'分镜表' },
+      { k:'publish',  n:'出片发布' }
+    ]},
+  { key:'work', t:'工作台', ic:'layers', desc:'单步把一件事做完',
+    sub:[
+      { k:'gen-image',  n:'AI 生成图片' },
+      { k:'gen-motion', n:'动图工作台' },
+      { k:'gen-video',  n:'视频生成' },
+      { k:'gen-3d',     n:'图生 3D' },
+      { k:'gen-previs', n:'3D 预演' },
+      { k:'edit-image', n:'图片编辑' },
+      { k:'edit-clip',  n:'视频剪辑' },
+      { k:'edit-sub',   n:'字幕提取' },
+      { k:'edit-bgm',   n:'BGM 配乐' },
+      { k:'edit-live2d',n:'Live2D' }
+    ]},
+  { key:'tools', t:'工具', ic:'wrench', desc:'一个点就完的小功能',
+    sub:[
+      { k:'t-crop',   n:'裁剪 / 缩放' },
+      { k:'t-filter', n:'滤镜 / 调色' },
+      { k:'t-cutout', n:'抠图' },
+      { k:'t-prompt', n:'提示词优化' },
+      { k:'t-ocr',    n:'OCR 取字' }
+    ]},
+  { key:'assets', t:'资产', ic:'folder', desc:'素材、角色、世界观',
+    sub:[
+      { k:'a-lib',    n:'素材库' },
+      { k:'a-char',   n:'角色' },
+      { k:'a-world',  n:'世界观 / 地图' },
+      { k:'a-prompt', n:'提示词库' },
+      { k:'a-read',   n:'阅读中心' },
+      { k:'a-crawl',  n:'采集与下载' }
+    ]},
+  { key:'kb', t:'知识库', ic:'cap', desc:'把外面的知识收进来，Agent 能查', tag:'新',
+    sub:[
+      { k:'kb-all',  n:'内容' },
+      { k:'kb-qa',   n:'问答', tag:'RAG' },
+      { k:'kb-prov', n:'处理设置' },
+      { k:'kb-recent',n:'最近阅读' },
+      { k:'kb-trash',n:'回收站' }
+    ]}
+];
+
+const ICONS = {
+  grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+  book:'<path d="M4 4h7v16H4zM13 4h7v16h-7z"/>',
+  layers:'<path d="M3 7l9-4 9 4-9 4z"/><path d="M3 12l9 4 9-4"/><path d="M3 17l9 4 9-4"/>',
+  wrench:'<path d="M14.7 6.3a4 4 0 0 0 5 5L11 20a2.8 2.8 0 0 1-4-4l9.7-9.7z"/>',
+  folder:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  cap:'<path d="M2 8l10-4 10 4-10 4z"/><path d="M6 10.5V16c0 1.7 2.7 3 6 3s6-1.3 6-3v-5.5"/>'
+};
+
+/* ================= 用户 ================= */
+const USERS = [
+  { id:'u-mei',  n:'我（梅）', av:'梅', color:'#22d3ee' },
+  { id:'u-lin',  n:'林设计',   av:'林', color:'#a78bfa' },
+  { id:'u-zhao', n:'赵剪辑',   av:'赵', color:'#fbbf24' }
+];
+let currentUser = 'u-mei';
+const SPEND = { 'u-mei':6.80, 'u-lin':0, 'u-zhao':12.40 };
+
+let cur = { nav:'canvas', sub:'canvas' };
+const opened = new Set(['canvas','kb']);
+
+/* ================= 渲染导航 ================= */
+function renderNav(){
+  document.getElementById('navScroll').innerHTML = NAV.map(g=>{
+    const isOpen = opened.has(g.key);
+    const isActive = cur.nav === g.key;
+    const hasActiveSub = g.sub.some(s=>s.k===cur.sub);
+    return `<div class="ngroup">
+      <div class="nhead ${isOpen?'open':''} ${isActive&&!isOpen?'active':''}"
+           onclick="toggleGroup('${g.key}')">
+        <svg class="ic sm" viewBox="0 0 24 24">${ICONS[g.ic]||''}</svg>
+        <span>${g.t}</span>
+        ${g.tag?`<span class="tag" style="margin-left:6px">${g.tag}</span>`:''}
+        ${!isOpen?`<span class="cnt">${g.sub.length}</span>`:''}
+        <svg class="ic sm chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+      </div>
+      ${isOpen?`<div class="nsub">${g.sub.map(s=>`
+        <div class="nitem ${s.k===cur.sub?'on':''}" onclick="go('${s.k}')">
+          <span class="dot"></span><span>${s.n}</span>
+          ${s.tag?`<span class="tag">${s.tag}</span>`:''}
+        </div>`).join('')}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function toggleGroup(key){
+  const g = NAV.find(x=>x.key===key);
+  if (opened.has(key)) opened.delete(key);
+  else opened.add(key);
+  // 点分组本身：如果里面有页面，跳到第一个
+  if (!cur.sub || !NAV.find(x=>x.key===cur.nav)?.sub.some(s=>s.k===cur.sub)){
+    go(g.sub[0].k);
+  } else {
+    renderNav();
+  }
+}
+
+function findSub(k){
+  for (const g of NAV) for (const s of g.sub) if (s.k===k) return { g, s };
+  return null;
+}
+
+/* ================= 跳转 ================= */
+function go(k){
+  const hit = findSub(k);
+  if (!hit){ toast('这个入口还没做'); return; }
+  cur = { nav: hit.g.key, sub: k };
+  opened.add(hit.g.key);
+  renderNav();
+
+  const frame = document.getElementById('canvasFrame');
+  const page  = document.getElementById('pageView');
+
+  if (k === 'canvas'){
+    frame.classList.remove('hidden');
+    page.classList.add('hidden');
+    return;
+  }
+  frame.classList.add('hidden');
+  page.classList.remove('hidden');
+  page.innerHTML = renderPage(hit.g, hit.s);
+  page.scrollTop = 0;
+}
+
+/* ================= 页面渲染 ================= */
+function renderPage(g, s){
+  if (g.key === 'kb'){
+    if (s.k === 'kb-qa')   kbView = 'qa';
+    else if (s.k === 'kb-prov') kbView = 'prov';
+    else kbView = 'items';
+    return renderKB(s);
+  }
+
+  // 通用占位页：说明它归到哪一层，不假装实现了
+  const layer = { canvas:'L3 画布', project:'L3 画布 / L2 组合', work:'L2 组合功能',
+                  tools:'L1 基础功能', assets:'支撑' }[g.key] || '—';
+  return `
+    <div class="ph">
+      <div><h1>${s.n}</h1>
+        <p>归在 <b>${g.t}</b> 下（架构层：${layer}）。<b>${g.desc}</b></p></div>
+      <div class="sp"><button class="b out" onclick="go('canvas')">去画布</button></div>
+    </div>
+    <div class="emptyhint">
+      这一页还没做。<br>
+      <b>它属于「${g.t}」这一层</b>，真实现时是原有的页面（如 <code>/image-gen</code>），
+      在导航里挂到这里。<br><br>
+      这次原型只证明一件事：<b>44 项能收进 6 个入口，并且点得通</b>。
+    </div>`;
+}
+
+/* ================= 知识库（按墨渊 Moyuan 的结构重做） =================
+   来源项目：https://cnb.cool/yiliu/moyuan （我自己写的，可直接抄）
+   核心：多个大脑 / 多模态采集 / 混合检索 / RAG 带出处 / 收藏与回收站 / 功能绑定
+*/
+
+const KB_BRAINS = [
+  { id:'b-main', n:'我的知识库',  items:9,  emb:'bge-m3', dim:1024 },
+  { id:'b-drama', n:'漫剧研究',   items:24, emb:'bge-m3', dim:1024 },
+  { id:'b-code',  n:'代码参考',   items:16, emb:'bge-m3', dim:1024 }
+];
+let kbBrain = 'b-main';
+
+const KB_KINDS = {
+  wechat: { n:'公众号',    c:'#34d399', ic:'✉' },
+  git:    { n:'Git 仓库',  c:'#a78bfa', ic:'⑂' },
+  web:    { n:'网页',      c:'#22d3ee', ic:'◍' },
+  doc:    { n:'PDF/文档',  c:'#fbbf24', ic:'▤' },
+  media:  { n:'音视频',    c:'#f87171', ic:'▷' },
+  image:  { n:'图片',      c:'#f0abfc', ic:'▣' },
+  note:   { n:'我的笔记',  c:'#9c9ca8', ic:'✎' },
+  preset: { n:'平台预制',  c:'#38bdf8', ic:'◆' }
+};
+
+const KB_ITEMS = [
+  { id:'k1', k:'wechat', t:'AI 生图的提示词工程实践（2025 修订版）',
+    src:'mp.weixin.qq.com/s/…', from:'卡兹克', at:'2026-10-16',
+    chunks:42, words:8400, tags:['提示词','生图'], col:'提示词相关',
+    state:'ready', hot:0.91, read:1 },
+
+  { id:'k2', k:'git', t:'ComfyUI-Impact-Pack',
+    src:'github.com/ltdrdata/ComfyUI-Impact-Pack', from:'GitHub', at:'2026-10-18',
+    chunks:186, words:null, tags:['ComfyUI','工具'], col:'工程参考',
+    state:'ready', hot:0.62, read:1, stars:'4.1k' },
+
+  { id:'k3', k:'git', t:'basketikun/infinite-canvas',
+    src:'github.com/basketikun/infinite-canvas', from:'GitHub', at:'2026-10-14',
+    chunks:94, words:null, tags:['画布','MIT'], col:'工程参考',
+    state:'ready', hot:0.58, read:1, stars:'7.7k' },
+
+  { id:'k4', k:'web', t:'Anthropic: Building effective agents',
+    src:'anthropic.com/engineering/building-effective-agents', from:'Anthropic', at:'2026-10-11',
+    chunks:31, words:6200, tags:['Agent','方法论'], col:'工程参考',
+    state:'ready', hot:0.77, read:0 },
+
+  { id:'k5', k:'wechat', t:'短剧分镜的 12 个镜头语言',
+    src:'mp.weixin.qq.com/s/…', from:'影视工业网', at:'2026-10-05',
+    chunks:26, words:5300, tags:['分镜','短剧'], col:'漫剧方法论',
+    state:'ready', hot:0.84, read:1 },
+
+  { id:'k6', k:'doc', t:'电影镜头设计（第 2 版）节选',
+    src:'本地 · 87 页 PDF', from:'上传', at:'2026-09-20',
+    chunks:214, words:null, tags:['镜头','构图'], col:'漫剧方法论',
+    state:'ready', hot:0.55, read:0 },
+
+  { id:'k7', k:'media', t:'Lovart 2.0 发布演示',
+    src:'bilibili.com/video/BV…', from:'B 站', at:'2026-10-17',
+    chunks:0, words:null, tags:['Lovart','竞品'], col:'竞品观察',
+    state:'parsing', hot:0, read:0, progress:'转写中 · 38%' },
+
+  { id:'k8', k:'note', t:'我做 Cos 图的 7 条经验',
+    src:'手写', from:'我', at:'2026-10-19',
+    chunks:6, words:1200, tags:['Cos','经验'], col:null,
+    state:'ready', hot:0.71, read:1 },
+
+  { id:'k9', k:'preset', t:'YLCraft 平台使用指南',
+    src:'平台内置', from:'系统', at:'随版本',
+    chunks:18, words:null, tags:['上手'], col:null,
+    state:'ready', hot:0.4, read:0 },
+
+  { id:'k10', k:'image', t:'参考图合集 · 雨夜霓虹',
+    src:'12 张 · 已 OCR', from:'我', at:'2026-10-18',
+    chunks:12, words:null, tags:['参考','氛围'], col:'提示词相关',
+    state:'ready', hot:0.66, read:0 }
+];
+
+const KB_COLS = [
+  { n:'提示词相关', c:2 }, { n:'竞品观察', c:1 },
+  { n:'漫剧方法论', c:2 }, { n:'工程参考', c:3 }
+];
+const KB_TAGS = ['提示词','生图','分镜','短剧','Agent','ComfyUI','画布','Cos','镜头'];
+
+let kbQ = '', kbFilter = 'all', kbCol = null, kbView = 'items', kbSel = null;
+
+/* ================= 测验 · 错题本 =================
+   不是考你，是确认"这条知识你真的记住了"。
+   和墨渊一致：出题 / 判题 / 错题复习，但每题都带出处，错了能直接跳回原文。
+*/
+
+const KB_QUIZ = [
+  { id:'q1', type:'单选',
+    q:'磨皮要避免"塑料感"，下面哪个做法对？',
+    opts:['一次推到底，效率高','分两次推，第一次只去瑕疵','只用磨皮工具，不加任何纹理','把皮肤磨到完全无纹理'],
+    a:1,
+    why:'磨皮分两次：第一次去瑕疵，第二次才轻推纹理 —— 这样保留皮肤质感，不会像塑料。',
+    ref:{ id:'k8', seg:3, t:'我做 Cos 图的 7 条经验' } },
+
+  { id:'q2', type:'单选',
+    q:'短剧里情绪转折处，镜头应该先怎么处理？',
+    opts:['直接切特写','先用中景过渡','切到远景拉远','快速切换多个角度'],
+    a:1,
+    why:'情绪转折处先用中景过渡，别直接切特写 —— 观众会跟不上空间关系。',
+    ref:{ id:'k5', seg:8, t:'短剧分镜的 12 个镜头语言' } },
+
+  { id:'q3', type:'判断',
+    q:'写负向约束时，"不要出现xx"比"避免xx"效果更稳。',
+    opts:['对','错'],
+    a:1,
+    why:'反了。写"避免"比写"不要"稳 —— 模型对否定句理解不稳定，容易把被否定的词画出来。',
+    ref:{ id:'k1', seg:12, t:'AI 生图的提示词工程实践' } },
+
+  { id:'q4', type:'单选',
+    q:'为什么检索到 3 段材料，不能直接说"3 条依据"？',
+    opts:['因为数量不够','因为相似度高不代表相关','因为要凑够 5 条','因为用户看不完'],
+    a:1,
+    why:'相似度高 ≠ 相关。检索分数只表示"像"，不表示"有用"。所以要标出哪几段真的相关。',
+    ref:{ id:'k1', seg:20, t:'AI 生图的提示词工程实践' } },
+
+  { id:'q5', type:'单选',
+    q:'知识库里的视频条目一直卡在"处理中"，最可能是什么原因？',
+    opts:['网络慢','没绑定音视频转写模型','视频太大','视频格式不对'],
+    a:1,
+    why:'音视频要先转写才能切片检索。处理设置里没绑转写模型，就会一直卡着。',
+    ref:{ id:'k7', seg:1, t:'Lovart 2.0 发布演示' } }
+];
+
+const QUIZ_TOPICS = [
+  { n:'全部条目', c:10 }, { n:'Cos 精修', c:2 },
+  { n:'短剧分镜', c:2 }, { n:'提示词', c:3 }
+];
+
+let quiz = {
+  started:false,
+  i:0,
+  pick:null,
+  answers:[],     // 每题的答案索引
+  done:false,
+  scope:'全部条目',
+  count:5
+};
+
+function renderQuizView(){
+  if (!quiz.started) return quizIntroView();
+  if (quiz.done)     return quizResultView();
+  return quizQuestionView();
+}
+
+/* --------- 出题前 --------- */
+function quizIntroView(){
+  const wrong = quiz.answers.filter((a,i)=>a!==KB_QUIZ[i].a).length;
+  return `
+    <div class="qzintro">
+      <div class="qzin-h">从你的知识库里出题</div>
+      <div class="qzin-s">
+        不是考你，是确认<b>这条知识你真的记住了</b>。
+        答错的会进错题本，错了能直接跳回原文。
+      </div>
+
+      <div class="qzin-row">
+        <span class="qzin-k">出题范围</span>
+        <div class="qzchips">
+          ${QUIZ_TOPICS.map(t=>`
+            <button class="qzchip ${quiz.scope===t.n?'on':''}"
+              onclick="quiz.scope='${t.n}';renderKBInto()">${t.n} ${t.c}</button>`).join('')}
+        </div>
+      </div>
+
+      <div class="qzin-row">
+        <span class="qzin-k">题量</span>
+        <div class="qzchips">
+          ${[3,5,10].map(n=>`
+            <button class="qzchip ${quiz.count===n?'on':''}"
+              onclick="quiz.count=${n};renderKBInto()">${n} 题</button>`).join('')}
+        </div>
+      </div>
+
+      <div class="qzin-foot">
+        <span class="qzin-tip">题目由「判题」模型生成 · 每题都带出处</span>
+        <button class="b solid" onclick="startQuiz()">开始测验</button>
+      </div>
+    </div>
+
+    ${wrongCardHTML()}`;
+}
+
+function wrongCardHTML(){
+  const wrongs = quiz.answers.map((a,i)=>({q:KB_QUIZ[i], my:a})).filter(x=>x.my!==x.q.a);
+  if (!quiz.answers.length) return `
+    <div class="qzwrongempty">
+      <div class="qzwe-t">错题本</div>
+      <div class="qzwe-s">还没有错题。<b>做一次测验，答错的会自动收进来。</b></div>
+    </div>`;
+
+  return `
+    <div class="qzwrong">
+      <div class="qzwh">
+        <span class="qzwh-t">错题本</span>
+        <span class="qzwh-c">${wrongs.length} 题</span>
+        <button class="b" style="margin-left:auto;font-size:10.5px;padding:3px 9px"
+          onclick="startQuiz()">重做一遍</button>
+      </div>
+      ${wrongs.length ? wrongs.map(x=>`
+        <div class="qzwitem">
+          <div class="qzwq">${x.q.q}</div>
+          <div class="qzwl">
+            <span class="bad">你答：${x.q.opts[x.my]}</span>
+            <span class="good">正确：${x.q.opts[x.q.a]}</span>
+          </div>
+          <div class="qzwr">
+            来自《${x.q.ref.t}》第 ${x.q.ref.seg} 段
+            <span class="qzwlink" onclick="openCite('${x.q.ref.id}')">看原文 →</span>
+          </div>
+        </div>`).join('')
+        : '<div class="qzwe-s" style="padding:12px">全对！错题本是空的。</div>'}
+    </div>`;
+}
+
+/* --------- 答题中 --------- */
+function quizQuestionView(){
+  const q = KB_QUIZ[quiz.i];
+  const picked = quiz.pick;
+  return `
+    <div class="qzcard">
+      <div class="qzh">
+        <span class="qzno">第 ${quiz.i+1} / ${KB_QUIZ.length} 题</span>
+        <span class="qztype">${q.type}</span>
+        <div class="qzprog">
+          ${KB_QUIZ.map((_,i)=>`<span class="qzpd ${i<quiz.i?'done':''} ${i===quiz.i?'cur':''}"></span>`).join('')}
+        </div>
+      </div>
+
+      <div class="qzq">${q.q}</div>
+
+      <div class="qzopts">
+        ${q.opts.map((o,i)=>{
+          let cls = '';
+          if (picked !== null){
+            if (i === q.a) cls = 'right';
+            else if (i === picked) cls = 'wrong';
+          } else if (picked === null) { cls = ''; }
+          return `<div class="qzopt ${picked===i&&picked===null?'':''} ${cls}"
+            onclick="${picked===null?`quiz.pick=${i};renderKBInto()`:''}">
+            <span class="qzo-dot">${String.fromCharCode(65+i)}</span>
+            <span class="qzo-t">${o}</span>
+            ${picked!==null && i===q.a?'<span class="qzo-m ok">✓</span>':''}
+            ${picked!==null && i===picked && i!==q.a?'<span class="qzo-m no">✗</span>':''}
+          </div>`;
+        }).join('')}
+      </div>
+
+      ${picked!==null?`
+        <div class="qzfb ${picked===q.a?'ok':'bad'}">
+          <div class="qzfb-h">${picked===q.a?'✓ 答对了':'✗ 答错了'}</div>
+          <div class="qzfb-w">${q.why}</div>
+          <div class="qzfb-r">
+            来自《${q.ref.t}》第 ${q.ref.seg} 段
+            <span class="qzfb-link" onclick="openCite('${q.ref.id}')">看原文 →</span>
+          </div>
+        </div>
+        <div class="qzfoot">
+          <span class="qztip">${picked===q.a?'':'已收进错题本'}</span>
+          <button class="b solid" onclick="nextQuiz()">
+            ${quiz.i+1>=KB_QUIZ.length?'看结果 →':'下一题 →'}
+          </button>
+        </div>
+      `:`
+        <div class="qzfoot">
+          <span class="qztip">选一个再提交</span>
+          <button class="b solid" ${picked===null?'disabled style="opacity:.4;cursor:not-allowed"':''}
+            onclick="submitQuiz()">提交答案</button>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+/* --------- 结果 --------- */
+function quizResultView(){
+  const right = quiz.answers.filter((a,i)=>a===KB_QUIZ[i].a).length;
+  const total = quiz.answers.length;
+  const pct = Math.round(right/total*100);
+  return `
+    <div class="qzresult">
+      <div class="qzr-big">${right} / ${total}</div>
+      <div class="qzr-sub">${pct >= 80 ? '记得挺牢' : pct >= 50 ? '有些地方还模糊' : '建议回原文再看一遍'}</div>
+      <div class="qzr-bar"><span style="width:${pct}%"></span></div>
+      <div class="qzr-acts">
+        <button class="b" onclick="resetQuiz()">再测一次</button>
+        <button class="b solid" onclick="quiz.started=false;quiz.answers=[];renderKBInto()">看错题本</button>
+      </div>
+    </div>
+    ${wrongCardHTML()}`;
+}
+
+/* --------- 动作 --------- */
+function startQuiz(){
+  quiz.started = true; quiz.i = 0; quiz.pick = null; quiz.done = false;
+  renderKBInto();
+}
+function submitQuiz(){
+  if (quiz.pick === null) return;
+  quiz.answers[quiz.i] = quiz.pick;
+  renderKBInto();
+}
+function nextQuiz(){
+  quiz.pick = null;
+  if (quiz.i + 1 >= KB_QUIZ.length){ quiz.done = true; }
+  else quiz.i++;
+  renderKBInto();
+}
+function resetQuiz(){
+  quiz.started = false; quiz.i = 0; quiz.pick = null;
+  quiz.answers = []; quiz.done = false;
+  renderKBInto();
+}
+
+/* ---------- 主渲染 ---------- */
+function renderKB(){
+  if (kbView === 'qa')   return kbShell(kbQAView());
+  if (kbView === 'quiz') return kbShell(renderQuizView());
+  if (kbView === 'prov') return kbShell(kbProvView());
+  return kbShell(kbItemsView());
+}
+
+function kbShell(inner){
+  const b = KB_BRAINS.find(x=>x.id===kbBrain) || KB_BRAINS[0];
+  const ready = KB_ITEMS.filter(i=>i.state==='ready').length;
+  const chunkSum = KB_ITEMS.reduce((a,i)=>a+(i.chunks||0),0);
+
+  return `
+    <div class="ph">
+      <div><h1>知识库</h1>
+        <p>把外面的东西收进来 —— <b>公众号 / Git / 网页 / PDF / 音视频 / 图片 / 笔记</b>。
+          <b>每个大脑独立检索</b>，画布里的智能体直接查、回答带出处。</p></div>
+      <div class="sp">
+        <button class="b out" onclick="kbAdd()">
+          <svg class="ic sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>添加内容
+        </button>
+      </div>
+    </div>
+
+    <div class="kbtop">
+      <div class="kbbrain">
+        <span class="kbbrain-ic">◆</span>
+        <select onchange="kbBrain=this.value;renderKBInto()">
+          ${KB_BRAINS.map(x=>`<option value="${x.id}" ${x.id===kbBrain?'selected':''}>${x.n} · ${x.items} 条</option>`).join('')}
+        </select>
+        <span class="kbdim">${b.emb} · ${b.dim}维</span>
+      </div>
+      <div class="kbtabs">
+        <button class="kbtab ${kbView==='items'?'on':''}" onclick="kbView='items';renderKBInto()">内容</button>
+        <button class="kbtab ${kbView==='qa'?'on':''}" onclick="kbView='qa';renderKBInto()">问答</button>
+        <button class="kbtab ${kbView==='quiz'?'on':''}" onclick="kbView='quiz';renderKBInto()">测验</button>
+        <button class="kbtab ${kbView==='prov'?'on':''}" onclick="kbView='prov';renderKBInto()">处理设置</button>
+      </div>
+    </div>
+
+    ${inner}
+
+    <div class="kbfoot">
+      ${ready} 条就绪 · ${chunkSum} 个可检索片段
+      ${KB_ITEMS.some(i=>i.state==='parsing')?' · <b style="color:var(--wn)">1 条处理中</b>':''}
+    </div>`;
+}
+
+/* ---------- 视图 1：内容 ---------- */
+function kbItemsView(){
+  const q = kbQ.trim().toLowerCase();
+  const rows = KB_ITEMS.filter(it=>{
+    if (kbFilter !== 'all' && it.k !== kbFilter) return false;
+    if (kbCol && it.col !== kbCol) return false;
+    if (!q) return true;
+    return (it.t+' '+it.src+' '+it.tags.join(' ')+' '+(it.col||'')).toLowerCase().includes(q);
+  });
+
+  return `
+    <div class="kbsearch2">
+      <div class="kbsbox">
+        <svg class="ic sm" viewBox="0 0 24 24" style="color:var(--tx3)"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.4-3.4"/></svg>
+        <input placeholder="搜内容、来源、标签…" value="${escA(kbQ)}" oninput="kbQ=this.value;renderKBInto()">
+        <span class="kbhybrid" title="向量 + 关键词">混合检索</span>
+      </div>
+    </div>
+
+    <div class="kbrow2">
+      <aside class="kbside">
+        <div class="ksg">收藏夹</div>
+        ${KB_COLS.map(c=>`
+          <div class="ksi ${kbCol===c.n?'on':''}" onclick="kbCol=${kbCol===c.n?'null':`'${c.n}'`};renderKBInto()">
+            <span>${c.n}</span><span class="ksc">${c.c}</span>
+          </div>`).join('')}
+        <div class="ksg">标签</div>
+        <div class="kstags">
+          ${KB_TAGS.map(t=>`<span class="kstag" onclick="kbQ='${t}';renderKBInto()">${t}</span>`).join('')}
+        </div>
+        <div class="ksg">其他</div>
+        <div class="ksi"><span>最近阅读</span><span class="ksc">${{}.x||KB_ITEMS.filter(i=>i.read).length}</span></div>
+        <div class="ksi"><span>回收站</span><span class="ksc">2</span></div>
+      </aside>
+
+      <div class="kblist2">
+        <div class="kbfilters2">
+          <button class="kbf ${kbFilter==='all'?'on':''}" onclick="kbFilter='all';renderKBInto()">全部</button>
+          ${Object.entries(KB_KINDS).map(([k,v])=>{
+            const c = KB_ITEMS.filter(i=>i.k===k).length;
+            return `<button class="kbf ${kbFilter===k?'on':''}" onclick="kbFilter='${k}';renderKBInto()">
+              <span class="kbd" style="background:${v.c}"></span>${v.n}${c?' '+c:''}</button>`;
+          }).join('')}
+        </div>
+
+        ${rows.length ? rows.map(it=>kbRow(it)).join('') : '<div class="emptyhint">没搜到。<b>换个词，或者直接加内容。</b></div>'}
+      </div>
+    </div>`;
+}
+
+function kbRow(it){
+  const s = KB_KINDS[it.k];
+  return `<div class="kbrow" onclick="kbOpen('${it.id}')">
+    <span class="kbic" style="color:${s.c};border-color:${s.c}33;background:${s.c}14">${s.ic}</span>
+    <div class="kbi">
+      <div class="kbt">${it.t}
+        ${it.state==='parsing'?`<span class="kbpend">${it.progress||'处理中'}</span>`:''}
+        ${it.read?'':'<span class="kbunread"></span>'}
+      </div>
+      <div class="kbf2">${it.from} · ${it.at}
+        ${it.chunks?` · ${it.chunks} 段`:''}
+        ${it.stars?` · ★${it.stars}`:''}
+        ${it.col?` · <span style="color:var(--tx3)">${it.col}</span>`:''}
+      </div>
+      <div class="kbtags">${it.tags.map(t=>`<span class="kbtag">${t}</span>`).join('')}</div>
+    </div>
+    <span class="kbsrc" style="color:${s.c}">${s.n}</span>
+  </div>`;
+}
+
+/* ---------- 视图 2：问答（RAG 带出处） ---------- */
+const KB_QA = [
+  { q:'磨皮怎么才不会塑料感', a:'分两次推，别一次到底。',
+    hits:[
+      { id:'k1', seg:12, score:0.91, k:'wechat',
+        txt:'负向约束要写"避免"，不要写"不要" —— 模型对否定句的理解不稳定，容易把被否定的词画出来。' },
+      { id:'k8', seg:3, score:0.87, k:'note',
+        txt:'磨皮别一次推到底，分两次：第一次只去瑕疵，第二次才轻推皮肤纹理，这样不会塑料。' },
+      { id:'k5', seg:8, score:0.74, k:'wechat',
+        txt:'情绪转折处先用中景过渡，别直接切特写 —— 观众会跟不上空间关系。' }
+    ],
+    note:'第 3 条其实是讲分镜的，跟"磨皮"关系不大 —— 相似度高不代表相关，这也是要标注分数的原因。' }
+];
+
+function kbQAView(){
+  const qa = KB_QA[0];
+  return `
+    <div class="kbqa2">
+      <div class="kqq">"${qa.q}"</div>
+      <div class="kqa2">
+        <b>${qa.a}</b> 我查到 ${qa.hits.length} 段材料，其中 ${qa.hits.filter(h=>h.score>0.8).length} 段真的相关。
+      </div>
+
+      ${qa.hits.map((h,i)=>{
+        const it = KB_ITEMS.find(x=>x.id===h.id);
+        const s = KB_KINDS[h.k];
+        const weak = h.score < 0.8;
+        return `<div class="kbhit2 ${weak?'weak':''}">
+          <div class="kbhh2">
+            <span class="kbnum">[${i+1}]</span>
+            <span class="kbsco ${weak?'w':''}">${h.score.toFixed(2)}</span>
+            <span class="kbht2">${it.t}</span>
+            <span class="kbhp2">第 ${h.seg} 段</span>
+            <span class="kbsrc2" style="color:${s.c}">${s.n}</span>
+          </div>
+          <div class="kbhx">${h.txt}</div>
+          ${weak?'<div class="kbhw">相关度偏低，仅作参考</div>':''}
+        </div>`;
+      }).join('')}
+
+      <div class="kbnote2">
+        <b>为什么标分数：</b>${qa.note}<br><br>
+        <b>引用可以点：</b>点 [1] 直接跳到那一条的第 12 段，看上下文。
+      </div>
+
+      <div class="kbqafoot">
+        <span>回答带出处 · 没有出处时会明说「这是我的推断，不是材料里的」</span>
+      </div>
+    </div>`;
+}
+
+/* ---------- 视图 3：处理设置（功能绑定） ---------- */
+const KB_BIND = [
+  { f:'切片',     m:'bge-m3 / 语义切片',   d:'按语义切，重叠 10%' },
+  { f:'向量化',   m:'bge-m3 (1024维)',    d:'多语言，中英混合友好' },
+  { f:'OCR',      m:'未绑定',             d:'图片/扫描 PDF 需要它', warn:1 },
+  { f:'音视频转写', m:'未绑定',            d:'视频条目现在卡在这里', warn:1 },
+  { f:'摘要',     m:'GPT-4o-mini',        d:'压缩长文，省 token' },
+  { f:'问答',     m:'DeepSeek-V3',        d:'RAG 生成' },
+  { f:'判题',     m:'DeepSeek-V3',        d:'测验/错题用' }
+];
+
+function kbProvView(){
+  return `
+    <div class="kbprov">
+      <div class="kbpnotice">
+        这里绑定的是<b>每个功能用哪个模型</b> —— 不是全局一个模型。
+        <br>OCR 和转写没绑，所以图片和视频条目会一直卡在"处理中"。
+      </div>
+      ${KB_BIND.map(b=>`
+        <div class="kbprow ${b.warn?'warn':''}">
+          <span class="kbpk">${b.f}</span>
+          <span class="kbpm ${b.warn?'unset':''}">${b.m}</span>
+          <span class="kbpd">${b.d}</span>
+          <button class="b" style="font-size:10.5px;padding:3px 9px"
+            onclick="toast('绑定模型（原型不接）')">${b.warn?'去绑定':'更换'}</button>
+        </div>`).join('')}
+      <div class="kbpfoot">
+        向量模型换掉要<b>重建索引</b>，代价是这条大脑的所有条目重新算一遍。
+      </div>
+    </div>`;
+}
+
+/* ---------- 详情 ---------- */
+/* ================= 条目详情：原文 / 片段 / 标注 / 引用记录 ================= */
+
+/* 标注：我自己在材料上写的话，锚定到具体段落 */
+const KB_ANNOT = {
+  k1: [
+    { seg:12, quote:'负向约束要写"避免"，不要写"不要"',
+      note:'我们节点里的提示词也这么写 —— 别用否定句，用"避免"。', at:'10-18 14:20' },
+    { seg:12, quote:'模型对否定句的理解不稳定',
+      note:'这解释了为什么有时候会把"不要红色"画出红色。', at:'10-16 09:15' }
+  ],
+  k8: [
+    { seg:3, quote:'第一次只去瑕疵，第二次才轻推皮肤纹理',
+      note:'实操：两次之间隔开看一遍再推，不然容易过头。', at:'10-19 11:05' }
+  ],
+  k5: [
+    { seg:8, quote:'情绪转折处先用中景过渡',
+      note:'第 7 镜切错了就是因为这个，回头改。', at:'10-15 20:40' }
+  ]
+};
+
+/* 引用记录：哪次对话/哪块画布引用了这条材料的哪一段 —— 引用留痕 */
+const KB_REFLOG = {
+  k1: [
+    { q:'磨皮怎么才不会塑料感', seg:12, at:'今天 10:24', canvas:'短剧 · 第 3 集', score:0.91 },
+    { q:'负向词为什么不管用',   seg:12, at:'昨天 16:10', canvas:'Cos 图 · 蕾姆',   score:0.88 }
+  ],
+  k8: [
+    { q:'磨皮怎么才不会塑料感', seg:3, at:'今天 10:24', canvas:'短剧 · 第 3 集', score:0.87 },
+    { q:'Cos 精修要注意什么',   seg:3, at:'昨天 09:30', canvas:'Cos 图 · 蕾姆',   score:0.82 },
+    { q:'皮肤质感怎么保住',     seg:3, at:'10-17 21:12', canvas:'短剧 · 第 3 集', score:0.79 }
+  ],
+  k5: [
+    { q:'情绪转折怎么切镜头', seg:8, at:'10-15 20:38', canvas:'短剧 · 第 3 集', score:0.86 }
+  ]
+};
+
+let kbDetailTab = 'text';
+
+function kbOpen(id){
+  const it = KB_ITEMS.find(x=>x.id===id);
+  if (!it) return;
+  kbSel = id;
+  renderKbDetail();
+}
+
+function renderKbDetail(){
+  const it = KB_ITEMS.find(x=>x.id===kbSel);
+  if (!it) return;
+  const s = KB_KINDS[it.k];
+  const ann = KB_ANNOT[it.id] || [];
+  const refs = KB_REFLOG[it.id] || [];
+  const tabs = [
+    { k:'text',  n:'原文' },
+    { k:'chunk', n:'片段 ' + (it.chunks||0) },
+    { k:'annot', n:'标注 ' + ann.length },
+    { k:'refs',  n:'引用记录 ' + refs.length }
+  ];
+
+  document.getElementById('overlayHost').innerHTML =
+   `<div class="ov" onclick="if(event.target===this)closeOverlay()"><div class="kbd3">
+      <div class="kbd3h">
+        <span class="kbic" style="color:${s.c};border-color:${s.c}33;background:${s.c}14">${s.ic}</span>
+        <div style="flex:1;min-width:0">
+          <div class="kbd3t">${it.t}</div>
+          <div class="kbd3s">${it.src} · ${it.at}</div>
+        </div>
+        <button class="b" onclick="closeOverlay()">✕</button>
+      </div>
+
+      <div class="kbd3tabs">
+        ${tabs.map(t=>`<span class="${kbDetailTab===t.k?'on':''}"
+          onclick="kbDetailTab='${t.k}';renderKbDetail()">${t.n}</span>`).join('')}
+      </div>
+
+      <div class="kbd3b">
+        ${kbDetailTab==='text'  ? kbTabText(it) : ''}
+        ${kbDetailTab==='chunk' ? kbTabChunk(it) : ''}
+        ${kbDetailTab==='annot' ? kbTabAnnot(it, ann) : ''}
+        ${kbDetailTab==='refs'  ? kbTabRefs(it, refs) : ''}
+      </div>
+
+      <div class="kbd3f">
+        <button class="b" onclick="toast('移到回收站')">删除</button>
+        <button class="b" onclick="kbDetailTab='annot';renderKbDetail();toast('新建标注（原型不落库）')">＋ 标注</button>
+        <button class="b solid" onclick="closeOverlay();kbView='qa';renderKBInto()">用它提问</button>
+      </div>
+    </div></div>`;
+}
+
+/* --- 原文 --- */
+function kbTabText(it){
+  const ann = KB_ANNOT[it.id] || [];
+  if (it.state === 'parsing'){
+    return `<div class="kbd3pend">正在处理：${it.progress||'转写中'}<br>
+      <span style="font-size:10px;color:var(--tx3)">原因是「处理设置」里没绑 OCR / 转写模型</span></div>`;
+  }
+  const body = it.k === 'git'
+    ? '# ' + it.t + '\n\n## 这是什么\n' + '（README 正文会被完整保留，代码文件按函数切片。）\n\n## 怎么用\n' + '（目录结构、关键文件都保留路径信息，检索时能定位到具体文件。）'
+    : '（这里显示正文。真实内容是全文可读，支持划词后直接添加标注。）\n\n'
+      + '第 1 段：' + (it.k==='note'?'这是我自己的记录：':'') + '……\n\n'
+      + '第 ' + (ann[0] ? ann[0].seg : 3) + ' 段：' + (ann[0] ? ann[0].quote : '……')
+      + '\n\n（划词可标注）';
+
+  return `
+    <div class="kbsim">
+      <div class="kbsimt">全文 · 可划词标注</div>
+      <div class="kbsimp">${body.replace(/</g,'&lt;')}</div>
+    </div>
+    ${ann.length?`<div class="kbd3tip">这条材料上已有 <b>${ann.length}</b> 条标注 · 切到「标注」看</div>`:''}`;
+}
+
+/* --- 片段 --- */
+function kbTabChunk(it){
+  const n = Math.min(it.chunks||0, 5);
+  const used = (KB_REFLOG[it.id]||[]).map(r=>r.seg);
+  return `
+    <div class="kbsim">
+      <div class="kbsimt">共 ${it.chunks||0} 段 · 下面是前 ${n} 段</div>
+      ${Array.from({length:n},(_,i)=>{
+        const seg = i+1;
+        const isUsed = used.includes(seg);
+        return `<div class="kbchunk">
+          <span class="kbcn">${seg}</span>
+          <div style="flex:1;min-width:0">
+            <div class="kbcx">${it.k==='git'?'（文件片段）':'（段落 ' + seg + '）'}${isUsed?' <span class="kbusetag">被引用过</span>':''}</div>
+            <div class="kbcv">向量 ${1024} 维 · 已入库 · 长度 ${80+seg*40} 字</div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="kbd3tip">片段是检索的最小单位 —— 引用记录里说的"第 N 段"就是这里的分段。</div>`;
+}
+
+/* --- 标注 --- */
+function kbTabAnnot(it, ann){
+  if (!ann.length){
+    return `<div class="kbempty">
+      <div class="kbempty-t">还没有标注</div>
+      <div class="kbempty-s">读到有用的一段，划一下就能记句话。<br>
+        标注会锚在具体段落上，<b>以后检索到这段时会一起显示。</b></div>
+    </div>`;
+  }
+  return `
+    ${ann.map(a=>`
+      <div class="kbann">
+        <div class="kbann-q">「${a.quote}」<span class="kbann-seg">第 ${a.seg} 段</span></div>
+        <div class="kbann-n">${a.note}</div>
+        <div class="kbann-m">${a.at}</div>
+      </div>`).join('')}
+    <div class="kbd3tip">标注是<b>你自己写的话</b>，和原文一起进检索 —— 搜的时候能搜到你当时的理解。</div>`;
+}
+
+/* --- 引用记录（引用留痕） --- */
+function kbTabRefs(it, refs){
+  if (!refs.length){
+    return `<div class="kbempty">
+      <div class="kbempty-t">还没有被引用过</div>
+      <div class="kbempty-s">画布里的智能体回答时如果用了这条材料，<br>
+        <b>每次都会记在这里</b> —— 这样你能反过来检查"它是不是被我收的东西带偏了"。</div>
+    </div>`;
+  }
+  return `
+    ${refs.map(r=>`
+      <div class="kbref">
+        <div class="kbref-h">
+          <span class="kbref-q">"${r.q}"</span>
+          <span class="kbref-s">${r.score.toFixed(2)}</span>
+        </div>
+        <div class="kbref-m">
+          引用了 <b>第 ${r.seg} 段</b> · ${r.at} · 在画布《${r.canvas}》
+        </div>
+      </div>`).join('')}
+    <div class="kbd3tip ref">
+      🔴 <b>这就是引用留痕</b>：能回答"我的回答到底是被哪些材料影响的"。<br>
+      如果发现某条材料老把回答带偏，可以停用它。
+    </div>`;
+}
+
+function kbAdd(){
+  document.getElementById('overlayHost').innerHTML =
+   `<div class="ov" onclick="if(event.target===this)closeOverlay()"><div class="kbadd">
+      <div class="kbd3h"><div style="flex:1"><div class="kbd3t">添加内容</div>
+        <div class="kbd3s">能收的东西都收 —— 收进来就会自动处理</div></div>
+        <button class="b" onclick="closeOverlay()">✕</button></div>
+      <div class="kbaddb">
+        <div class="kbaddrow" onclick="toast('粘贴公众号链接')">
+          <span class="kbaddi" style="color:#34d399">✉</span>
+          <div><div class="kbaddn">公众号文章</div><div class="kbaddd">粘贴链接，自动取正文 + 图片</div></div>
+        </div>
+        <div class="kbaddrow" onclick="toast('粘贴 Git 地址')">
+          <span class="kbaddi" style="color:#a78bfa">⑂</span>
+          <div><div class="kbaddn">Git 仓库</div><div class="kbaddd">README + 代码 + 目录结构，会持续跟踪更新</div></div>
+        </div>
+        <div class="kbaddrow" onclick="toast('粘贴网页链接')">
+          <span class="kbaddi" style="color:#22d3ee">◍</span>
+          <div><div class="kbaddn">网页</div><div class="kbaddd">自动提取正文，去掉导航和广告</div></div>
+        </div>
+        <div class="kbaddrow" onclick="toast('选文件')">
+          <span class="kbaddi" style="color:#fbbf24">▤</span>
+          <div><div class="kbaddn">上传文件</div><div class="kbaddd">PDF / Word / Excel / 图片 / 音视频，支持整个文件夹</div></div>
+        </div>
+        <div class="kbaddrow" onclick="toast('写笔记')">
+          <span class="kbaddi" style="color:#9c9ca8">✎</span>
+          <div><div class="kbaddn">写一条笔记</div><div class="kbaddd">自己的想法，也能被检索到</div></div>
+        </div>
+      </div>
+      <div class="kbd3f">
+        <span style="margin-right:auto;font-size:10px;color:var(--tx3)">
+          收进哪个大脑：<b style="color:var(--tx2)">${(KB_BRAINS.find(b=>b.id===kbBrain)||{}).n}</b>
+        </span>
+        <button class="b" onclick="closeOverlay()">取消</button>
+      </div>
+    </div></div>`;
+}
+
+function renderKBInto(){
+  const host = document.getElementById('pageView');
+  if (host) host.innerHTML = renderKB();
+  bindKBSelect();
+}
+function bindKBSelect(){ /* select 用原生 onchange，无需额外绑定 */ }
+
+function escA(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* ================= 用户菜单 ================= */
+function openUserMenu(){
+  const u = USERS.find(x=>x.id===currentUser);
+  document.getElementById('overlayHost').innerHTML =
+   `<div class="ov" onclick="if(event.target===this)closeOverlay()"><div class="umenu">
+      <div class="umh">当前登录</div>
+      <div class="umcur">
+        <span class="avt" style="background:${u.color}">${u.av}</span>
+        <div><div class="umn">${u.n}</div>
+          <div class="ums">今天花了 ¥${(SPEND[u.id]||0).toFixed(2)}</div></div>
+      </div>
+      <div class="umh" style="margin-top:12px">切换用户（演示隔离）</div>
+      ${USERS.map(x=>`
+        <div class="umitem ${x.id===currentUser?'on':''}" onclick="switchUser('${x.id}')">
+          <span class="avt sm" style="background:${x.color}">${x.av}</span>
+          <span>${x.n}</span>
+          <span class="umc">¥${(SPEND[x.id]||0).toFixed(2)}</span>
+        </div>`).join('')}
+      <div class="umnote">切换后画布列表会变 —— <b>别人的私有画布你看不到</b>。</div>
+      <div class="umfoot"><button class="b" onclick="closeOverlay()">关闭</button></div>
+    </div></div>`;
+}
+function switchUser(uid){
+  currentUser = uid;
+  const u = USERS.find(x=>x.id===uid);
+  document.getElementById('ubAv').textContent = u.av;
+  document.getElementById('ubAv').style.background = u.color;
+  document.getElementById('ubName').textContent = u.n;
+  document.getElementById('ubCost').textContent = '今日 ¥' + (SPEND[uid]||0).toFixed(2);
+  closeOverlay();
+  toast('已切换为「' + u.n + '」');
+}
+function closeOverlay(){ document.getElementById('overlayHost').innerHTML=''; }
+
+function toast(t){
+  const old=document.querySelector('.toast'); if(old) old.remove();
+  const d=document.createElement('div'); d.className='toast'; d.textContent=t;
+  document.body.appendChild(d);
+  setTimeout(()=>{d.style.opacity='0';d.style.transition='opacity .4s';},2000);
+  setTimeout(()=>d.remove(),2500);
+}
+
+/* 启动 */
+renderNav();
+go('canvas');
+
+/* ================= P5：间隔重复 + P6：划词标注 ================= */
+
+/* ---------- P5 ---------- */
+const SR_STEPS = [1, 3, 7, 16, 35];
+let wrongBox = [];
+const DAYMS = 86400000;
+
+function srAdd(qid){
+  const now = Date.now();
+  let it = wrongBox.find(w=>w.qid===qid);
+  if (!it){ it = { qid, stage:0, due: now + SR_STEPS[0]*DAYMS, wrongCount:1 }; wrongBox.push(it); }
+  else {
+    it.wrongCount++;
+    it.stage = Math.max(0, it.stage - 1);
+    it.due = now + SR_STEPS[it.stage]*DAYMS;
+  }
+}
+function srPass(qid){
+  const it = wrongBox.find(w=>w.qid===qid);
+  if (!it) return;
+  it.stage++;
+  if (it.stage >= SR_STEPS.length){ wrongBox = wrongBox.filter(w=>w.qid!==qid); return; }
+  it.due = Date.now() + SR_STEPS[it.stage]*DAYMS;
+}
+function srDue(){ return wrongBox.filter(w=>w.due <= Date.now()); }
+function srWhen(ts){
+  const d = Math.round((ts - Date.now())/DAYMS);
+  if (d <= 0) return '现在该复习';
+  if (d === 1) return '明天';
+  return d + ' 天后';
+}
+
+const _submitQuiz = submitQuiz;
+submitQuiz = function(){
+  if (quiz.pick === null) return;
+  const q = KB_QUIZ[quiz.i];
+  quiz.answers[quiz.i] = quiz.pick;
+  if (quiz.pick === q.a) srPass(q.id); else srAdd(q.id);
+  renderKBInto();
+};
+
+wrongCardHTML = function(){
+  if (!wrongBox.length && !quiz.answers.length) return `
+    <div class="qzwrongempty">
+      <div class="qzwe-t">错题本</div>
+      <div class="qzwe-s">还没有错题。<b>做一次测验，答错的会自动收进来。</b></div>
+    </div>`;
+
+  const due = srDue();
+  const items = wrongBox.map(w=>({ w, q: KB_QUIZ.find(x=>x.id===w.qid) })).filter(x=>x.q);
+
+  return `
+    <div class="qzwrong">
+      <div class="qzwh">
+        <span class="qzwh-t">错题本</span>
+        <span class="qzwh-c">${items.length} 题</span>
+        ${due.length?`<span class="qzwh-due">${due.length} 题该复习了</span>`:''}
+        <button class="b" style="margin-left:auto;font-size:10.5px;padding:3px 9px"
+          onclick="startQuiz()">再测一次</button>
+      </div>
+
+      ${items.length ? items.map(({w,q})=>{
+        const isDue = w.due <= Date.now();
+        return `<div class="qzwitem ${isDue?'due':''}">
+          <div class="qzwq">${q.q}</div>
+          <div class="qzwl">
+            <span class="bad">错 ${w.wrongCount} 次</span>
+            <span class="${isDue?'good':'dim'}">${isDue?'该复习了':'下次 '+srWhen(w.due)}</span>
+          </div>
+          <div class="qzwr">
+            来自《${q.ref.t}》第 ${q.ref.seg} 段
+            <span class="qzwlink" onclick="openCite('${q.ref.id}')">看原文 →</span>
+          </div>
+        </div>`;
+      }).join('') : '<div class="qzwe-s" style="padding:12px">全对！错题本是空的。</div>'}
+
+      ${items.length?`<div class="qzsr">
+        <b>为什么排时间：</b>答错后 1 天复习 → 对了排 3 天 → 7 天 → 16 天 → 35 天；
+        再错退回前一档。<span class="qzsr-n">（间隔重复）</span>
+      </div>`:''}
+    </div>`;
+};
+
+/* ---------- P6：划词标注 ---------- */
+let selText = '';
+let annForItem = null;
+
+kbTabText = function(it){
+  const ann = KB_ANNOT[it.id] || [];
+  if (it.state === 'parsing'){
+    return `<div class="kbd3pend">正在处理：${it.progress||'转写中'}<br>
+      <span style="font-size:10px;color:var(--tx3)">原因是「处理设置」里没绑 OCR / 转写模型</span></div>`;
+  }
+  const body = it.k === 'git'
+    ? '# ' + it.t + '\n\n## 这是什么\n（README 正文会被完整保留，代码文件按函数切片。）\n\n## 怎么用\n（目录结构、关键文件都保留路径信息，检索时能定位到具体文件。）'
+    : '（这里显示正文，选一段字就能标注。）\n\n'
+      + '第 1 段：先看整体再抠细节，别一上来就调参数。\n\n'
+      + '第 2 段：' + (it.k==='note'?'我自己的记录：':'') + '参数是给别人看的，效果是给自己看的 —— 先看效果。\n\n'
+      + '第 3 段：' + (ann[0] ? ann[0].quote : '同一件事，换个模型价格能差 4 倍多。') + '\n\n'
+      + '第 4 段：不确定的多跑两版，用数量换质量，别在一个参数上死磕。';
+
+  return `
+    <div class="kbsim" onmouseup="kbSelCheck('${it.id}')">
+      <div class="kbsimt">全文 · <b>划一下可以标注</b></div>
+      <div class="kbsimp" style="-webkit-user-select:text;user-select:text">${body.replace(/</g,'&lt;')}</div>
+    </div>
+    ${ann.length?`<div class="kbd3tip">这条材料上已有 <b>${ann.length}</b> 条标注 · 切到「标注」看</div>`:''}`;
+};
+
+function kbSelCheck(itemId){
+  setTimeout(()=>{
+    const sel = window.getSelection();
+    const t = sel ? String(sel).trim() : '';
+    const old = document.getElementById('selPop');
+    if (old) old.remove();
+    if (!t || t.length < 4) return;
+    selText = t.slice(0, 120);
+    annForItem = itemId;
+    const r = sel.getRangeAt(0).getBoundingClientRect();
+    const d = document.createElement('div');
+    d.className = 'selpop'; d.id = 'selPop';
+    d.style.left = Math.min(r.left + r.width/2, window.innerWidth - 120) + 'px';
+    d.style.top = Math.max(r.top - 36, 8) + 'px';
+    d.innerHTML = `<span onclick="kbDoAnnot()">＋ 标注这句</span>`;
+    document.body.appendChild(d);
+  }, 10);
+}
+
+function kbDoAnnot(){
+  const pop = document.getElementById('selPop'); if (pop) pop.remove();
+  const note = prompt('给这句写个标注：', '');
+  if (note === null) return;
+  const v = String(note).trim();
+  if (!v){ toast('标注不能为空'); return; }
+  const arr = KB_ANNOT[annForItem] || (KB_ANNOT[annForItem] = []);
+  arr.unshift({ seg: 3, quote: selText, note: v, at: '刚刚' });
+  renderKbDetail();
+  toast('已标注 · 会跟着这段一起进检索');
+}
+
+(function p456CSS(){
+  const st = document.createElement('style');
+  st.textContent = `
+    .selpop{position:fixed;z-index:600;transform:translateX(-50%);
+      background:rgba(20,20,24,.98);border:1px solid var(--acl);border-radius:6px;
+      box-shadow:0 8px 24px -8px rgba(0,0,0,.9);padding:3px 4px;animation:pop .14s var(--ez)}
+    .selpop span{font-size:11px;color:var(--ac);cursor:pointer;padding:3px 8px;display:block;
+      border-radius:4px;white-space:nowrap}
+    .selpop span:hover{background:var(--acs)}
+    .qzwh-due{font-size:9px;color:var(--wn);background:rgba(251,191,36,.12);
+      border-radius:3px;padding:1px 5px}
+    .qzwitem.due{background:rgba(251,191,36,.05);border-radius:6px;padding:10px;margin:0 -10px}
+    .qzwl .dim{color:var(--tx3)}
+    .qzsr{margin-top:11px;padding:9px 11px;border-radius:var(--r2);font-size:10px;
+      line-height:1.7;color:var(--tx3);background:var(--bg2);border:1px solid var(--ln)}
+    .qzsr b{color:var(--tx2)}
+    .qzsr-n{opacity:.7}
+  `;
+  document.head.appendChild(st);
+})();
+
+</script>
+</body>
+</html>
