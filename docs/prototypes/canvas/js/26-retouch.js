@@ -249,6 +249,25 @@ function openRetouch(id){
                 <span class="le-v" id="rtLiqAmtV">8</span></div>
               <button class="rt-demo" onclick="rtDemoFace()">自动演示「瘦脸」</button>
               <div class="rt-note">在左边画布上按住拖动就能推。纯双线性重采样，3ms 一次。</div>
+
+              <div class="rt-sec">一键（要做，先占位）</div>
+              <button class="rt-auto" onclick="rtOneKeyFace()">
+                <span class="rt-an">一键瘦脸</span>
+                <span class="rt-ad">自动找人脸 → 按关键点向内推 → 不用手拖</span>
+                <span class="rt-atag">待实现</span>
+              </button>
+              <button class="rt-auto" onclick="rtOneKeyEye()">
+                <span class="rt-an">放大眼睛</span>
+                <span class="rt-ad">按眼角关键点做局部膨胀</span>
+                <span class="rt-atag">待实现</span>
+              </button>
+              <div class="rt-dep">
+                <b>依赖</b>：人脸关键点检测。
+                <br>调研结论：<b>MediaPipe Face Mesh</b>（Google，<b>Apache-2.0，可免费商用</b>），
+                468 个 3D 关键点，<b>能直接在浏览器跑</b>，包不算大。
+                <br><span class="rt-dep2">具体实现后做：拿到关键点后，在脸颊两侧 / 眼角位置
+                调用已有的 <code>rtLiquify</code> 就行 —— 液化算法本身不用改。</span>
+              </div>
             </div>
 
             <div id="rtHeal" class="rt-ctrl" style="display:none">
@@ -465,3 +484,28 @@ function rtApplyAll(){
   }
   toast('已应用 · 免费');
 }
+
+/* ---------- 一键功能的占位（具体实现后做） ----------
+   已调研：MediaPipe Face Mesh（Apache-2.0，可免费商用，浏览器能跑）
+   拿到 468 个 3D 关键点后：
+     · 一键瘦脸：取左右脸颊关键点，向内调用 rtLiquify
+     · 放大眼睛：取眼角/眼睑关键点，做局部膨胀
+   液化算法本身不用改 —— 缺的只是"脸在哪里"。
+*/
+function rtOneKeyFace(){
+  toast('待实现：需要接人脸关键点检测（MediaPipe Face Mesh）');
+  setTimeout(()=>{
+    if (typeof agAdd === 'function'){
+      agAdd('ai', `「一键瘦脸」还没做。<br><br>`
+        + `它缺的不是算法 —— <b>液化本身已经有了</b>（你刚才拖的就是）。<br>`
+        + `缺的是<b>「脸在哪里」</b>：得先检测出人脸关键点，才知道往哪个方向推。<br><br>`
+        + `<span class="myown">调研结论：用 <b>MediaPipe Face Mesh</b>（Google 开源，`
+        + `<b>Apache-2.0 可免费商用</b>），468 个关键点，能直接在浏览器跑。<br>`
+        + `接上之后，自动瘦脸 / 放大眼睛 都能做 —— <b>液化算法一行都不用改</b>，`
+        + `只是把"手拖的方向"换成"按关键点算的方向"。</span><br><br>`
+        + `<b>具体实现后做。</b>`);
+    }
+  }, 120);
+}
+
+function rtOneKeyEye(){ rtOneKeyFace(); }
