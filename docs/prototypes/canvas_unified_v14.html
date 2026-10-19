@@ -601,6 +601,62 @@
   .insp-b.pri{color:#04222a;background:var(--ac);border-color:var(--ac);font-weight:600}
   .insp-b.pri:hover{filter:brightness(1.1)}
   @keyframes fade{from{opacity:0}to{opacity:1}}
+  /* 分通道 / 色阶 / 直方图 */
+  .le-chs{display:inline-flex;gap:2px;margin-left:4px}
+  .le-ch{font-size:9px;padding:1px 6px;border-radius:3px;cursor:pointer;
+    background:var(--s2);border:1px solid var(--ln2);color:var(--tx3);font-family:inherit}
+  .le-ch:hover{color:var(--tx)}
+  .le-ch.on{color:var(--ac);border-color:var(--acl);background:var(--acs)}
+  .le-ch.r.on{color:#f87171;border-color:rgba(248,113,113,.5);background:rgba(248,113,113,.12)}
+  .le-ch.g.on{color:#34d399;border-color:rgba(52,211,153,.5);background:rgba(52,211,153,.12)}
+  .le-ch.b.on{color:#60a5fa;border-color:rgba(96,165,250,.5);background:rgba(96,165,250,.12)}
+  .le-hwrap{background:var(--bg2);border:1px solid var(--ln);border-radius:5px;
+    padding:3px;margin-bottom:24px}
+  .le-hist{width:100%;height:52px;display:block;border-radius:3px;
+    background:linear-gradient(90deg,rgba(255,255,255,.02),rgba(255,255,255,.05))}
+  /* 导出面板（占位） */
+  .ex{position:fixed;inset:0;z-index:568;display:flex;align-items:center;justify-content:center;
+    background:rgba(0,0,0,.76);backdrop-filter:blur(3px);animation:fade .16s var(--ez)}
+  .exw{width:min(560px,94vw);max-height:90vh;display:flex;flex-direction:column;
+    background:var(--bg1);border:1px solid var(--ln2);border-radius:12px;
+    box-shadow:0 26px 84px -22px rgba(0,0,0,.95);animation:pop .2s var(--ez);overflow:hidden}
+  .ex-body{padding:15px 18px;overflow-y:auto;flex:0 1 auto;min-height:0}
+  .ex-body::-webkit-scrollbar{width:7px}
+  .ex-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:4px}
+  .ex-sec{display:flex;align-items:baseline;gap:7px;margin:12px 0 7px}
+  .ex-sec:first-child{margin-top:0}
+  .ex-st{font-size:10.5px;color:var(--tx2)}
+  .ex-s2{font-size:9px;color:var(--tx3)}
+  .ex-stack{background:var(--bg2);border:1px solid var(--ln);border-radius:7px;padding:7px 9px}
+  .ex-layer{display:flex;align-items:center;gap:7px;padding:4px 0}
+  .ex-n{width:12px;font-size:9px;font-family:var(--fm);color:var(--tx3);flex:0 0 auto}
+  .ex-ln{font-size:11px;color:var(--tx2);flex:1}
+  .ex-lt{font-size:8px;border-radius:3px;padding:0 4px;flex:0 0 auto}
+  .ex-lt.local{color:var(--ok);background:rgba(52,211,153,.12)}
+  .ex-lt.ai{color:var(--dg);background:rgba(248,113,113,.12)}
+  .ex-lt.src{color:var(--tx3);background:var(--s3)}
+  .ex-lc{font-size:10px;font-family:var(--fm);color:var(--ac);flex:0 0 34px;text-align:right}
+  .ex-lc.free{color:var(--ok);font-family:inherit;font-size:9.5px}
+  .ex-ld{font-size:9px;color:var(--tx3);padding:0 0 5px 19px}
+  .ex-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .ex-gi{display:flex;flex-direction:column;gap:3px}
+  .ex-gk{font-size:9px;color:var(--tx3)}
+  .ex-sel{background:var(--bg2);border:1px solid var(--ln2);border-radius:5px;
+    color:var(--tx2);font-size:10.5px;font-family:inherit;padding:5px 7px;outline:none;
+    cursor:pointer}
+  .ex-key{margin-top:12px;font-size:10px;color:var(--tx2);line-height:1.7;
+    background:rgba(34,211,238,.06);border:1px solid var(--acl);border-radius:6px;padding:8px 10px}
+  .ex-key b{color:var(--ac)}
+  .ex-key2{color:var(--tx3);font-size:9.5px}
+  .ex-todo{margin-top:9px;font-size:9.5px;color:var(--tx3);line-height:1.65;
+    background:var(--bg2);border:1px dashed var(--ln2);border-radius:5px;padding:7px 9px}
+  .ex-td{font-size:8.5px;color:var(--wn);border:1px solid var(--wnl);border-radius:3px;
+    padding:0 4px;margin-right:5px}
+  .ex-todo b{color:var(--tx2)}
+  .ex-foot{padding:11px 18px;border-top:1px solid var(--ln);display:flex;align-items:center;
+    gap:10px;flex:0 0 auto}
+  .ex-cost{font-size:11px;color:var(--tx2)}
+  .ex-costn{font-size:9px;color:var(--tx3);margin-left:5px}
   /* 主链路串联 */
   .chain-hero{text-align:center;padding:6px 0}
   .chain-h{font-size:13px;color:var(--tx);font-weight:600;margin-bottom:5px}
@@ -4172,6 +4228,9 @@ function showFloatBar(anchorEl, item){
       <svg class="ic sm" viewBox="0 0 24 24"><rect x="4" y="4" width="12" height="12" rx="2"/><path d="M8 20h10a2 2 0 0 0 2-2V8"/></svg>
       <span>画同款</span>
     </button>
+    <button class="fb-b" title="导出（合成所有层）" onclick="fbAct('export')">
+      <svg class="ic sm" viewBox="0 0 24 24"><path d="M4 16v3h16v-3"/><path d="M12 4v10M8 10l4 4 4-4"/></svg>
+    </button>
     <button class="fb-b" title="下载" onclick="fbAct('download')">
       <svg class="ic sm" viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 20h16"/></svg>
     </button>
@@ -4988,6 +5047,486 @@ openLocalEdit = function(id){
       ${pend.map(f=>`第${f.shot}镜 ${f.title}`).join('、')}<br>
       <span class="le-tip2">调下面这些参数就能修，不用花钱。</span>
     </div>`);
+};
+
+
+/* ================= 非破坏性编辑：文档层 / 预览层 / 导出层 =================
+   🔴 2026-10-19 用户纠正：
+   「曲线导出成真图」这个说法是错的。
+   正确模型和 PS 一样：
+     ① 文档层：存参数，不存像素
+     ② 预览层：画布上实时渲染（看到的就是最终的）
+     ③ 导出层：只在导出时按顺序合成
+
+   原型阶段「先把位置占上」—— 这里把三层的数据结构和入口占住，
+   具体合成实现后做。
+*/
+
+/* ---------- 一层调整（本地，免费）---------- */
+function makeLocalLayer(){
+  return {
+    id: 'adj_' + Date.now(),
+    type: 'local',            // local | ai
+    name: '本地精调',
+    visible: true,
+    opacity: 1,
+    params: {
+      exposure: 0,
+      contrast: 1,
+      saturation: 1,
+      temp: 6100,
+      curve: [[0,0],[0.25,0.25],[0.5,0.5],[0.75,0.75],[1,1]]
+    },
+    cost: 0                     // 🔴 本地层永远 0
+  };
+}
+
+/* ---------- 一层 AI 编辑（花钱）---------- */
+function makeAiLayer(kind, params){
+  return {
+    id: 'ai_' + Date.now(),
+    type: 'ai',
+    kind,                       // 'inpaint' | 'outpaint' | 'regenerate' | 'lighting'
+    name: { inpaint:'局部重绘', outpaint:'扩展画布',
+            regenerate:'重画这一镜', lighting:'改光照方向' }[kind] || kind,
+    visible: true,
+    opacity: 1,
+    mask: null,                 // 蒙版（白=要改的区域）
+    params: params || {},
+    cost: 14,
+    resultAsset: null           // 结果图，合成时用
+  };
+}
+
+/* ---------- 镜头文档结构（占位）---------- */
+/* 真实实现时应该落在 CanvasDocument.document_json 里 */
+const SHOT_DOC_DEMO = {
+  id: 'shot_3',
+  source: { assetId: 'asset_9f2a', w: 1024, h: 1536, bitDepth: 8, colorSpace: 'sRGB' },
+  layers: [
+    makeLocalLayer(),
+    makeAiLayer('lighting', { direction: 35 })
+  ],
+  export: { format: 'png', quality: 95, scale: 1 },
+  history: []                   // 撤销栈
+};
+
+/* ---------- 导出面板（占住位置）---------- */
+function openExport(){
+  const shot = DOC.items.find(x=>x.id===selId) || DOC.items[0];
+  if (!shot){ toast('先选一张图'); return; }
+  hideFloatBar();
+
+  const layers = [
+    { n:'本地精调', t:'local', c:'免费', d:'曝光 +0.80EV · 色温 7200K · S 曲线' },
+    { n:'改光照方向', t:'ai', c:'⚡14', d:'蒙版重绘 · 结果已缓存' }
+  ];
+
+  document.getElementById('overlayHost').innerHTML = `
+    <div class="ex" onclick="if(event.target.classList.contains('exw'))closeExport()">
+      <div class="exw">
+        <div class="inp-hd">
+          <div class="inp-t">导出</div>
+          <div class="inp-sub">${esc(shot.name)} · 把下面这些层按顺序合成</div>
+          <button class="inp-x" onclick="closeExport()">✕</button>
+        </div>
+
+        <div class="ex-body">
+          <div class="ex-sec">
+            <span class="ex-st">合成顺序</span>
+            <span class="ex-s2">从上到下依次应用 · 参数不烘焙，随时能改</span>
+          </div>
+
+          <div class="ex-stack">
+            ${layers.map((l,i)=>`
+              <div class="ex-layer ${l.t}">
+                <span class="ex-n">${i+1}</span>
+                <span class="ex-ln">${l.n}</span>
+                <span class="ex-lt ${l.t}">${l.t==='local'?'本地':'调模型'}</span>
+                <span class="ex-lc ${l.t==='local'?'free':''}">${l.c}</span>
+              </div>
+              <div class="ex-ld">${l.d}</div>
+            `).join('')}
+            <div class="ex-layer src">
+              <span class="ex-n">0</span>
+              <span class="ex-ln">原图</span>
+              <span class="ex-lt src">源</span>
+              <span class="ex-lc">—</span>
+            </div>
+          </div>
+
+          <div class="ex-sec"><span class="ex-st">导出设置</span></div>
+          <div class="ex-grid">
+            <div class="ex-gi"><span class="ex-gk">格式</span>
+              <select class="ex-sel" onchange="toast('格式：'+this.value)">
+                <option>PNG（无损）</option><option>JPEG 95</option>
+                <option>WebP 90</option><option>TIFF 16bit</option>
+              </select>
+            </div>
+            <div class="ex-gi"><span class="ex-gk">尺寸</span>
+              <select class="ex-sel" onchange="toast('尺寸：'+this.value)">
+                <option>原尺寸 1024×1536</option><option>2 倍 2048×3072</option>
+                <option>Web 1200 宽</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="ex-key">
+            🔴 <b>导出才合成</b> —— 画布上你看到的一直是实时预览（参数渲染），
+            只有点这里才会真正把像素算出来。<br>
+            <span class="ex-key2">所以导出之前，任何一步都还能改回去。</span>
+          </div>
+
+          <div class="ex-todo">
+            <span class="ex-td">占位</span>
+            真实合成需要：① 把 local 层的参数应用到像素 ② 把 AI 层的结果按蒙版贴回去
+            ③ 按 opacity 混合 ④ 按格式编码。<b>具体实现后做。</b>
+          </div>
+        </div>
+
+        <div class="ex-foot">
+          <div class="ex-cost">
+            导出花费 <b class="le-zero">0</b>
+            <span class="ex-costn">合成是本地处理 · 除非选 2 倍放大要调模型</span>
+          </div>
+          <div class="le-acts">
+            <button class="insp-b ghost" onclick="closeExport()">取消</button>
+            <button class="insp-b pri" onclick="exDo()">导出 PNG</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function closeExport(){ document.getElementById('overlayHost').innerHTML = ''; }
+
+function exDo(){
+  closeExport();
+  agAdd('ai', `导出好了 —— <b>PNG · 1024×1536 · 花了 0</b>。<br><br>`
+    + `合成了 2 层：本地精调（曝光/色温/曲线）+ 改光照方向。<br><br>`
+    + `<span class="myown">原图和各层参数都还在，随时能改完再导一次。`
+    + `这次导出不会把参数烘焙掉。</span>`);
+  toast('已导出 · 免费');
+}
+
+/* ---------- 在浮条加「导出」入口 ---------- */
+const _fbAct = fbAct;
+fbAct = function(act){
+  if (act === 'export'){ openExport(); return; }
+  _fbAct(act);
+};
+
+
+/* ================= 分通道曲线 / 色阶 / 直方图 =================
+   全部本地运算，仍然免费。
+   实现要点：
+     ① 色阶先作用，曲线后作用 → 合成一个 LUT 塞给 feComponentTransfer
+     ② 三个通道各一条曲线（默认跟随 RGB 合成）
+     ③ 直方图用当前参数模拟分布（真实现要从像素算）
+*/
+
+/* 扩展 LOCAL_ADJ */
+LOCAL_ADJ.levels = { black: 0, white: 1, gamma: 1 };
+LOCAL_ADJ.channel = 'rgb';          // 当前编辑的通道
+LOCAL_ADJ.curves = {                // 四个通道各一套点
+  rgb: [[0,0],[0.25,0.25],[0.5,0.5],[0.75,0.75],[1,1]],
+  r:   [[0,0],[0.25,0.25],[0.5,0.5],[0.75,0.75],[1,1]],
+  g:   [[0,0],[0.25,0.25],[0.5,0.5],[0.75,0.75],[1,1]],
+  b:   [[0,0],[0.25,0.25],[0.5,0.5],[0.75,0.75],[1,1]]
+};
+
+/* 兼容旧字段：LOCAL_ADJ.curve 指向当前通道 */
+Object.defineProperty(LOCAL_ADJ, 'curve', {
+  get(){ return LOCAL_ADJ.curves[LOCAL_ADJ.channel]; },
+  set(v){ LOCAL_ADJ.curves[LOCAL_ADJ.channel] = v; }
+});
+
+/* ---- 色阶 + 曲线 → 最终 LUT ---- */
+function applyLevels(x){
+  const L = LOCAL_ADJ.levels;
+  const span = Math.max(1e-6, L.white - L.black);
+  let v = (x - L.black) / span;
+  v = Math.max(0, Math.min(1, v));
+  if (L.gamma !== 1) v = Math.pow(v, 1 / L.gamma);
+  return v;
+}
+
+/* 某个通道的最终采样函数 */
+function channelSample(ch, x){
+  let v = applyLevels(x);
+  // rgb 合成曲线先作用，再叠该通道曲线
+  v = curveSample(LOCAL_ADJ.curves.rgb, v);
+  if (ch !== 'rgb') v = curveSample(LOCAL_ADJ.curves[ch], v);
+  return Math.max(0, Math.min(1, v));
+}
+
+/* 覆盖：生成 filter 时三通道分别算 */
+ensureCurveFilter = function(){
+  let svg = document.getElementById('leSvg');
+  if (!svg){
+    svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.id = 'leSvg';
+    svg.setAttribute('width','0'); svg.setAttribute('height','0');
+    svg.style.position = 'absolute'; svg.style.pointerEvents = 'none';
+    document.body.appendChild(svg);
+  }
+  const N = 16, mk = ch => {
+    const a = [];
+    for (let i = 0; i < N; i++) a.push(channelSample(ch, i/(N-1)).toFixed(4));
+    return a.join(' ');
+  };
+  svg.innerHTML = `<defs>
+    <filter id="leCurve" color-interpolation-filters="sRGB">
+      <feComponentTransfer>
+        <feFuncR type="table" tableValues="${mk('r')}"/>
+        <feFuncG type="table" tableValues="${mk('g')}"/>
+        <feFuncB type="table" tableValues="${mk('b')}"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>`;
+};
+
+/* ---- 重画曲线（按当前通道）---- */
+leRenderCurve = function(){
+  const pts = LOCAL_ADJ.curve;
+  const toPx = p => [p[0]*200, (1-p[1])*200];
+  let d = '';
+  for (let i = 0; i <= 60; i++){
+    const x = i/60;
+    const y = curveSample(pts, x);
+    d += (i===0?'M':'L') + (x*200).toFixed(1) + ',' + ((1-y)*200).toFixed(1) + ' ';
+  }
+  const pathEl = document.getElementById('lePath');
+  if (pathEl){
+    pathEl.setAttribute('d', d);
+    const chColor = { rgb:'var(--ac)', r:'#f87171', g:'#34d399', b:'#60a5fa' }[LOCAL_ADJ.channel];
+    pathEl.style.stroke = chColor;
+  }
+  const g = document.getElementById('lePts');
+  if (g) g.innerHTML = pts.map((p,i)=>{
+    const [px,py] = toPx(p);
+    return `<circle cx="${px}" cy="${py}" r="5" class="le-dot ${i===LE_DRAG?'on':''}"
+      style="fill:${ {rgb:'var(--ac)',r:'#f87171',g:'#34d399',b:'#60a5fa'}[LOCAL_ADJ.channel] }"/>`;
+  }).join('');
+  // 通道 tab 高亮
+  document.querySelectorAll('.le-ch').forEach(b=>{
+    b.classList.toggle('on', b.dataset.ch === LOCAL_ADJ.channel);
+  });
+  leRenderHist();
+};
+
+/* ---- 切换通道 ---- */
+function leSetChannel(ch){
+  LOCAL_ADJ.channel = ch;
+  leRenderCurve();
+}
+
+/* ---- 直方图（按当前参数模拟）---- */
+function leRenderHist(){
+  const host = document.getElementById('leHist');
+  if (!host) return;
+  const W = 200, H = 52;
+  // 模拟：一个中间偏暗的分布，套上当前 LUT 后形变
+  const bars = [];
+  const N = 40;
+  for (let i = 0; i < N; i++){
+    const x = i / (N - 1);
+    // 基础分布（模拟一张中间调偏暗的图）
+    let base = Math.exp(-Math.pow((x - 0.42) / 0.22, 2)) * 0.85
+             + Math.exp(-Math.pow((x - 0.75) / 0.14, 2)) * 0.35;
+    bars.push(base);
+  }
+  // 应用 LUT：把 base 分布按最终映射搬位置（色阶 + 合成曲线 + 该通道曲线）
+  const mapped = new Array(N).fill(0);
+  for (let i = 0; i < N; i++){
+    const out = channelSample(LOCAL_ADJ.channel, i/(N-1));
+    const idx = Math.round(out * (N-1));
+    mapped[Math.max(0, Math.min(N-1, idx))] += bars[i];
+  }
+  const mx = Math.max(...mapped, 0.01);
+  const ch = LOCAL_ADJ.channel;
+  const color = { rgb:'var(--ac)', r:'#f87171', g:'#34d399', b:'#60a5fa' }[ch];
+  host.innerHTML = mapped.map((v,i)=>{
+    const h = (v/mx) * H;
+    const w = W/N;
+    return `<rect x="${(i*w).toFixed(1)}" y="${(H-h).toFixed(1)}" width="${(w*0.82).toFixed(1)}"
+      height="${h.toFixed(1)}" fill="${color}" opacity="0.55"/>`;
+  }).join('') + (ch === 'rgb'
+    ? `<rect x="0" y="0" width="${W}" height="${H}" fill="none"/>` : '');
+}
+
+/* ---- 色阶滑块 ---- */
+function leLevel(key, val){
+  LOCAL_ADJ.levels[key] = Number(val);
+  const el = document.getElementById('leLv_' + key);
+  if (el) el.textContent = key === 'gamma'
+    ? Number(val).toFixed(2)
+    : Math.round(Number(val) * 255);
+  // 黑场不能超过白场
+  if (LOCAL_ADJ.levels.black >= LOCAL_ADJ.levels.white){
+    if (key === 'black') LOCAL_ADJ.levels.black = LOCAL_ADJ.levels.white - 0.02;
+    else LOCAL_ADJ.levels.white = LOCAL_ADJ.levels.black + 0.02;
+    leRenderAll();
+    return;
+  }
+  leApplyPreview();
+  leRenderHist();
+}
+
+/* ---- 重写面板（加通道 tab + 色阶 + 直方图）---- */
+openLocalEdit = function(id){
+  LE_ID = id || selId || (DOC.items[0] && DOC.items[0].id);
+  const s = DOC.items.find(x=>x.id===LE_ID);
+  if (!s){ toast('先选一张图'); return; }
+  hideFloatBar();
+
+  document.getElementById('overlayHost').innerHTML = `
+    <div class="le" onclick="if(event.target.classList.contains('lew'))closeLocalEdit()">
+      <div class="lew">
+        <div class="le-hd">
+          <div class="le-t">本地精调 · ${esc(s.name)}</div>
+          <span class="le-free">免费</span>
+          <span class="le-nb">非破坏</span>
+          <button class="inp-x" onclick="closeLocalEdit()">✕</button>
+        </div>
+
+        <div class="le-body">
+          <div class="le-stage">
+            <div class="le-img" id="leImg"><div class="le-fig"></div></div>
+            <div class="le-tag">实时预览 · 参数渲染，不是烘焙进图里</div>
+          </div>
+
+          <div class="le-panel">
+            <div class="le-sec">基础</div>
+            ${leSlider('exposure','曝光','EV',-2,2,0.05)}
+            ${leSlider('contrast','对比度','',0.5,1.5,0.01)}
+            ${leSlider('saturation','饱和度','',0,2,0.01)}
+            ${leSlider('temp','色温','K',4000,8000,50)}
+
+            <div class="le-sec">直方图 <span class="le-sec2">按当前参数模拟</span></div>
+            <div class="le-hwrap"><svg class="le-hist" id="leHist" viewBox="0 0 200 52"
+              preserveAspectRatio="none"></svg></div>
+
+            <div class="le-sec">色阶
+              <button class="le-reset" onclick="leResetLevels()">复位</button>
+            </div>
+            <div class="le-row">
+              <span class="le-l">黑场</span>
+              <input type="range" class="le-r" min="0" max="1" step="0.005" value="${LOCAL_ADJ.levels.black}"
+                oninput="leLevel('black', this.value)">
+              <span class="le-v" id="leLv_black">${Math.round(LOCAL_ADJ.levels.black*255)}</span>
+            </div>
+            <div class="le-row">
+              <span class="le-l">白场</span>
+              <input type="range" class="le-r" min="0" max="1" step="0.005" value="${LOCAL_ADJ.levels.white}"
+                oninput="leLevel('white', this.value)">
+              <span class="le-v" id="leLv_white">${Math.round(LOCAL_ADJ.levels.white*255)}</span>
+            </div>
+            <div class="le-row">
+              <span class="le-l">Gamma</span>
+              <input type="range" class="le-r" min="0.3" max="3" step="0.02" value="${LOCAL_ADJ.levels.gamma}"
+                oninput="leLevel('gamma', this.value)">
+              <span class="le-v" id="leLv_gamma">${LOCAL_ADJ.levels.gamma.toFixed(2)}</span>
+            </div>
+
+            <div class="le-sec">曲线
+              <span class="le-chs">
+                <button class="le-ch on" data-ch="rgb" onclick="leSetChannel('rgb')">RGB</button>
+                <button class="le-ch r" data-ch="r" onclick="leSetChannel('r')">R</button>
+                <button class="le-ch g" data-ch="g" onclick="leSetChannel('g')">G</button>
+                <button class="le-ch b" data-ch="b" onclick="leSetChannel('b')">B</button>
+              </span>
+              <button class="le-reset" onclick="leResetCurve()">拉直</button>
+            </div>
+            <div class="le-curvewrap">
+              <svg class="le-curve" id="leCurveSvg" viewBox="0 0 200 200"
+                   onmousedown="leCurveDown(event)" onmousemove="leCurveMove(event)"
+                   onmouseup="leCurveUp(event)" onmouseleave="leCurveUp(event)"
+                   ondblclick="leResetCurve()">
+                <line x1="0" y1="200" x2="200" y2="0" class="le-diag"/>
+                <g>
+                  <line x1="50" y1="0" x2="50" y2="200" class="le-grid"/>
+                  <line x1="100" y1="0" x2="100" y2="200" class="le-grid"/>
+                  <line x1="150" y1="0" x2="150" y2="200" class="le-grid"/>
+                  <line x1="0" y1="50" x2="200" y2="50" class="le-grid"/>
+                  <line x1="0" y1="100" x2="200" y2="100" class="le-grid"/>
+                  <line x1="0" y1="150" x2="200" y2="150" class="le-grid"/>
+                </g>
+                <path id="lePath" class="le-path" d=""/>
+                <g id="lePts"></g>
+              </svg>
+            </div>
+            <div class="le-hint">拖中间的点做 S 曲线 · 双击拉直 · RGB 是先作用的</div>
+          </div>
+        </div>
+
+        <div class="le-foot">
+          <div class="le-cost">
+            花费 <b class="le-zero">0</b>
+            <span class="le-costn">本地像素运算 · 不走模型 · 参数留着随时能改</span>
+          </div>
+          <div class="le-acts">
+            <button class="insp-b ghost" onclick="leResetAll()">全部重置</button>
+            <button class="insp-b pri" onclick="leApply()">应用</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  leRenderAll();
+};
+
+/* ---- 重置色阶 ---- */
+function leResetLevels(){
+  LOCAL_ADJ.levels = { black:0, white:1, gamma:1 };
+  leRenderAll();
+}
+
+/* ---- leRenderAll 要带上色阶值 ---- */
+const _leRenderAll = leRenderAll;
+leRenderAll = function(){
+  _leRenderAll();
+  ['black','white','gamma'].forEach(k=>{
+    const inp = document.querySelector('.le-r[oninput*="' + k + '"]');
+    if (inp) inp.value = LOCAL_ADJ.levels[k];
+    const el = document.getElementById('leLv_' + k);
+    if (el) el.textContent = k === 'gamma'
+      ? LOCAL_ADJ.levels[k].toFixed(2) : Math.round(LOCAL_ADJ.levels[k]*255);
+  });
+  leRenderHist();
+};
+
+/* ---- 重置要连色阶和分通道一起 ---- */
+const _leResetAll = leResetAll;
+leResetAll = function(){
+  LOCAL_ADJ.levels = { black:0, white:1, gamma:1 };
+  const lin = () => [[0,0],[0.25,0.25],[0.5,0.5],[0.75,0.75],[1,1]];
+  LOCAL_ADJ.curves = { rgb: lin(), r: lin(), g: lin(), b: lin() };
+  LOCAL_ADJ.channel = 'rgb';
+  Object.assign(LOCAL_ADJ, { exposure:0, contrast:1, saturation:1, temp:6100, gamma:1 });
+  leRenderAll();
+  toast('已重置 · 回到原图');
+};
+
+/* ---- 应用汇报要带上色阶/分通道 ---- */
+const _leApply2 = leApply;
+leApply = function(){
+  const L = LOCAL_ADJ.levels;
+  const extra = [];
+  if (L.black > 0.005) extra.push(`黑场 ${Math.round(L.black*255)}`);
+  if (L.white < 0.995) extra.push(`白场 ${Math.round(L.white*255)}`);
+  if (Math.abs(L.gamma - 1) > 0.02) extra.push(`Gamma ${L.gamma.toFixed(2)}`);
+  ['r','g','b'].forEach(ch=>{
+    const c = LOCAL_ADJ.curves[ch];
+    if (c.some(p=>Math.abs(p[1]-p[0]) > 0.02)) extra.push(ch.toUpperCase() + ' 通道曲线');
+  });
+  const before = { n: 'before' };
+  _leApply2();
+  if (extra.length){
+    setTimeout(()=>{
+      agAdd('ai', `另外还调了：<b>${extra.join(' · ')}</b>。`);
+    }, 500);
+  }
 };
 
 </script>
