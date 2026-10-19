@@ -110,3 +110,75 @@
 > 我之前的问题是：**调研很勤，但没建索引**。
 > 40 份文档躺在那里，决策的时候不去查 —— 等于白调研。
 > 这份台账就是索引。
+
+---
+
+# 六、2026-10-20 新增（PhotoCraft + PS 传统算法）
+
+## 6.1 PhotoCraft（开源的 PS 重实现）
+
+| 项 | 内容 |
+| --- | --- |
+| **对象** | [`storytold/photocraft`](https://github.com/storytold/photocraft) · 68,327 stars · 12,040 forks |
+| **是什么** | **clean-room reimplementation（净室重实现）**，不是逆向工程 |
+| **许可** | **MIT / Apache-2.0 双许可** → 可读、可移植、可商用 |
+| **语言** | 100% Rust（桌面 + Web-native） |
+| **状态** | early alpha · 广度 76% · **能干活 45%** · 953 issues · PSD 写不对 |
+| **文档** | `docs/research/2026-10-20_photocraft_open_source_ps.md` |
+
+### 采纳了什么
+
+| 采纳 | 怎么用 |
+| --- | --- |
+| ✅ **它是我们的算法参考书** | 🔴 **具体实现时，按它的算法用我们的语言写**（Python/JS） |
+| ✅ **印证了我们的算法方向** | 液化 55% / 修复 50% / 混合模式 65% —— 走经典算法不是模型 |
+| ✅ 它 AI 只有 10%，我们强在 AI | 互补不冲突，不用怕 |
+
+### 按它的算法，具体要写什么（落实到我们的语言）
+
+| 我们的功能 | 参考它的模块 | 我们的实现语言 | 优先级 |
+| --- | --- | --- | --- |
+| **液化 / 变形** | `Transform, warp, puppet, liquify`（55%） | Python `cv2.remap` / JS 已实现 | ✅ 已做（3ms） |
+| **磨皮 / 高低频** | `Retouching`（50%） | JS 已实现（103ms） | ✅ 已做 |
+| **祛瑕疵 / patch** | `Retouching (healing, clone, patch)` | Python `cv2.inpaint` / JS 已做简版 | ✅ 已做（5ms） |
+| **图层混合模式** | `Layers, masks, blend modes`（65%） | CSS mix-blend-mode | ✅ 已做（6 种） |
+| **蒙版 / 局部调整** | `Selections, Select and Mask`（55%） | CSS mask-image | ✅ 已做（4 种） |
+| **曲线 / 色阶 / 调整层** | `Adjustments and filters`（70%） | SVG filter + LUT | ✅ 已做 |
+| **内容识别填充** | `content-aware` | 🔴 **待做** —— 学它的 PatchMatch | P1 |
+| **选区工具（套索/魔棒）** | `Selections`（55%） | 🔴 **待做** —— 学它的选区表示 | P2 |
+| **PSD 读写** | `File I/O`（60%） | 🔴 **待做** —— 我们有 psd-tools 可选 | P2 |
+
+### 还欠什么
+
+| 欠的 | 说明 |
+| --- | --- |
+| 读它 `crates/` 里图像处理模块的源码 | 未读，但已记下要读 |
+| 看它的「Built for agents」怎么暴露能力 | 未读 |
+| 它 AI 那 10% 做了什么（`docs/gaps.md#g15`） | 未读 |
+
+## 6.2 PS 在 AI 之前的传统算法（已实证）
+
+| 项 | 内容 |
+| --- | --- |
+| **对象** | PS 1990-2020 的传统实现方式 |
+| **文档** | `docs/research/2026-10-20_ps_preAI_retouch_algorithms.md` |
+
+### 采纳了什么
+
+| 采纳 | 状态 |
+| --- | --- |
+| ✅ 液化 = 网格变形 + `cv2.remap` | **已实现并实测**（3ms） |
+| ✅ 磨皮 = 高低频分离（可分离盒式模糊×3） | **已实现并实测**（103ms） |
+| ✅ 祛瑕疵 = 环形采样 inpaint | **已实现并实测**（5ms） |
+| ✅ 美白牙齿/祛黑眼圈 = 局部色相明度（有蒙版就能做） | 未单独做面板 |
+| ✅ 妆容 = 颜色层 + 混合模式（已有） | 未单独做面板 |
+| ✅ 一键瘦脸 = MediaPipe Face Mesh（Apache-2.0） | **已占位**，具体实现后做 |
+
+### 还欠什么
+
+| 欠的 | 优先级 |
+| --- | --- |
+| 一键瘦脸 / 放大眼（接 MediaPipe） | P1（已占位） |
+| 美白牙齿 / 祛黑眼圈 面板 | P2 |
+| 妆容面板 | P2 |
+| 闭眼修复 / 换表情 / 真超清（真要模型） | P3 |
