@@ -81,14 +81,16 @@ function renderLayerPanel(){
 }
 
 function toggleLayerVis(id){
-  const layers = layersOf(selId || DOC.items[0].id);
+  const sid = selId || DOC.items[0].id;
+  const layers = layersOf(sid);
   const l = layers.find(x=>x.id===id);
-  if (l){ l.visible = !l.visible; renderLayerPanel(); }
+  if (l){ l.visible = !l.visible; refreshLayers(sid); }
 }
 function setLayerOpacity(id, v){
-  const layers = layersOf(selId || DOC.items[0].id);
+  const sid = selId || DOC.items[0].id;
+  const layers = layersOf(sid);
   const l = layers.find(x=>x.id===id);
-  if (l){ l.opacity = Number(v); }
+  if (l){ l.opacity = Number(v); applyLayers(sid); }
   const el = document.getElementById('lpOpv');
   if (el) el.textContent = Math.round(Number(v)*100) + '%';
 }
@@ -96,7 +98,7 @@ function deleteLayer(id){
   const sid = selId || DOC.items[0].id;
   SHOT_LAYERS[sid] = layersOf(sid).filter(x=>x.id!==id);
   ACTIVE_LAYER = null;
-  renderLayerPanel();
+  refreshLayers(sid);
   pushHistory('删掉一层');
   toast('已删除该层（原图不受影响）');
 }
@@ -107,7 +109,7 @@ function addLayer(kind){
   l.name = kind === 'local' ? '调整层 ' + (layers.length) : '局部重绘';
   layers.push(l);
   ACTIVE_LAYER = l.id;
-  renderLayerPanel();
+  refreshLayers(sid);
   pushHistory('加了一层：' + l.name);
   toast(kind === 'local' ? '加了调整层 · 免费' : '加了 AI 编辑层 · 要调模型');
 }
@@ -120,7 +122,14 @@ function pushHistory(label){
   HISTORY = HISTORY.slice(0, HIST_POS + 1);
   HISTORY.push({
     label, at: new Date().toLocaleTimeString('zh-CN', { hour12:false }),
-    snapshot: JSON.stringify({ adj: LOCAL_ADJ, fixed: Array.from(FIXED) })
+    snapshot: JSON.stringify({
+      adj: LOCAL_ADJ,
+      fixed: Array.from(FIXED),
+      /* 🔴 图层也进快照 —— 之前漏了，所以撤销图层操作没效果 */
+      layers: JSON.parse(JSON.stringify(SHOT_LAYERS)),
+      /* 镜头的状态也进快照 */
+      items: (typeof DOC !== 'undefined' ? DOC.items : []).map(x=>({ id:x.id, status:x.status }))
+    })
   });
   HIST_POS = HISTORY.length - 1;
   renderHistory();
@@ -151,10 +160,27 @@ function restoreHistory(){
         Object.keys(s.adj).forEach(k=>{ LOCAL_ADJ[k] = s.adj[k]; });
       }
       FIXED = new Set(s.fixed || []);
+      /* 🔴 恢复图层 —— 之前快照里没存图层，所以撤销图层操作没效果 */
+      if (s.layers){
+        Object.keys(SHOT_LAYERS).forEach(k=>{ delete SHOT_LAYERS[k]; });
+        Object.keys(s.layers).forEach(k=>{
+          SHOT_LAYERS[k] = JSON.parse(JSON.stringify(s.layers[k]));
+        });
+      }
+      /* 恢复镜头状态 */
+      if (s.items && typeof DOC !== 'undefined'){
+        s.items.forEach(it=>{
+          const shot = DOC.items.find(x=>x.id===it.id);
+          if (shot) shot.status = it.status;
+        });
+      }
     } catch(_){}
   }
   renderHistory();
   if (document.querySelector('.lew')) leRenderAll();
+  /* 🔴 撤销后要把图层效果重新画到缩略图上 */
+  if (typeof applyAllLayers === 'function') applyAllLayers();
+  if (typeof renderLayerPanel === 'function') renderLayerPanel();
 }
 
 function renderHistory(){
@@ -314,7 +340,7 @@ function setLayerBlend(id, mode){
   const l = layers.find(x=>x.id===id);
   if (!l) return;
   l.blend = mode;
-  renderLayerPanel();
+  refreshLayers(selId);
   // 把混合模式挂到画布上对应缩略图（如果该镜头是当前选中）
   applyBlendPreview();
   const m = BLEND_MODES.find(x=>x.k===mode);
@@ -345,4 +371,105 @@ function applyBlendPreview(){
   ov.style.mixBlendMode = l.blend;
   ov.style.background = 'linear-gradient(160deg, rgba(34,211,238,.45), rgba(120,40,200,.4))';
   ov.style.opacity = String(l.opacity);
+}
+/* ================= 图层做真：把图层状态真正画到缩略图上 =================
+   之前图层只是数据，改了看不见效果。现在：
+   · 原图层隐藏 → 缩略图变灰 + 标"原图隐藏"
+   · 本地调整层 → 缩略图应用对应 filter（曝光/对比/饱和/色温）
+   · AI 编辑层 → 叠一层色块表示"内容被改过"
+   · 透明度 → 影响强度
+   · 混合模式 → 影响叠加方式
+*/
+function layerFilterOf(l){
+  const p = l.params || {};
+  const parts = [];
+  if (typeof p.exposure === 'number') parts.push('brightness(' + (1 + p.exposure*0.35).toFixed(3) + ')');
+  if (typeof p.contrast === 'number') parts.push('contrast(' + p.contrast.toFixed(3) + ')');
+  if (typeof p.saturation === 'number') parts.push('saturate(' + p.saturation.toFixed(3) + ')');
+  /* 参数全是中性（1/0）时给一点默认效果 —— 否则用户加了层却看不出变化 */
+  const neutral =
+    (parts.length === 0) ||
+    (Math.abs(p.exposure || 0) < 0.01 &&
+     Math.abs((p.contrast === undefined ? 1 : p.contrast) - 1) < 0.01 &&
+     Math.abs((p.saturation === undefined ? 1 : p.saturation) - 1) < 0.01);
+  if (neutral) return 'contrast(1.14) saturate(1.12) brightness(1.07)';
+  return parts.join(' ');
+}
+
+function applyLayers(shotId){
+  const el = document.querySelector('.shot[data-id="' + shotId + '"] .im');
+  if (!el) return;
+  const layers = layersOf(shotId);
+
+  // 清掉之前叠的
+  el.querySelectorAll('.lyr-ov').forEach(n=>n.remove());
+  el.style.filter = '';
+  el.style.opacity = '';
+  el.classList.remove('src-hidden');
+
+  const src = layers.find(l=>l.type==='source');
+  const srcVisible = !src || src.visible !== false;
+  if (!srcVisible) el.classList.add('src-hidden');
+
+  const locals = layers.filter(l=>l.type==='local' && l.visible);
+  const ais    = layers.filter(l=>l.type==='ai' && l.visible);
+
+  // 本地调整层：合成一个 filter（按可见 + 透明度加权）
+  let filterStr = '';
+  if (locals.length){
+    // 取最上面那层的参数（简化：多层就取最后一层，避免滤镜重复叠加失真）
+    const top = locals[locals.length-1];
+    const base = layerFilterOf(top);
+    // 透明度 <1 时减弱效果
+    if (top.opacity < 0.99){
+      const t = top.opacity;
+      filterStr = base.replace(/([\d.]+)\)/g, (m,n)=> {
+        const num = Number(n);
+        const weakened = 1 + (num - 1) * t;
+        return weakened.toFixed(3) + ')';
+      });
+    } else {
+      filterStr = base;
+    }
+  }
+  // AI 层也会让画面"变了"
+  if (ais.length && !filterStr){
+    filterStr = 'contrast(1.1) saturate(1.15) brightness(1.05)';
+  }
+  if (filterStr) el.style.filter = filterStr;
+
+  // AI 编辑层：叠一个可见的标记层（因为没法真生成）
+  ais.forEach(a=>{
+    const ov = document.createElement('div');
+    ov.className = 'lyr-ov';
+    ov.style.cssText = 'position:absolute;inset:0;pointer-events:none;border-radius:inherit;'
+      + 'background:linear-gradient(160deg,rgba(34,211,238,.28),rgba(140,60,220,.22));'
+      + 'opacity:' + a.opacity + ';'
+      + 'mix-blend-mode:' + (a.blend || 'normal') + ';';
+    el.appendChild(ov);
+  });
+
+  // 隐藏的原图 → 加个遮罩感
+  if (!srcVisible){
+    const ov = document.createElement('div');
+    ov.className = 'lyr-ov';
+    ov.style.cssText = 'position:absolute;inset:0;pointer-events:none;border-radius:inherit;'
+      + 'background:repeating-linear-gradient(45deg,rgba(0,0,0,.55) 0 6px,rgba(0,0,0,.35) 6px 12px);';
+    el.appendChild(ov);
+  }
+}
+
+/* 全局重画所有镜头的图层效果 */
+function applyAllLayers(){
+  if (typeof DOC === 'undefined' || !DOC.items) return;
+  DOC.items.forEach(s=>{
+    if (SHOT_LAYERS[s.id]) applyLayers(s.id);
+  });
+}
+
+/* 图层操作后统一刷新 */
+function refreshLayers(shotId){
+  renderLayerPanel();
+  const sid = shotId || selId || (DOC.items[0] && DOC.items[0].id);
+  applyLayers(sid);
 }

@@ -21,7 +21,13 @@ ta.addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventD
 
 renderUserChip(); renderCanvasName(); renderTplRefBar();
 setMode('shots');
-bindFloatBarHide();
+/* 🔴 bindFloatBarHide 定义在 11-floatbar.js（后面才加载）——
+   直接调用会 ReferenceError 并中断后面所有脚本。
+   用 typeof 守卫，等 DOM ready 再绑。 */
+if (typeof bindFloatBarHide === 'function') bindFloatBarHide();
+else document.addEventListener('DOMContentLoaded', ()=>{
+  if (typeof bindFloatBarHide === 'function') bindFloatBarHide();
+});
 
 /* 原型演示工具条：搜索失败 / 注入（真实现里不该有） */
 (function mountFailTools(){
