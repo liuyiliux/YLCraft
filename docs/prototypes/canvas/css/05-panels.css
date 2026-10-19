@@ -993,3 +993,23 @@
 .rt-dep b{color:var(--ac)}
 .rt-dep2{opacity:.8}
 .rt-dep code{font-family:var(--fm);color:var(--ac)}
+/* ===== 导出真合成（16-export） ===== */
+.ex-cols{display:flex;gap:16px;align-items:flex-start}
+.ex-left{flex:0 0 auto;display:flex;flex-direction:column;gap:5px}
+.ex-preview{border-radius:8px;overflow:hidden;background:#000;
+  box-shadow:0 10px 34px -12px rgba(0,0,0,.9);line-height:0}
+.ex-preview canvas{display:block;width:170px;height:auto}
+.ex-pv{font-size:8.5px;color:var(--tx3);text-align:center}
+.ex-right{flex:1;min-width:0}
+.ex-layer.off{opacity:.45}
+.ex-off{font-size:8px;color:var(--wn);background:rgba(251,191,36,.12);
+  border-radius:3px;padding:0 5px;margin-left:auto}
+.ex-fmts{display:flex;gap:5px}
+.ex-f{flex:1;font-size:10px;padding:5px 0;border-radius:4px;cursor:pointer;
+  font-family:inherit;background:var(--bg2);border:1px solid var(--ln2);color:var(--tx3)}
+.ex-f.on{color:var(--ac);border-color:var(--acl);background:var(--acs)}
+.ex-key{margin-top:12px;font-size:9.5px;line-height:1.7;color:var(--tx2);
+  background:rgba(34,211,238,.06);border:1px solid var(--acl);
+  border-radius:6px;padding:8px 10px}
+.ex-key b{color:var(--ac)}
+.ex-key2{color:var(--tx3);font-size:9px}
