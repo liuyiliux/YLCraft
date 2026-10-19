@@ -975,3 +975,21 @@
 .rt-key b{color:var(--ac)}
 .rt-key2{color:var(--tx3);font-size:9px}
 .le-stage{gap:10px}
+/* ===== 一键功能占位（26-retouch） ===== */
+.rt-sec{margin:13px 0 7px;font-size:9px;color:var(--tx3);letter-spacing:.05em;
+  display:flex;align-items:center;gap:6px}
+.rt-sec::after{content:'';flex:1;height:1px;background:var(--ln)}
+.rt-auto{width:100%;display:flex;flex-direction:column;align-items:flex-start;gap:1px;
+  padding:8px 10px;border-radius:6px;margin-bottom:5px;cursor:pointer;font-family:inherit;
+  background:var(--bg2);border:1px dashed var(--ln3);color:var(--tx3);
+  position:relative;text-align:left;transition:all .16s var(--ez)}
+.rt-auto:hover{border-color:var(--acl);background:var(--acs)}
+.rt-an{font-size:10.5px;color:var(--tx2)}
+.rt-ad{font-size:8.5px;color:var(--tx3)}
+.rt-atag{position:absolute;right:8px;top:50%;transform:translateY(-50%);
+  font-size:8px;color:var(--wn);background:rgba(251,191,36,.12);border-radius:3px;padding:1px 5px}
+.rt-dep{margin-top:8px;font-size:9px;line-height:1.65;color:var(--tx3);
+  background:rgba(34,211,238,.05);border:1px solid var(--acl);border-radius:5px;padding:7px 9px}
+.rt-dep b{color:var(--ac)}
+.rt-dep2{opacity:.8}
+.rt-dep code{font-family:var(--fm);color:var(--ac)}
