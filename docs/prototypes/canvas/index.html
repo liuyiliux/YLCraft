@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>YLCraft 画布 · 统一原型 v14</title>
+  <link rel="stylesheet" href="css/01-base.css">
+  <link rel="stylesheet" href="css/02-canvas.css">
+  <link rel="stylesheet" href="css/03-graph.css">
+  <link rel="stylesheet" href="css/04-search.css">
+  <link rel="stylesheet" href="css/05-panels.css">
+</head>
+<body>
+
+<!-- ============ 区1：顶栏 ============ -->
+<div class="top">
+  <div class="brand"><span class="mk">YL</span><span style="font-size:12.5px;font-weight:600">YLCraft</span></div>
+  <button class="b" id="canvasNameBtn" onclick="openCanvasList()" style="padding:4px 8px;gap:5px">
+    <span class="cn"><b id="canvasName">我的短剧 / 第 3 集</b></span>
+    <svg class="ic sm" viewBox="0 0 24 24" style="opacity:.5"><path d="M6 9l6 6 6-6"/></svg>
+  </button>
+  <div class="saved"><span class="d"></span>已保存</div>
+
+  <div class="seg" style="margin-left:6px">
+    <button id="mShots" class="on" onclick="setMode('shots')">
+      <svg class="ic sm" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>镜头墙
+    </button>
+    <button id="mFree" onclick="setMode('free')">
+      <svg class="ic sm" viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 12l9 4 9-4"/></svg>自由画布
+    </button>
+  </div>
+  <div id="tplRefBar" class="hidden"></div>
+  <button class="b adv" id="mFlow" onclick="setMode('flow')" style="font-size:11.5px;color:var(--tx3);padding:5px 9px">
+    <svg class="ic sm" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M6 8.4v5.6A3.4 3.4 0 0 0 9.4 17.4H15.6"/></svg>高级
+  </button>
+
+  <div id="userChip" onclick="openUserMenu()" class="uchip" title="切换用户（演示画布隔离）"></div>
+  <div style="margin-left:auto;display:flex;gap:6px">
+    <button class="b out" onclick="openSkills()" style="border-color:rgba(34,211,238,.35)"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 3l2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg>技能</button>
+    <button class="b out" onclick="openTpl()"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>模板</button>
+    <button class="b out icononly" onclick="toggleLayerPanel()" title="图层"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></button><button class="b out icononly" onclick="openPromptLib()" title="提示词库"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 5h16M4 12h10M4 19h7"/></svg></button><button class="b out" onclick="openRawImport()" title="相机原片，本地解码"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 20h16"/></svg>RAW</button><button class="b out" onclick="openInspect()"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.4-3.4"/></svg>巡检</button>
+    <button class="b solid" onclick="toast('出片：选好镜头后合成')"><svg class="ic sm" viewBox="0 0 24 24"><path d="M5 3l14 9-14 9z"/></svg>出片</button>
+  </div>
+</div>
+
+<!-- ============ 区2：主内容 ============ -->
+<div id="main">
+  <div class="stage" id="stage">
+    <div class="dots"></div>
+
+    <!-- 空态 -->
+    <div class="empty" id="empty">
+      <div class="ttl">从一个想法开始</div>
+      <div class="sub">选一条路，随时可以换</div>
+      <div class="opts">
+        <div class="opt" onclick="demoFill('script')">
+          <div class="oi"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></div>
+          <div><div class="on">写剧本，自动拆分镜</div><div class="od">给我一段故事，我拆成镜头</div></div>
+        </div>
+        <div class="opt" onclick="demoFill('upload')">
+          <div class="oi"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg></div>
+          <div><div class="on">上传参考图</div><div class="od">已有素材，直接开始修 / 扩</div></div>
+        </div>
+        <div class="opt" onclick="openTpl()">
+          <div class="oi"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg></div>
+          <div><div class="on">用模板</div><div class="od">一套连好的流程，改参数就能用</div></div>
+        </div>
+        <div class="opt" onclick="openSkills()">
+          <div class="oi"><svg class="ic sm" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-8 8H7l-4 3V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z"/></svg></div>
+          <div><div class="on">直接说给我听</div><div class="od">不用选，说一句我就开始</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 镜头墙 -->
+    <div id="vShots" class="hidden" style="flex:1;display:flex;flex-direction:column;min-height:0">
+      <div class="sbar">
+        <span class="ttl">镜头墙</span>
+        <span class="meta" id="metaBar"></span>
+        <span class="sp"></span>
+        <button class="b" onclick="addShot()"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>加一镜</button>
+      </div>
+      <div class="grid" id="grid"></div>
+      <div class="tl">
+        <div class="tr">
+          <button class="play"><svg class="ic sm" viewBox="0 0 24 24" style="stroke-width:2.2"><path d="M6 4l14 8-14 8z"/></svg></button>
+          <span class="time"><b id="curTime">00:00</b> / <span id="totalTime">00:41</span></span>
+          <span class="right">按时长比例 · 拖动卡片换顺序</span>
+        </div>
+        <div class="track" id="track"></div>
+      </div>
+    </div>
+
+    <!-- 自由画布 -->
+    <div id="vFree" class="hidden" style="flex:1;display:flex;flex-direction:column;min-height:0">
+      <div class="freecv" id="freecv">
+        <div class="bar">
+          <button class="on"><svg class="ic" viewBox="0 0 24 24"><path d="M4 3l7 17 2.5-6.5L20 11z"/></svg></button>
+          <button><svg class="ic" viewBox="0 0 24 24"><path d="M5 5h14M12 5v14"/></svg></button>
+          <button><svg class="ic" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="9" cy="9" r="1.5"/><path d="M4 17l5-5 4 4 3-3 4 4"/></svg></button>
+          <div class="dv"></div>
+          <button class="on" title="生成"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3l2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 高级：打组执行 / 连线图 -->
+    <div id="vFlow" class="hidden" style="flex:1;display:flex;flex-direction:column;min-height:0">
+      <div class="sbar">
+        <span class="ttl">高级</span>
+        <div class="subseg">
+          <button id="ftbSteps" class="on" onclick="setFlowView('steps')">步骤</button>
+          <button id="ftbGraph" onclick="setFlowView('graph')">连线图</button>
+        </div>
+        <span class="meta" id="flowCount"></span>
+        <span class="sp"></span>
+        <button class="b solid" style="font-size:11.5px" onclick="rerunAll()">
+          <svg class="ic sm" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>整组重跑
+        </button>
+      </div>
+
+      <!-- 子视图 A：步骤 -->
+      <div class="flow" id="flowStepsView">
+        <div class="grp">
+          <div class="gh">
+            <svg class="ic sm" viewBox="0 0 24 24" style="color:var(--ac)"><path d="M4 4h7v7H4zM13 13h7v7h-7zM13 4h7v7h-7z"/></svg>
+            <span class="t">第 3 集 · 整条流程</span>
+            <span class="sp"></span>
+          </div>
+          <div class="steps" id="steps"></div>
+        </div>
+        <div class="note">
+          <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/></svg>
+          <div>这是<b>这条流程由哪几步组成</b>。改完参数点「整组重跑」，只重跑有变动的部分。<br>
+          想看具体的节点和连线，切上面的<b>「连线图」</b>。</div>
+        </div>
+      </div>
+
+      <!-- 子视图 B：连线图（可编辑 · 可连线 · 可运行 · 节点库可加） -->
+      <div class="gwrap hidden" id="flowGraphView">
+        <!-- 节点库：基础 / 复杂 两栏（P4 加新用途=加配置） -->
+        <aside class="nodelib">
+          <div class="nlh">
+            <svg class="ic sm" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+            <span>节点库</span>
+          </div>
+          <div class="nlb">
+            <div class="nlg">基础节点 <span class="nlc">L1 · 一个点</span></div>
+            <div class="nli" onclick="addNodeFromLib('text')"><span class="nldot" style="background:#60a5fa"></span>文本</div>
+            <div class="nli" onclick="addNodeFromLib('prompt')"><span class="nldot" style="background:#60a5fa"></span>提示词</div>
+            <div class="nli" onclick="addNodeFromLib('image')"><span class="nldot" style="background:#22d3ee"></span>AI 生图</div>
+            <div class="nli" onclick="addNodeFromLib('to3d')"><span class="nldot" style="background:#fbbf24"></span>图生 3D</div>
+            <div class="nli" onclick="addNodeFromLib('crop')"><span class="nldot" style="background:#71717a"></span>裁剪（本地）</div>
+            <div class="nli" onclick="addNodeFromLib('filter')"><span class="nldot" style="background:#71717a"></span>滤镜（本地）</div>
+
+            <div class="nlg">复杂节点 <span class="nlc">L2 · 一个页面</span></div>
+            <div class="nli comp" onclick="addNodeFromLib('gen-page')"><span class="nldot" style="background:#a78bfa"></span>@生图工作台</div>
+            <div class="nli comp" onclick="addNodeFromLib('motion-page')"><span class="nldot" style="background:#a78bfa"></span>@动图工作台</div>
+            <div class="nli comp" onclick="addNodeFromLib('m3d-page')"><span class="nldot" style="background:#a78bfa"></span>@3D 工作台</div>
+            <div class="nli comp" onclick="addNodeFromLib('previs-page')"><span class="nldot" style="background:#a78bfa"></span>@3D 导演台</div>
+            <div class="nli comp" onclick="addNodeFromLib('clip-page')"><span class="nldot" style="background:#a78bfa"></span>@剪辑出片</div>
+
+            <div id="myFlows" class="hidden"></div>
+
+            <div class="nlnote">点一下加到画布中央。<br>复杂节点 = 页面能力，<b>点开是表单</b>。</div>
+          </div>
+        </aside>
+        <div class="gcanvas">
+          <div class="ginner" id="ginner">
+            <svg class="gedges" id="gedges"></svg>
+            <svg class="gedges" id="gghost" style="pointer-events:none;z-index:8"></svg>
+            <div id="gnodes"></div>
+          </div>
+          <div class="gparams hidden" id="gparams"></div>
+          <div id="groupBar" class="hidden"></div>
+          <div class="ghint">拖节点摆位置 · <b>从右侧圆点拖到左侧圆点</b>连线 · 点连线断开 · 点节点改参数</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 区3：Agent ============ -->
+  <aside class="ag">
+    <div class="agh">
+      <svg class="ic sm" viewBox="0 0 24 24" style="color:var(--ac)"><path d="M21 12a8 8 0 0 1-8 8H7l-4 3V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z"/></svg>
+      <span class="t">智能体</span>
+      <span class="m">gpt-image-2</span>
+    </div>
+    <div class="agb" id="agb">
+      <div class="msg ai">
+        <div class="who">智能体</div>
+        <div class="bubble" id="welcome">画布还是空的。<b>左边选一条路</b>，或者直接在这儿说你想做什么。<br><br>想试搜索？说<b>「生成一个最近出现的角色」</b>。</div>
+      </div>
+    </div>
+    <div class="cmp">
+      <div class="bx">
+        <div class="row1">
+          <textarea id="ta" rows="1" placeholder="说你想做什么，或用 @ 引用素材"></textarea>
+          <button class="snd" onclick="send()"><svg class="ic sm" viewBox="0 0 24 24" style="stroke-width:2"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
+        </div>
+        <div class="prow">
+          <span class="op">2:3 <span class="cv2">▾</span></span>
+          <span class="op">GPT Image 2 <span class="cv2">▾</span></span>
+          <span class="op" style="color:var(--tx3)">更多</span>
+          <span class="sp"></span>
+          <span class="cost">⚡14</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<div id="overlayHost"></div>
+  <div id="layerPanel" class="layerpanel"></div>
+  <div id="histPanel" class="histpanel"></div>
+<div class="hint" id="hintBar">选一条路开始 · 三个模式随时切换</div>
+
+
+<script src="js/01-data.js"></script>
+<script src="js/02-canvas.js"></script>
+<script src="js/03-groups.js"></script>
+<script src="js/04-caps.js"></script>
+<script src="js/05-account.js"></script>
+<script src="js/06-imageops.js"></script>
+<script src="js/07-agent.js"></script>
+<script src="js/08-events.js"></script>
+<script src="js/09-search.js"></script>
+<script src="js/10-failures.js"></script>
+<script src="js/11-floatbar.js"></script>
+<script src="js/12-inspect.js"></script>
+<script src="js/13-localedit.js"></script>
+<script src="js/14-raw.js"></script>
+<script src="js/15-chain.js"></script>
+<script src="js/16-export.js"></script>
+<script src="js/17-channels.js"></script>
+<script src="js/18-panels.js"></script>
+</body>
+</html>
