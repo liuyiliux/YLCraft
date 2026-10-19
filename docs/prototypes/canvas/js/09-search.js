@@ -30,20 +30,20 @@ const SUBJECT_SCHEMAS = {
         fields:['色调','光比'] }
     ],
     elements:{
-      '脸型':{ v:'— 搜到的资料没写', ok:0 },
-      '瞳色':{ v:'红色 竖瞳',        ok:1, src:'2' },
-      '肤色':{ v:'冷白 无明显血色',   ok:1, src:'1' },
-      '发型':{ v:'银白色 长直发 过腰', ok:1, src:'1' },
-      '发色':{ v:'银白 发梢微青',     ok:1, src:'3' },
-      '上装':{ v:'黑色高领长风衣 银扣', ok:1, src:'3' },
-      '下装':{ v:'— 只有半身图',      ok:0 },
-      '鞋':  { v:'— 搜不到',          ok:0 },
-      '耳饰':{ v:'— 搜不到',          ok:0 },
-      '标志物':{ v:'左眼下 泪痕状疤痕', ok:1, src:'1' },
-      '身高':{ v:'约 168cm',          ok:1, src:'3' },
-      '体型':{ v:'纤细 肩窄',         ok:1, src:'3' },
-      '色调':{ v:'冷色调 高对比',      ok:1, src:'2' },
-      '光比':{ v:'逆光 边缘光明显',    ok:1, src:'2' }
+      '脸型':{ v:'— 搜到的资料没写', ok:0, ai:3 },
+      '瞳色':{ v:'红色 竖瞳',        ok:1, src:'2', ai:4 },
+      '肤色':{ v:'冷白 无明显血色',   ok:1, src:'1', ai:4 },
+      '发型':{ v:'银白色 长直发 过腰', ok:1, src:'1', ai:5 },
+      '发色':{ v:'银白 发梢微青',     ok:1, src:'3', ai:5 },
+      '上装':{ v:'黑色高领长风衣 银扣', ok:1, src:'3', ai:5 },
+      '下装':{ v:'— 只有半身图',      ok:0, ai:4 },
+      '鞋':  { v:'— 搜不到',          ok:0, ai:5 },
+      '耳饰':{ v:'— 搜不到',          ok:0, ai:4 },
+      '标志物':{ v:'左眼下 泪痕状疤痕', ok:1, src:'1', ai:4 },
+      '身高':{ v:'约 168cm',          ok:1, src:'3', ai:3 },
+      '体型':{ v:'纤细 肩窄',         ok:1, src:'3', ai:4 },
+      '色调':{ v:'冷色调 高对比',      ok:1, src:'2', ai:5 },
+      '光比':{ v:'逆光 边缘光明显',    ok:1, src:'2', ai:5 }
     },
     promptTail:'银白发丝逆光边缘光, 高清细节',
     /* 缺项影响度不同 */
@@ -302,10 +302,13 @@ function renderSearchResult(){
         <button class="srch-mini" onclick="cancelElem()">✕</button>
       </div>`;
     }
-    return `<div class="srch-ei ${e.ok?'':'miss'} ${e.edited?'edited':''} ${e.addedByMe?'added':''}"
-        onclick="startEditElem('${e.id}')" title="点一下改">
+    const fit = (typeof aiFitOf === 'function') ? aiFitOf(e) : null;
+    const hardCls = (fit && e.ok && fit.ai <= 2) ? 'hardgen' : '';
+    return `<div class="srch-ei ${e.ok?'':'miss'} ${e.edited?'edited':''} ${e.addedByMe?'added':''} ${hardCls}"
+        onclick="startEditElem('${e.id}')" title="点一下改${fit?' · AI 适配度 '+fit.ai+'/5：'+fit.why:''}">
       <span class="srch-ek">${e.k}</span>
       <span class="srch-ev">${e.v}</span>
+      ${fit ? (typeof aiStars === 'function' ? aiStars(fit.ai) : '') : ''}
       <span class="srch-esrc ${e.addedByMe?'add':(e.edited?'me':(e.src?'':'none'))}">
         ${e.addedByMe ? '我加的' : (e.edited ? '我改的' : (e.src ? `[${e.src}]` : '缺 · 点我填'))}
       </span>
@@ -384,6 +387,7 @@ function renderSearchResult(){
 
       <div class="srch-sec">当前会用的提示词 <span class="srch-sec2">（按组顺序拼 · 改完实时更新）</span></div>
       <div class="srch-live" id="livePrompt">${buildPrompt()}</div>
+      ${(typeof aiFitNote === 'function') ? aiFitNote(c.elements) : ''}
 
       <div class="srch-warn ${miss.length?'':'ok'}">
         ${miss.length

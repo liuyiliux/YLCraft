@@ -233,5 +233,21 @@
 <script src="js/16-export.js"></script>
 <script src="js/17-channels.js"></script>
 <script src="js/18-panels.js"></script>
+<script src="js/19-aifit.js"></script>
+<script src="js/20-board.js"></script>
+
+<script>
+/* 挂载 Agent 面板的「对话 / 制作实况」切换 */
+(function mountAgentTabsDelayed(){
+  var tries = 0;
+  var t = setInterval(function(){
+    if (typeof mountAgentTabs === 'function' && document.querySelector('.ag')){
+      mountAgentTabs();
+      clearInterval(t);
+    }
+    if (++tries > 40) clearInterval(t);
+  }, 150);
+})();
+</script>
 </body>
 </html>
