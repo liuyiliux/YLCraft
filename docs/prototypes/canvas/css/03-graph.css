@@ -183,3 +183,23 @@
     gap:8px;justify-content:flex-end;background:rgba(255,255,255,.014)}
   .tpl .tf .info{margin-right:auto;font-size:11px;color:var(--tx3)}
 
+
+/* ===== 连线图真执行（27-graphrun） ===== */
+.gn.gn-st-run{border-color:var(--ac)!important;
+  box-shadow:0 0 0 1px var(--acl),0 0 20px -6px var(--ac)}
+.gn.gn-st-run .gbd{color:var(--ac)}
+.gn.gn-st-todo{opacity:.5}
+.gn.gn-st-ok{border-color:rgba(52,211,153,.45)}
+.graph-run-btn{position:fixed;right:14px;top:56px;z-index:60;
+  display:flex;align-items:center;gap:6px;
+  font-family:inherit;font-size:11px;font-weight:600;
+  padding:7px 14px;border-radius:7px;cursor:pointer;
+  background:var(--ac);border:1px solid var(--ac);color:#04222a;
+  box-shadow:0 8px 24px -10px rgba(34,211,238,.8)}
+.graph-run-btn:hover{filter:brightness(1.1)}
+.graph-run-btn span{font-size:9px}
+.gn-pin{position:absolute;left:50%;top:-9px;transform:translate(-50%,-100%);
+  font-size:8.5px;white-space:nowrap;padding:2px 7px;border-radius:4px;
+  background:var(--ac);color:#04222a;font-weight:600;opacity:0;
+  transition:opacity .22s var(--ez);pointer-events:none;z-index:5}
+.gn-pin.on{opacity:1}
