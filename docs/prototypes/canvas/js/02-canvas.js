@@ -199,6 +199,9 @@ function renderFree(){
     bindFree(el,s);
     freecv.appendChild(el);
   });
+  /* 🔧 2026-10-20：重建后要把图层效果重新套上，否则一渲染就丢
+     （之前 applyLayers 只认 .shot，自由画布这边压根没套过） */
+  if (typeof applyAllLayers === 'function') { try { applyAllLayers(); } catch(_){} }
 }
 function bindFree(el,s){
   let drag=false,moved=false,sx=0,sy=0,ox=0,oy=0;

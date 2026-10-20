@@ -16,19 +16,33 @@ const _leApply = leApply;
 leApply = function(){
   const a = LOCAL_ADJ;
   const fixedNow = [];
-  // 判断哪些巡检项被这次调整覆盖了
+  /* 🔴 2026-10-20 修（用户实测发现「应用以后画布没变」，顺带揪出这条撒谎的提示）：
+     之前不管用户在调哪张图，只要曝光变了就说"把巡检里的第 2 镜曝光偏暗修掉了"。
+     但巡检那 6 条是**预置示例**（INSPECT_FINDINGS 里标了 _demo:true），
+     用户很可能在自由画布调一张自己导入的照片 —— 跟第 2 镜毫无关系。
+     把示例数据当事实讲出来，比不提示更糟。
+     现在：命中示例数据就明确标注；只有将来接上真巡检才算数。 */
+  const selIdx = DOC.items.findIndex(x => x.id === selId);   // 当前选中的是第几张（0 基）
   INSPECT_FINDINGS.forEach(f=>{
     if (f.layer !== 'local' || FIXED.has(f.id)) return;
+    /* 必须真的是同一张图，才算"修掉了它的毛病" */
+    if (selIdx >= 0 && (f.shot - 1) !== selIdx) return;
     if (f.kind === '白平衡' && Math.abs(a.temp - 6100) > 30){ FIXED.add(f.id); fixedNow.push(f); }
     if (f.kind === '曝光' && Math.abs(a.exposure) > 0.05){ FIXED.add(f.id); fixedNow.push(f); }
     if (f.kind === '曲线' && a.curve.some(p=>Math.abs(p[1]-p[0]) > 0.02)){ FIXED.add(f.id); fixedNow.push(f); }
   });
   _leApply();
   if (fixedNow.length){
+    const isDemo = fixedNow.some(f => f._demo);
     setTimeout(()=>{
-      agAdd('ai', `顺带说：这次调整<b>把巡检里的 ${fixedNow.length} 个问题也修掉了</b> ——
-        ${fixedNow.map(f=>`第 ${f.shot} 镜 ${f.title}`).join('、')}。<br><br>`
-        + `<span class="myown">不用再单独点一次"修"，同一个参数解决了两件事。</span>`);
+      agAdd('ai', isDemo
+        ? `这次调整动了 <b>${fixedNow.map(f=>f.title).join('、')}</b> 这类的参数。<br><br>`
+          + `<span class="myown">🔴 说明：巡检那几条目前是<b>示例数据</b>（标了【示例】），`
+          + `所以不能说"把巡检里的问题修掉了" —— 真巡检要真量直方图/色温才能算。`
+          + `这层联动先留着，等巡检接上真的就自动生效。</span>`
+        : `顺带说：这次调整<b>把巡检里的 ${fixedNow.length} 个问题也修掉了</b> —— `
+          + `${fixedNow.map(f=>`第 ${f.shot} 镜 ${f.title}`).join('、')}。<br><br>`
+          + `<span class="myown">不用再单独点一次"修"，同一个参数解决了两件事。</span>`);
     }, 400);
   }
 };
