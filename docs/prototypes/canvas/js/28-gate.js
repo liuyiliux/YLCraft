@@ -127,8 +127,13 @@ function __gateApprove(gateId, kind, cost){
 function __gateReject(gateId, kind){
   const p = (window.__GATE_PENDING || {})[gateId];
   if (!p) return;
+  /* 🔧 2026-10-20 修：之前 cost 写死 0，导致「因此省下」永远算 ⚡0。
+     现在记「本来要花的钱」，拒绝后才算得出省了多少。 */
+  const wouldCost = Number(p.cost) || 0;
   GATE_LOG.push({
-    id: gateId, kind, cost: 0,
+    id: gateId, kind,
+    cost: 0,              // 实际花掉 = 0
+    wouldCost: wouldCost, // 本来要花 = 这个数（省下的就是它）
     title: p.title,
     at: new Date().toLocaleTimeString('zh-CN', { hour12:false }),
     result: 'rejected'
@@ -138,11 +143,12 @@ function __gateReject(gateId, kind){
 
   // 🔴 被拒绝要有明确说明，不能静默失败
   if (typeof agAdd === 'function'){
-    agAdd('ai', `好的，<b>没有执行</b> —— 也没花钱。<br><br>`
+    agAdd('ai', `好的，<b>没有执行</b> —— 也没花钱`
+      + (wouldCost ? `，省了 <b>⚡${wouldCost}</b>` : '') + `。<br><br>`
       + `<span class="myown">你可以随时再来一次，或者先把别的调好再跑。`
       + `被拒绝的操作我记下来了，如果想看"为什么当时要花这个钱"，问我就行。</span>`);
   }
-  toast('已取消 · 没花钱');
+  toast(wouldCost ? `已取消 · 省下 ⚡${wouldCost}` : '已取消 · 没花钱');
   p.resolve(false);
 }
 
@@ -185,7 +191,7 @@ function openGateLog(){
             <div class="gatl-si"><span>批准</span><b>${ok.length}</b></div>
             <div class="gatl-si"><span>拒绝</span><b class="no">${no.length}</b></div>
             <div class="gatl-si"><span>因此花掉</span><b class="co">⚡${spent}</b></div>
-            <div class="gatl-si"><span>因此省下</span><b class="ok">⚡${no.reduce((a,b)=>a+(b.cost||0),0)}</b></div>
+            <div class="gatl-si"><span>因此省下</span><b class="ok">⚡${no.reduce((a,b)=>a+(b.wouldCost||0),0)}</b></div>
           </div>
           <div class="gatl-list">
             ${GATE_LOG.length ? GATE_LOG.slice().reverse().map(g=>`

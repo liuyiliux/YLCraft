@@ -84,7 +84,12 @@ function toggleLayerVis(id){
   const sid = selId || DOC.items[0].id;
   const layers = layersOf(sid);
   const l = layers.find(x=>x.id===id);
-  if (l){ l.visible = !l.visible; refreshLayers(sid); }
+  if (l){
+    l.visible = !l.visible;
+    refreshLayers(sid);
+    /* 🔧 2026-10-20 修：之前关眼睛不进历史，撤销退不回来 */
+    pushHistory((l.visible ? '显示' : '隐藏') + '一层：' + l.name);
+  }
 }
 function setLayerOpacity(id, v){
   const sid = selId || DOC.items[0].id;
@@ -93,6 +98,11 @@ function setLayerOpacity(id, v){
   if (l){ l.opacity = Number(v); applyLayers(sid); }
   const el = document.getElementById('lpOpv');
   if (el) el.textContent = Math.round(Number(v)*100) + '%';
+  /* 拖动时不刷历史（太密），松手才记 —— 用节流 */
+  if (typeof __opacityHistTimer !== 'undefined' && __opacityHistTimer) clearTimeout(__opacityHistTimer);
+  window.__opacityHistTimer = setTimeout(()=>{
+    if (l) pushHistory('透明度 ' + l.name + ' → ' + Math.round(Number(v)*100) + '%');
+  }, 420);
 }
 function deleteLayer(id){
   const sid = selId || DOC.items[0].id;
@@ -382,6 +392,8 @@ function setLayerBlend(id, mode){
   // 把混合模式挂到画布上对应缩略图（如果该镜头是当前选中）
   applyBlendPreview();
   const m = BLEND_MODES.find(x=>x.k===mode);
+  /* 🔧 2026-10-20 修：混合模式改变也要进历史 */
+  pushHistory('混合：' + l.name + ' → ' + (m ? m.n : mode));
   toast('混合：' + (m?m.n:mode) + (m&&mode!=='normal' ? ' —— ' + m.d : ''));
 }
 
@@ -421,15 +433,76 @@ function applyBlendPreview(){
 function layerFilterOf(l){
   const p = l.params || {};
   const parts = [];
-  if (typeof p.exposure === 'number') parts.push('brightness(' + (1 + p.exposure*0.35).toFixed(3) + ')');
-  if (typeof p.contrast === 'number') parts.push('contrast(' + p.contrast.toFixed(3) + ')');
-  if (typeof p.saturation === 'number') parts.push('saturate(' + p.saturation.toFixed(3) + ')');
-  /* 参数全是中性（1/0）时给一点默认效果 —— 否则用户加了层却看不出变化 */
+
+  /* 只推「非中性」的项 —— 否则会输出 contrast(1.000) 这种等于没变的冗余 */
+  if (typeof p.exposure === 'number' && Math.abs(p.exposure) > 0.005)
+    parts.push('brightness(' + (1 + p.exposure*0.35).toFixed(3) + ')');
+  if (typeof p.contrast === 'number' && Math.abs(p.contrast - 1) > 0.005)
+    parts.push('contrast(' + p.contrast.toFixed(3) + ')');
+  if (typeof p.saturation === 'number' && Math.abs(p.saturation - 1) > 0.005)
+    parts.push('saturate(' + p.saturation.toFixed(3) + ')');
+
+  /* 🔧 2026-10-20 修：之前只读 exposure/contrast/saturation，
+     导致 temp / levels / curves 全链路白存（预设和批量应用的参数到下游全失效）。
+     现在把这三类也翻译成 CSS filter。 */
+
+  // ① 色温：偏暖加 sepia，偏冷减饱和再偏蓝
+  let tempOn = false;
+  if (typeof p.temp === 'number' && Math.abs(p.temp - 6100) > 30){
+    const t = (p.temp - 6100) / 2000;   // -1 ~ +0.95
+    if (t > 0){
+      parts.push('sepia(' + (t * 0.30).toFixed(3) + ')');
+      parts.push('hue-rotate(' + (-t * 10).toFixed(1) + 'deg)');
+    } else {
+      const k = -t;
+      parts.push('saturate(' + (1 - k * 0.12).toFixed(3) + ')');
+      parts.push('hue-rotate(' + (k * 16).toFixed(1) + 'deg)');
+    }
+    tempOn = true;
+  }
+
+  // ② 色阶 gamma：gamma>1 提亮中间调
+  let lvOn = false;
+  if (p.levels){
+    const g = typeof p.levels.gamma === 'number' ? p.levels.gamma : 1;
+    if (Math.abs(g - 1) > 0.02){
+      parts.push('brightness(' + Math.pow(1 / g, 0.45).toFixed(3) + ')');
+      lvOn = true;
+    }
+    const blk = typeof p.levels.black === 'number' ? p.levels.black : 0;
+    const wht = typeof p.levels.white === 'number' ? p.levels.white : 1;
+    if (blk > 0.005 || wht < 0.995){
+      const span = Math.max(0.05, wht - blk);
+      parts.push('contrast(' + (1 / span).toFixed(3) + ')');
+      lvOn = true;
+    }
+  }
+
+  // ③ 曲线：CSS 做不了任意曲线，用中点偏移估一个对比度（并标注是近似）
+  let cvOn = false;
+  if (p.curves && Array.isArray(p.curves.rgb) && p.curves.rgb.length >= 3){
+    const pts = p.curves.rgb;
+    let midY = 0.5;
+    let bestD = 9;
+    pts.forEach(function(pt){
+      const d = Math.abs(pt[0] - 0.5);
+      if (d < bestD){ bestD = d; midY = pt[1]; }
+    });
+    if (Math.abs(midY - 0.5) > 0.02){
+      parts.push('contrast(' + (1 + (midY - 0.5) * 0.9).toFixed(3) + ')');
+      cvOn = true;
+    }
+  }
+
+  /* 参数全是中性（1/0）时给一点默认效果 —— 否则用户加了层却看不出变化。
+     🔧 修：中性判断要包含 temp/levels/curves，否则设了色温还说"中性"就被覆盖。 */
   const neutral =
     (parts.length === 0) ||
-    (Math.abs(p.exposure || 0) < 0.01 &&
+    (!tempOn && !lvOn && !cvOn &&
+     Math.abs(p.exposure || 0) < 0.01 &&
      Math.abs((p.contrast === undefined ? 1 : p.contrast) - 1) < 0.01 &&
      Math.abs((p.saturation === undefined ? 1 : p.saturation) - 1) < 0.01);
+
   if (neutral) return 'contrast(1.14) saturate(1.12) brightness(1.07)';
   return parts.join(' ');
 }
