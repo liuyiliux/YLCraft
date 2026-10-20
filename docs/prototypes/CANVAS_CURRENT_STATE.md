@@ -93,7 +93,7 @@
 | ~~蒙版参与合成~~ | ✅ **已修** | `makeMaskCanvas` + `destination-in` 裁剪；预览用 backdrop-filter + mask |
 | **内容识别填充** | ❌ 未做 | 要学 PhotoCraft 的 PatchMatch |
 | **选区工具（套索/魔棒）** | ❌ 未做 | 要学 PhotoCraft 的 Selections |
-| **质量透镜（清晰主体+模糊背景）** | 🟡 不对 | blur 和 mask 加在同一层，呈现暗糊晕影 |
+| ~~质量透镜~~ | ✅ **已修** | 拆成清晰底层 + 模糊上层（mask 只露边缘） |
 
 ---
 
@@ -166,5 +166,5 @@ PowerShell 的 `.Replace()` 会吃掉反引号/引号/中文引号，导致语�
 | P1 | 一键瘦脸 / 放大眼 | MediaPipe Face Mesh（已调研） |
 | P1 | RAW 真解码 | 后端 rawpy |
 | P2 | 内容识别填充 / 选区 | 学 PhotoCraft 的算法 |
-| P2 | 质量透镜修正 | 分成两层：清晰底层 + 模糊上层 |
+| ~~P2~~ | ~~质量透镜修正~~ | ✅ 已拆成两层 |
 | P3 | 美白牙齿 / 祛黑眼圈 / 妆容 | 用现有蒙版能做 |
