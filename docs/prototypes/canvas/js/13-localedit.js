@@ -21,19 +21,70 @@ let LE_ID = null;   // 正在编辑的镜头 id
 let LE_DRAG = -1;   // 正在拖的曲线点
 
 /* ---- 曲线采样：分段线性 ---- */
+/* ===== 曲线插值：单调三次 Hermite（PCHIP / Fritsch–Carlson）=====
+   🔴 2026-10-20 用户指出「拉取的不够圆润」。
+   之前是**分段线性**（点与点直连），所以曲线是折线、转折处是尖角。
+   PS / Camera Raw 用的是「单调三次样条」：
+     · 平滑（C1 连续，切线自然过渡）
+     · 但保证不过冲 —— 单调区间内仍单调，不会甩出去
+   这正是 PCHIP 的数学性质，所以用它。
+*/
+function curveTangents(pts){
+  const n = pts.length;
+  if (n < 2) return [0];
+  const d = [];                       // 各段割线斜率
+  for (let i = 0; i < n - 1; i++){
+    const dx = pts[i+1][0] - pts[i][0];
+    d.push(dx > 1e-9 ? (pts[i+1][1] - pts[i][1]) / dx : 0);
+  }
+  const m = new Array(n);
+  m[0] = d[0];
+  m[n-1] = d[n-2];
+  for (let i = 1; i < n - 1; i++){
+    if (d[i-1] * d[i] <= 0){
+      m[i] = 0;                       // 极值点：切线归零，保证单调不过冲
+    } else {
+      const h0 = pts[i][0] - pts[i-1][0];
+      const h1 = pts[i+1][0] - pts[i][0];
+      const w1 = 2 * h1 + h0;
+      const w2 = h1 + 2 * h0;
+      m[i] = (w1 + w2) / (w1 / d[i-1] + w2 / d[i]);
+    }
+  }
+  return m;
+}
+
 function curveSample(pts, x){
+  if (!pts || !pts.length) return x;
   if (x <= pts[0][0]) return pts[0][1];
   const last = pts[pts.length-1];
   if (x >= last[0]) return last[1];
+
+  /* 找所在区间 */
   let k = 0;
   while (k < pts.length - 2 && x > pts[k+1][0]) k++;
-  const x0=pts[k][0], x1=pts[k+1][0], y0=pts[k][1], y1=pts[k+1][1];
-  const t = x1 === x0 ? 0 : (x - x0) / (x1 - x0);
-  return Math.max(0, Math.min(1, y0 + (y1 - y0) * t));
+
+  const x0 = pts[k][0], x1 = pts[k+1][0];
+  const y0 = pts[k][1], y1 = pts[k+1][1];
+  const h = x1 - x0;
+  if (h <= 1e-9) return Math.max(0, Math.min(1, y0));
+
+  const m = curveTangents(pts);
+  const t = (x - x0) / h;
+  const t2 = t * t, t3 = t2 * t;
+
+  /* Hermite 基函数 */
+  const h00 = 2*t3 - 3*t2 + 1;
+  const h10 = t3 - 2*t2 + t;
+  const h01 = -2*t3 + 3*t2;
+  const h11 = t3 - t2;
+
+  const y = h00*y0 + h10*(m[k] * h) + h01*y1 + h11*(m[k+1] * h);
+  return Math.max(0, Math.min(1, y));
 }
 
 /* ---- 曲线 → tableValues（这就是 LUT 的采样） ---- */
-function curveToTable(pts, n = 16){
+function curveToTable(pts, n = 64){
   const out = [];
   for (let i = 0; i < n; i++) out.push(curveSample(pts, i / (n - 1)));
   return out;

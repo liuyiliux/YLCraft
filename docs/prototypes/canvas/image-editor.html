@@ -245,7 +245,7 @@ function ensureFilter(){
     svg.style.position='absolute'; svg.style.pointerEvents='none';
     document.body.appendChild(svg);
   }
-  const N = 16, mk = ch => {
+  const N = 64, mk = ch => {
     const a = [];
     for (let i = 0; i < N; i++) a.push(chSample(ch, i/(N-1)).toFixed(4));
     return a.join(' ');
