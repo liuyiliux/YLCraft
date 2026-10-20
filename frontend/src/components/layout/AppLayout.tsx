@@ -10,6 +10,7 @@ import {
   SettingOutlined,
   FolderOpenOutlined,
   PictureOutlined,
+  PlayCircleOutlined,
   UnorderedListOutlined,
   DatabaseOutlined,
   BranchesOutlined,
@@ -108,6 +109,7 @@ const menuItems: MenuProps['items'] = [
     label: 'AI 创作',
     children: [
       { key: '/image-gen', icon: <PictureOutlined />, label: 'AI 图片' },
+      { key: '/motion', icon: <PlayCircleOutlined />, label: '动图工作台' },
       { key: '/multi-platform-gen', label: navLabel('多平台生图', '实验') },
       { key: '/video-gen', label: navLabel('视频生成', '实验') },
       { key: '/model-3d', label: navLabel('图生 3D', '实验') },

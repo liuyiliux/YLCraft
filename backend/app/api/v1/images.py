@@ -78,6 +78,9 @@ def _image_retry_payload(req) -> dict:
         # 同理：带框标注图虽已混在 reference_images 里，但提示词里那段
         # 「不要把框线画进结果」的说明靠这个开关触发。丢了它，重发就会生成一张带红框的图。
         "annotation_marked_reference": req.annotation_marked_reference,
+        # 动图参数同理必须一起带：重发走同一端点，少了它就会重生成出一张
+        # **单张图**而不是多格图 —— 与用户刚看到的完全不同，且不会报任何错。
+        "motion_gif": req.motion_gif or {},
     }
 
 
@@ -348,6 +351,9 @@ class ImageGenerateRequest(BaseModel):
     #: 标注图说明的自定义文案。`None` = 用内置默认；空字符串 = **不加这句**；
     #: 非空 = 用这段。三种状态语义不同，**不能互相兜底**。
     annotation_hint_text: Optional[str] = None
+    #: 动图（多格图）模式：把"画成 N 格连贯画面"这类系统规则追加进提示词。
+    #: 留空/为 null 时**不改变任何行为**，与接入前完全一致。
+    motion_gif: Optional[dict[str, Any]] = None
 
 
 def _generation_lineage_from_request(req: ImageGenerateRequest, *, extra: dict | None = None) -> dict:
@@ -371,6 +377,9 @@ def _generation_lineage_from_request(req: ImageGenerateRequest, *, extra: dict |
         "production_plan_id": req.production_plan_id or "",
         "production_node_id": req.production_node_id or "",
         "planning_summary": req.planning_summary or {},
+        # 动图参数必须一起带：重发走同一端点，少了它就会重生成出一张
+        # **单张图**而不是多格图 —— 与用户刚看到的完全不同，且不报任何错。
+        "motion_gif": req.motion_gif or {},
         **(extra or {}),
     }
     return {key: value for key, value in lineage.items() if value not in (None, "", [])}
@@ -397,6 +406,8 @@ def _generation_lineage_from_payload(payload: dict, *, extra: dict | None = None
         "production_plan_id": payload.get("production_plan_id", ""),
         "production_node_id": payload.get("production_node_id", ""),
         "planning_summary": payload.get("planning_summary") or {},
+        # 重发（走 payload 这条路）同样要带动图参数，否则会重生成出单张图
+        "motion_gif": payload.get("motion_gif") or {},
         **(extra or {}),
     }
     return {key: value for key, value in lineage.items() if value not in (None, "", [])}
@@ -621,6 +632,12 @@ class ImagePromptOptimizeRequest(BaseModel):
     instruction: Optional[str] = None  # 单独的修改描述，如"改成雨天、加广角"
     provider: Optional[str] = None     # 用于优化的 LLM（不填走默认后端）
     model: Optional[str] = None
+    #: 动图参数。给了就按**多格图**思路优化，而不是按单张图。
+    #: 不给则按普通静态图优化（与接入前行为完全一致）。
+    motion_gif: Optional[dict[str, Any]] = None
+    #: 参考图（data URL 或 http(s)），**多张按顺序全传**。
+    #: 仅当所选连接器声明 `support_vision_input` 时才真正带上。
+    reference_images: Optional[list[str]] = None
 
 
 class ImagePromptPreviewRequest(BaseModel):
@@ -697,7 +714,15 @@ async def optimize_prompt(
     req: ImagePromptOptimizeRequest,
     principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
 ):
-    """把朴素描述改写成图像模型友好的提示词；只润色文字，不生成图片。"""
+    """把朴素描述改写成图像模型友好的提示词；只润色文字，不生成图片。
+
+    两条按需生效的能力，**不给就完全保持接入前行为**：
+
+    - `motion_gif`：按多格图思路优化（静态图优化会产出「单张高清立绘」这种描述，
+      模型不知道要画成多格连贯的分格图）。
+    - `reference_images`：图生图/动图时把参考图**按顺序全传**给 LLM 视觉模型，
+      让它照着图写而不是凭空描述。只在连接器声明 `support_vision_input` 时生效。
+    """
     try:
         from app.services.ai.prompt_optimize import optimize_image_prompt
 
@@ -706,6 +731,8 @@ async def optimize_prompt(
             instruction=req.instruction or "",
             provider=req.provider or "",
             model=req.model or "",
+            motion_gif=req.motion_gif,
+            reference_images=req.reference_images,
         )
         return ImagePromptOptimizeResponse(
             success=True,
@@ -759,6 +786,56 @@ async def generate_image(
             "[image/annotations] prompt composed, system blocks: %s",
             ",".join(built["system_added"]),
         )
+    # 动图（多格图）模式：追加"画成 N 格连贯画面"等系统规则。
+    #
+    # ⚠️ 这段曾经**只在前端预览里出现、生成时根本没发** —— 用户在预览弹窗里
+    # 看到完整规则，实际请求却只有输入框那两句话，模型当然不会按多格图去画。
+    # 现在与 `motion-gif/prompt-preview` 共用同一个 `compose_prompt`，
+    # 保证"看到什么就发什么"（与画面批注同一条纪律）。
+    motion_summary: dict[str, Any] = {}
+    motion_meta = req.motion_gif if isinstance(req.motion_gif, dict) else None
+    if motion_meta:
+        from app.services.image import motion_prompt as _mp
+
+        try:
+            layout = str(motion_meta.get("grid_layout") or motion_meta.get("layout") or "2x4")
+            kind = str(motion_meta.get("motion_kind") or motion_meta.get("kind") or "orbit")
+            lang = str(motion_meta.get("prompt_lang") or motion_meta.get("lang") or "en")
+            disabled = [str(x) for x in (motion_meta.get("disabled_block_ids") or [])]
+            # 用户改过的块文本必须一起带 —— 漏了它就会出现
+            # "预览里改好了、生成时还是默认文案"的漂移。
+            raw_over = motion_meta.get("block_overrides")
+            overrides = (
+                {str(k): str(v) for k, v in raw_over.items()}
+                if isinstance(raw_over, dict)
+                else None
+            )
+            optimized = bool(motion_meta.get("optimized"))
+            # 参数写错属于**请求写错**（400），不是"生成失败"——
+            # 与批注同一处理：放在 try 之外，别让外部 Agent 误以为供应商挂了。
+            effective_prompt = _mp.compose_final_prompt(
+                user_prompt=effective_prompt,
+                blocks=_mp.apply_block_overrides(
+                    _mp.build_prompt_blocks(
+                        kind=kind,  # type: ignore[arg-type]
+                        layout=layout,  # type: ignore[arg-type]
+                        lang=lang,  # type: ignore[arg-type]
+                        subject=str(motion_meta.get("subject") or ""),
+                    ),
+                    overrides,
+                ),
+                disabled_ids=disabled,
+                optimized=optimized,
+            )
+            motion_summary = {
+                "motion_kind": kind,
+                "grid_layout": layout,
+                "prompt_lang": lang,
+                "disabled_block_ids": disabled,
+                "optimized": optimized,
+            }
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"动图参数不合法：{exc}") from exc
     # 没有生成出批注段时摘要记 0 而不是记 N，否则日志会让人以为
     # 「批注生效了但没效果」（实际是意见与主提示词重复，被去重掉了）。
     if "annotations" not in built["system_added"]:

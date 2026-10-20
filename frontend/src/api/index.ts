@@ -161,6 +161,25 @@ export const getAllCharacterTags = () => request('/characters/tags/all')
 
 // ===== Assets =====
 
+/**
+ * 素材库枚举（来源筛选选项与中文名）。
+ *
+ * **前端不硬编码这些值**：它们与后端入库时写的 `source`、出卡时算的
+ * `source_type` 必须完全一致，三份各写各的必然漂移 —— 动图入库自创
+ * `motion_gif` 时前端选项里没有，资产就显示"未知"并被所有来源筛选排除
+ * （表现为"存入素材库成功，但素材库里找不到"）。
+ * 唯一真相源在 `backend/app/services/asset_hub/source_taxonomy.py`。
+ */
+export const getAssetsMeta = () =>
+  request('/assets/meta') as Promise<{
+    success: boolean
+    source_type_options: { value: string; label: string }[]
+    source_type_labels: Record<string, string>
+    unknown_source_label: string
+    asset_type_options: { value: string; label: string }[]
+    asset_type_labels: Record<string, string>
+  }>
+
 export const listAssets = (params?: Record<string, any>) => {
   const sp = new URLSearchParams()
   if (params?.asset_type) sp.set('asset_type', params.asset_type)
@@ -841,12 +860,180 @@ export const getImageTask = (taskId: string, provider?: string) => {
 
 export const getImageBackends = () => request('/images/backends')
 
-/** 用 LLM 优化生图提示词（只润色文字，不生图） */
+// ===== 动图（motion GIF） =====
+// 说明：多格图→GIF/WebP/MP4 的合成。②切帧与③合成都**不调图像模型**，
+// 所以反复调整切法不花钱——这是把切帧从生成里拆出来的原因。
+// 类型定义见 `components/motion-gif/motionGifConfig.ts`。
+
+/**
+ * 用户拖过的分割线（**归一化** 0..1，不是像素）。
+ *
+ * 归一化是为了换一张分辨率不同的多格图时同一组边界能直接复用。
+ * 少给、越界、非递增后端都会修正，不会整单失败。
+ */
+export interface GridEdges {
+  xs?: number[]
+  ys?: number[]
+}
+
+/** 动图可选项（动效类型 / 格子排布 / 循环方式 / 提示词字符上限）。 */
+export const getMotionGifOptions = () => request('/images/motion-gif/options')
+
+/**
+ * 预览真正会发送的完整动图提示词（不调模型、不花钱）。
+ *
+ * 与生成走的是同一个后端拼装函数，返回的 `prompt` 就是实际发送内容。
+ */
+export const previewMotionGifPrompt = (data: {
+  prompt: string
+  motion_kind: string
+  grid_layout: string
+  prompt_lang: string
+  subject?: string
+  disabled_block_ids?: string[]
+  /** 用户改过的提示词块 `{id: 新文本}`；空串 = 关掉该段。 */
+  block_overrides?: Record<string, string>
+  optimized?: boolean
+}) =>
+  request('/images/motion-gif/prompt-preview', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+/** 切帧预览（只切不合成，不花钱）。返回每帧小图 URL 与来源标签。 */
+export const previewMotionGifSlice = (data: {
+  sheet_path: string
+  rows: number
+  cols: number
+  order?: unknown[]
+  align_subject?: boolean
+  trim?: boolean
+  /** 用户拖过的分割线（归一化 0..1）。不传 = 均匀切分。 */
+  grid_edges?: GridEdges
+}) =>
+  request('/images/motion-gif/slice-preview', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+/** 合成 GIF / WebP / MP4（**不调模型，不花钱**）。 */
+export const composeMotionGif = (data: {
+  sheet_path: string
+  rows: number
+  cols: number
+  order: unknown[]
+  loop?: string
+  size?: number
+  frame_ms?: number
+  timing?: string
+  max_kb?: number
+  colors?: number
+  resample?: string
+  dither?: boolean
+  transparent?: boolean
+  /** 把每帧主体平移居中（消除 GIF 里主体上下跳动）。 */
+  align_subject?: boolean
+  /** 裁掉每格主体之外的留白。默认关 —— 裁了会把主体切坏。 */
+  trim?: boolean
+  /** 用户拖过的分割线（归一化 0..1）。不传 = 均匀切分。 */
+  grid_edges?: GridEdges
+  /** 是否存出每帧小图（本地文件操作，不花钱）。 */
+  save_frames?: boolean
+  write_webp?: boolean
+  write_mp4?: boolean
+  fps?: number
+}) =>
+  request('/images/motion-gif/compose', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+/**
+ * 上传一张图片作为切帧补位（不调模型，不花钱）。
+ *
+ * 为什么要这条：多格图是**一次性画出来的**，单独重画一格必然对不上
+ * （光照/角度/笔触都会变）。让用户自己传图，一致性由用户保证。
+ *
+ * 返回的 `index` 就是 SliceRef.source.index，合成时后端据此取回像素。
+ */
+export const uploadMotionGifFrame = async (file: File) => {
+  const form = new FormData()
+  form.append('file', file)
+  const r = await request('/images/motion-gif/upload-frame', {
+    method: 'POST',
+    body: form,
+  })
+  return (r?.data ?? r) as {
+    success: boolean
+    index: number
+    filename: string
+    file_path: string
+    url: string
+    file_size: number
+  }
+}
+/**
+ * 把合成好的动图存入素材库（**一个 AssetNode + 多版本**，不调模型）。
+ *
+ * 传 `node_id` 则追加新版本（改了切帧重新合成）；不传则新建节点。
+ * 多格图作为同一版本下的一个 representation（format=framesheet），
+ * 切帧配置存进 `slice_config` —— 没有它就无法复现上次的切法。
+ */
+export const saveMotionGif = (data: {
+  sheet_path: string
+  rows: number
+  cols: number
+  order: unknown[]
+  loop?: string
+  size?: number
+  frame_ms?: number
+  timing?: string
+  max_kb?: number
+  colors?: number
+  resample?: string
+  dither?: boolean
+  transparent?: boolean
+  write_webp?: boolean
+  write_mp4?: boolean
+  name?: string
+  prompt?: string
+  provider?: string
+  model?: string
+  motion_kind?: string
+  align_subject?: boolean
+  trim?: boolean
+  node_id?: string
+  project_id?: string
+  content_id?: string
+  /** 用户拖过的分割线，必须一起存：只存行列的话下次打开拖法就丢了。 */
+  grid_edges?: GridEdges
+}) =>
+  request('/images/motion-gif/save', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+/**
+ * 用 LLM 优化生图提示词（只润色文字，不生图）。
+ *
+ * 两条按需生效、**不给就完全保持接入前行为**的字段：
+ * - `motion_gif`：按多格图思路优化（否则会产出「单张高清立绘」这种描述，
+ *   而模型并不知道要画成多格连贯的分格图）。
+ * - `reference_images`：图生图时把参考图**按顺序全传**给视觉模型；
+ *   仅当所选连接器声明 `support_vision_input` 时才真正带上。
+ */
 export const optimizeImagePrompt = (data: {
   prompt: string
   instruction?: string
   provider?: string
   model?: string
+  motion_gif?: {
+    motion_kind: string
+    rows: number
+    cols: number
+    cells: number
+  }
+  reference_images?: string[]
 }) =>
   request('/images/optimize-prompt', { method: 'POST', body: JSON.stringify(data) })
 
