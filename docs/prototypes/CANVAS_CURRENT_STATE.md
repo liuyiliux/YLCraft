@@ -90,7 +90,7 @@
 | **RAW 真传感器解码** | ❌ 模拟 | 要后端 rawpy |
 | **一键瘦脸 / 放大眼** | ⏸ 占位 | 要 MediaPipe Face Mesh（Apache-2.0） |
 | **生成 / 重画的真模型调用** | ❌ 模拟 | 原型阶段不接真 API |
-| **蒙版参与合成** | 🟡 半 | 参数存了，`compositeShot` 还没按 mask 裁剪 |
+| ~~蒙版参与合成~~ | ✅ **已修** | `makeMaskCanvas` + `destination-in` 裁剪；预览用 backdrop-filter + mask |
 | **内容识别填充** | ❌ 未做 | 要学 PhotoCraft 的 PatchMatch |
 | **选区工具（套索/魔棒）** | ❌ 未做 | 要学 PhotoCraft 的 Selections |
 | **质量透镜（清晰主体+模糊背景）** | 🟡 不对 | blur 和 mask 加在同一层，呈现暗糊晕影 |
@@ -162,7 +162,7 @@ PowerShell 的 `.Replace()` 会吃掉反引号/引号/中文引号，导致语�
 
 | 优先 | 项 | 依赖 |
 | --- | --- | --- |
-| P0 | 蒙版参与合成 | 改 `compositeShot` 支持 mask 裁剪 |
+| ~~P0~~ | ~~蒙版参与合成~~ | ✅ 本轮已完成 |
 | P1 | 一键瘦脸 / 放大眼 | MediaPipe Face Mesh（已调研） |
 | P1 | RAW 真解码 | 后端 rawpy |
 | P2 | 内容识别填充 / 选区 | 学 PhotoCraft 的算法 |
