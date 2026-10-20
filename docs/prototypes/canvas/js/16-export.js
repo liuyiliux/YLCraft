@@ -70,6 +70,77 @@ const BLEND_TO_CANVAS = {
   overlay:'overlay', 'soft-light':'soft-light', color:'color'
 };
 
+/* ===== 蒙版画布 =====
+   🔴 2026-10-20 新增：之前 applyMask 存的 mask 参数只是存着，
+      compositeShot 完全没读 —— 局部调整实际按全图生效。
+      现在真生成一张 alpha 蒙版，用 destination-in 裁剪调整层。
+
+   mask = { mode:'full'|'rect'|'circle'|'linear', x, y, w, h, feather, angle }
+   返回一张白=生效 / 透明=不生效 的画布。
+*/
+function makeMaskCanvas(w, h, mask){
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d');
+
+  if (!mask || !mask.mode || mask.mode === 'full'){
+    g.fillStyle = '#fff';
+    g.fillRect(0, 0, w, h);
+    return c;
+  }
+
+  const cx = (mask.x === undefined ? 0.5 : mask.x) * w;
+  const cy = (mask.y === undefined ? 0.42 : mask.y) * h;
+  const mw = (mask.w === undefined ? 0.55 : mask.w);
+  const mh = (mask.h === undefined ? 0.5 : mask.h);
+  const rx = mw * w / 2;
+  const ry = mh * h / 2;
+  const f = Math.max(0, Math.min(0.95, mask.feather === undefined ? 0.22 : mask.feather));
+
+  if (mask.mode === 'circle' || mask.mode === 'rect'){
+    /* 用 blur ��羽化：先在一张临时画布上画硬边形状，模糊后再画回来 */
+    const tmp = document.createElement('canvas');
+    tmp.width = w; tmp.height = h;
+    const tg = tmp.getContext('2d');
+    const blurPx = Math.max(0.1, f * Math.min(rx || 1, ry || 1) * 2);
+    tg.filter = 'blur(' + blurPx.toFixed(1) + 'px)';
+    tg.fillStyle = '#fff';
+    tg.beginPath();
+    if (mask.mode === 'circle'){
+      tg.ellipse(cx, cy, Math.max(1, rx), Math.max(1, ry), 0, 0, Math.PI * 2);
+    } else {
+      tg.rect(cx - rx, cy - ry, Math.max(1, rx * 2), Math.max(1, ry * 2));
+    }
+    tg.fill();
+    /* 模糊会让边缘变半透明，画回来即可当 alpha */
+    g.drawImage(tmp, 0, 0);
+    return c;
+  }
+
+  if (mask.mode === 'linear'){
+    const ang = (mask.angle === undefined ? 90 : mask.angle) * Math.PI / 180;
+    const len = Math.abs(w * Math.cos(ang)) + Math.abs(h * Math.sin(ang));
+    const x0 = cx - Math.cos(ang) * len / 2;
+    const y0 = cy - Math.sin(ang) * len / 2;
+    const x1 = cx + Math.cos(ang) * len / 2;
+    const y1 = cy + Math.sin(ang) * len / 2;
+    const gr = g.createLinearGradient(x0, y0, x1, y1);
+    const solidEnd = Math.max(0.01, 1 - f);
+    gr.addColorStop(0, 'rgba(255,255,255,1)');
+    gr.addColorStop(solidEnd, 'rgba(255,255,255,1)');
+    gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, w, h);
+    return c;
+  }
+
+  /* 未知模式 → 全图 */
+  g.fillStyle = '#fff';
+  g.fillRect(0, 0, w, h);
+  return c;
+}
+
+
 /* 把 AI 层画成"重画后的样子"（filter + 色相偏移模拟，不是真生成）
    🔧 2026-10-20 修：参数改成「当前合成结果」而不是 base ——
       之前所有 AI 层都画同一张 base，等于把下面的内容抹掉了。 */
@@ -127,6 +198,15 @@ function compositeShot(shotId, w, h){
       ag.filter = f;                            // 对"下方内容"整体套滤镜
       ag.drawImage(below, 0, 0);
 
+      /* 🔴 2026-10-20 新增：有蒙版就裁掉蒙版外的调整 —— 这才是「局部调整」 */
+      const mask = l.params && l.params.mask;
+      if (mask && mask.mode && mask.mode !== 'full'){
+        const mk = makeMaskCanvas(w, h, mask);
+        ag.globalCompositeOperation = 'destination-in';   // 只保留蒙版覆盖的部分
+        ag.drawImage(mk, 0, 0);
+        ag.globalCompositeOperation = 'source-over';
+      }
+
       ctx.save();
       ctx.clearRect(0, 0, w, h);
       ctx.globalAlpha = 1;
@@ -135,7 +215,7 @@ function compositeShot(shotId, w, h){
       ctx.drawImage(below, 0, 0);               // 先还原下方内容
       ctx.globalAlpha = alpha;                  // 再按透明度叠调整后
       ctx.globalCompositeOperation = BLEND_TO_CANVAS[l.blend || 'normal'] || 'source-over';
-      ctx.drawImage(adj, 0, 0);
+      ctx.drawImage(adj, 0, 0);                 // 已被蒙版裁剪过的调整层
       ctx.restore();
 
     } else if (l.type === 'ai'){
