@@ -1160,3 +1160,7 @@
 .le-dot{cursor:grab}
 .le-dot:active{cursor:grabbing}
 .le-curvecnt{font-size:8.5px;color:var(--tx3);margin-left:auto;white-space:nowrap}
+/* ===== 曲线：直方图背景 + 输入输出数值（对齐 Camera Raw） ===== */
+.le-histbg{fill:rgba(200,205,215,.16);stroke:none;pointer-events:none}
+.le-curveio{font-size:8.5px;font-family:var(--fm);color:var(--tx3);
+  padding:3px 2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

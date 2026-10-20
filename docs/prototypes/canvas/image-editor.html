@@ -203,10 +203,10 @@ const ADJ = {
   levels:{ black:0, white:1, gamma:1 },
   channel:'rgb',
   curves:{
-    rgb:[[0,0],[0.25,0.25],[0.5,0.5],[0.75,0.75],[1,1]],
-    r:  [[0,0],[0.25,0.25],[0.5,0.5],[0.75,0.75],[1,1]],
-    g:  [[0,0],[0.25,0.25],[0.5,0.5],[0.75,0.75],[1,1]],
-    b:  [[0,0],[0.25,0.25],[0.5,0.5],[0.75,0.75],[1,1]]
+    rgb:[[0,0],[1,1]],
+    r:  [[0,0],[1,1]],
+    g:  [[0,0],[1,1]],
+    b:  [[0,0],[1,1]]
   }
 };
 let DRAG = -1;
@@ -298,11 +298,11 @@ function setLevel(k, v){
 function setCh(ch){ ADJ.channel = ch; drawCurve(); }
 function resetLevels(){ ADJ.levels = {black:0,white:1,gamma:1}; renderAll(); }
 function resetCurve(){
-  ADJ.curves[ADJ.channel] = [[0,0],[0.25,0.25],[0.5,0.5],[0.75,0.75],[1,1]];
+  ADJ.curves[ADJ.channel] = [[0,0],[1,1]];
   drawCurve(); preview();
 }
 function resetAll(){
-  const lin = ()=>[[0,0],[0.25,0.25],[0.5,0.5],[0.75,0.75],[1,1]];
+  const lin = ()=>[[0,0],[1,1]];
   ADJ.exposure=0; ADJ.contrast=1; ADJ.saturation=1; ADJ.temp=6100;
   ADJ.levels={black:0,white:1,gamma:1}; ADJ.channel='rgb';
   ADJ.curves={rgb:lin(),r:lin(),g:lin(),b:lin()};
