@@ -1138,3 +1138,20 @@
 .rt-src-b{flex:0 0 auto;font-size:9px;padding:3px 8px;border-radius:4px;cursor:pointer;
   font-family:inherit;background:var(--acs);border:1px solid var(--acl);color:var(--ac)}
 .rt-src-b:hover{filter:brightness(1.15)}
+/* ===== 质量透镜两层结构（24-quality 修正） =====
+   底层清晰 + 上层模糊（mask 只露边缘）—— 这才是"清晰主体 + 模糊背景" */
+.q-wrap{position:relative;overflow:hidden}
+.q-wrap .q-base,
+.q-wrap .q-blur{position:absolute;inset:0;border-radius:inherit}
+.q-wrap .q-blur{pointer-events:none}
+/* 两层共用同一份背景（渐变 + 人物），保证完全对齐 */
+.q-wrap .q-base,
+.q-wrap .q-blur{
+  background:linear-gradient(165deg,#2b2440,#141020);
+}
+.q-wrap .q-base .le-fig,
+.q-wrap .q-blur .le-fig{
+  position:absolute;left:42%;top:18%;width:16%;height:64%;
+  background:linear-gradient(175deg,#e8d5bd,#a8825c);
+  border-radius:42% 42% 20% 20%/16% 16% 8% 8%;
+}
