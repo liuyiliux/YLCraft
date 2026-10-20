@@ -280,7 +280,6 @@ function closeLocalEdit(){
 }
 
 function leApply(){
-  closeLocalEdit();
   const a = LOCAL_ADJ;
   const changes = [];
   if (Math.abs(a.exposure) > 0.01) changes.push(`曝光 ${(a.exposure>=0?'+':'')}${a.exposure.toFixed(2)}EV`);
@@ -290,9 +289,28 @@ function leApply(){
   const curveChanged = a.curve.some(p=>Math.abs(p[1]-p[0]) > 0.02);
   if (curveChanged) changes.push('曲线');
 
+  closeLocalEdit();
+
+  /* 🔧 2026-10-20 修（审查报告阻断问题 4）：之前只往对话发一条，
+     画布参数一个字节没变。现在真写进图层，画面/导出/撤销都带上。 */
+  let committed = null;
+  if (changes.length && typeof commitLocalLayer === 'function'){
+    committed = commitLocalLayer(
+      '精调：' + changes.slice(0, 2).join(' '),
+      {
+        exposure: a.exposure, contrast: a.contrast, saturation: a.saturation,
+        temp: a.temp,
+        levels: JSON.parse(JSON.stringify(a.levels || {})),
+        curves: JSON.parse(JSON.stringify(a.curves || null))
+      },
+      '应用精调：' + changes.join(' · ')
+    );
+  }
+
   agAdd('ai', changes.length
     ? `调好了：${changes.join(' · ')}<br><br><b>没花钱</b> —— 这是本地像素运算。<br><br>`
-      + `<span class="myown">参数我留着了，不是烘焙进图里的。你哪天想改回去，点开还能调。</span>`
+      + `<span class="myown">${committed ? '参数已经挂成一层了：画面能看出来、导出会带上、撤销能退。' : ''}`
+      + `参数我留着了，不是烘焙进图里的。你哪天想改回去，点开还能调。</span>`
     : `没改任何参数，图还是原样。`);
   toast(changes.length ? '已应用 · 免费' : '没改动');
 }

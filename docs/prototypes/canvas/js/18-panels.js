@@ -494,11 +494,45 @@ function layerFilterOf(l){
     }
   }
 
+  /* ④ 画质参数（24-quality.js 落盘进来的）——
+     CSS 没有降噪/锐化，用近似表达：降噪→轻微模糊，锐化→加对比 */
+  let qOn = false;
+  if (typeof p.denoise === 'number' && p.denoise > 0.01){
+    parts.push('blur(' + (p.denoise * 0.8).toFixed(2) + 'px)');
+    qOn = true;
+  }
+  if (typeof p.sharpen === 'number' && p.sharpen > 0.01){
+    parts.push('contrast(' + (1 + p.sharpen * 0.22).toFixed(3) + ')');
+    qOn = true;
+  }
+  if (typeof p.shadow === 'number' && p.shadow > 0.01){
+    parts.push('brightness(' + (1 + p.shadow * 0.18).toFixed(3) + ')');
+    qOn = true;
+  }
+  if (typeof p.blur === 'number' && p.blur > 0.01){
+    parts.push('blur(' + (p.blur * 4).toFixed(2) + 'px)');
+    qOn = true;
+  }
+  if (p.hsl){
+    if (Math.abs(p.hsl.hue || 0) > 0.5){
+      parts.push('hue-rotate(' + Number(p.hsl.hue).toFixed(1) + 'deg)');
+      qOn = true;
+    }
+    if (typeof p.hsl.sat === 'number' && Math.abs(p.hsl.sat - 1) > 0.01){
+      parts.push('saturate(' + p.hsl.sat.toFixed(3) + ')');
+      qOn = true;
+    }
+    if (typeof p.hsl.light === 'number' && Math.abs(p.hsl.light) > 0.01){
+      parts.push('brightness(' + (1 + p.hsl.light * 0.5).toFixed(3) + ')');
+      qOn = true;
+    }
+  }
+
   /* 参数全是中性（1/0）时给一点默认效果 —— 否则用户加了层却看不出变化。
      🔧 修：中性判断要包含 temp/levels/curves，否则设了色温还说"中性"就被覆盖。 */
   const neutral =
     (parts.length === 0) ||
-    (!tempOn && !lvOn && !cvOn &&
+    (!tempOn && !lvOn && !cvOn && !qOn &&
      Math.abs(p.exposure || 0) < 0.01 &&
      Math.abs((p.contrast === undefined ? 1 : p.contrast) - 1) < 0.01 &&
      Math.abs((p.saturation === undefined ? 1 : p.saturation) - 1) < 0.01);
@@ -583,4 +617,29 @@ function refreshLayers(shotId){
   renderLayerPanel();
   const sid = shotId || selId || (DOC.items[0] && DOC.items[0].id);
   applyLayers(sid);
+}
+/* ================= 统一落盘：把一组参数变成一个图层 =================
+   🔴 2026-10-20 修（审查报告阻断问题 4）：
+      之前 leApply / applyQuality / applyMask 点「应用」只往对话里发一条
+      "做完了"，画布参数一个字节没变 —— 看着像做了，其实没落盘。
+
+      现在统一走这里：参数 → 新图层 → applyLayers 重画 → pushHistory 可撤销。
+*/
+function commitLocalLayer(name, params, historyLabel){
+  const sid = selId || (DOC.items[0] && DOC.items[0].id);
+  if (!sid){ toast('先选一张图'); return null; }
+
+  const layers = layersOf(sid);
+  const l = makeLocalLayer();
+  l.name = name || '调整层';
+  l.params = Object.assign({}, params || {});
+  layers.push(l);
+  ACTIVE_LAYER = l.id;
+
+  if (typeof refreshLayers === 'function') refreshLayers(sid);
+  else if (typeof renderLayerPanel === 'function') renderLayerPanel();
+
+  if (typeof pushHistory === 'function') pushHistory(historyLabel || ('应用：' + l.name));
+
+  return l;
 }

@@ -260,11 +260,26 @@ function applyQuality(){
   if (Math.abs(q.hsl.sat - 1) > 0.01) out.push('饱和 ' + q.hsl.sat.toFixed(2));
   if (Math.abs(q.hsl.light) > 0.01) out.push('明度 ' + q.hsl.light.toFixed(2));
   closeQuality();
+
+  /* 🔧 2026-10-20 修（审查报告阻断问题 4）：之前只发消息不落盘。现在真写进图层。 */
+  let committed = null;
+  if (out.length && typeof commitLocalLayer === 'function'){
+    committed = commitLocalLayer(
+      '画质：' + out.slice(0, 2).join(' '),
+      {
+        denoise: q.denoise, sharpen: q.sharpen, shadow: q.shadow,
+        blur: q.blur, blurMode: q.blurMode,
+        hsl: JSON.parse(JSON.stringify(q.hsl || {}))
+      },
+      '应用画质：' + out.join(' · ')
+    );
+  }
+
   if (typeof agAdd === 'function'){
     agAdd('ai', out.length
       ? `画质调整已应用：<b>${out.join(' · ')}</b><br><br><b>没花钱</b> —— 全是本地运算。<br><br>`
-        + `<span class="myown">这些参数都留着，不是烘焙进图里的。降噪会轻微损细节，`
-        + `锐化过头会有白边 —— 觉得过了随时能调低。</span>`
+        + `<span class="myown">${committed ? '参数已经挂成一层了：导出会带上、撤销能退。' : ''}`
+        + `降噪会轻微损细节，锐化过头会有白边 —— 觉得过了随时能调低。</span>`
       : '没做任何调整。');
   }
   toast(out.length ? '已应用 · 免费' : '没改动');
