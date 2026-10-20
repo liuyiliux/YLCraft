@@ -246,17 +246,25 @@ function openRetouch(id){
                 <span class="rt-src-m">${srcMeta}</span></span>
               <button class="rt-src-b" onclick="rtPickSource()">${RT_REAL?'换一张':'导入自己的图'}</button>
             </div>
-            <div class="rt-row">
-              <div class="rt-wrap">
-                <canvas id="rtA" width="${RT_W}" height="${RT_H}"
+            <!-- 🔴 2026-10-20 用户要求：单张图、编辑立即生效、可切换看原图。
+                 原来左右并排两张（原图 + 处理后），现在叠放成一张，
+                 默认显示处理后的；「看原图」按住或点亮就切到原图。 -->
+            <div class="rt-row rt-stack">
+              <div class="rt-wrap rt-stagewrap">
+                <canvas id="rtA" class="rt-layer" width="${RT_W}" height="${RT_H}"
                   style="width:${dim.w}px;height:${dim.h}px"></canvas>
-                <div class="rt-cl">${RT_REAL ? '原图 · 真像素' : '演示人像 · 有噪点/痘印'}</div>
-              </div>
-              <div class="rt-wrap">
-                <canvas id="rtB" width="${RT_W}" height="${RT_H}"
+                <canvas id="rtB" class="rt-layer on" width="${RT_W}" height="${RT_H}"
                   style="width:${dim.w}px;height:${dim.h}px"></canvas>
-                <div class="rt-cl" id="rtBLabel">处理后</div>
+                <div class="rt-cl" id="rtBLabel">处理后 · 编辑实时预览</div>
               </div>
+            </div>
+            <div class="rt-viewbar">
+              <button class="rt-origbtn" id="rtOrigBtn"
+                onmousedown="rtShowOrig(true)" onmouseup="rtShowOrig(false)"
+                onmouseleave="rtShowOrig(false)"
+                onclick="rtToggleOrig()"
+                title="按住看原图 · 点一下锁定">👁 看原图</button>
+              <span class="rt-viewhint">按住 = 临时看原图 · 点一下 = 锁定对比</span>
             </div>
             <div class="le-tag" id="rtTag">选一个工具，然后拖 / 点</div>
           </div>
@@ -354,6 +362,7 @@ function openRetouch(id){
     </div>`;
 
   rtInit(RT_SRC_CANVAS);
+  RT_SHOW_ORIG = false; RT_ORIG_LOCK = false; rtSyncView();
 }
 
 function closeRetouch(){
@@ -599,3 +608,41 @@ function rtOneKeyFace(){
 }
 
 function rtOneKeyEye(){ rtOneKeyFace(); }
+/* ================= 实时预览：单图 + 看原图 =================
+   🔴 2026-10-20 按用户要求改：
+     · 只显示一张图（原来是左右两张对比）
+     · 编辑立即生效（rtB 一直是实时渲染的，现在它就在正中间）
+     · 「看原图」按钮：按住临时看，点一下锁定对比
+*/
+let RT_SHOW_ORIG = false;   // 当前是否正在看原图
+let RT_ORIG_LOCK = false;   // 是否点了锁定
+
+function rtSyncView(){
+  const a = document.getElementById('rtA');
+  const b = document.getElementById('rtB');
+  const btn = document.getElementById('rtOrigBtn');
+  if (a) a.classList.toggle('on', RT_SHOW_ORIG);
+  if (b) b.classList.toggle('on', !RT_SHOW_ORIG);
+  if (btn){
+    btn.classList.toggle('on', RT_SHOW_ORIG);
+    btn.textContent = RT_SHOW_ORIG ? '👁 正在看原图' : '👁 看原图';
+  }
+  const lbl = document.getElementById('rtBLabel');
+  if (lbl) lbl.textContent = RT_SHOW_ORIG ? '原图（未处理）' : '处理后 · 编辑实时预览';
+}
+
+/* 按住：显示原图；松开：回到效果 */
+function rtShowOrig(on){
+  if (RT_ORIG_LOCK) return;      // 锁定时按住无效
+  RT_SHOW_ORIG = !!on;
+  rtSyncView();
+}
+
+/* 点击：锁定/解除锁定 */
+function rtToggleOrig(){
+  RT_ORIG_LOCK = !RT_ORIG_LOCK;
+  RT_SHOW_ORIG = RT_ORIG_LOCK;
+  rtSyncView();
+  if (RT_ORIG_LOCK) toast('已锁定原图 · 再点一下回到处理效果');
+  else toast('回到处理效果');
+}

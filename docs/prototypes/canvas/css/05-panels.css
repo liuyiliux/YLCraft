@@ -1164,3 +1164,17 @@
 .le-histbg{fill:rgba(200,205,215,.16);stroke:none;pointer-events:none}
 .le-curveio{font-size:8.5px;font-family:var(--fm);color:var(--tx3);
   padding:3px 2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* ===== 人像修饰：单图叠放 + 看原图 ===== */
+.rt-stack{justify-content:center}
+.rt-stagewrap{position:relative;display:inline-block}
+.rt-layer{position:absolute;left:0;top:0;opacity:0;pointer-events:none;
+  transition:opacity .12s linear;border-radius:8px}
+.rt-layer.on{position:relative;opacity:1;pointer-events:auto}
+.rt-viewbar{display:flex;align-items:center;gap:10px;justify-content:center;
+  margin-top:10px;flex-wrap:wrap}
+.rt-origbtn{font-size:10px;font-weight:600;padding:5px 12px;border-radius:6px;
+  border:1px solid var(--ln2);background:rgba(20,20,26,.85);color:var(--tx2);
+  cursor:pointer;user-select:none;transition:all .12s var(--ez)}
+.rt-origbtn:hover{border-color:var(--acl);color:var(--tx)}
+.rt-origbtn.on{background:rgba(34,211,238,.16);border-color:var(--ac);color:var(--ac)}
+.rt-viewhint{font-size:8.5px;color:var(--tx3)}
