@@ -10,11 +10,18 @@
 /* 扩展 LOCAL_ADJ */
 LOCAL_ADJ.levels = { black: 0, white: 1, gamma: 1 };
 LOCAL_ADJ.channel = 'rgb';          // 当前编辑的通道
-LOCAL_ADJ.curves = {                // 四个通道各一套点
-  rgb: [[0,0],[0.25,0.25],[0.5,0.5],[0.75,0.75],[1,1]],
-  r:   [[0,0],[0.25,0.25],[0.5,0.5],[0.75,0.75],[1,1]],
-  g:   [[0,0],[0.25,0.25],[0.5,0.5],[0.75,0.75],[1,1]],
-  b:   [[0,0],[0.25,0.25],[0.5,0.5],[0.75,0.75],[1,1]]
+/* 🔴 2026-10-20 按 PS / Camera Raw 改：曲线初始**只有两个端点**，中间没有预设点。
+   依据 PhotoCraft（净室重实现，MIT/Apache）：
+     crates/ui-egui/src/point_curve.rs、camera_raw_ui.rs、adjust_dialog.rs 等 7 处
+     都是 vec![[0.0, 0.0], [255.0, 255.0]]
+   它的 can_delete() 判定：pts.len() > 2 && i > 0 && i < len-1
+   —— 至少保留 2 个点，首尾删不掉，中间点都是用户点出来的。
+   之前我们固定 5 个点（0/0.25/0.5/0.75/1），这就是"看起来像预设点"的原因。 */
+LOCAL_ADJ.curves = {                // 四个通道各一套点（初始都是直线 = 两端点）
+  rgb: [[0,0],[1,1]],
+  r:   [[0,0],[1,1]],
+  g:   [[0,0],[1,1]],
+  b:   [[0,0],[1,1]]
 };
 
 /* 兼容旧字段：LOCAL_ADJ.curve 指向当前通道 */
@@ -78,12 +85,48 @@ leRenderCurve = function(){
     const y = curveSample(pts, x);
     d += (i===0?'M':'L') + (x*200).toFixed(1) + ',' + ((1-y)*200).toFixed(1) + ' ';
   }
+
+  /* 🔴 2026-10-20 按 Camera Raw 加：直方图当曲线图背景。
+     用和 leRenderHist 同一套模拟分布，映射到 200×200 的坐标里画一条填充路径。 */
+  const histEl = document.getElementById('leHistBg');
+  if (histEl){
+    const N = 48;
+    const bins = [];
+    for (let i = 0; i < N; i++){
+      const x = i / (N - 1);
+      bins.push(Math.exp(-Math.pow((x - 0.42) / 0.22, 2)) * 0.85
+              + Math.exp(-Math.pow((x - 0.75) / 0.14, 2)) * 0.35);
+    }
+    const mx = Math.max.apply(null, bins.concat([0.01]));
+    let hd = 'M0,200';
+    bins.forEach((v, i)=>{
+      const x = i / (N - 1) * 200;
+      const y = 200 - (v / mx) * 190;   // 最高柱到顶留 10
+      hd += ' L' + x.toFixed(1) + ',' + y.toFixed(1);
+    });
+    hd += ' L200,200 Z';
+    histEl.setAttribute('d', hd);
+  }
+
   const pathEl = document.getElementById('lePath');
   if (pathEl){
     pathEl.setAttribute('d', d);
     const chColor = { rgb:'var(--ac)', r:'#f87171', g:'#34d399', b:'#60a5fa' }[LOCAL_ADJ.channel];
     pathEl.style.stroke = chColor;
   }
+
+  /* 选中点的输入/输出值（0-255，和 PS 一样） */
+  const ioEl = document.getElementById('leCurveIO');
+  if (ioEl){
+    if (LE_DRAG >= 0 && pts[LE_DRAG]){
+      const p = pts[LE_DRAG];
+      ioEl.textContent = '输入：' + Math.round(p[0] * 255) + '　输出：' + Math.round(p[1] * 255)
+        + '　（第 ' + (LE_DRAG + 1) + '/' + pts.length + ' 点）';
+    } else {
+      ioEl.textContent = pts.length + ' 个控制点 · 点图上任意位置加点';
+    }
+  }
+
   const g = document.getElementById('lePts');
   if (g) g.innerHTML = pts.map((p,i)=>{
     const [px,py] = toPx(p);
@@ -99,7 +142,7 @@ leRenderCurve = function(){
 
   /* 点数提示：让用户知道能加点、还能加几个 */
   const cntEl = document.getElementById('leCurveCount');
-  if (cntEl) cntEl.textContent = pts.length + ' 点' + (pts.length < 8 ? ' · 点空白处加点' : '（已满 8 点）');
+  if (cntEl) cntEl.textContent = pts.length + ' 点' + ((pts.length < 16) ? ' · 点空白处加点' : '（已满 16 点 · PS 上限）');
 
   // 通道 tab 高亮
   document.querySelectorAll('.le-ch').forEach(b=>{
@@ -240,7 +283,10 @@ openLocalEdit = function(id){
               <svg class="le-curve" id="leCurveSvg" viewBox="0 0 200 200"
                    onmousedown="leCurveDown(event)" onmousemove="leCurveMove(event)"
                    onmouseup="leCurveUp(event)" onmouseleave="leCurveUp(event)"
+                   oncontextmenu="event.preventDefault();leCurveDown(event)"
                    ondblclick="leResetCurve()">
+                <!-- 🔴 2026-10-20 按 Camera Raw 加：直方图作为曲线图背景 -->
+                <path id="leHistBg" class="le-histbg" d=""/>
                 <line x1="0" y1="200" x2="200" y2="0" class="le-diag"/>
                 <g>
                   <line x1="50" y1="0" x2="50" y2="200" class="le-grid"/>
@@ -254,7 +300,9 @@ openLocalEdit = function(id){
                 <g id="lePts"></g>
               </svg>
             </div>
-            <div class="le-hint">点空白处加点（最多 8 点）· 拖点改曲线 · 双击拉直</div>
+            <!-- 选中点的输入/输出值（Camera Raw 也是这么显示的） -->
+            <div class="le-curveio" id="leCurveIO">输入：— 输出：—</div>
+            <div class="le-hint">点空白处加点（PS 上限 16）· 右键/Ctrl 点删点 · 双击拉直</div>
           </div>
         </div>
 
@@ -298,7 +346,8 @@ leRenderAll = function(){
 const _leResetAll = leResetAll;
 leResetAll = function(){
   LOCAL_ADJ.levels = { black:0, white:1, gamma:1 };
-  const lin = () => [[0,0],[0.25,0.25],[0.5,0.5],[0.75,0.75],[1,1]];
+  /* PS 的直线 = 只有两端点 */
+  const lin = () => [[0,0],[1,1]];
   LOCAL_ADJ.curves = { rgb: lin(), r: lin(), g: lin(), b: lin() };
   LOCAL_ADJ.channel = 'rgb';
   Object.assign(LOCAL_ADJ, { exposure:0, contrast:1, saturation:1, temp:6100, gamma:1 });

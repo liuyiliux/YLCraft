@@ -13,7 +13,7 @@ const LOCAL_ADJ = {
   saturation: 1,    // 0 ~ 2
   temp: 6100,       // 色温 K（目标值）
   gamma: 1,
-  curve: [[0,0],[0.25,0.25],[0.5,0.5],[0.75,0.75],[1,1]],   // 直线
+  curve: [[0,0],[1,1]],   // 直线（PS 只有两个端点，中间的点是用户点出来的）
   curveMode: 'rgb'  // rgb | r | g | b
 };
 
@@ -187,22 +187,77 @@ function leCurveXYtoPct(e){
   return [x, y];
 }
 
+/* ===== PS / Camera Raw 曲线交互规范 =====
+   依据 PhotoCraft（净室重实现，MIT/Apache-2.0）crates/ui-egui/src/point_curve.rs：
+     MAX_POINTS = 16        点数上限（PS 是 16，我们之前只给 8）
+     MIN_GAP    = 2/255     输入差小于这个就视为同一个点
+     can_delete: pts.len()>2 && i>0 && i<len-1   首尾删不掉、至少留 2 点
+   交互：
+     左键点空白 → 加点并开始拖
+     左键点已有点 → 选中拖动
+     右键 / Ctrl+左键 点已有点 → 删掉（首尾和最少 2 点时删不掉）
+*/
+const LE_CURVE_MAX = 16;
+const LE_CURVE_GAP = 2 / 255;
+const LE_HIT_RADIUS = 0.05;
+
+function leCurveHit(pts, x, y){
+  let best = -1, bd = 1e9;
+  pts.forEach((p, i)=>{
+    const d = Math.hypot(p[0] - x, p[1] - y);
+    if (d < bd && d <= LE_HIT_RADIUS){ bd = d; best = i; }
+  });
+  return best;
+}
+
+function leCurveInsert(pts, x, y){
+  /* 附近已有 → 直接选它，不重复加点 */
+  const near = pts.findIndex(p => Math.abs(p[0] - x) < LE_CURVE_GAP);
+  if (near >= 0) return near;
+  if (pts.length >= LE_CURVE_MAX) return -1;
+  pts.push([x, y]);
+  pts.sort((a, b) => a[0] - b[0]);
+  return pts.findIndex(p => p[0] === x && p[1] === y);
+}
+
+function leCurveDel(i){
+  const pts = LOCAL_ADJ.curve;
+  /* PS 规则：至少留 2 点，首尾不能删 */
+  if (pts.length <= 2 || i <= 0 || i >= pts.length - 1){
+    toast('首尾两点删不掉（曲线至少留 2 个点）');
+    return false;
+  }
+  pts.splice(i, 1);
+  leRenderCurve();
+  leApplyPreview();
+  toast('删掉一个控制点 · 还剩 ' + pts.length + ' 点');
+  return true;
+}
+
 function leCurveDown(e){
   const [x, y] = leCurveXYtoPct(e);
   const pts = LOCAL_ADJ.curve;
-  // 找最近的点
-  let best = -1, bd = 1e9;
-  pts.forEach((p, i)=>{
-    const d = Math.hypot(p[0]-x, p[1]-y);
-    if (d < bd){ bd = d; best = i; }
-  });
-  // 太远就在旁边插一个
-  if (bd > 0.12 && pts.length < 8){
-    pts.push([x, y]);
-    pts.sort((a,b)=>a[0]-b[0]);
-    best = pts.findIndex(p=>p[0]===x && p[1]===y);
+  const hit = leCurveHit(pts, x, y);
+
+  /* 右键 / Ctrl+左键：删点 */
+  const wantDel = (e.button === 2) || (e.ctrlKey || e.metaKey);
+  if (wantDel){
+    if (hit >= 0) leCurveDel(hit);
+    LE_DRAG = -1;
+    return;
   }
-  LE_DRAG = best;
+
+  if (hit >= 0){
+    LE_DRAG = hit;
+  } else {
+    const idx = leCurveInsert(pts, x, y);
+    if (idx < 0){
+      LE_DRAG = -1;
+      toast('已经 ' + LE_CURVE_MAX + ' 个点了（PS 上限就是 16）');
+      return;
+    }
+    LE_DRAG = idx;
+  }
   leCurveMove(e);
 }
 
@@ -210,12 +265,15 @@ function leCurveMove(e){
   if (LE_DRAG < 0) return;
   const pts = LOCAL_ADJ.curve;
   let [x, y] = leCurveXYtoPct(e);
-  // 首尾固定 x
+  /* 首尾固定 x，中间点不能越过邻居 */
   if (LE_DRAG === 0) x = 0;
   else if (LE_DRAG === pts.length - 1) x = 1;
   else {
-    x = Math.max(pts[LE_DRAG-1][0] + 0.03, Math.min(pts[LE_DRAG+1][0] - 0.03, x));
+    const lo = pts[LE_DRAG-1][0] + 0.008;
+    const hi = pts[LE_DRAG+1][0] - 0.008;
+    x = Math.max(lo, Math.min(hi, x));
   }
+  y = Math.max(0, Math.min(1, y));
   pts[LE_DRAG] = [x, y];
   leRenderCurve();
   leApplyPreview();
@@ -249,18 +307,19 @@ function leRenderCurve(){
 
   /* 点数提示，让用户知道还能加点 */
   const cnt = document.getElementById('leCurveCount');
-  if (cnt) cnt.textContent = pts.length + ' 点' + (pts.length < 8 ? ' · 点空白处加点' : '（已满）');
+  if (cnt) cnt.textContent = pts.length + ' 点' + (pts.length < 16 ? ' · 点空白处加点' : '（已满 16 点）');
 }
 
 function leResetCurve(){
-  LOCAL_ADJ.curve = [[0,0],[0.25,0.25],[0.5,0.5],[0.75,0.75],[1,1]];
+  /* PS 的「拉直」= 回到只有两端点的直线 */
+  LOCAL_ADJ.curve = [[0,0],[1,1]];
   leRenderCurve(); leApplyPreview();
 }
 
 function leResetAll(){
   Object.assign(LOCAL_ADJ, {
     exposure:0, contrast:1, saturation:1, temp:6100, gamma:1,
-    curve:[[0,0],[0.25,0.25],[0.5,0.5],[0.75,0.75],[1,1]]
+    curve:[[0,0],[1,1]]
   });
   leRenderAll();
   toast('已重置 · 回到原图');
