@@ -295,6 +295,68 @@ def _download_task_info(task_id: str, data: dict[str, Any], include_detail: bool
     )
 
 
+def _duration_between(started: Any, finished: Any, status: str = "") -> float | None:
+    """两个时间戳之间的秒数。
+
+    终态任务但**没有结束时间戳**时返回 None —— 用「现在」兜底会让很久以前
+    失败的行看起来还在跑（沿用 `_duration_seconds` 的这条判定）。
+    """
+    if not started:
+        return None
+    if hasattr(started, "timestamp"):
+        started = started.timestamp()
+    if finished is not None:
+        if hasattr(finished, "timestamp"):
+            finished = finished.timestamp()
+        end = finished
+    elif status in {"done", "failed", "cancelled"}:
+        return None
+    else:
+        end = datetime.now().timestamp()
+    try:
+        return max(0, round(float(end) - float(started), 2))
+    except (TypeError, ValueError):
+        return None
+
+
+def _snapshot_fields(row: object) -> dict:
+    """把一条媒体任务记录读成**纯 dict**（不返回 ORM 实例）。
+
+    为什么必须这样：`get_async_session()` 是 `async with`，退出即关闭连接；
+    之后任何 `row.<attr>` 都可能抛 `DetachedInstanceError`。只在 session
+    还活着时把值取出来，是唯一稳妥的做法。
+    """
+    def _json(value: object) -> dict:
+        try:
+            parsed = json.loads(value or "{}")
+        except (TypeError, ValueError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
+    return {
+        "task_id": getattr(row, "task_id", ""),
+        "status": getattr(row, "status", ""),
+        "progress": int(getattr(row, "progress", 0) or 0),
+        "progress_message": getattr(row, "progress_message", "") or "",
+        "created_at": getattr(row, "created_at", None),
+        "completed_at": getattr(row, "completed_at", None),
+        "request_json": _json(getattr(row, "request_json", None)),
+        "result_json": _json(getattr(row, "result_json", None)),
+        "external_task_id": getattr(row, "external_task_id", "") or "",
+        "error_message": getattr(row, "error_message", "") or "",
+    }
+
+
+def _video_task_snapshot(row: object) -> dict:
+    """`VideoGenerationTask` 的快照（session 内读，不外泄 ORM 实例）。"""
+    return _snapshot_fields(row)
+
+
+def _media_task_snapshot(row: object) -> dict:
+    """`Model3DGenerationTask` 的快照。"""
+    return _snapshot_fields(row)
+
+
 def _external_task_infos(include_detail: bool = False) -> list[TaskInfo]:
     """Collect task views from modules that still keep their own in-memory task stores."""
     infos: list[TaskInfo] = []
@@ -316,41 +378,39 @@ async def _video_task_infos(include_detail: bool = False) -> list[TaskInfo]:
             rows = (await session.execute(
                 select(VideoGenerationTask).order_by(VideoGenerationTask.created_at.desc()).limit(100)
             )).scalars().all()
+            # 必须在 **session 还活着** 时把 ORM 对象读成纯数据。
+            # `async with get_async_session()` 退出时连接被归还，之后再访问
+            # `row.request_json` 就是 DetachedInstanceError —— 而且它只在
+            # 该行字段被 expire（提交/刷新）后才炸，表现为"任务列表偶发 500"。
+            snapshots = [_video_task_snapshot(row) for row in rows]
     except Exception as exc:
         logger.debug("Failed to collect video generation tasks: %s", exc)
         return []
 
     infos: list[TaskInfo] = []
-    for row in rows:
-        try:
-            payload = json.loads(row.request_json or "{}")
-        except (TypeError, ValueError):
-            payload = {}
-        try:
-            result = json.loads(row.result_json or "{}")
-        except (TypeError, ValueError):
-            result = {}
-        info = TaskInfo(
-            task_id=row.task_id,
+    for snap in snapshots:
+        payload, result = snap["request_json"], snap["result_json"]
+        status = _normalize_status(snap["status"])
+        infos.append(TaskInfo(
+            task_id=snap["task_id"],
             task_type="video_generation",
-            status=_normalize_status(row.status),
-            progress=int(row.progress or 0),
-            progress_message=row.progress_message or "",
-            created_at=_format_timestamp(row.created_at),
-            completed_at=_format_timestamp(row.completed_at),
-            duration_seconds=_duration_seconds(row),
+            status=status,
+            progress=snap["progress"],
+            progress_message=snap["progress_message"],
+            created_at=_format_timestamp(snap["created_at"]),
+            completed_at=_format_timestamp(snap["completed_at"]),
+            duration_seconds=_duration_between(snap["created_at"], snap["completed_at"], status),
             payload=payload if include_detail else None,
             result=result if include_detail else None,
             diagnostics=_media_task_diagnostics(
                 payload=payload,
                 result=result,
-                provider=row.provider or "",
-                model=row.model or "",
-                status=_normalize_status(row.status),
+                provider=str(payload.get("provider") or ""),
+                model=str(payload.get("model") or ""),
+                status=status,
             ) if include_detail else None,
-            error=row.error if include_detail else None,
-        )
-        infos.append(info)
+            error=snap["error_message"] if include_detail else None,
+        ))
     return infos
 
 
@@ -361,39 +421,35 @@ async def _model3d_task_infos(include_detail: bool = False) -> list[TaskInfo]:
             rows = (await session.execute(
                 select(Model3DGenerationTask).order_by(Model3DGenerationTask.created_at.desc()).limit(100)
             )).scalars().all()
+            # 同 `_video_task_infos`：session 内先转纯数据，别把 ORM 对象带出去。
+            snapshots = [_media_task_snapshot(row) for row in rows]
     except Exception as exc:
         logger.debug("Failed to collect 3D generation tasks: %s", exc)
         return []
 
     infos: list[TaskInfo] = []
-    for row in rows:
-        try:
-            payload = json.loads(row.request_json or "{}")
-        except (TypeError, ValueError):
-            payload = {}
-        try:
-            result = json.loads(row.result_json or "{}")
-        except (TypeError, ValueError):
-            result = {}
+    for snap in snapshots:
+        payload, result = snap["request_json"], snap["result_json"]
+        status = _normalize_status(snap["status"])
         infos.append(TaskInfo(
-            task_id=row.task_id,
+            task_id=snap["task_id"],
             task_type="model3d_generation",
-            status=_normalize_status(row.status),
-            progress=int(row.progress or 0),
-            progress_message=row.progress_message or "",
-            created_at=_format_timestamp(row.created_at),
-            completed_at=_format_timestamp(row.completed_at),
-            duration_seconds=_duration_seconds(row),
+            status=status,
+            progress=snap["progress"],
+            progress_message=snap["progress_message"],
+            created_at=_format_timestamp(snap["created_at"]),
+            completed_at=_format_timestamp(snap["completed_at"]),
+            duration_seconds=_duration_between(snap["created_at"], snap["completed_at"], status),
             payload=payload if include_detail else None,
             result=result if include_detail else None,
             diagnostics=_media_task_diagnostics(
                 payload=payload,
                 result=result,
-                provider=row.provider or "",
-                model=row.model or "",
-                status=_normalize_status(row.status),
+                provider=str(payload.get("provider") or ""),
+                model=str(payload.get("model") or ""),
+                status=status,
             ) if include_detail else None,
-            error=row.error if include_detail else None,
+            error=snap["error_message"] if include_detail else None,
         ))
     return infos
 
