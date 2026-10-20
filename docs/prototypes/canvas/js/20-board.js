@@ -113,7 +113,7 @@ function renderBoard(){
   host.innerHTML = `
     <div class="bp-hd">
       <span class="bp-t">制作实况</span>
-      <span class="bp-used">从 DOC + 生产日志推导 · 不是 Agent 汇报的</span>
+      <span class="bp-used">演示数据 · 编号 1-11 是预置样例，第 12 条起才是真实操作</span>
     </div>
 
     <div class="bp-sum">
@@ -169,7 +169,7 @@ function renderBoard(){
     </div>
 
     <div class="bp-foot">
-      <span class="bp-fn">🔴 这一页是事实：花了 ${totalCost}、跑了 ${gens.length} 次生成、${localFixes.length} 次免费本地修</span>
+      <span class="bp-fn">🔴 跑了 ${gens.length} 次生成、${localFixes.length} 次免费本地修 · 合计 ⚡${totalCost}</span>
       <button class="bp-replay" onclick="replayProduction()">▶ 回放</button>
     </div>`;
 }
