@@ -74,6 +74,7 @@ function fbAct(act){
   if (act === 'zoom'){ openLB(id); return; }
   if (act === 'more'){ fbMore(); return; }
   if (act === 'edit'){ openLocalEdit(id); return; }
+  if (act === 'export'){ openExport(); return; }
   if (act === 'cutout'){ toast('去背景 · 输出透明底 PNG'); return; }
   if (act === 'eraser'){ toast('橡皮擦 · 擦掉不要的部分'); return; }
   if (act === 'same'){ toast('画同款 · 照这张的风格再出一张'); return; }

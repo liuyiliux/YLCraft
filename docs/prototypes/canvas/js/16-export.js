@@ -40,10 +40,19 @@ const SHOT_DOC_DEMO = {
 /* ================= 真合成 ================= */
 
 /* 造一张"原图"（复用 retouch 的人像，没有就用渐变） */
-function exportBaseCanvas(w, h){
+function exportBaseCanvas(w, h, shotId){
   const out = document.createElement('canvas');
   out.width = w; out.height = h;
   const g = out.getContext('2d');
+  const item = (typeof DOC !== 'undefined') ? DOC.items.find(x=>x.id===shotId) : null;
+  if (item && item.canvas){
+    const iw = item.canvas.width, ih = item.canvas.height;
+    const s = Math.max(w/iw, h/ih);
+    const dw = iw*s, dh = ih*s;
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(item.canvas, (w-dw)/2, (h-dh)/2, dw, dh);
+    return out;
+  }
   if (typeof rtMakePortrait === 'function'){
     const src = rtMakePortrait(false, false);
     g.drawImage(src, 0, 0, w, h);
@@ -80,7 +89,7 @@ function compositeShot(shotId, w, h){
   const canvas = document.createElement('canvas');
   canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext('2d');
-  const base = exportBaseCanvas(w, h);
+  const base = exportBaseCanvas(w, h, shotId);
   const layers = layersOf(shotId);
 
   layers.forEach(l => {

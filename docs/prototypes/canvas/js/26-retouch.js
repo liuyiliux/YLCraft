@@ -5,18 +5,22 @@
       祛瑕疵 环形采样 inpaint  5ms
    全部纯本地，零模型，零成本。
 
-   ⚠️ 原型里图片是 CSS 假图，没有真实像素 ——
-      所以这里用 canvas 现画一个"假人像"当工作对象，
-      算法是真跑的，能看出效果。
-      真接进去时换成真实图片的 ImageData 即可。
+   ✅ 现在接的是文档里的真实像素（item.canvas，见 29-real-image.js）：
+      选中一张导入的图再打开，磨皮/液化/祛瑕疵直接作用在它的 ImageData 上，
+      点「应用并写回」后用同一份像素重画缩略图，导出也读这份。
+      没选中真图时退回演示人像，并明确标注"不会写回"。
 */
 
-const RT_W = 320, RT_H = 420;
+let RT_W = 320, RT_H = 420;
 let RT_BASE = null;     // 原始像素
 let RT_CUR = null;      // 当前像素
 let RT_MASK = null;     // 手动蒙版（磨皮用）
 let RT_DRAG = null;
 let RT_MODE = 'skin';   // skin | liquify | heal
+let RT_ITEM_ID = null;  // 正在修的镜头/图片
+let RT_REAL = false;    // 是否真的接到了文档里的像素
+let RT_SRC_CANVAS = null;
+let RT_SKIN_TIMER = null;
 
 /* ---------- 画一张假人像（带噪点和痘印，供算法用） ---------- */
 function rtMakePortrait(withNoise, withSpots){
@@ -131,7 +135,7 @@ function rtLiquify(cur, w, h, cx, cy, dx, dy, radius, strength){
         const bot = p01 + (p11-p01)*fx;
         out[idx+ch] = top + (bot-top)*fy;
       }
-      out[idx+3] = 255;
+      out[idx+3] = src[idx+3];
     }
   }
 }
@@ -166,7 +170,7 @@ function rtInpaint(cur, w, h, cx, cy, radius){
         if (diff < minD){ minD = diff; best = rp; }
       }
       const idx = (y*w+x)*4;
-      out[idx] = best.r; out[idx+1] = best.g; out[idx+2] = best.b; out[idx+3] = 255;
+      out[idx] = best.r; out[idx+1] = best.g; out[idx+2] = best.b; out[idx+3] = src[idx+3];
     }
   }
   // 边缘羽化
@@ -184,16 +188,51 @@ function rtInpaint(cur, w, h, cx, cy, radius){
 }
 
 /* ================= 面板 ================= */
+function rtDisplaySize(w, h){
+  const s = Math.min(250 / w, 380 / h, 1.6);
+  return { w: Math.max(90, Math.round(w*s)), h: Math.max(90, Math.round(h*s)) };
+}
+
+function rtPickSource(){
+  if (typeof pickImageFile !== 'function'){ toast('图片导入没加载'); return; }
+  closeRetouch();
+  pickImageFile({ onDone: items=>{
+    if (items && items[0]) openRetouch(items[0].id);
+  }});
+}
+
 function openRetouch(id){
   if (typeof hideFloatBar === 'function') hideFloatBar();
   RT_MODE = 'skin';
-  RT_BASE = null; RT_CUR = null;
+  RT_BASE = null; RT_CUR = null; RT_SRC_CANVAS = null;
+
+  RT_ITEM_ID = id || (typeof selId !== 'undefined' ? selId : null)
+    || (DOC.items[0] && DOC.items[0].id) || null;
+  const item = RT_ITEM_ID ? DOC.items.find(x=>x.id===RT_ITEM_ID) : null;
+  RT_REAL = !!(item && item.canvas);
+  if (RT_REAL){
+    RT_SRC_CANVAS = (typeof riFitCanvas === 'function')
+      ? riFitCanvas(item.canvas, 1600) : item.canvas;
+  } else {
+    RT_W = 320; RT_H = 420;
+    RT_SRC_CANVAS = rtMakePortrait(true, true);
+  }
+  if (RT_SRC_CANVAS){
+    RT_W = RT_SRC_CANVAS.width;
+    RT_H = RT_SRC_CANVAS.height;
+  }
+  const dim = rtDisplaySize(RT_W, RT_H);
+  const title = RT_REAL ? ('人像修饰 · ' + esc(String(item.name || '图片'))) : '人像修饰 · 演示';
+  const srcMeta = RT_REAL
+    ? `${RT_W}×${RT_H} 工作分辨率`
+      + (item.realW && item.realW !== RT_W ? ` · 原图 ${item.realW}×${item.realH}` : '')
+    : '没有选中真实图片 · 拖一张进来，或点右边导入';
 
   document.getElementById('overlayHost').innerHTML = `
     <div class="le" onclick="if(event.target.classList.contains('lew'))closeRetouch()">
       <div class="lew" style="width:min(880px,95vw)">
         <div class="le-hd">
-          <div class="le-t">人像修饰</div>
+          <div class="le-t">${title}</div>
           <span class="le-free">免费</span>
           <span class="le-nb">经典算法</span>
           <button class="inp-x" onclick="closeRetouch()">✕</button>
@@ -201,13 +240,21 @@ function openRetouch(id){
 
         <div class="le-body">
           <div class="le-stage">
+            <div class="rt-src ${RT_REAL?'':'demo'}">
+              <span class="rt-src-dot"></span>
+              <span class="rt-src-t"><b>${RT_REAL ? '正在改这张图' : '演示模式'}</b>
+                <span class="rt-src-m">${srcMeta}</span></span>
+              <button class="rt-src-b" onclick="rtPickSource()">${RT_REAL?'换一张':'导入自己的图'}</button>
+            </div>
             <div class="rt-row">
               <div class="rt-wrap">
-                <canvas id="rtA" width="${RT_W}" height="${RT_H}"></canvas>
-                <div class="rt-cl">原图（有噪点和痘印）</div>
+                <canvas id="rtA" width="${RT_W}" height="${RT_H}"
+                  style="width:${dim.w}px;height:${dim.h}px"></canvas>
+                <div class="rt-cl">${RT_REAL ? '原图 · 真像素' : '演示人像 · 有噪点/痘印'}</div>
               </div>
               <div class="rt-wrap">
-                <canvas id="rtB" width="${RT_W}" height="${RT_H}"></canvas>
+                <canvas id="rtB" width="${RT_W}" height="${RT_H}"
+                  style="width:${dim.w}px;height:${dim.h}px"></canvas>
                 <div class="rt-cl" id="rtBLabel">处理后</div>
               </div>
             </div>
@@ -230,10 +277,10 @@ function openRetouch(id){
 
             <div id="rtSkin" class="rt-ctrl">
               <div class="le-row"><span class="le-l">强度</span>
-                <input type="range" class="le-r" id="rtSkinAmt" min="0" max="100" value="70" oninput="rtApplySkin()">
+                <input type="range" class="le-r" id="rtSkinAmt" min="0" max="100" value="70" oninput="rtApplySkinSoon()">
                 <span class="le-v" id="rtSkinAmtV">70</span></div>
               <div class="le-row"><span class="le-l">半径</span>
-                <input type="range" class="le-r" id="rtSkinRad" min="3" max="12" value="6" oninput="rtApplySkin()">
+                <input type="range" class="le-r" id="rtSkinRad" min="3" max="12" value="6" oninput="rtApplySkinSoon()">
                 <span class="le-v" id="rtSkinRadV">6</span></div>
               <div class="rt-note"><b>高低频分离</b> —— 把图拆成"低频（颜色明暗）+ 高频（纹理）"，只压高频。<br>高频幅度大的算边缘（五官）保留，幅度小的算噪点压掉。所以<b>磨完皮五官还在</b>。</div>
             </div>
@@ -294,20 +341,25 @@ function openRetouch(id){
         <div class="le-foot">
           <div class="le-cost">
             花费 <b class="le-zero">0</b>
-            <span class="le-costn">经典算法 · 不用模型 · 12 镜批量也免费</span>
+            <span class="le-costn">${RT_REAL
+              ? '真实像素 · 应用后写回这张图 · 不走模型'
+              : '演示像素 · 不会写回文档 · 不走模型'}</span>
           </div>
           <div class="le-acts">
             <button class="insp-b ghost" onclick="rtReset()">重置</button>
-            <button class="insp-b pri" onclick="rtApplyAll()">应用</button>
+            <button class="insp-b pri" onclick="rtApplyAll()">${RT_REAL?'应用并写回':'应用（演示）'}</button>
           </div>
         </div>
       </div>
     </div>`;
 
-  rtInit();
+  rtInit(RT_SRC_CANVAS);
 }
 
-function closeRetouch(){ document.getElementById('overlayHost').innerHTML = ''; }
+function closeRetouch(){
+  clearTimeout(RT_SKIN_TIMER);
+  document.getElementById('overlayHost').innerHTML = '';
+}
 
 function setRtMode(m){
   RT_MODE = m;
@@ -325,16 +377,22 @@ function setRtMode(m){
   if (m === 'skin') rtApplySkin();
 }
 
-function rtInit(){
-  const c = rtMakePortrait(true, true);
+function rtInit(srcCanvas){
+  const c = srcCanvas || RT_SRC_CANVAS || rtMakePortrait(true, true);
   const a = document.getElementById('rtA');
-  const ga = a.getContext('2d');
-  ga.drawImage(c, 0, 0);
+  const ga = a.getContext('2d', { willReadFrequently: true });
+  ga.clearRect(0, 0, RT_W, RT_H);
+  ga.drawImage(c, 0, 0, RT_W, RT_H);
   RT_BASE = ga.getImageData(0, 0, RT_W, RT_H);
   RT_CUR = new ImageData(new Uint8ClampedArray(RT_BASE.data), RT_W, RT_H);
   document.getElementById('rtB').getContext('2d').putImageData(RT_CUR, 0, 0);
   rtApplySkin();
   rtBindCanvas();
+}
+
+function rtApplySkinSoon(){
+  clearTimeout(RT_SKIN_TIMER);
+  RT_SKIN_TIMER = setTimeout(rtApplySkin, 110);
 }
 
 function rtDrawB(){ document.getElementById('rtB').getContext('2d').putImageData(RT_CUR, 0, 0); }
@@ -376,8 +434,11 @@ function rtBlur(srcData, w, h, radius){
 }
 
 function rtApplySkin(){
-  const amt = Number(document.getElementById('rtSkinAmt').value)/100;
-  const rad = Number(document.getElementById('rtSkinRad').value);
+  const amtEl = document.getElementById('rtSkinAmt');
+  const radEl = document.getElementById('rtSkinRad');
+  if (!amtEl || !radEl) return;
+  const amt = Number(amtEl.value)/100;
+  const rad = Number(radEl.value);
   document.getElementById('rtSkinAmtV').textContent = Math.round(amt*100);
   document.getElementById('rtSkinRadV').textContent = rad;
   if (typeof RT_BASE === 'undefined' || !RT_BASE) return;
@@ -401,7 +462,7 @@ function rtApplySkin(){
       const keep = keepFlat + (keepEdge - keepFlat) * t;
       out[i+ch] = low[i+ch] + hi * keep;
     }
-    out[i+3] = 255;
+    out[i+3] = src[i+3];
   }
   rtDrawB();
   const el = document.getElementById('rtTag');
@@ -475,14 +536,43 @@ function rtReset(){
 
 function rtApplyAll(){
   const m = {skin:'磨皮',liquify:'液化',heal:'祛瑕疵'}[RT_MODE];
+
+  if (RT_REAL && RT_CUR){
+    const item = DOC.items.find(x=>x.id===RT_ITEM_ID);
+    if (item){
+      const out = document.createElement('canvas');
+      out.width = RT_W; out.height = RT_H;
+      out.getContext('2d').putImageData(RT_CUR, 0, 0);
+      setItemCanvas(item, out, {
+        name: item.name,
+        imageName: item.imageName,
+        maxDim: (typeof RI_WORK_MAX === 'number' ? RI_WORK_MAX : 1600)
+      });
+      if (typeof pushHistory === 'function') pushHistory('人像修饰：' + m);
+      closeRetouch();
+      if (typeof agAdd === 'function'){
+        agAdd('ai', `已把 <b>${m}</b> 应用到 <b>${esc(String(item.name||''))}</b> 的真实像素上。`
+          + `缩略图、放大预览、导出读到的都已经是修饰后的这张图。`
+          + `<br><br><span class="myown">全部本地运算：高低频分离 / 双线性重采样 / 邻域填充 —— `
+          + `<b>没调模型、没花钱</b>。<br>`
+          + `原型是<b>就地覆盖</b>这张图（工作分辨率 ${RT_W}×${RT_H}）；`
+          + `正式版会生成一个<b>修饰层</b>，原图保留，随时能关掉或调强度。</span>`);
+      }
+      toast('已写回图片 · 免费');
+      return;
+    }
+  }
+
   closeRetouch();
   if (typeof agAdd === 'function'){
-    agAdd('ai', `人像修饰已应用：<b>${m}</b><br><br>`
-      + `<span class="myown">这些全是经典算法 —— 双边滤波 / 网格重采样 / 邻域填充。`
-      + `**没调任何模型，没花钱**。12 镜批量做也是 0 成本。</span><br><br>`
-      + `代价是要你手动指位置（拖、点）。要"一键自动瘦脸"得接人脸关键点模型 —— 那是可选升级。`);
+    agAdd('ai', `演示效果已应用：<b>${m}</b><br><br>`
+      + `<span class="myown">你刚才改的是演示人像，<b>不会写进文档</b>。`
+      + `先导入一张自己的图（工具栏的图片按钮，或直接把文件拖进画布），`
+      + `再打开人像修饰，就能改真实像素并写回。</span><br><br>`
+      + `算法本身全是经典方法 —— 高低频分离 / 网格重采样 / 邻域填充，`
+      + `<b>没调模型，没花钱</b>。`);
   }
-  toast('已应用 · 免费');
+  toast('演示效果 · 未写回（先导入一张图）');
 }
 
 /* ---------- 一键功能的占位（具体实现后做） ----------

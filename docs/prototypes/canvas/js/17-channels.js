@@ -161,6 +161,8 @@ openLocalEdit = function(id){
   const s = DOC.items.find(x=>x.id===LE_ID);
   if (!s){ toast('先选一张图'); return; }
   hideFloatBar();
+  const pic = s.thumbUrl || '';
+  const dims = s.canvas ? (s.canvas.width + '×' + s.canvas.height) : (s.w + '×' + s.h);
 
   document.getElementById('overlayHost').innerHTML = `
     <div class="le" onclick="if(event.target.classList.contains('lew'))closeLocalEdit()">
@@ -174,8 +176,10 @@ openLocalEdit = function(id){
 
         <div class="le-body">
           <div class="le-stage">
-            <div class="le-img" id="leImg"><div class="le-fig"></div></div>
-            <div class="le-tag">实时预览 · 参数渲染，不是烘焙进图里</div>
+            <div class="le-img${pic?' has-pic':''}" id="leImg"${pic?` style="width:100%;height:min(58vh,440px);aspect-ratio:auto;background-image:url('${pic}');background-size:contain;background-position:center;background-repeat:no-repeat;background-color:#0b0b0f"`:''}>
+              ${pic?'':'<div class="le-fig"></div>'}
+            </div>
+            <div class="le-tag">${pic ? '真实图片预览 · ' + dims : '演示图预览 · 导入图片后这里显示你自己的图'} · 参数渲染，不是烘焙进图里</div>
           </div>
 
           <div class="le-panel">
