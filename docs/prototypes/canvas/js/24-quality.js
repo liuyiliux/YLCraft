@@ -84,7 +84,12 @@ function ensureQualityFilter(){
 }
 
 /* 组装最终 filter 字符串 */
-function qualityFilterCSS(){
+/* 🔧 2026-10-20 修（审查报告实现偏离 10）：
+   之前 blur 和 mask 都加在同一个 #qImg 上 → 整体糊成暗糊晕影，
+   不是"清晰主体 + 模糊背景"。
+   现在拆两层：底层只加非-blur 的滤镜，上层加 blur + mask 只露边缘。 */
+function qualityFilterCSS(opts){
+  opts = opts || {};
   const ok = ensureQualityFilter();
   const out = [];
   if (ok) out.push('url(#qFilter)');
@@ -92,8 +97,8 @@ function qualityFilterCSS(){
   if (Math.abs(QUALITY.hsl.light) > 0.01){
     out.push('brightness(' + (1 + QUALITY.hsl.light * 0.5).toFixed(3) + ')');
   }
-  // 镜头虚化：CSS blur（作用范围用 mask 控制）
-  if (QUALITY.blur > 0.01){
+  // 镜头虚化：只有上层那层才加 blur
+  if (!opts.noBlur && QUALITY.blur > 0.01){
     out.push('blur(' + (QUALITY.blur * 4).toFixed(2) + 'px)');
   }
   return out.length ? out.join(' ') : 'none';
@@ -131,7 +136,7 @@ function openQuality(id){
 
         <div class="le-body">
           <div class="le-stage">
-            <div class="le-img" id="qImg"><div class="le-fig"></div></div>
+            <div class="le-img q-wrap" id="qImg"><div class="q-base"><div class="le-fig"></div></div><div class="q-blur"><div class="le-fig"></div></div></div>
             <div class="le-tag">全部本地运算 · 不走模型 · 参数不烘焙</div>
           </div>
 
@@ -225,16 +230,29 @@ function setBlurMode(m){
 }
 
 function renderQuality(){
-  const img = document.getElementById('qImg');
-  if (!img) return;
-  img.style.filter = qualityFilterCSS();
-  const mask = blurMaskCSS();
-  if (mask){
-    img.style.maskImage = mask;
-    img.style.webkitMaskImage = mask;
-  } else {
-    img.style.maskImage = 'none';
-    img.style.webkitMaskImage = 'none';
+  const wrap = document.getElementById('qImg');
+  if (!wrap) return;
+  const base = wrap.querySelector('.q-base');
+  const blurL = wrap.querySelector('.q-blur');
+
+  /* 底层：清晰的，只加非-blur 的滤镜（降噪/锐化/柔化阴影/HSL） */
+  if (base){
+    base.style.filter = qualityFilterCSS({ noBlur: true });
+    base.style.maskImage = 'none';
+    base.style.webkitMaskImage = 'none';
+  }
+
+  /* 上层：模糊的，加 blur + mask 只露该虚的区域 */
+  if (blurL){
+    if (QUALITY.blur > 0.01){
+      blurL.style.display = '';
+      blurL.style.filter = qualityFilterCSS();     // 含 blur
+      const mask = blurMaskCSS();
+      blurL.style.maskImage = mask || 'none';
+      blurL.style.webkitMaskImage = mask || 'none';
+    } else {
+      blurL.style.display = 'none';
+    }
   }
 }
 
