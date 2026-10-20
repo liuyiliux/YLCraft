@@ -102,7 +102,10 @@ function batchAll(on){
   renderBatchPane();
 }
 
-/* 执行批量应用 */
+/* 执行批量应用
+   🔴 批量套预设是本地运算（⚡0），不走门禁 —— 门禁只拦花钱的。
+      免费操作还让人确认就是烦人。
+*/
 function doBatchApply(){
   const pre = PRESETS.find(p=>p.id===BATCH_PRESET);
   if (!pre){ toast('先选一个预设'); return; }
