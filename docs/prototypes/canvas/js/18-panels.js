@@ -120,6 +120,20 @@ let HIST_POS = -1;
 
 function pushHistory(label){
   HISTORY = HISTORY.slice(0, HIST_POS + 1);
+  /* 镜头整份进快照（不含像素对象），像素单独用引用存 —— 撤销导入/修饰才回得去 */
+  const items = (typeof DOC !== 'undefined' ? DOC.items : []).map(x=>{
+    const o = {};
+    Object.keys(x).forEach(k=>{
+      if (k === 'canvas' || k === 'thumbUrl') return;
+      o[k] = x[k];
+    });
+    o._hasCanvas = !!x.canvas;
+    return o;
+  });
+  const images = {};
+  if (typeof DOC !== 'undefined'){
+    DOC.items.forEach(x=>{ if (x.canvas) images[x.id] = x.canvas; });
+  }
   HISTORY.push({
     label, at: new Date().toLocaleTimeString('zh-CN', { hour12:false }),
     snapshot: JSON.stringify({
@@ -127,9 +141,11 @@ function pushHistory(label){
       fixed: Array.from(FIXED),
       /* 🔴 图层也进快照 —— 之前漏了，所以撤销图层操作没效果 */
       layers: JSON.parse(JSON.stringify(SHOT_LAYERS)),
-      /* 镜头的状态也进快照 */
-      items: (typeof DOC !== 'undefined' ? DOC.items : []).map(x=>({ id:x.id, status:x.status }))
-    })
+      /* 镜头整份进快照 */
+      items
+    }),
+    /* canvas 不能被 JSON 序列化，用引用平行保存 */
+    images
   });
   HIST_POS = HISTORY.length - 1;
   renderHistory();
@@ -167,12 +183,34 @@ function restoreHistory(){
           SHOT_LAYERS[k] = JSON.parse(JSON.stringify(s.layers[k]));
         });
       }
-      /* 恢复镜头状态 */
+      /* 恢复镜头：新快照是整份的，老快照只有 id/status */
       if (s.items && typeof DOC !== 'undefined'){
-        s.items.forEach(it=>{
-          const shot = DOC.items.find(x=>x.id===it.id);
-          if (shot) shot.status = it.status;
-        });
+        const full = s.items.some(it=>it && Object.prototype.hasOwnProperty.call(it, 'name'));
+        if (full){
+          DOC.items = s.items.map(it=>{
+            const o = Object.assign({}, it);
+            delete o._hasCanvas;
+            return o;
+          });
+          /* 像素用快照里的引用接回去；缩略图从像素重新生成 */
+          Object.keys(h.images || {}).forEach(id=>{
+            const item = DOC.items.find(x=>x.id===id);
+            if (!item) return;
+            item.canvas = h.images[id];
+            item.hasRealPixels = true;
+            if (typeof riMakeThumb === 'function') item.thumbUrl = riMakeThumb(item.canvas, 640);
+            if (typeof riSyncSourceLayer === 'function') riSyncSourceLayer(item);
+          });
+          if (!DOC.items.some(x=>x.id===selId)) selId = DOC.items[0] ? DOC.items[0].id : null;
+          if (typeof emptyEl !== 'undefined' && emptyEl) emptyEl.classList.toggle('hidden', DOC.items.length>0);
+          if (typeof buildGraph === 'function'){ try { buildGraph(false); } catch(_){} }
+          if (typeof setMode === 'function') setMode(mode);
+        } else {
+          s.items.forEach(it=>{
+            const shot = DOC.items.find(x=>x.id===it.id);
+            if (shot) shot.status = it.status;
+          });
+        }
       }
     } catch(_){}
   }

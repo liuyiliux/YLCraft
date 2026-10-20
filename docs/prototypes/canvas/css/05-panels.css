@@ -1118,3 +1118,23 @@
   word-break:break-all;line-height:1.6}
 .raw-td{font-size:9px;color:var(--tx3);line-height:1.65;margin-top:7px}
 .raw-td b{color:var(--tx2)}
+
+/* ===== 真实图片接入（29-real-image）：拖放提示 + 修图来源条 ===== */
+#stage.ri-drop::after{content:'松手导入图片 · 本地处理 · 不上传';position:absolute;inset:8px;
+  border:2px dashed var(--ac);border-radius:12px;display:flex;align-items:center;justify-content:center;
+  font-size:14px;color:var(--ac);background:rgba(34,211,238,.07);z-index:600;pointer-events:none}
+.rt-wrap canvas{max-width:100%}
+.rt-src{display:flex;align-items:center;gap:8px;width:100%;max-width:520px;
+  padding:7px 10px;border-radius:7px;font-size:9.5px;line-height:1.5;
+  background:rgba(34,211,238,.06);border:1px solid var(--acl);color:var(--tx2)}
+.rt-src.demo{background:rgba(251,191,36,.06);border-color:rgba(251,191,36,.32)}
+.rt-src-dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:0 0 auto;
+  box-shadow:0 0 0 3px rgba(52,211,153,.12)}
+.rt-src.demo .rt-src-dot{background:var(--wn);box-shadow:0 0 0 3px rgba(251,191,36,.12)}
+.rt-src-t{flex:1;min-width:0}
+.rt-src-t b{color:var(--tx);font-weight:600}
+.rt-src-m{display:block;color:var(--tx3);font-size:8.5px;margin-top:1px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rt-src-b{flex:0 0 auto;font-size:9px;padding:3px 8px;border-radius:4px;cursor:pointer;
+  font-family:inherit;background:var(--acs);border:1px solid var(--acl);color:var(--ac)}
+.rt-src-b:hover{filter:brightness(1.15)}

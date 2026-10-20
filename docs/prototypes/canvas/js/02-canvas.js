@@ -78,20 +78,26 @@ function renderShots(){
   grid.innerHTML='';
   items.forEach((s,i)=>{
     const el = document.createElement('div');
-    el.className = 'shot' + (s.id===selId?' sel':'') + (s.status==='err'?' err':'') + (s.status==='todo'?' todo':'');
+    el.className = 'shot' + (s.id===selId?' sel':'') + (s.status==='err'?' err':'') + (s.status==='todo'?' todo':'') + (s.wsSim?' sim':'');
     el.draggable = true;
     el.dataset.id = s.id;
     el.dataset.i = i;
-    el.innerHTML = `<div class="im" style="background:${BG[s.cls]}">
-        <div class="glow"></div><div class="fig"></div>`
+    el.innerHTML = `<div class="im${s.thumbUrl?' has-img':''}" style="${
+        s.thumbUrl
+          ? `background-image:url("${s.thumbUrl}");background-size:cover;background-position:center`
+          : `background:${BG[s.cls]}`
+      }">
+        ${s.thumbUrl ? '' : '<div class="glow"></div><div class="fig"></div>'}`
       + (s.status==='err' ? '<div class="errbadge">生成失败 · 403</div>' : '')
       + (s.status==='todo' ? '<div class="todobadge">'
           + '<svg class="ic" viewBox="0 0 24 24" style="color:var(--tx3)"><path d="M12 3l2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg>待生成</div>' : '')
       + `<span class="no">${String(i+1).padStart(2,'0')}</span>`
-      + `<span class="stt ${s.status}"></span></div>`
+      + `<span class="stt ${s.status}"></span>`
+      + (typeof wsRefChipsHtml === 'function' ? wsRefChipsHtml(s.id) : '')
+      + `</div>`
       + `<div class="info"><div class="nm">${s.name}</div><div class="ln">`
       + `<span>${s.duration>0?s.duration.toFixed(1)+'s':'—'}</span>`
-      + `<span class="d">${s.status==='ok'?'1024×1536':s.status==='err'?'403':s.status==='run'?'生成中':'—'}</span>`
+      + `<span class="d">${s.wsSim ? '模拟' : s.canvas ? s.canvas.width+'×'+s.canvas.height : s.status==='ok'?'1024×1536':s.status==='err'?'403':s.status==='run'?'生成中':'—'}</span>`
       + `</div></div>`;
     el.addEventListener('click', ()=>{
       if(s.status==='todo') return;
@@ -184,8 +190,11 @@ function renderFree(){
     el.className='item'+(s.id===selId?' sel':'');
     el.dataset.id=s.id;
     el.style.cssText=`left:${s.x}px;top:${s.y}px;width:${s.w}px;height:${s.h}px`;
-    el.innerHTML=`<div class="im" style="background:${BG[s.cls]}">
-        <div class="glow"></div><div class="fig"></div></div>
+    el.innerHTML=`<div class="im${s.thumbUrl?' has-img':''}" style="${
+        s.thumbUrl
+          ? `background-image:url("${s.thumbUrl}");background-size:cover;background-position:center`
+          : `background:${BG[s.cls]}`
+      }">${s.thumbUrl ? '' : '<div class="glow"></div><div class="fig"></div>'}</div>
         <div class="lbl2">${s.name}</div>`;
     bindFree(el,s);
     freecv.appendChild(el);

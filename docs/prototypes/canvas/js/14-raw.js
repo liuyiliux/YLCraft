@@ -20,7 +20,10 @@ const RAW_META = {
   outBits: 16
 };
 
-let RAW_STATE = { loaded: false, img: null, linear: false, gamma: 2.2, dims:[0,0] };
+let RAW_STATE = {
+  loaded: false, img: null, linear: false, gamma: 2.2, dims:[0,0],
+  canvas: null, demo: false, name: ''
+};
 
 /* ================= 面板 ================= */
 function openRawImport(){
@@ -92,6 +95,7 @@ function rawOnFile(input){
     RAW_STATE.loaded = true;
     RAW_STATE.img = img;
     RAW_STATE.linear = isRaw;
+    RAW_STATE.demo = false;
     RAW_STATE.name = f.name;
     RAW_STATE.dims = [img.naturalWidth, img.naturalHeight];
     renderRawDecoded('真实文件：' + f.name, f.size);
@@ -177,6 +181,7 @@ function renderRawDecoded(title, bytes){
   canvas.height = img.naturalHeight || 420;
   const cx = canvas.getContext('2d');
   cx.drawImage(img, 0, 0);
+  RAW_STATE.canvas = canvas;   // 解码结果留给「进入编辑」，不再只是画个预览
 
   let dataUrl = '';
   try { dataUrl = canvas.toDataURL(); } catch(_){ dataUrl = ''; }
@@ -288,6 +293,7 @@ function rawUseDemo(){
   RAW_STATE.img = c;
   RAW_STATE.dims = [320, 420];
   RAW_STATE.linear = true;
+  RAW_STATE.demo = true;
   RAW_STATE.name = RAW_META.name;
 
   renderRawDecoded('模拟：' + RAW_META.name + ' · ' + RAW_META.camera, 28.4 * 1024 * 1024);
@@ -296,20 +302,45 @@ function rawUseDemo(){
 
 function rawDone(){ rawUseDemo(); }
 
-/* 进编辑：把解码结果交给本地精调 */
+/* 进编辑：把解码结果作为一张真图放进文档，再打开本地精调 */
 function rawToEdit(){
+  const canvas = RAW_STATE.canvas;
+  const baseName = String(RAW_STATE.name || 'RAW').replace(/\.[^.]+$/, '');
+  const demo = !!RAW_STATE.demo;
   closeRaw();
+
+  let item = null;
+  if (canvas && typeof addRealImageItem === 'function'){
+    item = addRealImageItem(canvas, baseName + (demo ? ' · 模拟' : ' · RAW'), {
+      free: true,
+      imageName: RAW_STATE.name,
+      pushHistory: true
+    });
+  }
+
+  if (item){
+    const note = demo
+      ? `这次是<b>模拟 RAW</b>：流程是真的，传感器数据是画的。<br>`
+        + `真 RAW（CR3/NEF/ARW…）浏览器解不了，要后端 <b>rawpy</b>（LibRaw，MIT）`
+        + `解成线性数据再进来。`
+      : `浏览器解的是<b>预览图</b>（已经是 sRGB）；真正 RAW 的线性传感器数据要后端 rawpy 解。<br>`
+        + `但「解码 → 编辑 → 写回 → 导出」这条链已经通了。`;
+    if (typeof agAdd === 'function'){
+      agAdd('ai', `RAW 解码完了，像素已经放进文档，正在打开编辑。<br><br>`
+        + `尺寸 <b>${item.canvas.width}×${item.canvas.height}</b>（工作分辨率）`
+        + (item.realW && item.realW !== item.canvas.width
+            ? `，原图 ${item.realW}×${item.realH}` : '')
+        + `<br><br><span class="myown">${note}</span>`);
+    }
+    if (typeof openLocalEdit === 'function') setTimeout(()=>openLocalEdit(item.id), 160);
+    toast('已进入编辑 · ' + item.canvas.width + '×' + item.canvas.height + ' · 免费');
+    return;
+  }
+
   if (typeof agAdd === 'function'){
-    agAdd('ai', `RAW 解码完了，进编辑。<br><br>`
-      + `解码后是 <b>${RAW_META.outBits}bit 线性数据</b>，不是 sRGB —— `
-      + `所以现在调曝光 <b>±2EV 都不会炸</b>，暗部拉起来还有细节。`
-      + `<br><br><span class="myown">这就是 RAW 值得单独做的原因：`
-      + `JPG 一拉就出色带，线性数据还有余量。<br>`
-      + `接下来能直接用本地精调（曲线/色阶/曝光）—— 那些都是操作线性数据的。</span>`);
+    agAdd('ai', `RAW 解码完了，但没拿到可用的像素。<br><br>`
+      + `<span class="myown">真 RAW 的传感器数据浏览器没有解码器，`
+      + `要接后端 <b>rawpy</b>（LibRaw 的 Python 封装，MIT）才行。</span>`);
   }
-  if (typeof openLocalEdit === 'function'){
-    const sid = (typeof selId !== 'undefined' && selId) || (DOC.items[0] && DOC.items[0].id);
-    setTimeout(()=>openLocalEdit(sid), 200);
-  }
-  toast('已进入编辑 · 线性数据 · 免费');
+  toast('没拿到像素 · 需要后端 rawpy');
 }

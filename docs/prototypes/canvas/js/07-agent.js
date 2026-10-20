@@ -103,6 +103,7 @@ function send(){
   const t=ta.value.trim(); if(!t) return;
   ta.value=''; ta.rows=1;
   agAdd('me', esc(t));
+  if (typeof wsConsumeComposerRefs === 'function') wsConsumeComposerRefs();
   if (DOC.items.length===0){
     setTimeout(()=>{ demoFill('talk'); }, 500);
     return;
