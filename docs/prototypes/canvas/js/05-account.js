@@ -250,9 +250,17 @@ function openPage(capKey){
         <div class="pgv-kv"><span>接口</span><code>${cap.invoke.method} ${cap.invoke.path}</code></div>
         <div class="pgv-kv"><span>当前参数</span><code>${escapeHtml(JSON.stringify(cap.params))}</code></div>
         <div class="pgv-kv"><span>回传</span><code>改完点「返回画布」→ 参数与产物回填到节点</code></div>
+        ${cap.file?`
+        <div class="pgv-kv"><span>这一页真有</span><code>${cap.file}</code>
+          <a class="b" href="${cap.file}" target="_blank" rel="noopener"
+             style="margin-left:8px;font-size:11px;padding:3px 9px;text-decoration:none;color:inherit">↗ 真打开这一页</a></div>`:''}
         <div class="pgv-note">
-          🔴 真实实现是 <code>navigate('${cap.page}')</code>，
-          页面走自己的 UI，<b>画布不知道它内部怎么做的</b>（这是基调 E1：页面与节点是兄弟）。
+          ${cap.file
+            ? '🔴 这一页<b>真存在</b>（上面就是真的 <code>target="_blank"</code> 链接，不是示意）。'
+              + '节点和它是<b>兄弟</b>：两边调的是同一份能力 <code>' + cap.invoke.path + '</code>（基调 E1）。'
+            : '🔴 真实实现是 <code>navigate(\'' + cap.page + '\')</code>，'
+              + '页面走自己的 UI，<b>画布不知道它内部怎么做的</b>（这是基调 E1：页面与节点是兄弟）。'
+              + '这一版还是示意卡 —— 这个能力的独立页面还没做。'}
         </div>
       </div>
     </div></div>`;
