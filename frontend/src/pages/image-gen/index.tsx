@@ -10,7 +10,24 @@
  */
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { MotionGifOptionsPanel } from '../../components/motion-gif/MotionGifOptionsPanel'
+import { previewMotionGifPrompt } from '../../components/motion-gif/api'
+import {
+  clearMotionDraft,
+  loadMotionDraft,
+  rememberMotionBlockSettings,
+  rememberMotionSheet,
+} from '../../components/motion-gif/motionDraft'
+import { useMotionGifOptions } from '../../components/motion-gif/useMotionGifOptions'
+import type {
+  GridLayoutKey,
+  MotionKind,
+  MotionPromptPreviewResponse,
+  PromptLang,
+  SheetGridEdges,
+  SliceRef,
+} from '../../components/motion-gif/motionGifConfig'
 import {
   Card,
   Row,
@@ -32,6 +49,7 @@ import {
   Upload,
   Modal,
   Alert,
+  Typography,
 } from 'antd'
 import {
   ThunderboltOutlined,
@@ -49,6 +67,7 @@ import {
   CloseOutlined,
   SaveOutlined,
   EditOutlined,
+  PlayCircleOutlined,
 } from '@ant-design/icons'
 import type { UploadFile } from 'antd/es/upload/interface'
 import { useTheme } from '../../constants/theme'
@@ -71,6 +90,7 @@ import PromptReferencePicker, { type PromptReferenceAction } from '../../compone
 
 
 const { TextArea } = Input
+const { Text } = Typography
 const { Dragger } = Upload
 
 function safeDecode(value: string | null): string {
@@ -93,6 +113,51 @@ function getGeneratedImageSrc(img: GeneratedImage): string {
   return assetFileUrl(img.url || img.local_path)
 }
 
+/**
+ * 真正下载一个本地资产。
+ *
+ * **为什么不能只 `window.open(assetFileUrl(path))`**：那个 URL 默认
+ * `inline=true`，后端就只回一个普通响应，浏览器**在标签页里预览**它，
+ * 而不是下载。点「下载」结果开新页 —— 用户反馈的原话就是"是新页面打开"。
+ *
+ * 后端其实早支持了 `?inline=false`（会带 `Content-Disposition: attachment`），
+ * 但前端**从来没传过这个参数**。这里补上，并同时请求 blob 后用 `<a download>`
+ * 触发保存：
+ * - 带上 `inline=false` 保证服务端也认定这是下载，不靠前端单方面；
+ * - 再走一次 blob 是为了**给出文件名**（否则落到 `download` 这个名字）。
+ *
+ * 用 fetch 而不是直接 `<a href download>`：跨源时 `download` 属性会被忽略，
+ * 而本站 `/api` 经 Vite 代理虽是同源，但换成直连后端地址就不保证了 ——
+ * 两步都做，谁生效算谁。
+ */
+async function downloadAssetFile(path: string | null | undefined, fallbackName: string) {
+  if (!path) {
+    message.warning('没有可下载的文件')
+    return
+  }
+  const url = `/api/v1/assets/download?path=${encodeURIComponent(path)}&inline=false`
+  try {
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const blob = await res.blob()
+    const name = path.split(/[\\/]/).pop() || fallbackName
+    const href = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = href
+    a.download = name
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    // 立刻 revoke 会让部分浏览器来不及取数据
+    setTimeout(() => URL.revokeObjectURL(href), 10000)
+    message.success(`已下载 ${name}`)
+  } catch (e: any) {
+    // blob 拿不到就退回最朴素的方式：让浏览器自己处理 attachment
+    message.warning(`下载失败，改用浏览器默认方式：${e?.message || e}`)
+    window.open(url)
+  }
+}
+
 const STANDARD_RATIOS = [
   { ratio: '1:1', threshold: 0.05 },
   { ratio: '16:9', threshold: 0.05 },
@@ -103,6 +168,35 @@ const STANDARD_RATIOS = [
   { ratio: '2:3', threshold: 0.05 },
   { ratio: '21:9', threshold: 0.08 },
 ]
+
+/**
+ * 动图排布的**兜底值**。
+ *
+ * ⚠️ 真正的事实来源是后端 `/images/motion-gif/options`（`motion_prompt.GRID_LAYOUTS`），
+ * 经 `useMotionGifOptions` 读取。这里只用于**选项还没拉到**的那一小段时间
+ * （首屏、或接口失败），否则"换排布"会因为查不到格数而算错。
+ *
+ * 为什么不再像以前那样把完整表格当唯一来源：后端加一种排布（比如 3×3）时，
+ * 页面这份不知道 —— 换排布时 `rows×cols` 算错，切帧格数就跟着错，
+ * 而这**不会报错**，只会切出错的帧数。
+ */
+const MOTION_GRID_FALLBACK: Record<
+  GridLayoutKey,
+  { rows: number; cols: number; cells: number }
+> = {
+  '4x4': { rows: 4, cols: 4, cells: 16 },
+  '2x4': { rows: 2, cols: 4, cells: 8 },
+  '1x4': { rows: 1, cols: 4, cells: 4 },
+}
+
+/**
+ * 合成输出长边（px）。
+ *
+ * 取 480 是实测过的：1024x1024 切 8 格（单格 256x512）时，480px 成品
+ * 尚可接受。要撑 640px 成品就需要 2048 生成（单格 512px）——
+ * **但那组组合我没实测过**，所以默认留在验证过的 480。
+ */
+const MOTION_OUTPUT_SIZE = 480
 
   // 计算宽高比例
 function calculateAspectRatio(size: string): string {
@@ -240,6 +334,7 @@ export default function ImageGenPage() {
 function ImageGenSinglePage() {
   const { theme: THEME } = useTheme()
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
   const projectContext = useMemo(() => {
     const projectId = searchParams.get('project_id') || ''
@@ -425,6 +520,231 @@ function ImageGenSinglePage() {
   const [llmBackends, setLlmBackends] = useState<any[]>([])
   const [optimizeProvider, setOptimizeProvider] = useState<string>('')
   const [optimizeModel, setOptimizeModel] = useState<string>('')
+  /** 本次优化实际带上的参考图张数，用于在结果区如实告诉用户。 */
+  const [optimizeReferenceCount, setOptimizeReferenceCount] = useState(0)
+
+  // ===== 动图（motion GIF）=====
+  // 它是**生图的后处理**，不是第三种模式：mode（文生图/图生图）语义完全不动，
+  // 动图只是多挂一个开关 + 两步免费的后处理。
+  //
+  // ⚠️ 这些状态会被**跨页保存**（见 `motionDraft.ts`）：跳去图片编辑器再回来是
+  // 组件重新挂载，不保存的话用户调的切法、拖的分割线、调的颜色全丢。
+  /** 页面加载时先读草稿，用它当各 state 的初始值（只读一次）。 */
+  const motionDraft = useMemo(() => loadMotionDraft(), [])
+  const [motionGifOn, setMotionGifOn] = useState(motionDraft?.motionGifOn ?? false)
+  const [motionGifKind, setMotionGifKind] = useState<MotionKind>(motionDraft?.motionGifKind ?? 'orbit')
+  const [motionGifLayout, setMotionGifLayout] = useState<GridLayoutKey>(motionDraft?.motionGifLayout ?? '2x4')
+  const [motionGifLang, setMotionGifLang] = useState<PromptLang>(motionDraft?.motionGifLang ?? 'en')
+
+  /**
+   * 动图可选项（排布行列/格数）**从后端拉**。
+   *
+   * 以前这里硬编码了一份 `MOTION_GRID_CELLS` / `MOTION_GRID_SHAPE`，
+   * 与 `/motion-gif/options` 的返回值是同一件事实的两个来源。
+   * 后端加排布时页面不会跟着变，而**算错格数不会报错**，只会切出错误的帧数。
+   *
+   * 注意：生图页**只需要行列格数**（拼提示词用）。循环方式、切帧、对齐、合成
+   * 已全部归 `/motion` 页面（见 `useMotionGifWorkflow`）。
+   */
+  const { shapeOf: motionShapeOf, grids: motionGridLayouts } = useMotionGifOptions(motionGifOn)
+
+  /** 当前排布的行列格数（拼提示词要告诉模型画几格）。 */
+  const motionActiveShape =
+    motionShapeOf(motionGifLayout) || MOTION_GRID_FALLBACK[motionGifLayout]
+
+  /** AI 优化过的提示词不再追加系统块（避免重复/冲突）。 */
+  const [motionGifOptimized, setMotionGifOptimized] = useState(motionDraft?.motionGifOptimized ?? false)
+  /** 被用户关掉的系统提示词块 id。 */
+  const [motionGifDisabledBlocks, setMotionGifDisabledBlocks] = useState<string[]>(
+    motionDraft?.motionGifDisabledBlocks ?? [],
+  )
+  /**
+   * 用户**改过**的提示词块文本 `{块id: 新文本}`。
+   *
+   * 为什么要有：这套规则是**按假设写的默认值**，而素材用法千差万别。
+   * 实测踩到：「表情包」原写死"除表情外任何东西都不变"，而用户要的是
+   * **表情变 + 小动作、主体不变**；「连续性」又四类共用一句环绕专用的
+   * "每格约 8.571 度"。**能改比写得准更重要** —— 规则是默认模板，不是圣旨。
+   */
+  const [motionGifBlockOverrides, setMotionGifBlockOverrides] = useState<Record<string, string>>(
+    motionDraft?.motionGifBlockOverrides ?? {},
+  )
+
+  /**
+   * 提示词块的开关与改动**要跨页保存**。
+   *
+   * 不保存的话，去动图工作台转一圈回来（组件重新挂载）改动就没了 ——
+   * 而用户改这些文案是有成本的（手写规则）。
+   */
+  useEffect(() => {
+    if (!motionGifOn) return
+    rememberMotionBlockSettings(motionGifDisabledBlocks, motionGifBlockOverrides)
+  }, [motionGifOn, motionGifDisabledBlocks, motionGifBlockOverrides])
+  const [motionPromptPreviewOpen, setMotionPromptPreviewOpen] = useState(false)
+  const [motionPromptPreview, setMotionPromptPreview] = useState<MotionPromptPreviewResponse | null>(null)
+  /** 主体名（进提示词 SUBJECT 段）。留空时后端用「参考图中的主体」。 */
+  const [motionGifSubject] = useState(motionDraft?.motionGifSubject ?? '')
+  /** 多格图候选（一次生成 N 张，全部保留供挑选）。不跨页保存：是生成产物，重生成即可。 */
+  const [motionCandidates, setMotionCandidates] = useState<GeneratedImage[]>([])
+  /**
+   * 「待切分的图片」在**生图页只是"我选了哪张候选"**，用于高亮显示。
+   *
+   * 真正的图源、帧顺序、分割线等编辑态归 `/motion` 页的 `useMotionGifWorkflow`；
+   * 跨页传递走 `rememberMotionSheet`（写 sessionStorage）。
+   * ⚠️ 这里**不再持有 sheetPath 的副本** —— 之前留了一份，导致点候选只改了
+   * 没人读的本地 state，跳到 `/motion` 后图源是空的（用户："素材库还是没有新入的动图"，
+   * 因为合成根本没有图源可切）。
+   */
+  const [motionPickedIndex, setMotionPickedIndex] = useState(motionDraft?.motionPickedIndex ?? 0)
+
+  const handleMotionGifToggle = (checked: boolean) => {
+    setMotionGifOn(checked)
+    if (!checked) {
+      setMotionCandidates([])
+      // 关掉动图 = 结束这次编辑，草稿也清掉（否则下次开开关会捡回旧图）
+      clearMotionDraft()
+    }
+  }
+
+  /**
+   * 把当前选中的多格图交给动图工作台。
+   *
+   * 用 `sheet_path` 走 sessionStorage（`motionDraft`），不用 URL query ——
+   * 路径可能很长，query 会被截断。项目血缘（`project_id` / `content_id`）
+   * 走 query 传，因为**入库时必须带上**，否则动图会断掉与创作项目的关联。
+   */
+  const openMotionWorkbench = () => {
+    // 兜底：用户可能没点候选就直接跳。此时用**第一张**（或已选那张），
+    // 而不是让他跳过去面对一个空白的工作台 —— 那看起来像功能坏了。
+    const picked = motionCandidates[motionPickedIndex] || motionCandidates[0]
+    if (picked) {
+      const p = picked.local_path || picked.url || ''
+      if (p) rememberMotionSheet(p, getGeneratedImageSrc(picked))
+    }
+    const params = new URLSearchParams()
+    if (projectContext.projectId) params.set('project_id', projectContext.projectId)
+    if (projectContext.contentId) params.set('content_id', projectContext.contentId)
+    if (prompt.trim()) params.set('prompt', prompt.trim().slice(0, 120))
+    const qs = params.toString()
+    navigate(`/motion${qs ? `?${qs}` : ''}`)
+  }
+
+  /** 拉取真正会发送的提示词（不调模型、不花钱）。与生成走同一个后端函数。 */
+  const loadMotionPromptPreview = useCallback(async () => {
+    if (!motionGifOn) return
+    try {
+      const res: any = await previewMotionGifPrompt({
+        prompt,
+        motion_kind: motionGifKind,
+        grid_layout: motionGifLayout,
+        prompt_lang: motionGifLang,
+        subject: motionGifSubject,
+        disabled_block_ids: motionGifDisabledBlocks,
+        block_overrides: motionGifBlockOverrides,
+        optimized: motionGifOptimized,
+      })
+      const data: MotionPromptPreviewResponse = res?.data ?? res
+      if (data?.success) setMotionPromptPreview(data)
+    } catch (e: any) {
+      message.error(`提示词预览失败：${e?.message || e}`)
+    }
+  }, [motionGifOn, prompt, motionGifKind, motionGifLayout, motionGifLang, motionGifSubject, motionGifDisabledBlocks, motionGifBlockOverrides, motionGifOptimized])
+
+  useEffect(() => {
+    if (!motionPromptPreviewOpen) return
+    loadMotionPromptPreview()
+  }, [motionPromptPreviewOpen, loadMotionPromptPreview])
+
+
+
+  /**
+   * 收集用于「AI 优化」的参考图（data URL）。
+   *
+   * 图生图与动图模式下把图**按勾选顺序全传**给视觉模型，让它照着图写提示词，
+   * 而不是凭空描述。多张全部传——只传第一张会丢掉"图 2 是剖面图"这类分工信息。
+   * 文生图没有参考图，返回空数组（与接入前一致）。
+   */
+  const collectOptimizeReferences = useCallback(async (): Promise<string[]> => {
+    if (mode !== 'img2img' || referenceImages.length === 0) return []
+    const manualImages = referenceImages.filter((f: any) => !(f as any).assetId)
+    const payloads: string[] = []
+    for (const f of manualImages) {
+      try {
+        if (f.originFileObj) {
+          payloads.push(
+            await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader()
+              reader.onload = () => resolve(reader.result as string)
+              reader.onerror = reject
+              reader.readAsDataURL(f.originFileObj!)
+            }),
+          )
+        } else if (f.url) {
+          const resp = await fetch(f.url)
+          const blob = await resp.blob()
+          payloads.push(
+            await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader()
+              reader.onload = () => resolve(reader.result as string)
+              reader.onerror = reject
+              reader.readAsDataURL(blob)
+            }),
+          )
+        }
+      } catch {
+        // 单张图取不到就跳过，不让整次优化失败
+      }
+    }
+    // 素材库选图（assetId）走 URL，服务端要能取到；这里直接透传原 URL
+    const assetUrls = referenceImages
+      .filter((f: any) => (f as any).assetId && f.url)
+      .map((f: any) => f.url as string)
+    return [...payloads, ...assetUrls].filter(Boolean)
+  }, [mode, referenceImages])
+
+  const runOptimize = async () => {
+    if (optimizing) return
+    setOptimizing(true)
+    try {
+      // 动图模式：把动效类型与格数传下去，否则 AI 会按单张图优化，
+      // 产出「高清立绘」这种描述——而应用后系统不再追加多格图技术规则，等于两头落空。
+      const optimizeShape = motionGifOn ? motionActiveShape : null
+      const motionGif = optimizeShape
+        ? {
+            motion_kind: motionGifKind,
+            rows: optimizeShape.rows,
+            cols: optimizeShape.cols,
+            cells: optimizeShape.rows * optimizeShape.cols,
+          }
+        : undefined
+      const references = await collectOptimizeReferences()
+
+      const res: any = await optimizeImagePrompt({
+        prompt,
+        instruction: optimizeInstruction,
+        provider: optimizeProvider || undefined,
+        model: optimizeModel || undefined,
+        motion_gif: motionGif,
+        reference_images: references.length ? references : undefined,
+      })
+      const data = res?.data ?? res
+      if (data?.success && data?.optimized_prompt) {
+        setOptimizeResult(data.optimized_prompt)
+        setOptimizeReferenceCount(references.length)
+        message.success(
+          references.length
+            ? `已生成优化后的提示词（参考 ${references.length} 张图）`
+            : '已生成优化后的提示词',
+        )
+      } else {
+        message.error(data?.error || '优化失败')
+      }
+    } catch (error: any) {
+      message.error(error?.message || '优化失败')
+    } finally {
+      setOptimizing(false)
+    }
+  }
 
   // 优化用的是 LLM，不是生图后端：单独拉一份可用的文本模型列表。
   useEffect(() => {
@@ -432,7 +752,15 @@ function ImageGenSinglePage() {
     fetch('/api/v1/ai/connectors?provider_type=llm&active_only=true')
       .then(res => res.json())
       .then(result => {
-        const items = result?.connectors || result?.data || result?.items || []
+        const raw: any[] = result?.connectors || result?.data || result?.items || []
+        // 按配置名去重：同名的就是同一条数据，重复项在下拉里无法区分
+        const seen = new Set<string>()
+        const items = raw.filter((item: any) => {
+          const key = item?.name || item?.provider
+          if (!key || seen.has(key)) return false
+          seen.add(key)
+          return true
+        })
         setLlmBackends(items)
         if (items.length && !optimizeProvider) {
           const first = items[0]
@@ -455,34 +783,17 @@ function ImageGenSinglePage() {
     setOptimizeOpen(true)
   }
 
-  const runOptimize = async () => {
-    if (optimizing) return
-    setOptimizing(true)
-    try {
-      const res: any = await optimizeImagePrompt({
-        prompt,
-        instruction: optimizeInstruction,
-        provider: optimizeProvider || undefined,
-        model: optimizeModel || undefined,
-      })
-      const data = res?.data ?? res
-      if (data?.success && data?.optimized_prompt) {
-        setOptimizeResult(data.optimized_prompt)
-        message.success('已生成优化后的提示词')
-      } else {
-        message.error(data?.error || '优化失败')
-      }
-    } catch (error: any) {
-      message.error(error?.message || '优化失败')
-    } finally {
-      setOptimizing(false)
-    }
-  }
-
   const applyOptimized = () => {
     if (!optimizeResult.trim()) return
     setPrompt(optimizeResult.trim())
     setOptimizeOpen(false)
+    // 动图模式下，AI 优化出的提示词已按该动效写法写全，
+    // 再追加系统块会**重复甚至冲突**（两段措辞打架会把模型带偏）。
+    if (motionGifOn) {
+      setMotionGifOptimized(true)
+      message.success('已应用优化结果，生成动图时不再追加系统提示词')
+      return
+    }
     message.success('已应用优化后的提示词')
   }
 
@@ -800,6 +1111,27 @@ function ImageGenSinglePage() {
     }
 
     setGeneratedImages(prev => [...newImages, ...prev])
+
+    // 动图：把这一批多格图收进候选池，**全部保留**——同一提示词出的几张质量差异
+    // 很大，用户常要挑；没选中的之后还能换回来重切，不必重新生成（重新生成要花钱）。
+    if (motionGifOn && newImages.length) {
+      setMotionCandidates(prev => [...prev, ...newImages])
+      // 自动把**选中的那张**设为待切分图：生成后直接能带去做动图
+      const pickedLocal =
+        newImages[motionPickedIndex]?.local_path ||
+        newImages[0]?.local_path ||
+        newImages[0]?.url ||
+        ''
+      if (pickedLocal) {
+        // 写共享草稿（`/motion` 读它），不是页面本地 state
+        rememberMotionSheet(
+          pickedLocal,
+          getGeneratedImageSrc(newImages[motionPickedIndex] || newImages[0]),
+        )
+      }
+      message.info(`已生成 ${newImages.length} 张多格图候选，可挑一张后切帧`)
+    }
+
     message.success(
       <span>
         成功生成 {newImages.length} 张图片，
@@ -808,7 +1140,17 @@ function ImageGenSinglePage() {
       </span>,
       5
     )
-  }, [mode, navigate])
+    // 依赖里必须带 motionGif* 这几个：appendGeneratedImages 被 useCallback 记住，
+    // 漏掉它们会让回调永远读到首次渲染时的旧值（motionGifOn 初始为 false），
+    // 于是「生成完成」后候选池始终为空、切帧面板一直显示「没有可用帧」。
+  }, [
+    mode,
+    navigate,
+    motionGifOn,
+    motionGifLayout,
+    motionCandidates,
+    motionPickedIndex,
+  ])
 
   useTaskPolling({
     enabled: Boolean(pendingTask?.taskId),
@@ -889,6 +1231,29 @@ function ImageGenSinglePage() {
         body.prompt_reference_title = selectedPromptReference.title
         body.prompt_reference_category = selectedPromptReference.category || undefined
         body.prompt_reference_source_url = selectedPromptReference.source_url || undefined
+      }
+      /*
+       * 动图（多格图）模式：必须把系统规则一起发给生成接口。
+       *
+       * ⚠️ 这里曾经**漏了** —— 前端只在 `prompt-preview` 里拼过那些规则，
+       * 真正的生成请求只发了输入框里那两句话。后果是：用户在预览弹窗里
+       * 看到「画成 2×4 共 8 格、相邻两格变化量相同…」，
+       * 模型却完全没收到，**画出来是单张图或排布随机的图**，且不报错。
+       *
+       * 传的是**参数**而不是拼好的字符串：拼装在服务端
+       * （`motion_prompt.compose_final_prompt`），与预览共用同一个函数 ——
+       * 若在这里自己拼一份，两边迟早不一致（预览与生成漂移）。
+       */
+      if (motionGifOn) {
+        body.motion_gif = {
+          motion_kind: motionGifKind,
+          grid_layout: motionGifLayout,
+          prompt_lang: motionGifLang,
+          subject: motionGifSubject,
+          disabled_block_ids: motionGifDisabledBlocks,
+          block_overrides: motionGifBlockOverrides,
+          optimized: motionGifOptimized,
+        }
       }
       if (projectContext.hasContext) {
         body.project_id = projectContext.projectId
@@ -1046,13 +1411,19 @@ function ImageGenSinglePage() {
     }
   }
 
-  // 下载图片
+  // 下载图片（与动图同一个坑：window.open 只会"在新标签页预览"，不是下载）
   const handleDownload = async (img: GeneratedImage) => {
-    if (img.local_path) {
-      window.open(assetFileUrl(img.local_path))
-    } else if (img.url) {
-      window.open(assetFileUrl(img.url))
+    const path = img.local_path || img.url
+    if (!path) {
+      message.warning('这张图没有可下载的文件')
+      return
     }
+    // 外部直链（http/https）不归本地资产下载管，直接开
+    if (/^https?:/i.test(path)) {
+      window.open(path)
+      return
+    }
+    await downloadAssetFile(path, img.url || 'image.png')
   }
 
   // 复制提示词
@@ -1128,6 +1499,122 @@ function ImageGenSinglePage() {
         ) : null
       }
     >
+      {/* 动图：生图页只负责"把多格图画出来"。
+          切帧、手动切格、微调、合成全部搬到 /motion 独立页 —— 那套逻辑
+          不需要动效类型（后端 slice-preview/compose 都不收这个参数），
+          留在这里会让"生成"和"加工"两件事互相拖累。
+          这里只保留：选哪张候选 + 一个跳过去的按钮。 */}
+      {motionGifOn && (
+        <div
+          style={{
+            marginBottom: 16,
+            paddingBottom: 14,
+            borderBottom: `1px solid ${THEME.borderLight}`,
+          }}
+        >
+          {motionCandidates.length > 0 ? (
+            <>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                  marginBottom: 8,
+                }}
+              >
+                <Space size={6} wrap>
+                  <Tag color="green" style={{ margin: 0 }}>多格图已就绪</Tag>
+                  <Text style={{ fontSize: 12, color: THEME.textSecondary }}>
+                    {motionCandidates.length} 张候选，选一张去做动图
+                  </Text>
+                </Space>
+                <Button
+                  type="primary"
+                  icon={<PlayCircleOutlined />}
+                  onClick={() => openMotionWorkbench()}
+                >
+                  去做成动图
+                </Button>
+              </div>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+                  gap: 8,
+                }}
+              >
+                {motionCandidates.map((c, i) => {
+                  const picked = i === motionPickedIndex
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        setMotionPickedIndex(i)
+                        const p = c.local_path || c.url || ''
+                        if (p) {
+                          // ⚠️ 必须写进**共享草稿**（sessionStorage），不能只改页面本地 state。
+                          // 这条曾经漏过：页面还留着拆 hook 之前的 `setMotionSheetPath`，
+                          // 点候选只改了那个**已经没人读的**本地状态，
+                          // 于是跳到 /motion 时"待切分图"是空的 ——
+                          // 用户看到的是"点了但没带过去"，合成没产出、素材库自然也没有新动图。
+                          rememberMotionSheet(p, getGeneratedImageSrc(c))
+                        }
+                      }}
+                      style={{
+                        position: 'relative',
+                        padding: 0,
+                        border: `2px solid ${picked ? THEME.primary : THEME.borderLight}`,
+                        borderRadius: THEME.radiusXS ?? 4,
+                        background: THEME.bgElevated,
+                        cursor: 'pointer',
+                        overflow: 'hidden',
+                        aspectRatio: '1 / 1',
+                      }}
+                    >
+                      <img
+                        src={getGeneratedImageSrc(c)}
+                        alt=""
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      />
+                      <span
+                        style={{
+                          position: 'absolute',
+                          left: 2,
+                          bottom: 2,
+                          background: 'rgba(0,0,0,.7)',
+                          color: '#fff',
+                          fontSize: 10,
+                          padding: '0 4px',
+                          borderRadius: 3,
+                        }}
+                      >
+                        {picked ? '已选' : `候选 ${i + 1}`}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          ) : (
+            <Alert
+              type="info"
+              showIcon
+              style={{ fontSize: 12 }}
+              message={
+                <span style={{ fontSize: 12 }}>
+                  开动图后会生成一张<b>多格图</b>（不是一段视频）。
+                  出来后在这里选一张，再去动图工作台切帧合成 —— 切帧与合成不花钱。
+                </span>
+              }
+            />
+          )}
+        </div>
+      )}
+
       {generatedImages.length === 0 ? (
         <Empty
           description="暂无生成结果"
@@ -1361,6 +1848,40 @@ function ImageGenSinglePage() {
                   color: '#e2e8f0',
                 }}
               />
+            </div>
+
+            {/* 动图开关：叠在现有文生图/图生图之上，关闭时下方整块消失，
+                页面回到接入前的原样。mode 语义完全不动。 */}
+            <div style={{ marginBottom: 16 }}>
+              <Switch
+                checked={motionGifOn}
+                onChange={handleMotionGifToggle}
+                style={{ marginRight: 8 }}
+              />
+              <span style={{ fontWeight: 500, color: '#e2e8f0' }}>
+                生成动图
+              </span>
+              <div style={{ fontSize: 11.5, color: THEME.textSecondary, marginTop: 2 }}>
+                一次画出多格画面 → 切帧合成 GIF / WebP / MP4（约 2–4 分钟）
+              </div>
+
+              {motionGifOn && (
+                <MotionGifOptionsPanel
+                  motionKind={motionGifKind}
+                  onMotionKindChange={setMotionGifKind}
+                  gridLayout={motionGifLayout}
+                  /* 换排布只影响提示词里"画成几×几" —— 切帧顺序归 /motion 页管，
+                     那边会在自己切排布时重置，所以这里不需要联动清理。 */
+                  onGridLayoutChange={setMotionGifLayout}
+                  promptLang={motionGifLang}
+                  onPromptLangChange={setMotionGifLang}
+                  mode={mode}
+                  size={size}
+                  outputSize={MOTION_OUTPUT_SIZE}
+                  optimized={motionGifOptimized}
+                  onOpenPromptPreview={() => setMotionPromptPreviewOpen(true)}
+                />
+              )}
             </div>
 
             {/* 图生图：参考图上传 */}
@@ -1597,7 +2118,12 @@ function ImageGenSinglePage() {
                 </Col>
                 <Col span={12}>
                   <div style={{ marginBottom: 4, fontSize: 12, color: '#8b8ba8' }}>
-                    批量数量：{batchCount}
+                    {motionGifOn
+                      ? `多格图数量（候选）：${batchCount}`
+                      : `批量数量：${batchCount}`}
+                    {motionGifOn && (
+                      <Tag color="purple" style={{ marginLeft: 8, fontSize: 10 }}>候选</Tag>
+                    )}
                   </div>
                   <Slider
                     min={1}
@@ -1750,7 +2276,7 @@ function ImageGenSinglePage() {
           <Space wrap>
             <Select
               placeholder="选择 LLM"
-              style={{ width: 220 }}
+              style={{ width: 280 }}
               value={optimizeProvider || undefined}
               onChange={(value) => {
                 setOptimizeProvider(value)
@@ -1759,10 +2285,19 @@ function ImageGenSinglePage() {
                   backend?.default_model || backend?.model || backend?.available_models?.[0] || '',
                 )
               }}
-              options={llmBackends.map((item: any) => ({
-                value: item.name || item.provider,
-                label: item.provider_label || item.name || item.provider,
-              }))}
+              // 显示**配置名**而不是厂商名：模型管理页里「模型 = 用户实际选择的配置项」，
+              // 同厂商可以有多份配置（如「本地反代」与「OpenAi」都属 OpenAI 厂商），
+              // 只显示 provider_label 会让下拉里出现好几个一模一样的「OpenAI」，
+              // 用户根本分不清自己选的是哪个。
+              options={llmBackends.map((item: any) => {
+                const name = item.name || item.provider
+                const vendor = item.provider_label
+                return {
+                  value: name,
+                  label: vendor && vendor !== name ? `${name}（${vendor}）` : name,
+                }
+              })}
+              optionFilterProp="label"
             />
             <Select
               placeholder="选择模型"
@@ -1796,9 +2331,163 @@ function ImageGenSinglePage() {
                 value={optimizeResult}
                 onChange={e => setOptimizeResult(e.target.value)}
               />
+              <div style={{ marginTop: 6, fontSize: 11, color: THEME.textSecondary }}>
+                本次优化
+                {optimizeReferenceCount > 0 && (
+                  <span style={{ color: '#86efac' }}>参考了 {optimizeReferenceCount} 张图</span>
+                )}
+                {motionGifOn && (
+                  <span style={{ color: '#c4b5fd' }}>
+                    {' '}· 按动图（{motionActiveShape.rows}×{motionActiveShape.cols}）写法
+                  </span>
+                )}
+                {optimizeReferenceCount > 0 && motionGifOn && '，不是单张图'}
+              </div>
             </div>
           ) : null}
         </Space>
+      </Modal>
+
+      {/* 动图：预览真正会发送的完整提示词。
+          与生成走**同一个后端拼装函数**（`motion_prompt.compose_final_prompt`），
+          所以这里显示的就是实际发送内容——否则用户照着预览调半天，
+          生成出来却不一样，是最难查的一类问题。 */}
+      <Modal
+        open={motionPromptPreviewOpen}
+        title="最终会发给模型的完整动图提示词"
+        width={780}
+        onCancel={() => setMotionPromptPreviewOpen(false)}
+        footer={[
+          <Button key="close" onClick={() => setMotionPromptPreviewOpen(false)}>
+            关闭
+          </Button>,
+        ]}
+      >
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={
+            <span style={{ fontSize: 12 }}>
+              实际发送的是 <b>{motionGifLang === 'zh' ? '中文版' : '英文版'}</b>
+              {motionGifOptimized
+                ? ' · 已应用 AI 优化，**不再追加**系统块。'
+                : ` · 已追加 ${motionPromptPreview?.system_added?.length || 0} 段系统提示词。`}
+            </span>
+          }
+        />
+
+        {motionPromptPreview?.blocks?.length ? (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11.5, color: THEME.textSecondary, marginBottom: 8 }}>
+              下面每段都会**原样追加**到你的提示词后面发给模型。
+              <b>可以直接改</b>（改了就按你改的发）；
+              不想要的点 × 关掉，再点标题可恢复。
+            </div>
+            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+              {motionPromptPreview.blocks.map(b => {
+                const off = motionGifDisabledBlocks.includes(b.id)
+                const edited = Boolean(b.edited)
+                const defaultText = motionPromptPreview.default_texts?.[b.id] ?? ''
+                return (
+                  <div
+                    key={b.id}
+                    style={{
+                      border: `1px solid ${off ? THEME.borderLight : THEME.borderLight}`,
+                      borderRadius: 6,
+                      background: off ? 'transparent' : THEME.bgElevated,
+                      opacity: off ? 0.55 : 1,
+                      padding: '6px 8px',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        marginBottom: off ? 0 : 6,
+                      }}
+                    >
+                      <a
+                        onClick={() =>
+                          off
+                            ? setMotionGifDisabledBlocks(prev => prev.filter(id => id !== b.id))
+                            : setMotionGifDisabledBlocks(prev => [...prev, b.id])
+                        }
+                        title={b.why}
+                        style={{ fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        {off ? '＋ ' : '－ '}
+                        {b.title}
+                      </a>
+                      <Tag color={off ? 'default' : 'purple'} style={{ margin: 0, fontSize: 10 }}>
+                        {off ? '已关' : edited ? '已改' : '默认'}
+                      </Tag>
+                      {edited && !off && (
+                        <a
+                          onClick={() =>
+                            setMotionGifBlockOverrides(prev => {
+                              const next = { ...prev }
+                              delete next[b.id]
+                              return next
+                            })
+                          }
+                          style={{ fontSize: 11 }}
+                        >
+                          恢复默认
+                        </a>
+                      )}
+                    </div>
+                    {!off && (
+                      <Input.TextArea
+                        value={b.text}
+                        autoSize={{ minRows: 2, maxRows: 10 }}
+                        onChange={e =>
+                          setMotionGifBlockOverrides(prev => ({ ...prev, [b.id]: e.target.value }))
+                        }
+                        style={{ fontSize: 11.5, fontFamily: 'ui-monospace, Menlo, Consolas, monospace' }}
+                      />
+                    )}
+                    {!off && edited && defaultText && (
+                      <div style={{ fontSize: 10.5, color: THEME.textSecondary, marginTop: 4 }}>
+                        默认文案：{defaultText.slice(0, 60)}
+                        {defaultText.length > 60 ? '…' : ''}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </Space>
+          </div>
+        ) : null}
+
+        <div
+          style={{
+            fontFamily: 'ui-monospace, Menlo, Consolas, monospace',
+            fontSize: 11.5,
+            lineHeight: 1.6,
+            background: THEME.bgElevated,
+            border: `1px solid ${THEME.borderLight}`,
+            borderRadius: 8,
+            padding: 12,
+            whiteSpace: 'pre-wrap',
+            maxHeight: '40vh',
+            overflow: 'auto',
+          }}
+        >
+          {motionPromptPreview?.prompt || '（加载中…）'}
+        </div>
+
+        <div style={{ marginTop: 10, fontSize: 11.5, color: THEME.textSecondary }}>
+          共 <b style={{ color: THEME.textPrimary }}>{motionPromptPreview?.total_chars || 0}</b> 字符
+          {motionPromptPreview?.exceeds_limit ? (
+            <span style={{ color: '#fca5a5' }}>
+              {' '}· 超出上限，接口可能拒收 —— 建议关掉几段
+            </span>
+          ) : (
+            <span> · 在上限内</span>
+          )}
+        </div>
       </Modal>
     </div>
   )

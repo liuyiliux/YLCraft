@@ -55,6 +55,7 @@ import { LineageGraph } from '../../components/asset-hub/LineageGraph'
 import { AssetVersionManager } from '../../components/asset-hub/AssetVersionManager'
 import {
   listAssets,
+  getAssetsMeta,
   deleteAsset,
   restoreAsset,
   getAsset,
@@ -82,67 +83,57 @@ const STATUS_LABELS: Record<string, string> = {
   READY: '完成', ERROR: '错误', FAILED: '失败',
 }
 
-const SOURCE_TYPE_LABELS: Record<string, string> = {
-  upload: '本地上传', parse: '视频解析',
+/**
+ * 来源枚举**从后端拉**（`GET /assets/meta`），不在前端硬编码。
+ *
+ * 踩过的坑：前端自己写了一份来源下拉与中文名，后端入库/出卡又各写一份，
+ * 三份靠人同步。动图入库自创 `motion_gif` 时前端选项里没有 → 卡片显示"未知"、
+ * 一点「AI生成」筛选就被排除，用户看到的是"存进素材库成功了，但找不到"。
+ * 唯一真相源：`backend/app/services/asset_hub/source_taxonomy.py`。
+ *
+ * 这里保留一份**兜底**：接口没回来时（首屏、离线）至少让下拉不是空的。
+ * 兜底值刻意只放最常用的几项，不与后端争真相。
+ */
+const SOURCE_TYPE_FALLBACK_OPTIONS = [
+  { value: 'ai_generated', label: 'AI生成' },
+  { value: 'upload', label: '本地上传' },
+  { value: 'import', label: '导入' },
+]
+const SOURCE_TYPE_FALLBACK_LABELS: Record<string, string> = {
   ai_generated: 'AI生成',
-  image_generation: 'AI生成',
-  character_portrait: '角色立绘',
+  upload: '本地上传',
   import: '导入',
-  imported_file: '导入文件',
-  download: '下载',
-  torrent: '磁力/种子',
-  novel_download: '小说下载',
-  legacy_assets: '旧素材迁移',
-  asset_hub: '资产中枢',
-  wechat_mp: '公众号文章',
-  novel_bookshelf: '小说书架',
   '': '未知',
 }
 
-const ASSET_TYPE_LABELS: Record<string, string> = {
+/**
+ * 资产类型枚举的**兜底值** —— 同 `SOURCE_TYPE_FALLBACK_*` 的道理。
+ *
+ * 事实来源是后端 `source_taxonomy.ASSET_TYPE_OPTIONS`（经 `/assets/meta`）。
+ * 原来这份是唯一来源，且含两个**后端不认**的选项（`article`/`document`）——
+ * 选了永远返回空列表，用户只会以为"这类素材没有"，而不知道是选项本身无效。
+ * 还漏了 `world_setting` / `animation` / `subtitle`。
+ *
+ * 兜底表只留**真的会用到**的几项：接口没回来时下拉不至于缺关键类型
+ * （图集 `collection` 必须在内，否则图集没法筛）。
+ */
+const ASSET_TYPE_FALLBACK_LABELS: Record<string, string> = {
   video: '视频',
   image: '图片',
   audio: '音频',
-  article: '文章',
-  document: '文档',
   text: '文本',
   novel: '小说',
-  model: '模型',
   character: '角色',
-  world_setting: '世界观',
-  workflow: '工作流',
-  '3d_model': '3D模型',
-  animation: '动画',
-  subtitle: '字幕',
   collection: '集合',
-  jianying_draft: '剪映草稿',
 }
-
-const ASSET_TYPE_OPTIONS = [
+const ASSET_TYPE_FALLBACK_OPTIONS = [
   { value: 'video', label: '视频' },
   { value: 'image', label: '图片' },
   { value: 'audio', label: '音频' },
-  { value: 'article', label: '文章' },
-  { value: 'document', label: '文档' },
   { value: 'text', label: '文本' },
   { value: 'novel', label: '小说' },
-  { value: 'model', label: '模型' },
   { value: 'character', label: '角色' },
-  { value: 'workflow', label: '工作流' },
-  { value: '3d_model', label: '3D模型' },
   { value: 'collection', label: '集合' },
-]
-
-const SOURCE_TYPE_OPTIONS = [
-  { value: 'ai_generated', label: 'AI生成' },
-  { value: 'parse', label: '视频解析' },
-  { value: 'download', label: '下载' },
-  { value: 'torrent', label: '磁力/种子' },
-  { value: 'novel_download', label: '小说下载' },
-  { value: 'wechat_mp', label: '公众号文章' },
-  { value: 'upload', label: '本地上传' },
-  { value: 'import', label: '导入' },
-  { value: 'legacy_assets', label: '旧素材迁移' },
 ]
 
 const SEARCH_HISTORY_KEY = 'ylcraft_asset_search_history'
@@ -224,6 +215,41 @@ export default function AssetsPage() {
   const [selectedTags, setSelectedTags] = useState<SelectedTag[]>([])
   const selectedTagIds = useMemo(() => selectedTags.map(tag => tag.id), [selectedTags])
   const selectedTagNames = useMemo(() => selectedTags.map(tag => tag.name || tag.path || tag.id), [selectedTags])
+
+  /**
+   * 来源枚举（后端唯一真相源的镜像）。首屏先用兜底值，拉到后覆盖。
+   *
+   * **为什么不硬编码**：这三处（入库写的 source、出卡算的 source_type、
+   * 界面显示的中文名）必须一致，各写各的必然漂移 —— 动图就是这么
+   * "存进去了但筛不出来"的。
+   */
+  const [sourceOptions, setSourceOptions] = useState(SOURCE_TYPE_FALLBACK_OPTIONS)
+  const [sourceLabels, setSourceLabels] = useState(SOURCE_TYPE_FALLBACK_LABELS)
+  const [assetTypeOptions, setAssetTypeOptions] = useState(ASSET_TYPE_FALLBACK_OPTIONS)
+  const [assetTypeLabels, setAssetTypeLabels] = useState(ASSET_TYPE_FALLBACK_LABELS)
+
+  useEffect(() => {
+    let cancelled = false
+    getAssetsMeta()
+      .then(res => {
+        if (cancelled) return
+        const data = (res as any)?.data ?? res
+        if (Array.isArray(data?.source_type_options) && data.source_type_options.length) {
+          setSourceOptions(data.source_type_options)
+        }
+        if (data?.source_type_labels) setSourceLabels(data.source_type_labels)
+        if (Array.isArray(data?.asset_type_options) && data.asset_type_options.length) {
+          setAssetTypeOptions(data.asset_type_options)
+        }
+        if (data?.asset_type_labels) setAssetTypeLabels(data.asset_type_labels)
+      })
+      .catch(() => {
+        // 拉不到就用兜底值：下拉少几项总比整页报错好
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // Search history
   const [searchHistory, setSearchHistory] = useState<string[]>(() => {
@@ -816,7 +842,7 @@ export default function AssetsPage() {
             </div>
 
             <Descriptions column={1} size="small" style={{ marginBottom: 16 }} labelStyle={{ color: theme.textSecondary }} contentStyle={{ color: theme.textPrimary }}>
-              <Descriptions.Item label="类型">{ASSET_TYPE_LABELS[String(detailAsset.type || detailAsset.asset_type || '').toLowerCase()] || detailAsset.type || detailAsset.asset_type || '-'}</Descriptions.Item>
+              <Descriptions.Item label="类型">{assetTypeLabels[String(detailAsset.type || detailAsset.asset_type || '').toLowerCase()] || detailAsset.type || detailAsset.asset_type || '-'}</Descriptions.Item>
               <Descriptions.Item label="平台">{detailAsset.platform || '-'}</Descriptions.Item>
               <Descriptions.Item label={isPaidCourse ? '作者/讲师' : '作者'}>{detailAsset.author || meta.author || '-'}</Descriptions.Item>
               <Descriptions.Item label="状态">
@@ -829,7 +855,7 @@ export default function AssetsPage() {
                   <Descriptions.Item label="时长">{detailAsset.duration ? `${Math.floor(detailAsset.duration / 60)}:${String(Math.floor(detailAsset.duration % 60)).padStart(2, '0')}` : '-'}</Descriptions.Item>
                 </>
               )}
-              <Descriptions.Item label="来源">{SOURCE_TYPE_LABELS[String(detailAsset.source_type || '').toLowerCase()] || detailAsset.source_type || '-'}</Descriptions.Item>
+              <Descriptions.Item label="来源">{sourceLabels[String(detailAsset.source_type || '').toLowerCase()] || detailAsset.source_type || '-'}</Descriptions.Item>
               {projectContext.project_id && (
                 <>
                   <Descriptions.Item label="创作项目">{projectContext.project_title || projectContext.project_id}</Descriptions.Item>
@@ -1148,7 +1174,7 @@ export default function AssetsPage() {
                 style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bgInput)', color: 'var(--textPrimary)' }}
               >
                 <option value="">全部类型</option>
-                {ASSET_TYPE_OPTIONS.map(option => (
+                {assetTypeOptions.map(option => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </select>
@@ -1170,7 +1196,7 @@ export default function AssetsPage() {
                 style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bgInput)', color: 'var(--textPrimary)' }}
               >
                 <option value="">全部来源</option>
-                {SOURCE_TYPE_OPTIONS.map(option => (
+                {sourceOptions.map(option => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </select>

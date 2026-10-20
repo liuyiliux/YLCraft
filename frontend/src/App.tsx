@@ -14,6 +14,7 @@ import SettingsPage from './pages/settings'
 import AssetsPage from './pages/assets'
 import CharacterDetailPage, { CharacterWorkspaceEntry } from './pages/character-detail'
 import ImageGenPage from './pages/image-gen'
+import MotionPage from './pages/motion'
 import VideoGenPage from './pages/video-gen'
 import Model3DPage from './pages/model-3d'
 import Model3DViewerPage from './pages/model3d-viewer'
@@ -89,6 +90,7 @@ export default function App() {
               <Route path="story" element={<StoryPage />} />
               <Route path="canvas" element={<CanvasPage />} />
               <Route path="image-gen" element={<ImageGenPage />} />
+              <Route path="motion" element={<MotionPage />} />
               <Route path="multi-platform-gen" element={<MultiPlatformGenPage />} />
               <Route path="video-gen" element={<VideoGenPage />} />
               <Route path="model-3d" element={<Model3DPage />} />

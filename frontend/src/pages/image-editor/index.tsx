@@ -68,6 +68,11 @@ import {
   type ImageDataUrlInfo,
 } from '../../utils/base64Image'
 import { consumeCanvasImageEditorLaunch, enqueueCanvasImageEditorResult, type CanvasImageEditorLaunch } from '../../components/canvas/bridge'
+import {
+  consumeImageEditorLaunch,
+  enqueueImageEditorResult,
+  type ImageEditorLaunch,
+} from '../../components/canvas/bridge'
 
 const { TextArea } = Input
 
@@ -159,6 +164,8 @@ export default function ImageEditorPage() {
   const { theme: THEME } = useTheme()
   const navigate = useNavigate()
   const [canvasReturnTarget, setCanvasReturnTarget] = useState<CanvasImageEditorLaunch | null>(null)
+  /** 通用启动参数（动图切帧等）。与画布那套**并存但互斥**：先到先得。 */
+  const [genericLaunch, setGenericLaunch] = useState<ImageEditorLaunch | null>(null)
 
   // ---- 图片状态 ----
   const [originalSrc, setOriginalSrc] = useState<string>('')
@@ -274,6 +281,20 @@ export default function ImageEditorPage() {
     setHistory([])
     historyIdx.current = -1
     message.success('Canvas image loaded into the editor.')
+  }, [])
+
+  // 通用启动（动图切帧等）。两条 useEffect 按**声明顺序**执行，画布那条先，
+  // 且两者用的是不同的 key，所以互不干扰（各自 consume 自己的 key）。
+  useEffect(() => {
+    const launch = consumeImageEditorLaunch()
+    if (!launch) return
+    setGenericLaunch(launch)
+    setOriginalSrc(launch.imageUrl)
+    setOriginalFormat('png')
+    setProcessedGifUrl('')
+    setHistory([])
+    historyIdx.current = -1
+    message.success(launch.sourceTitle ? `已载入：${launch.sourceTitle}` : '图片已载入编辑器')
   }, [])
 
   const handleUpload = async (file: File) => {
@@ -1010,6 +1031,31 @@ export default function ImageEditorPage() {
     navigate('/canvas')
   }
 
+  /**
+   * 把编辑结果交回发起页（通用路径）。
+   *
+   * 与 `returnToCanvas` 的区别：那个写死跳 `/canvas` 且要求 `documentId` /
+   * `sourceNodeId`；这个按 `genericLaunch.returnTo` 跳，并把 `payload` 原样带回，
+   * 发起页靠它认领"这条结果是我的哪一格"。
+   */
+  const returnToCaller = () => {
+    const canvas = mainCanvasRef.current
+    if (!canvas || !genericLaunch) {
+      message.warning('没有可返回的编辑结果')
+      return
+    }
+    const dataUrl = canvasToImageDataUrl(canvas, mimeFromFormat(originalFormat), 1)
+    enqueueImageEditorResult({
+      imageDataUrl: dataUrl,
+      width: canvas.width,
+      height: canvas.height,
+      payload: genericLaunch.payload,
+      createdAt: new Date().toISOString(),
+    })
+    message.success('已送回，可以回上一页接收了')
+    navigate(genericLaunch.returnTo || '/image-gen')
+  }
+
   // 下载原始 GIF
   const handleDownloadOriginal = () => {
     if (originalFormat !== 'gif') {
@@ -1611,7 +1657,12 @@ export default function ImageEditorPage() {
                     返回画布
                   </Button>
                 ) : null}
-                                <Button size="small" type="primary" icon={<DownloadOutlined />} onClick={handleDownload}>
+                {genericLaunch ? (
+                  <Button size="small" type="primary" icon={<PictureOutlined />} onClick={returnToCaller}>
+                    送回{genericLaunch.sourceTitle ? `（${genericLaunch.sourceTitle}）` : ''}
+                  </Button>
+                ) : null}
+                <Button size="small" type="primary" icon={<DownloadOutlined />} onClick={handleDownload}>
                   {originalFormat === 'gif' ? '下载带水印' : '下载图片'}
                 </Button>
               </Space>

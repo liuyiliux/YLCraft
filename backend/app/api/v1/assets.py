@@ -42,6 +42,7 @@ from app.core.resource_auth import principal_owner_user_id, require_owned_or_leg
 from app.core.user_auth import AuthenticatedPrincipal, get_authenticated_principal, get_authenticated_principal_optional
 from app.db.models.external_api_key import ExternalApiKey
 from app.services.asset_hub import AssetHubFacade
+from app.services.asset_hub import source_taxonomy
 from app.services.asset_hub.node_service import AssetNodeService
 from app.services.asset_hub.representation_service import AssetRepresentationService
 from app.services.asset_hub.version_service import AssetVersionService
@@ -253,7 +254,8 @@ def _card_matches_virtual_tag(card: dict, tag: str) -> bool:
         return any(_card_matches_virtual_tag(card, child) for child in STYLE_TAGS - {"风格"})
 
     if tag == "AI生成":
-        return source_type in {"ai_generated", "image_generation", "character_portrait"} or source in {"image_generation", "character_portrait"} or "ai生成" in blob
+        # 走共享口径，别再各写一份"哪些值算 AI"（动图就是这么漏掉的）
+        return source_taxonomy.is_ai_generated(source, source_type) or "ai生成" in blob
     if tag == "上传":
         return source_type in {"upload", "import", "imported_file"}
     if tag == "采集":
@@ -376,7 +378,10 @@ async def _asset_hub_card(
     source = node_meta.get("source") or lineage.get("source") or params.get("source") or "asset_hub"
     source_type = node_meta.get("source_type")
     if not source_type:
-        source_type = "ai_generated" if source in {"image_generation", "character_portrait"} else source
+        # 入库值 → 展示分组的映射收在 `source_taxonomy`（单一真相源）。
+        # 此前这里是写死的一个集合 `{"image_generation", "character_portrait"}` ——
+        # 动图自创 `motion_gif` 时就漏在外面，资产从筛选里消失了。
+        source_type = source_taxonomy.source_type_of(source)
     provider = (
         params.get("provider")
         or node_meta.get("provider")
@@ -767,6 +772,29 @@ async def _restore_asset_hub_node(session, asset_id: str) -> bool:
 # 资产列表 GET /api/v1/assets
 # ---------------------------------------------------------------------------
 
+@router.get("/meta", summary="素材库枚举（来源筛选选项与中文名）")
+async def get_assets_meta():
+    """前端**不该硬编码**这些枚举。
+
+    此前前端自己写了一份来源下拉与中文名映射，后端入库/出卡又各写一份，
+    三份靠人同步 —— 动图入库自创 `motion_gif` 时前端选项里没有，
+    资产就显示成"未知"并被所有来源筛选排除（用户："存成功了但看不到"）。
+
+    现在只有 `services/asset_hub/source_taxonomy.py` 一处定义，前端从这里拉。
+    不需要登录：它只是静态枚举，没有用户数据。
+    """
+    return {
+        "success": True,
+        "source_type_options": source_taxonomy.filter_options(),
+        "source_type_labels": source_taxonomy.label_map(),
+        "unknown_source_label": source_taxonomy.UNKNOWN_SOURCE_LABEL,
+        # 资产类型同理：前端原来自己写了一份，含 `article`/`document` 两个
+        # 后端根本不认的选项（选了永远是空列表），还漏了 `world_setting` 等。
+        "asset_type_options": source_taxonomy.asset_type_options(),
+        "asset_type_labels": source_taxonomy.asset_type_labels(),
+    }
+
+
 @router.get("", response_model=AssetListResponse, summary="素材资产列表")
 async def list_assets(
     session = Depends(get_asset_session),
@@ -947,7 +975,24 @@ async def download_local_asset_file(
     if inline and media_type.startswith("video/"):
         return _range_file_response(request, str(file_path), media_type)
 
-    headers = {"Cache-Control": "public, max-age=86400"} if inline else None
+    # 同一路径的**内容会被覆写**（例如动图重新合成后 `animation.gif` 原地替换，
+    # 帧数、尺寸都变了，但 URL 一个字没变）。原实现无条件
+    # `max-age=86400`，浏览器/`<img>` 会把旧的那份一直缓存住 ——
+    # 用户看到"删了格、重新合成，下载到的还是旧文件"。
+    #
+    # 改为 `no-cache` + 基于 **mtime/size 的 ETag**：仍然走协商缓存（有 ETag 时
+    # 304 响应很便宜），但文件一变就必然回源。内容寻址的文件不受影响。
+    headers = {"Cache-Control": "no-cache"} if inline else None
+    etag: str | None = None
+    try:
+        st = file_path.stat()
+        etag = f'W/"{int(st.st_mtime)}-{st.st_size}"'
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=304, headers={**(headers or {}), "ETag": etag})
+    except OSError:
+        etag = None
+    if etag:
+        headers = {**(headers or {}), "ETag": etag}
     if inline:
         return FileResponse(path=str(file_path), media_type=media_type, headers=headers)
     return FileResponse(path=str(file_path), media_type=media_type, filename=file_path.name)

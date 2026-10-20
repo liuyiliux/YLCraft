@@ -6,6 +6,7 @@ Asset Hub records while legacy `/api/v1/assets` compatibility is still present.
 
 from __future__ import annotations
 
+import logging
 import mimetypes
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,12 +17,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.asset_hub import AssetType
 from app.services.asset_file_resolver import (
+    resolve_asset_file,
     to_asset_download_url,
     to_storage_path,
 )
 from app.services.asset_hub.node_service import AssetNodeService
+from app.services.asset_hub import source_taxonomy
 from app.services.asset_hub.representation_service import AssetRepresentationService
 from app.services.asset_hub.version_service import AssetVersionService
+
+logger = logging.getLogger("ylcraft.asset_hub")
 
 
 @dataclass
@@ -190,6 +195,151 @@ class AssetHubFacade:
             node_id=str(node.id),
             version_id=str(version.id),
             representation_id=str(rep.id),
+            version_number=version.version_number,
+        )
+
+    async def create_motion_gif(
+        self,
+        *,
+        name: str,
+        primary_file_path: str,
+        representations: list[dict[str, Any]],
+        prompt: str = "",
+        provider: str = "",
+        model: str = "",
+        slice_config: dict[str, Any] | None = None,
+        lineage: dict[str, Any] | None = None,
+        source_node_id: str = "",
+        tags: list[str] | None = None,
+        owner_user_id: str | None = None,
+    ) -> AssetHubCreateResult:
+        """Create (or append a version to) a motion-GIF asset node.
+
+        **一个动图 = 一个 AssetNode**：列表里只占一行，详情里展开多版本与多格式。
+
+        多格图（frame sheet）作为**同一个版本下的一个 representation**（``format="framesheet"``）
+        而不是独立节点 —— 它既是「改切帧重出」的依据，也应能被其它功能按 format 取用
+        （用户要的「多方位数据」）。
+
+        ``slice_config`` 存切帧配置（帧顺序、删了哪些格、循环方式、尺寸等）。
+        **必须存**：没有它就无法复现「上次那个切法」，「改切帧出新版本」也就无从谈起。
+
+        Args:
+            name: 资产名（列表显示）。
+            primary_file_path: 主表示（成品 GIF）的本地路径。
+            representations: 全部表示，含 ``{format, mime_type, file_path, file_size}``。
+            source_node_id: 已存在的节点 id —— 传了就追加新版本，不建新节点。
+
+        Returns:
+            AssetHubCreateResult（含 version_number，前端可显示"v1/v2"）。
+        """
+        primary = Path(primary_file_path)
+        if not primary.exists():
+            # 主表示不存在就没有可入库的东西——直接报错，别建出一个空节点。
+            # 调用方传的多半是相对项目根的路径，先经解析器还原再判存在性。
+            resolved = resolve_asset_file(primary_file_path)
+            if resolved is None or not resolved.exists():
+                raise FileNotFoundError(f"动图主表示文件不存在：{primary_file_path}")
+            primary = resolved
+        width, height = _image_dimensions(primary)
+        file_size = primary.stat().st_size
+        mime_type = mimetypes.guess_type(primary.name)[0] or "image/gif"
+        config = {k: v for k, v in (slice_config or {}).items() if v is not None}
+
+        node_id = str(source_node_id or "")
+        if not node_id:
+            # ⚠️ 入库前自检：值必须在 `source_taxonomy` 里登记过。
+            # 这不是形式主义 —— 一个未登记的 source 不会报任何错，只会让资产
+            # **从素材库筛选里消失**（显示"未知"、被「AI生成」排除）。
+            # 动图就是这么踩的："存入素材库显示成功，再查素材库怎么看不到"。
+            source_taxonomy.assert_known_source("image_generation", where="create_motion_gif")
+            # 过滤空串：provider/model 可能为空，写进标签表会产生一个**无名标签**，
+            # 在素材库筛选里既没意义又占位。
+            node_tags = [
+                str(t) for t in ("ai-generated", "motion-gif", provider, model, *(tags or [])) if t
+            ]
+            node = await self.node_service.create(
+                name=(name or primary.stem or "动图")[:120],
+                asset_type=AssetType.IMAGE,
+                thumbnail_url=to_asset_download_url(primary),
+                metadata={
+                    # ⚠️ **必须是 `image_generation`，不能自创 `motion_gif`**。
+                    # 素材库的「来源」筛选按这个值分组（前端 SOURCE_TYPE_OPTIONS），
+                    # 自创的值不在选项里 —— 卡片会显示成"未知来源"，
+                    # 而且一点「AI生成」筛选就被排除掉。
+                    # 用户实测："点存入素材库显示成功，再查素材库怎么看不到" ——
+                    # 资产**确实存进去了**，只是在正常筛选下看不见。
+                    # 区分"这是动图"交给 tags（已有 `motion-gif`）和
+                    # `slice_config`，不该另立一个 source 值。
+                    "source": "image_generation",
+                    # 卡片缩略图/预览靠它解析（其它 AI 图片也有这个字段）
+                    "source_url": to_asset_download_url(primary),
+                    "provider": provider,
+                    "model": model,
+                    "prompt": prompt,
+                    "slice_config": config,
+                },
+                tags=node_tags,
+                owner_user_id=owner_user_id,
+            )
+            node_id = str(node.id)
+
+        version = await self.version_service.create(
+            asset_node_id=node_id,
+            prompt_used=prompt,
+            model_used=model,
+            params={
+                "provider": provider,
+                "model": model,
+                "slice_config": config,
+            },
+            lineage={
+                # lineage 里保留 `motion_gif`：它是**溯源信息**（这条版本是怎么来的），
+                # 素材库的"来源"筛选读的是 node metadata 的 `source`（已改为
+                # `image_generation`）。两者职责不同，不要一起改。
+                "source": "motion_gif",
+                "source_version_id": source_node_id,
+                **(lineage or {}),
+            },
+        )
+
+        first_rep = None
+        for item in representations:
+            # representation 里存的是**相对项目根**的路径（多机共享数据库、文件各自本地），
+            # 而本进程 CWD 通常是 backend/。直接 Path(x).exists() 会全部判为不存在，
+            # 结果是"合成成功但一个表示都没入库"。必须经解析器还原。
+            rep_path = resolve_asset_file(str(item.get("file_path") or ""))
+            if rep_path is None or not rep_path.exists():
+                # 产物缺失不能静默跳过——列表里少了格式却看不出来，比直接失败更难查
+                logger.warning(
+                    "[AssetHub] motion gif representation missing on disk: %s (format=%s)",
+                    item.get("file_path"),
+                    item.get("format"),
+                )
+                continue
+            is_primary = str(item.get("format")) == "gif"
+            rep = await self.rep_service.create(
+                asset_version_id=str(version.id),
+                file_path=to_storage_path(rep_path),
+                mime_type=str(item.get("mime_type") or ""),
+                file_size=int(item.get("file_size") or rep_path.stat().st_size),
+                width=width if is_primary else None,
+                height=height if is_primary else None,
+                format=str(item.get("format") or ""),
+                extra={"role": "primary" if is_primary else "companion"},
+            )
+            if first_rep is None or is_primary:
+                first_rep = rep
+
+        if first_rep is None:
+            raise ValueError("动图没有任何可入库的产物表示")
+
+        # 节点封面指向最新版本的主表示，否则列表里显示的还是旧图
+        await self.node_service.update(node_id, thumbnail_url=to_asset_download_url(primary))
+        return AssetHubCreateResult(
+            node_id=node_id,
+            version_id=str(version.id),
+            representation_id=str(first_rep.id),
             version_number=version.version_number,
         )
 

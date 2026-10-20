@@ -248,6 +248,14 @@ def _register_routes():
     except Exception as e:
         logger.warning(f"Could not load images router: {e}")
 
+    # 动图（多格图 → GIF/WebP/MP4）。与 images 同前缀：它是生图的后处理，
+    # 而独立前缀会让前端多一处 baseURL，也不好在生图页里并排呈现。
+    try:
+        from app.api.v1 import motion_gif
+        app.include_router(motion_gif.router, prefix="/api/v1/images", tags=["Images"])
+    except Exception as e:
+        logger.warning(f"Could not load motion_gif router: {e}")
+
     # 视频生成路由
     try:
         from app.api.v1 import videos

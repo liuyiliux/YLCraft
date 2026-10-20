@@ -37,6 +37,7 @@ from app.services.asset_file_resolver import to_asset_download_url, to_storage_p
 from app.services.platform_log import service as platform_log
 from app.services.creative_project.service import dumps_json, loads_json
 from app.db.models.character import CharacterSourceType, CharacterRole, CharacterRelationship, Character, CharacterWorkflowSource
+from app.services.image import slicing
 
 router = APIRouter()
 
@@ -1381,119 +1382,113 @@ async def slice_character_portrait_grid(
         try:
             with Image.open(source_path) as source_image:
                 image = source_image.convert("RGBA")
-                width, height = image.size
-                if width < req.cols or height < req.rows:
+                if image.width < req.cols or image.height < req.rows:
                     raise HTTPException(status_code=400, detail="图片尺寸小于网格数量，无法切图")
 
-                for row in range(req.rows):
-                    for col in range(req.cols):
-                        index = row * req.cols + col
-                        label = _grid_slice_label(grid_type, index)
-                        left = round(col * width / req.cols)
-                        upper = round(row * height / req.rows)
-                        right = round((col + 1) * width / req.cols)
-                        lower = round((row + 1) * height / req.rows)
-                        crop = image.crop((left, upper, right, lower))
-                        filename = (
-                            f"{index + 1:02d}_{row + 1}x{col + 1}_"
-                            f"{_safe_filename_part(character.name, 'character')}_"
-                            f"{_safe_filename_part(label, 'slice')}.png"
-                        )
-                        crop_path = output_dir / filename
-                        crop.save(crop_path, format="PNG")
-                        file_size = crop_path.stat().st_size
+                crops = slicing.slice_grid(image, req.rows, req.cols)
+                for index, crop in enumerate(crops):
+                    row, col = divmod(index, req.cols)
+                    label = _grid_slice_label(grid_type, index)
+                    filename = (
+                        f"{index + 1:02d}_{row + 1}x{col + 1}_"
+                        f"{_safe_filename_part(character.name, 'character')}_"
+                        f"{_safe_filename_part(label, 'slice')}.png"
+                    )
+                    crop_path = output_dir / filename
+                    crop.save(crop_path, format="PNG")
+                    file_size = crop_path.stat().st_size
 
-                        metadata = {
+                    metadata = {
+                        "source": "character_portrait_grid_slice",
+                        "character_id": str(character.id),
+                        "character_name": character.name,
+                        "source_portrait_node_id": portrait_node_id,
+                        "source_version_id": str(version.id),
+                        "source_representation_id": str(source_rep.id),
+                        "source_preset": preset,
+                        "grid_type": grid_type,
+                        "grid_rows": req.rows,
+                        "grid_cols": req.cols,
+                        "grid_index": index + 1,
+                        "row": row + 1,
+                        "col": col + 1,
+                        "label": label,
+                    }
+                    child_node = await node_service.create(
+                        name=f"{character.name}-{label}",
+                        asset_type=AssetType.IMAGE,
+                        parent_id=portrait_node_id,
+                        thumbnail_url=to_asset_download_url(crop_path),
+                        metadata=metadata,
+                        tags=[
+                            "角色立绘",
+                            "九宫格切片",
+                            "表情" if grid_type == "expression" else "动作",
+                            character.name,
+                        ],
+                    )
+                    child_version = await version_service.create(
+                        asset_node_id=str(child_node.id),
+                        prompt_used=version.prompt_used,
+                        model_used=version.model_used,
+                        params={
+                            **params,
+                            "source": "character_portrait_grid_slice",
+                            "source_preset": preset,
+                            "grid_type": grid_type,
+                            "grid_rows": req.rows,
+                            "grid_cols": req.cols,
+                            "grid_index": index + 1,
+                            "slice_label": label,
+                        },
+                        lineage={
                             "source": "character_portrait_grid_slice",
                             "character_id": str(character.id),
                             "character_name": character.name,
                             "source_portrait_node_id": portrait_node_id,
                             "source_version_id": str(version.id),
                             "source_representation_id": str(source_rep.id),
-                            "source_preset": preset,
-                            "grid_type": grid_type,
-                            "grid_rows": req.rows,
-                            "grid_cols": req.cols,
+                        },
+                    )
+                    child_rep = await rep_service.create(
+                        asset_version_id=str(child_version.id),
+                        file_path=to_storage_path(crop_path),
+                        mime_type="image/png",
+                        file_size=file_size,
+                        width=crop.width,
+                        height=crop.height,
+                        format="png",
+                        extra={
+                            **metadata,
+                            "local_path": to_storage_path(crop_path),
+                            "url": to_asset_download_url(crop_path),
+                        },
+                    )
+                    await version_service.link_versions(
+                        source_id=portrait_node_id,
+                        target_id=str(child_node.id),
+                        relation_type=RelationType.DERIVED_FROM,
+                        context={
+                            "source": "character_portrait_grid_slice",
+                            "source_version_id": str(version.id),
                             "grid_index": index + 1,
+                            "label": label,
+                        },
+                    )
+                    created_items.append(
+                        {
+                            "node_id": str(child_node.id),
+                            "version_id": str(child_version.id),
+                            "representation_id": str(child_rep.id),
+                            "file_path": to_storage_path(crop_path),
+                            "label": label,
+                            "index": index + 1,
                             "row": row + 1,
                             "col": col + 1,
-                            "label": label,
+                            "width": crop.width,
+                            "height": crop.height,
                         }
-                        child_node = await node_service.create(
-                            name=f"{character.name}-{label}",
-                            asset_type=AssetType.IMAGE,
-                            parent_id=portrait_node_id,
-                            thumbnail_url=to_asset_download_url(crop_path),
-                            metadata=metadata,
-                            tags=[
-                                "角色立绘",
-                                "九宫格切片",
-                                "表情" if grid_type == "expression" else "动作",
-                                character.name,
-                            ],
-                        )
-                        child_version = await version_service.create(
-                            asset_node_id=str(child_node.id),
-                            prompt_used=version.prompt_used,
-                            model_used=version.model_used,
-                            params={
-                                **params,
-                                "source": "character_portrait_grid_slice",
-                                "source_preset": preset,
-                                "grid_type": grid_type,
-                                "grid_rows": req.rows,
-                                "grid_cols": req.cols,
-                                "grid_index": index + 1,
-                                "slice_label": label,
-                            },
-                            lineage={
-                                "source": "character_portrait_grid_slice",
-                                "character_id": str(character.id),
-                                "character_name": character.name,
-                                "source_portrait_node_id": portrait_node_id,
-                                "source_version_id": str(version.id),
-                                "source_representation_id": str(source_rep.id),
-                            },
-                        )
-                        child_rep = await rep_service.create(
-                            asset_version_id=str(child_version.id),
-                            file_path=to_storage_path(crop_path),
-                            mime_type="image/png",
-                            file_size=file_size,
-                            width=crop.width,
-                            height=crop.height,
-                            format="png",
-                            extra={
-                                **metadata,
-                                "local_path": to_storage_path(crop_path),
-                                "url": to_asset_download_url(crop_path),
-                            },
-                        )
-                        await version_service.link_versions(
-                            source_id=portrait_node_id,
-                            target_id=str(child_node.id),
-                            relation_type=RelationType.DERIVED_FROM,
-                            context={
-                                "source": "character_portrait_grid_slice",
-                                "source_version_id": str(version.id),
-                                "grid_index": index + 1,
-                                "label": label,
-                            },
-                        )
-                        created_items.append(
-                            {
-                                "node_id": str(child_node.id),
-                                "version_id": str(child_version.id),
-                                "representation_id": str(child_rep.id),
-                                "file_path": to_storage_path(crop_path),
-                                "label": label,
-                                "index": index + 1,
-                                "row": row + 1,
-                                "col": col + 1,
-                                "width": crop.width,
-                                "height": crop.height,
-                            }
-                        )
+                    )
         except HTTPException:
             raise
         except Exception as e:
