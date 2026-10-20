@@ -1199,3 +1199,26 @@
 .rt-brush-cursor.tiny::after{top:50%;left:-6px;height:1px;width:4px;transform:translateY(-50%)}
 /* 画布上隐藏系统箭头（和 PS 一样只留圆圈） */
 #rtB{cursor:none}
+/* ===== 本地调整统一面板：顶部 Tab 栏（32-localhub） ===== */
+.lh-tabs{
+  position:fixed;left:50%;top:10px;transform:translateX(-50%);
+  z-index:9998;display:none;align-items:center;gap:4px;
+  padding:5px 6px 5px 12px;border-radius:10px;
+  background:rgba(14,14,18,.94);border:1px solid var(--ln2);
+  backdrop-filter:blur(14px);
+  box-shadow:0 8px 30px rgba(0,0,0,.55);
+  font-size:11px;white-space:nowrap;
+}
+.lh-lead{font-size:9.5px;font-weight:700;letter-spacing:.08em;
+  color:var(--tx3);text-transform:uppercase;margin-right:6px}
+.lh-tab{
+  font-size:10.5px;font-weight:600;padding:5px 11px;border-radius:6px;
+  border:1px solid transparent;background:transparent;color:var(--tx2);
+  cursor:pointer;transition:all .12s var(--ez);
+}
+.lh-tab:hover{color:var(--tx);background:rgba(255,255,255,.06)}
+.lh-tab.on{
+  background:rgba(34,211,238,.16);border-color:var(--ac);color:var(--ac);
+}
+.lh-hint{font-size:8.5px;color:var(--tx3);margin-left:8px;padding-left:10px;
+  border-left:1px solid var(--ln2)}
