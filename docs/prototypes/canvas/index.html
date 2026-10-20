@@ -39,7 +39,7 @@
     <button class="b out" onclick="openWorkspace()" style="border-color:rgba(34,211,238,.35);color:var(--ac)"><svg class="ic sm" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg>工作台</button>
     <button class="b out" onclick="openSkills()" style="border-color:rgba(34,211,238,.35)"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 3l2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg>技能</button>
     <button class="b out" onclick="openTpl()"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>模板</button>
-    <button class="b out icononly" onclick="toggleLayerPanel()" title="图层"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></button><button class="b out icononly" onclick="openGateLog()" title="门禁记录（花钱前的批准/拒绝）"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg></button><button class="b out icononly" onclick="openRetouch(selId)" title="人像修饰（磨皮/液化/祛瑕疵，免费）"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 3a5 5 0 015 5v3a5 5 0 01-10 0V8a5 5 0 015-5z"/><path d="M5 21c1-4 4-6 7-6s6 2 7 6"/></svg></button><button class="b out icononly" onclick="openQuality(selId)" title="画质与色彩（降噪/锐化/虚化/HSL，免费）"><svg class="ic sm" viewBox="0 0 24 24"><path d="M3 17l4-6 3 4 3-7 4 9"/></svg></button><button class="b out icononly" onclick="openUpscale(selId)" title="超清放大（要调模型，按输出像素计费）"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 20L10 14"/><path d="M8 4h12v12"/><path d="M14 10l6-6"/></svg></button><button class="b out icononly" onclick="openColorMatch(selId)" title="AI 追色（要调模型）"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="9" cy="9" r="5"/><circle cx="15" cy="15" r="5"/></svg></button><button class="b out icononly" onclick="openLocalMask(selId)" title="局部调整（蒙版）"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></svg></button><button class="b out icononly" onclick="openPresetLib()" title="调色预设"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="18" cy="18" r="2.5"/></svg></button><button class="b out icononly" onclick="openPromptLib()" title="提示词库"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 5h16M4 12h10M4 19h7"/></svg></button><button class="b out icononly" onclick="pickImageFile()" title="导入图片（JPG/PNG/RAW，本地不上传）"><svg class="ic sm" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 16l5-5 4 4 3-3 6 6"/><path d="M15 8h.01"/></svg></button><button class="b out" onclick="openRawImport()" title="相机原片，本地解码"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 20h16"/></svg>RAW</button><button class="b out" onclick="openInspect()"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.4-3.4"/></svg>巡检</button>
+    <button class="b out icononly" onclick="toggleLayerPanel()" title="图层"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></button><button class="b out icononly" onclick="openGateLog()" title="门禁记录（花钱前的批准/拒绝）"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg></button><button class="b out" onclick="openLocalHub()" title="本地调整：画质 / 人像 / 局部 / 精调 —— 全是免费本地像素运算"><svg class="ic sm" viewBox="0 0 24 24"><path d="M3 17l4-6 3 4 3-7 4 9"/><path d="M3 20h18"/></svg>本地调整</button><button class="b out icononly" onclick="openUpscale(selId)" title="超清放大（要调模型，按输出像素计费）"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 20L10 14"/><path d="M8 4h12v12"/><path d="M14 10l6-6"/></svg></button><button class="b out icononly" onclick="openColorMatch(selId)" title="AI 追色（要调模型）"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="9" cy="9" r="5"/><circle cx="15" cy="15" r="5"/></svg></button><button class="b out icononly" onclick="openPresetLib()" title="调色预设"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="18" cy="18" r="2.5"/></svg></button><button class="b out icononly" onclick="openPromptLib()" title="提示词库"><svg class="ic sm" viewBox="0 0 24 24"><path d="M4 5h16M4 12h10M4 19h7"/></svg></button><button class="b out icononly" onclick="pickImageFile()" title="导入图片（JPG/PNG/RAW，本地不上传）"><svg class="ic sm" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 16l5-5 4 4 3-3 6 6"/><path d="M15 8h.01"/></svg></button><button class="b out" onclick="openRawImport()" title="相机原片，本地解码"><svg class="ic sm" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 20h16"/></svg>RAW</button><button class="b out" onclick="openInspect()"><svg class="ic sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.4-3.4"/></svg>巡检</button>
     <button class="b solid" onclick="toast('出片：选好镜头后合成')"><svg class="ic sm" viewBox="0 0 24 24"><path d="M5 3l14 9-14 9z"/></svg>出片</button>
   </div>
 </div>
@@ -219,37 +219,38 @@
 <div class="hint" id="hintBar">选一条路开始 · 三个模式随时切换</div>
 
 
-<script src="js/01-data.js?v=1792509377"></script>
-<script src="js/02-canvas.js?v=1792509377"></script>
-<script src="js/03-groups.js?v=1792509377"></script>
-<script src="js/04-caps.js?v=1792509377"></script>
-<script src="js/05-account.js?v=1792509377"></script>
-<script src="js/06-imageops.js?v=1792509377"></script>
-<script src="js/07-agent.js?v=1792509377"></script>
-<script src="js/08-events.js?v=1792509377"></script>
-<script src="js/09-search.js?v=1792509377"></script>
-<script src="js/10-failures.js?v=1792509377"></script>
-<script src="js/11-floatbar.js?v=1792509377"></script>
-<script src="js/12-inspect.js?v=1792509377"></script>
-<script src="js/13-localedit.js?v=1792509377"></script>
-<script src="js/14-raw.js?v=1792509377"></script>
-<script src="js/15-chain.js?v=1792509377"></script>
-<script src="js/16-export.js?v=1792509377"></script>
-<script src="js/17-channels.js?v=1792509377"></script>
-<script src="js/18-panels.js?v=1792509377"></script>
-<script src="js/19-aifit.js?v=1792509377"></script>
-<script src="js/20-board.js?v=1792509377"></script>
-<script src="js/21-presets.js?v=1792509377"></script>
-<script src="js/22-batch.js?v=1792509377"></script>
-<script src="js/23-mask.js?v=1792509377"></script>
-<script src="js/24-quality.js?v=1792509377"></script>
-<script src="js/25-enhance.js?v=1792509377"></script>
-<script src="js/26-retouch.js?v=1792509377"></script>
-<script src="js/27-graphrun.js?v=1792509377"></script>
-<script src="js/28-gate.js?v=1792509377"></script>
-<script src="js/29-real-image.js?v=1792509377"></script>
-<script src="js/30-workspace.js?v=1792509377"></script>
-<script src="js/31-zoom.js?v=1792509377"></script>
+<script src="js/01-data.js?v=1792511137"></script>
+<script src="js/02-canvas.js?v=1792511137"></script>
+<script src="js/03-groups.js?v=1792511137"></script>
+<script src="js/04-caps.js?v=1792511137"></script>
+<script src="js/05-account.js?v=1792511137"></script>
+<script src="js/06-imageops.js?v=1792511137"></script>
+<script src="js/07-agent.js?v=1792511137"></script>
+<script src="js/08-events.js?v=1792511137"></script>
+<script src="js/09-search.js?v=1792511137"></script>
+<script src="js/10-failures.js?v=1792511137"></script>
+<script src="js/11-floatbar.js?v=1792511137"></script>
+<script src="js/12-inspect.js?v=1792511137"></script>
+<script src="js/13-localedit.js?v=1792511137"></script>
+<script src="js/14-raw.js?v=1792511137"></script>
+<script src="js/15-chain.js?v=1792511137"></script>
+<script src="js/16-export.js?v=1792511137"></script>
+<script src="js/17-channels.js?v=1792511137"></script>
+<script src="js/18-panels.js?v=1792511137"></script>
+<script src="js/19-aifit.js?v=1792511137"></script>
+<script src="js/20-board.js?v=1792511137"></script>
+<script src="js/21-presets.js?v=1792511137"></script>
+<script src="js/22-batch.js?v=1792511137"></script>
+<script src="js/23-mask.js?v=1792511137"></script>
+<script src="js/24-quality.js?v=1792511137"></script>
+<script src="js/25-enhance.js?v=1792511137"></script>
+<script src="js/26-retouch.js?v=1792511137"></script>
+<script src="js/27-graphrun.js?v=1792511137"></script>
+<script src="js/28-gate.js?v=1792511137"></script>
+<script src="js/29-real-image.js?v=1792511137"></script>
+<script src="js/30-workspace.js?v=1792511137"></script>
+<script src="js/31-zoom.js?v=1792511137"></script>
+<script src="js/32-localhub.js?v=1792511137"></script>
 
 <script>
 /* 挂载 Agent 面板的「对话 / 制作实况」切换 */
