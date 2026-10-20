@@ -502,8 +502,67 @@ function rtDemoHeal(){
 }
 
 /* 画布交互 */
+/* ===== 笔刷圆圈光标 =====
+   🔴 2026-10-20 用户问「笔刷大小怎么看，PS 应该是圆圈吧」。
+   查 PhotoCraft（crates/ui-egui/src/canvas.rs）的做法：
+     · 圆形笔刷画圆、方形画方框
+     · 关键是**双圈描边**：外圈半透明黑 alpha160 + 内圈半透明白 alpha230
+       —— 不管背景亮还是暗，圆圈都看得见（单色圈在相近背景上会消失）
+     · 笔刷太小（屏幕直径 <6px）时额外画十字准星，否则看不见在哪
+     · 系统光标设 None（隐藏箭头）
+   这里用 DOM 元素 + CSS box-shadow 做双圈，效果等价、开销更小。
+*/
+let RT_CURSOR_EL = null;
+
+function rtBrushEl(){
+  if (RT_CURSOR_EL && document.body.contains(RT_CURSOR_EL)) return RT_CURSOR_EL;
+  const el = document.createElement('div');
+  el.id = 'rtBrushCursor';
+  el.className = 'rt-brush-cursor';
+  document.body.appendChild(el);
+  RT_CURSOR_EL = el;
+  return el;
+}
+
+/* 当前模式的笔刷半径（画布像素）。磨皮是全图操作，没有笔刷范围 */
+function rtBrushRadius(){
+  if (RT_MODE === 'liquify'){
+    const e = document.getElementById('rtLiqRad');
+    return e ? Number(e.value) : 30;
+  }
+  if (RT_MODE === 'heal'){
+    const e = document.getElementById('rtHealRad');
+    return e ? Number(e.value) : 8;
+  }
+  return 0;
+}
+
+function rtMoveBrushCursor(e, cv){
+  const el = rtBrushEl();
+  const r = rtBrushRadius();
+  if (!r || !cv){ el.style.display = 'none'; return; }
+
+  const rect = cv.getBoundingClientRect();
+  const scale = rect.width / RT_W;          // 画布像素 → 屏幕像素
+  const rs = Math.max(1.5, r * scale);
+
+  el.style.display = 'block';
+  el.style.width = (rs * 2) + 'px';
+  el.style.height = (rs * 2) + 'px';
+  el.style.left = (e.clientX - rs) + 'px';
+  el.style.top = (e.clientY - rs) + 'px';
+  el.classList.toggle('tiny', rs * 2 < 6);  // 太小加十字
+}
+
+function rtHideBrushCursor(){
+  if (RT_CURSOR_EL) RT_CURSOR_EL.style.display = 'none';
+}
+
 function rtBindCanvas(){
-  const a = document.getElementById('rtA');
+  /* 🔧 2026-10-20 修：单图叠放后可见的是 rtB（rtA 是隐藏的原图）。
+     之前事件绑在 rtA 上，改完单图后笔刷/液化/祛瑕疵全都收不到指针事件。
+     现在绑可交互的那张（rtB 优先），并把笔刷光标挂上去。 */
+  const a = document.getElementById('rtB') || document.getElementById('rtA');
   if (!a) return;
   const scale = ()=> RT_W / a.getBoundingClientRect().width;
   const pos = e=>{
@@ -523,6 +582,8 @@ function rtBindCanvas(){
     }
   });
   a.addEventListener('pointermove', e=>{
+    rtMoveBrushCursor(e, a);      // 光标一直跟着，不管按没按
+
     if (RT_MODE !== 'liquify' || !last || e.buttons !== 1) return;
     const [x,y] = pos(e);
     const dx = x-last[0], dy = y-last[1];
@@ -533,7 +594,7 @@ function rtBindCanvas(){
     last = [x,y];
   });
   a.addEventListener('pointerup', ()=>{ last = null; });
-  a.addEventListener('pointerleave', ()=>{ last = null; });
+  a.addEventListener('pointerleave', ()=>{ last = null; rtHideBrushCursor(); });
 }
 
 function rtReset(){

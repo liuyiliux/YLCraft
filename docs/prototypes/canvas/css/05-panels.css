@@ -1178,3 +1178,24 @@
 .rt-origbtn:hover{border-color:var(--acl);color:var(--tx)}
 .rt-origbtn.on{background:rgba(34,211,238,.16);border-color:var(--ac);color:var(--ac)}
 .rt-viewhint{font-size:8.5px;color:var(--tx3)}
+/* ===== 笔刷圆圈光标（双圈：外黑内白，亮暗背景都可见）=====
+   依据 PhotoCraft canvas.rs：circle_stroke 外 alpha160 黑 + 内 alpha230 白 */
+.rt-brush-cursor{
+  position:fixed;pointer-events:none;z-index:9999;display:none;
+  border-radius:50%;
+  /* 外圈黑（47,47,47 半透明）+ 内圈白（82% 白），双圈才在任何背景上都看得见 */
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,.62),
+    inset 0 0 0 1px rgba(255,255,255,.90);
+  mix-blend-mode:normal;
+}
+/* 笔刷太小看不见位置 → 十字准星（同 PhotoCraft 的 show_crosshair_in_brush_tip） */
+.rt-brush-cursor.tiny::before,
+.rt-brush-cursor.tiny::after{
+  content:'';position:absolute;background:rgba(255,255,255,.92);
+  box-shadow:0 0 1px 1px rgba(0,0,0,.5);
+}
+.rt-brush-cursor.tiny::before{left:50%;top:-6px;width:1px;height:4px;transform:translateX(-50%)}
+.rt-brush-cursor.tiny::after{top:50%;left:-6px;height:1px;width:4px;transform:translateY(-50%)}
+/* 画布上隐藏系统箭头（和 PS 一样只留圆圈） */
+#rtB{cursor:none}
