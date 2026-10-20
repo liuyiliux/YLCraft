@@ -70,8 +70,10 @@ const BLEND_TO_CANVAS = {
   overlay:'overlay', 'soft-light':'soft-light', color:'color'
 };
 
-/* 把 AI 层画成"重画后的样子"（filter + 色相偏移模拟，不是真生成） */
-function paintAiLayer(ctx, w, h, base, layer){
+/* 把 AI 层画成"重画后的样子"（filter + 色相偏移模拟，不是真生成）
+   🔧 2026-10-20 修：参数改成「当前合成结果」而不是 base ——
+      之前所有 AI 层都画同一张 base，等于把下面的内容抹掉了。 */
+function paintAiLayer(ctx, w, h, current, layer){
   ctx.save();
   ctx.globalAlpha = layer.opacity === undefined ? 1 : layer.opacity;
   ctx.globalCompositeOperation = BLEND_TO_CANVAS[layer.blend || 'normal'] || 'source-over';
@@ -79,12 +81,16 @@ function paintAiLayer(ctx, w, h, base, layer){
   tmp.width = w; tmp.height = h;
   const tg = tmp.getContext('2d');
   tg.filter = 'hue-rotate(8deg) saturate(1.15) contrast(1.08)';
-  tg.drawImage(base, 0, 0);
+  tg.drawImage(current, 0, 0);
   ctx.drawImage(tmp, 0, 0);
   ctx.restore();
 }
 
-/* 核心：按图层顺序真合成 */
+/* 核心：按图层顺序真合成
+   🔴 2026-10-20 修（审查报告实现偏离 1）：
+      之前 local 层用 source-over 画不透明 base，会把下层的 AI 层抹掉
+      （实测 a1+l2 与 l2 only 像素 0% 差异）。
+      正确语义（同 PS 调整图层）：调整层作用于「它下方的合成结果」，不是重画原图。 */
 function compositeShot(shotId, w, h){
   const canvas = document.createElement('canvas');
   canvas.width = w; canvas.height = h;
@@ -92,22 +98,48 @@ function compositeShot(shotId, w, h){
   const base = exportBaseCanvas(w, h, shotId);
   const layers = layersOf(shotId);
 
+  /* 抓当前画布快照 */
+  function snapshot(){
+    const s = document.createElement('canvas');
+    s.width = w; s.height = h;
+    s.getContext('2d').drawImage(canvas, 0, 0);
+    return s;
+  }
+
   layers.forEach(l => {
     if (l.visible === false) return;
     const alpha = (l.opacity === undefined) ? 1 : l.opacity;
+
     if (l.type === 'source'){
       ctx.globalAlpha = alpha;
       ctx.globalCompositeOperation = 'source-over';
+      ctx.filter = 'none';
       ctx.drawImage(base, 0, 0);
+
     } else if (l.type === 'local'){
+      const f = (typeof layerFilterOf === 'function') ? layerFilterOf(l) : 'none';
+      if (!f || f === 'none') return;
+
+      const below = snapshot();                 // 下方已合成的结果
+      const adj = document.createElement('canvas');
+      adj.width = w; adj.height = h;
+      const ag = adj.getContext('2d');
+      ag.filter = f;                            // 对"下方内容"整体套滤镜
+      ag.drawImage(below, 0, 0);
+
       ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.filter = (typeof layerFilterOf === 'function') ? layerFilterOf(l) : 'none';
+      ctx.clearRect(0, 0, w, h);
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.filter = 'none';
+      ctx.drawImage(below, 0, 0);               // 先还原下方内容
+      ctx.globalAlpha = alpha;                  // 再按透明度叠调整后
       ctx.globalCompositeOperation = BLEND_TO_CANVAS[l.blend || 'normal'] || 'source-over';
-      ctx.drawImage(base, 0, 0);
+      ctx.drawImage(adj, 0, 0);
       ctx.restore();
+
     } else if (l.type === 'ai'){
-      paintAiLayer(ctx, w, h, base, l);
+      paintAiLayer(ctx, w, h, snapshot(), l);
     }
   });
   ctx.globalAlpha = 1;
