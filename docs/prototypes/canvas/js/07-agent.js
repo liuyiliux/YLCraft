@@ -254,13 +254,16 @@ function openSkillForm(id){
           <div class="sff">
             <label>${f.l}${f.req?'<span class="req">*</span>':''}</label>
             ${f.t==='text'
-              ? `<textarea rows="${f.rows||1}" placeholder="${f.ph||''}"></textarea>`
+              ? `<textarea data-f="${f.mapTo||''}" id="skf_${f.mapTo||''}" rows="${f.rows||1}" placeholder="${f.ph||''}"></textarea>`
               : f.t==='image'
-              ? `<div class="sfup" onclick="toast('选图（原型不接上传）')">
+              ? `<div class="sfup" data-f="${f.mapTo||''}" id="skf_${f.mapTo||''}"
+                     onclick="toast('选图（原型不接上传）')">
                    <svg class="ic sm" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
                    点这里选图
                  </div>`
-              : `<div class="sfsel" onclick="cycleOpt(this,'${f.opts.join('|')}')">${f.opts[0]} <span class="cv2">▾</span></div>`}
+              : `<div class="sfsel" data-f="${f.mapTo||''}" id="skf_${f.mapTo||''}"
+                     data-v="${f.opts[0]}"
+                     onclick="cycleOpt(this,'${f.opts.join('|')}')">${f.opts[0]} <span class="cv2">▾</span></div>`}
           </div>`).join('')}
       </div>
       <div class="skfoot">
@@ -279,24 +282,67 @@ function cycleOpt(el, opts){
   const cur = el.textContent.trim().replace(' ▾','');
   const i = (a.indexOf(cur) + 1) % a.length;
   el.innerHTML = a[i] + ' <span class="cv2">▾</span>';
+  /* 把当前值同步到 dataset，runSkill 从这里读 */
+  if (el.dataset) el.dataset.v = a[i];
 }
 
-/* 🔴 跑技能 = 走和节点同一个 invokeCap */
-function runSkill(id){
+/* 🔴 跑技能 = 走和节点同一个 invokeCap
+   🔧 2026-10-20 修：之前表单字段没有 id/data-f，所以只能写死「（表单值）」。
+      现在给字段挂了 data-f，这里真读用户填的值。
+   🔧 同时补门禁：之前 runSkill 直接 invokeCap，花钱不批。 */
+async function runSkill(id){
   const s = SKILLS.find(x=>x.id===id); if(!s) return;
   const cap = capOfSkill(s);
   if (!cap){ toast('这个技能还没有接上能力'); return; }
 
-  // 把表单字段按 mapTo 映射成 invoke 的 inputs/params
+  // 把表单字段按 mapTo 映射成 invoke 的 inputs/params（真读 DOM）
   const params = { ...cap.params };
   const inputs = {};
   s.fields.forEach(f=>{
-    if (f.mapTo && cap.params && Object.prototype.hasOwnProperty.call(cap.params, f.mapTo)){
-      params[f.mapTo] = (f.t==='select' && f.opts) ? f.opts[0] : params[f.mapTo];
-    } else if (f.mapTo){
-      inputs[f.mapTo] = (f.t==='select' && f.opts) ? f.opts[0] : '（表单值）';
+    if (!f.mapTo) return;
+
+    // ① 先从表单里读用户实际填的值
+    let val = null;
+    const el = document.querySelector('[data-f="' + f.mapTo + '"]');
+    if (el){
+      if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT'){
+        val = el.value;
+      } else {
+        // 自定义 select 把自己的当前值挂在 dataset.v 上
+        val = el.dataset ? el.dataset.v : null;
+        if (!val) val = (el.textContent || '').replace(/▾/g, '').trim();
+      }
+    }
+
+    // ② 没填 → 用默认值（select 取第一项，text 留空）
+    if (val === null || val === undefined || String(val).trim() === ''){
+      val = (f.t === 'select' && f.opts) ? f.opts[0] : '';
+    }
+
+    if (cap.params && Object.prototype.hasOwnProperty.call(cap.params, f.mapTo)){
+      params[f.mapTo] = val;
+    } else {
+      inputs[f.mapTo] = val;
     }
   });
+
+  // ③ 门禁：花钱的必须批（和节点、整图同一条规矩）
+  const cost = (typeof skillCost === 'function') ? Number(String(skillCost(s)).replace(/[^\d.]/g, '')) || 0 : 0;
+  if (cost >= GATE_COST_THRESHOLD && typeof requestGate === 'function'){
+    const approved = await requestGate({
+      kind: 'skill-run',
+      title: '跑技能 · ' + s.n,
+      plan: [
+        '能力：' + (cap.invoke ? cap.invoke.method + ' ' + cap.invoke.path : '—'),
+        '参数：' + JSON.stringify(inputs),
+        '产出：' + (s.fill ? s.fill.n + ' 个' + (s.fill.kind === 'script' ? '镜头' : '图') : '结果')
+      ],
+      cost: cost,
+      irreversible: false,
+      why: '技能和节点是同一份能力，花钱的规矩也一样'
+    });
+    if (!approved) return;
+  }
 
   const r = invokeCap(s.cap, inputs, params);   // 🔴 和节点完全同一条路
   closeOverlay();
