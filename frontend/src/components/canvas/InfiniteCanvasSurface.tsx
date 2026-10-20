@@ -1,9 +1,11 @@
 /*
  * YLCraft Infinite Canvas Surface.
  *
- * Interaction model adapted from basketikun/infinite-canvas:
+ * Interaction model (pointer-anchored zoom math, grid offset, wheel-target
+ * exclusion) adapted from basketikun/infinite-canvas:
  * https://github.com/basketikun/infinite-canvas
- * Licensed under AGPL-3.0. See NOTICE.md in this directory.
+ * Licensed under MIT. Copyright (c) 2026 basketikun.
+ * See NOTICE.md in this directory for what is derived vs. YLCraft's own work.
  */
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CanvasConnection, CanvasNode, CanvasPort, CanvasViewport } from './types'

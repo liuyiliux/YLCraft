@@ -188,7 +188,11 @@ frontend/src/
 ## infinite-canvas — 开源无限画布工作台
 
 **GitHub**: <https://github.com/basketikun/infinite-canvas>
-**许可证**: AGPL-3.0
+**许可证**: MIT（已核验 LICENSE 原文；`Copyright (c) 2026 basketikun`）
+
+> ⚠️ **同名的坑**：另有 `tigerowo/infinite-canvas`（1,210★）是**同源代码的另一分支，许可为 AGPL-3.0**。
+> 本文档此前把 `basketikun` 的 URL 与 AGPL-3.0 错误配对，导致 `frontend/src/components/canvas/NOTICE.md`
+> 一度按 AGPL 声明。2026-10-18 已审计纠正，见 `docs/research/2026-10-18_canvas_license_audit.md`。
 **技术栈**: React 19 + Vite 7 + Ant Design 6 + Zustand + TanStack Query + Tailwind + lucide + motion
 
 ### 核心能力
@@ -209,7 +213,13 @@ frontend/src/
 
 ### 采用边界
 
-不能直接复制源码进 YLCraft，除非项目整体接受 AGPL-3.0 传染义务。当前策略是只借鉴架构和交互模式，自行实现轻量无限画布组件。YLCraft 现有 `/story` 中的“关系图谱”不是这个自由画布，它只展示项目事实和血缘关系。
+**MIT 允许复制、修改、闭源分发，只要求保留版权声明。** 所以本项目的采用边界不是"许可禁止"，而是"技术上不应照搬"：
+
+- 只借用视口/缩放/网格这类交互模型与数学（已在 `frontend/src/components/canvas/NOTICE.md` 声明派生范围）。
+- 节点类型、端口类型化、连线校验、执行轨迹是 YLCraft 自有实现，不来自上游。
+- 上游是"整块自由画布"，YLCraft 的画布是"节点流程图 + 项目资产回流"，数据模型不同，不适合整体 fork。
+
+YLCraft 现有 `/story` 中的"关系图谱"不是这个自由画布，它只展示项目事实和血缘关系。
 
 ***
 
