@@ -84,7 +84,7 @@ function renderShots(){
     el.dataset.i = i;
     el.innerHTML = `<div class="im${s.thumbUrl?' has-img':''}" style="${
         s.thumbUrl
-          ? `background-image:url("${s.thumbUrl}");background-size:cover;background-position:center`
+          ? `background-image:url('${s.thumbUrl}');background-size:cover;background-position:center`
           : `background:${BG[s.cls]}`
       }">
         ${s.thumbUrl ? '' : '<div class="glow"></div><div class="fig"></div>'}`
@@ -192,7 +192,7 @@ function renderFree(){
     el.style.cssText=`left:${s.x}px;top:${s.y}px;width:${s.w}px;height:${s.h}px`;
     el.innerHTML=`<div class="im${s.thumbUrl?' has-img':''}" style="${
         s.thumbUrl
-          ? `background-image:url("${s.thumbUrl}");background-size:cover;background-position:center`
+          ? `background-image:url('${s.thumbUrl}');background-size:cover;background-position:center`
           : `background:${BG[s.cls]}`
       }">${s.thumbUrl ? '' : '<div class="glow"></div><div class="fig"></div>'}</div>
         <div class="lbl2">${s.name}</div>`;
@@ -212,10 +212,12 @@ function bindFree(el,s){
   });
   el.addEventListener('pointermove',e=>{
     if(!drag) return;
-    const dx=e.clientX-sx, dy=e.clientY-sy;
+    /* 🔧 2026-10-20：有缩放时，屏幕位移要除以 zoom 才是画布坐标位移 */
+    const z = (typeof CV_ZOOM === 'number' && CV_ZOOM > 0) ? CV_ZOOM : 1;
+    const dx=(e.clientX-sx)/z, dy=(e.clientY-sy)/z;
     if(Math.abs(dx)>3||Math.abs(dy)>3) moved=true;
-    s.x=Math.max(-20,Math.min(freecv.clientWidth-s.w+20,ox+dx));
-    s.y=Math.max(-20,Math.min(freecv.clientHeight-s.h+30,oy+dy));
+    s.x=Math.round(Math.max(-20,Math.min(freecv.clientWidth-s.w+20,ox+dx)));
+    s.y=Math.round(Math.max(-20,Math.min(freecv.clientHeight-s.h+30,oy+dy)));
     el.style.left=s.x+'px'; el.style.top=s.y+'px';
   });
   el.addEventListener('pointerup',e=>{

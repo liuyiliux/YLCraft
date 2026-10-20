@@ -87,9 +87,20 @@ leRenderCurve = function(){
   const g = document.getElementById('lePts');
   if (g) g.innerHTML = pts.map((p,i)=>{
     const [px,py] = toPx(p);
-    return `<circle cx="${px}" cy="${py}" r="5" class="le-dot ${i===LE_DRAG?'on':''}"
-      style="fill:${ {rgb:'var(--ac)',r:'#f87171',g:'#34d399',b:'#60a5fa'}[LOCAL_ADJ.channel] }"/>`;
+    const isEnd = (i === 0 || i === pts.length - 1);
+    const chColor = { rgb:'var(--ac)', r:'#f87171', g:'#34d399', b:'#60a5fa' }[LOCAL_ADJ.channel];
+    /* 🔧 2026-10-20：首尾点原本就存在（5 个），但贴在角落看不清，
+       用户以为只有 3 个点、也以为不能加点。
+       现在：首尾稍大 + 白描边，每个点带 title，右上显示总点数。 */
+    return `<circle cx="${px}" cy="${py}" r="${isEnd ? 6 : 5}"
+      class="le-dot ${i===LE_DRAG?'on':''} ${isEnd?'end':''}"
+      data-idx="${i}" style="fill:${chColor}"><title>第 ${i+1}/${pts.length} 点 · 拖动改曲线</title></circle>`;
   }).join('');
+
+  /* 点数提示：让用户知道能加点、还能加几个 */
+  const cntEl = document.getElementById('leCurveCount');
+  if (cntEl) cntEl.textContent = pts.length + ' 点' + (pts.length < 8 ? ' · 点空白处加点' : '（已满 8 点）');
+
   // 通道 tab 高亮
   document.querySelectorAll('.le-ch').forEach(b=>{
     b.classList.toggle('on', b.dataset.ch === LOCAL_ADJ.channel);
@@ -223,6 +234,7 @@ openLocalEdit = function(id){
                 <button class="le-ch b" data-ch="b" onclick="leSetChannel('b')">B</button>
               </span>
               <button class="le-reset" onclick="leResetCurve()">拉直</button>
+              <span class="le-curvecnt" id="leCurveCount"></span>
             </div>
             <div class="le-curvewrap">
               <svg class="le-curve" id="leCurveSvg" viewBox="0 0 200 200"
@@ -242,7 +254,7 @@ openLocalEdit = function(id){
                 <g id="lePts"></g>
               </svg>
             </div>
-            <div class="le-hint">拖中间的点做 S 曲线 · 双击拉直 · RGB 是先作用的</div>
+            <div class="le-hint">点空白处加点（最多 8 点）· 拖点改曲线 · 双击拉直</div>
           </div>
         </div>
 

@@ -1155,3 +1155,8 @@
   background:linear-gradient(175deg,#e8d5bd,#a8825c);
   border-radius:42% 42% 20% 20%/16% 16% 8% 8%;
 }
+/* ===== 曲线点可见性改进（13-localedit） ===== */
+.le-dot.end{stroke:var(--ac);stroke-width:2;fill:#fff}
+.le-dot{cursor:grab}
+.le-dot:active{cursor:grabbing}
+.le-curvecnt{font-size:8.5px;color:var(--tx3);margin-left:auto;white-space:nowrap}

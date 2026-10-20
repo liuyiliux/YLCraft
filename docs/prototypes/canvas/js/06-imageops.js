@@ -74,7 +74,7 @@ function openLB(id){
         <div class="lbw">
           <div class="lbi" style="aspect-ratio:${s.canvas ? s.canvas.width+'/'+s.canvas.height : s.w+'/'+s.h};height:min(64vh,440px);${
             s.thumbUrl
-              ? `background-image:url("${s.thumbUrl}");background-size:contain;background-position:center;background-repeat:no-repeat;background-color:#0b0b0f`
+              ? `background-image:url('${s.thumbUrl}');background-size:contain;background-position:center;background-repeat:no-repeat;background-color:#0b0b0f`
               : `background:${BG[s.cls]}`
           }">
             ${s.thumbUrl ? '' : '<div class="glow"></div><div class="fig"></div>'}
