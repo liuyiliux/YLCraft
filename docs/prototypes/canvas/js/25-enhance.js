@@ -74,9 +74,26 @@ function openUpscale(id){
 function setUpFactor(f){ UPSCALE.factor = f; openUpscale(selId); }
 function closeUpscale(){ document.getElementById('overlayHost').innerHTML = ''; }
 
-function doUpscale(){
+async function doUpscale(){
   const f = UPSCALE.factor, cost = f===2?6:f===3?10:16;
   closeUpscale();
+
+  /* 🔴 门禁：超清放大按输出像素计费，花前必须批 */
+  if (cost >= GATE_COST_THRESHOLD && typeof requestGate === 'function'){
+    const ok = await requestGate({
+      kind:'upscale',
+      title:'超清放大 ' + f + '×',
+      plan: [
+        '输出尺寸：' + (1024*f) + ' × ' + (1536*f),
+        UPSCALE.face ? '开人脸修复（五官重新生成）' : '不开人脸修复',
+        '用模型重新生成细节，不是插值'
+      ],
+      cost: cost,
+      irreversible: false,
+      why:'按输出像素计费 —— 4× 比 2× 贵 2.7 倍'
+    });
+    if (!ok) return;
+  }
   if (typeof agAdd === 'function'){
     agAdd('ai', `放大到 <b>${1024*f} × ${1536*f}</b>，花了 <b>⚡${cost}</b>。<br><br>`
       + (UPSCALE.face ? `开了人脸修复 —— 五官是重新生成的，会清晰但不一定和原来完全一样。` : `没开人脸修复，五官会保留原来的模糊感。`)
@@ -196,9 +213,27 @@ function openColorMatch(id){
 function setMatchMode(k){ MATCH_PICK = k; openColorMatch(selId); }
 function closeColorMatch(){ document.getElementById('overlayHost').innerHTML = ''; }
 
-function doColorMatch(){
+async function doColorMatch(){
   const m = COLOR_MATCH_MODES.find(x=>x.k===MATCH_PICK);
   closeColorMatch();
+
+  /* 🔴 门禁：追场景不可调，一次到底，花前必须批 */
+  if (m.cost >= GATE_COST_THRESHOLD && typeof requestGate === 'function'){
+    const ok = await requestGate({
+      kind:'colormatch',
+      title:'AI 追色 · ' + m.n,
+      plan: [
+        '模式：' + m.n + '（' + m.sub + '）',
+        '能做：' + m.pros.join('、'),
+        '做不到：' + m.cons.join('、'),
+        '输出：' + m.out
+      ],
+      cost: m.cost,
+      irreversible: m.k === 'match2scene',
+      why: m.k === 'match2scene' ? '追场景不支持程度调节，一次到底' : '生成式重绘'
+    });
+    if (!ok) return;
+  }
   if (typeof agAdd === 'function'){
     agAdd('ai', `用「<b>${m.n}</b>」追了色，花了 <b>⚡${m.cost}</b>。<br><br>`
       + `它做的是：${m.pros.join('、')}。<br>`

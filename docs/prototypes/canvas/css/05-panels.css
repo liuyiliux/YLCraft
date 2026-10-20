@@ -1013,3 +1013,108 @@
   border-radius:6px;padding:8px 10px}
 .ex-key b{color:var(--ac)}
 .ex-key2{color:var(--tx3);font-size:9px}
+/* ===== 门禁（28-gate） ===== */
+.gate{position:fixed;inset:0;z-index:580;display:flex;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.82);backdrop-filter:blur(5px);animation:fade .18s var(--ez)}
+.gatew{width:min(540px,94vw);max-height:88vh;display:flex;flex-direction:column;
+  background:var(--bg1);border:1px solid rgba(251,191,36,.5);border-radius:12px;
+  box-shadow:0 28px 90px -22px rgba(0,0,0,.95),0 0 0 1px rgba(251,191,36,.15);
+  animation:pop .22s var(--ez);overflow:hidden}
+.gathd{display:flex;align-items:flex-start;gap:10px;padding:14px 16px;
+  border-bottom:1px solid var(--ln);background:rgba(251,191,36,.05)}
+.gatic{font-size:17px;color:var(--wn);line-height:1;flex:0 0 auto;margin-top:1px}
+.gath{flex:1;min-width:0}
+.gatt{font-size:12.5px;font-weight:600;color:var(--tx)}
+.gats{font-size:9.5px;color:var(--tx3);margin-top:2px}
+.gatx{background:transparent;border:none;color:var(--tx3);font-size:14px;cursor:pointer;
+  padding:0 2px;font-family:inherit}
+.gatx:hover{color:var(--tx)}
+.gatbody{padding:14px 16px;overflow-y:auto;flex:0 1 auto}
+.gatbody::-webkit-scrollbar{width:6px}
+.gatbody::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:3px}
+.gatsec{font-size:9px;color:var(--tx3);letter-spacing:.05em;margin-bottom:7px}
+.gatplan{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.gatpi{display:flex;gap:7px;font-size:10.5px;color:var(--tx2);line-height:1.55}
+.gatpd{color:var(--ac);flex:0 0 auto}
+.gatcost{display:flex;align-items:center;gap:9px;padding:9px 11px;
+  background:var(--bg2);border-radius:6px;margin-bottom:10px}
+.gatck{font-size:10px;color:var(--tx3);flex:1}
+.gatcv{font-size:15px;font-family:var(--fm);font-weight:600;color:var(--ac)}
+.gatirr{font-size:8.5px;color:var(--dg);background:rgba(248,113,113,.12);
+  border-radius:3px;padding:1px 6px}
+.gatwhy{font-size:10px;color:var(--tx3);line-height:1.6;margin-bottom:10px;
+  padding:7px 10px;background:var(--s1);border-radius:5px;border-left:2px solid var(--wnl)}
+.gatrule{font-size:9.5px;line-height:1.65;color:var(--tx2);
+  background:rgba(34,211,238,.05);border:1px solid var(--acl);border-radius:5px;padding:8px 10px}
+.gatrule b{color:var(--ac)}
+.gatr2{color:var(--tx3);font-size:8.5px}
+.gatfoot{padding:11px 16px;border-top:1px solid var(--ln);display:flex;
+  justify-content:flex-end;gap:8px;flex:0 0 auto}
+
+/* 门禁记录面��� */
+.gatl-sum{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px}
+.gatl-si{display:flex;align-items:center;gap:7px;background:var(--bg2);
+  border-radius:5px;padding:6px 10px}
+.gatl-si span{font-size:9.5px;color:var(--tx3);flex:1}
+.gatl-si b{font-size:12px;font-family:var(--fm);color:var(--ac)}
+.gatl-si b.no{color:var(--dg)}
+.gatl-si b.ok{color:var(--ok)}
+.gatl-si b.co{color:var(--ac)}
+.gatl-list{display:flex;flex-direction:column;gap:3px;max-height:44vh;overflow-y:auto}
+.gatl-item{display:flex;align-items:center;gap:8px;padding:6px 9px;
+  background:var(--bg2);border-radius:5px;font-size:9.5px}
+.gatl-item.rejected{background:rgba(248,113,113,.05);border-left:2px solid rgba(248,113,113,.4)}
+.gatl-t{font-family:var(--fm);font-size:8.5px;color:var(--tx3);flex:0 0 52px}
+.gatl-n{flex:1;min-width:0;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gatl-r{font-size:8px;border-radius:2px;padding:0 5px;flex:0 0 auto}
+.gatl-r.approved{color:var(--ok);background:rgba(52,211,153,.12)}
+.gatl-r.rejected{color:var(--dg);background:rgba(248,113,113,.12)}
+.gatl-c{font-family:var(--fm);font-size:9px;color:var(--ac);flex:0 0 34px;text-align:right}
+.gatl-empty{text-align:center;color:var(--tx3);font-size:10px;padding:20px 0}
+/* ===== RAW 真解码（14-raw） ===== */
+.raw-drop{display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:22px 16px;border:1.5px dashed var(--ln3);border-radius:9px;
+  cursor:pointer;background:var(--bg2);transition:all .16s var(--ez)}
+.raw-drop:hover{border-color:var(--acl);background:var(--acs)}
+.raw-demo-btn{margin-top:9px;width:100%;font-size:10px;padding:6px;border-radius:6px;
+  cursor:pointer;font-family:inherit;background:transparent;
+  border:1px solid var(--ln2);color:var(--tx3)}
+.raw-demo-btn:hover{color:var(--ac);border-color:var(--acl)}
+
+.raw-preview{display:flex;gap:10px;margin-bottom:12px}
+.raw-pw{flex:1;min-width:0}
+.raw-plabel{font-size:8.5px;color:var(--tx3);margin-bottom:4px;text-align:center}
+.raw-pres{height:170px;border-radius:7px;background-size:cover;background-position:center;
+  background-color:#0a0a0c;box-shadow:inset 0 0 0 1px var(--ln)}
+
+.raw-info{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin-bottom:12px}
+.raw-info > div{display:flex;gap:7px;font-size:9.5px;align-items:baseline}
+.raw-ik{color:var(--tx3);flex:0 0 34px}
+.raw-iv{color:var(--tx2);font-family:var(--fm);font-size:9px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.raw-gamma{background:var(--bg2);border-radius:6px;padding:9px 11px;margin-bottom:12px}
+.raw-gh{display:flex;align-items:center;margin-bottom:6px}
+.raw-gh span:first-child{font-size:9.5px;color:var(--tx3);flex:1}
+.raw-gv{font-size:10.5px;font-family:var(--fm);color:var(--ac)}
+.raw-gn{font-size:9px;color:var(--tx3);line-height:1.6;margin-top:8px}
+.raw-gn b{color:var(--ac)}
+
+.raw-hist{background:var(--bg2);border-radius:6px;padding:9px 11px}
+.raw-hh{font-size:9px;color:var(--tx3);margin-bottom:6px}
+.raw-hist canvas{width:100%;display:block;border-radius:4px;background:var(--s1)}
+
+.raw-unsup{text-align:center;padding:26px 20px}
+.raw-ui{font-size:26px;color:var(--wn);margin-bottom:10px}
+.raw-ut{font-size:12.5px;color:var(--tx);margin-bottom:8px}
+.raw-ut b{color:var(--wn)}
+.raw-ud{font-size:10.5px;color:var(--tx3);line-height:1.8;margin-bottom:14px}
+.raw-ud code{font-family:var(--fm);color:var(--ac);font-size:10px}
+.raw-tech{text-align:left;background:var(--bg2);border:1px solid var(--acl);
+  border-radius:6px;padding:10px 12px}
+.raw-th{font-size:9.5px;color:var(--ac);margin-bottom:6px}
+.raw-tr code{font-family:var(--fm);font-size:9.5px;color:var(--tx2);
+  display:block;background:var(--s1);padding:6px 8px;border-radius:4px;
+  word-break:break-all;line-height:1.6}
+.raw-td{font-size:9px;color:var(--tx3);line-height:1.65;margin-top:7px}
+.raw-td b{color:var(--tx2)}

@@ -21,16 +21,30 @@ ta.addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventD
 
 renderUserChip(); renderCanvasName(); renderTplRefBar();
 setMode('shots');
-/* 🔴 bindFloatBarHide 定义在 11-floatbar.js（后面才加载）——
-   直接调用会 ReferenceError 并中断后面所有脚本。
-   用 typeof 守卫，等 DOM ready 再绑。 */
-if (typeof bindFloatBarHide === 'function') bindFloatBarHide();
-else document.addEventListener('DOMContentLoaded', ()=>{
+
+/* ============================================================
+   🔴 加载顺序陷阱（这个项目踩过两次，统一解决）：
+      本文件是 08，但下面调用的函数定义在 09~28 的文件里。
+      顶层直接调用 → ReferenceError → 中断后面所有脚本 → 一半功能消失。
+      症状很隐蔽：函数"看起来"没了，控制台才看得到。
+
+      解法：所有「依赖后续文件」的启动逻辑都推迟到 DOMContentLoaded
+      （那时全部脚本都已加载），每处仍然 typeof 守卫生效。
+   ============================================================ */
+function __bootDeferred(){
+  // 11-floatbar.js
   if (typeof bindFloatBarHide === 'function') bindFloatBarHide();
-});
+  // 10-failures.js
+  if (typeof mountFailToolsMsg === 'function') mountFailToolsMsg();
+  // 27-graphrun.js
+  if (typeof mountGraphRunBtn === 'function') mountGraphRunBtn();
+  if (typeof syncGraphRunBtn === 'function') syncGraphRunBtn();
+}
 
 /* 原型演示工具条：搜索失败 / 注入（真实现里不该有） */
-(function mountFailTools(){
+function mountFailToolsMsg(){
+  if (document.getElementById('failToolsMsg')) return;
+  if (typeof failToolbar !== 'function') return;
   const host = document.getElementById('agb');
   if (!host) return;
   const d = document.createElement('div');
@@ -40,7 +54,13 @@ else document.addEventListener('DOMContentLoaded', ()=>{
       真搜索一定会失败。这三种要分开说 —— 别把"查不到"说成"没有"。
     </div></div>`;
   host.appendChild(d);
-})();
+}
+
+if (document.readyState === 'loading'){
+  document.addEventListener('DOMContentLoaded', __bootDeferred);
+} else {
+  __bootDeferred();
+}
 
 /* 被平台壳嵌入时（?embed=1），隐藏壳已经提供的元素，避免重复 */
 if (new URLSearchParams(location.search).get('embed') === '1'){

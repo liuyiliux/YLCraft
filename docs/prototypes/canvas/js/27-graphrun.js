@@ -71,6 +71,37 @@ async function runGraph(){
     return;
   }
 
+  /* 🔴 门禁：跑整图前先算成本，超过阈值必须批准 */
+  {
+    const nodeById0 = {};
+    GRAPH.nodes.forEach(n=>{ nodeById0[n.id] = n; });
+    const estCost = order
+      .map(id=>nodeExecOf(nodeById0[id]))
+      .reduce((a,b)=>a+(b.cost||0),0);
+    const willRun = order.filter(id=>id!=='script'&&id!=='board');
+
+    if (estCost >= GATE_COST_THRESHOLD && typeof requestGate === 'function'){
+      const approved = await requestGate({
+        kind:'graph-run',
+        title:'跑整图 · ' + willRun.length + ' 个节点',
+        plan: [
+          '按依赖顺序执行 ' + willRun.length + ' 个节点',
+          '顺序：' + willRun.join(' → '),
+          '有消耗的节点：' + order
+            .filter(id=>nodeExecOf(nodeById0[id]).cost > 0)
+            .map(id=>id + '(⚡' + nodeExecOf(nodeById0[id]).cost + ')').join('、')
+        ],
+        cost: estCost,
+        irreversible: false,
+        why: '一次跑十几个节点，成本在跑之前就要让你知道'
+      });
+      if (!approved){
+        toast('已取消 · 没跑 · 没花钱');
+        return;
+      }
+    }
+  }
+
   GRAPH_RUNNING = true;
   const nodeById = {};
   GRAPH.nodes.forEach(n=>{ nodeById[n.id] = n; });
@@ -174,39 +205,36 @@ function renderGraphNodes(){
   });
 }
 
-/* ---------- 运行按钮（只在连线图模式显示） ---------- */
+/* ---------- 运行按钮：不单独造，复用它 ----------
+   之前这里造了一个浮动「▶ 运行整图」，和顶栏的「整组重跑」位置重叠。
+   现在改成：不造按钮，反过来把顶栏那个接到 runGraph 上。
+   保留这两个函数名（前面 08-events 的 boot 会调），但只做清理。 */
 function mountGraphRunBtn(){
-  if (document.getElementById('graphRunBtn')) return;
-  const b = document.createElement('button');
-  b.id = 'graphRunBtn';
-  b.className = 'graph-run-btn';
-  b.innerHTML = '<span>▶</span> 运行整图';
-  b.title = '按依赖顺序执行所有节点';
-  b.onclick = runGraph;
-  document.body.appendChild(b);
+  const old = document.getElementById('graphRunBtn');
+  if (old) old.remove();
 }
 
 function syncGraphRunBtn(){
-  const b = document.getElementById('graphRunBtn');
-  if (!b) return;
-  const inGraph = !!document.querySelector('#gnodes .gnode');
-  b.style.display = inGraph ? '' : 'none';
+  const old = document.getElementById('graphRunBtn');
+  if (old) old.remove();
 }
 
-/* 挂载：等 renderGraph 跑完再同步按钮 */
+/* 挂载：不再单独造按钮 —— 复用顶栏已有的「整组重跑」，
+   把它接到真执行上（之前它只弹提示）。
+   这样连线图里只有一个运行按钮，不重复。 */
 (function(){
   function boot(){
-    mountGraphRunBtn();
-    const orig = window.renderGraph;
-    if (typeof orig === 'function'){
-      window.renderGraph = function(){
-        const r = orig.apply(this, arguments);
-        syncGraphRunBtn();
-        return r;
-      };
+    const btn = document.querySelector('#vFlow .sbar button');
+    if (btn){
+      btn.onclick = null;
+      btn.addEventListener('click', function(e){
+        e.preventDefault();
+        if (typeof runGraph === 'function') runGraph();
+      });
+      btn.title = '按依赖顺序执行整张连线图（会先问你要不要花这个钱）';
+      btn.dataset.wired = '1';
     }
-    syncGraphRunBtn();
-    setInterval(syncGraphRunBtn, 900);
+    /* 只保留一个入口：不再造浮动按钮 */
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
