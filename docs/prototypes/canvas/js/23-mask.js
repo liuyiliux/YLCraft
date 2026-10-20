@@ -288,8 +288,8 @@ function applyMask(){
 
   /* 🔧 2026-10-20 修（审查报告阻断问题 4）：之前只发消息不落盘。
      现在把「蒙版参数 + 调整参数」一起写进图层。
-     ⚠️ 诚实说明：原型里 compositeShot 还没按蒙版裁剪，这一层目前按全图生效；
-        蒙版参数已经存下来了，真实现时按 mask 做局部合成。 */
+     ✅ 2026-10-20 再修：compositeShot 已支持按蒙版裁剪（makeMaskCanvas + destination-in），
+        预览层用 backdrop-filter + mask-image 同步 —— 蒙版内外真的分开了。 */
   let committed = null;
   if (typeof commitLocalLayer === 'function'){
     committed = commitLocalLayer(
@@ -311,7 +311,7 @@ function applyMask(){
           ? `全图调整。`
           : `<span class="myown">只有蒙版内那块变了，蒙版外保持原样 —— 这是局部调整的意义。`
             + `形状和羽化都是参数，随时能改。`
-            + (committed ? '（蒙版参数已存进图层；原型阶段合成还没按蒙版裁剪，这一层暂时按全图生效。）' : '') + `</span>`)
+            + (committed ? '（蒙版已真正参与合成：导出时按蒙版裁剪，画布预览也只影响蒙版内。）' : '') + `</span>`)
       + `<br><br><b>没花钱</b> —— 本地像素运算。`);
   }
   toast('已应用 · 免费');

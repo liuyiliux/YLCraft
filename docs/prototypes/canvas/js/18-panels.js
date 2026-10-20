@@ -541,6 +541,38 @@ function layerFilterOf(l){
   return parts.join(' ');
 }
 
+/* ===== 预览层：把 mask 参数翻译成 CSS mask-image =====
+   🔴 2026-10-20 新增：局部调整落盘后，画布预览也要只影响蒙版内。
+*/
+function layerMaskCSS(mask){
+  if (!mask || !mask.mode || mask.mode === 'full') return 'none';
+  const cx = ((mask.x === undefined ? 0.5 : mask.x) * 100).toFixed(1);
+  const cy = ((mask.y === undefined ? 0.42 : mask.y) * 100).toFixed(1);
+  const f = Math.max(0, Math.min(0.95, mask.feather === undefined ? 0.22 : mask.feather));
+  const fPct = (f * 100).toFixed(1);
+
+  if (mask.mode === 'circle'){
+    const r = Math.max(1, (mask.w === undefined ? 0.55 : mask.w) * 50);
+    const solid = Math.max(0, 100 - f * 180).toFixed(0);
+    return 'radial-gradient(ellipse ' + r + '% ' + r + '% at ' + cx + '% ' + cy +
+           '%, #000 0%, #000 ' + solid + '%, transparent 100%)';
+  }
+  if (mask.mode === 'linear'){
+    const ang = mask.angle === undefined ? 90 : mask.angle;
+    return 'linear-gradient(' + ang + 'deg, #000 0%, #000 ' +
+           Math.max(0, 100 - fPct * 1.2).toFixed(0) + '%, transparent 100%)';
+  }
+  if (mask.mode === 'rect'){
+    /* CSS 的 mask-image 做矩形羽化很绕，用椭圆近似（和 23-mask 的降级一致） */
+    const r = Math.max(1, Math.min(mask.w === undefined ? 0.55 : mask.w,
+                                   mask.h === undefined ? 0.5 : mask.h) * 52);
+    const solid = Math.max(0, 100 - f * 180).toFixed(0);
+    return 'radial-gradient(ellipse ' + r + '% ' + r + '% at ' + cx + '% ' + cy +
+           '%, #000 0%, #000 ' + solid + '%, transparent 100%)';
+  }
+  return 'none';
+}
+
 function applyLayers(shotId){
   const el = document.querySelector('.shot[data-id="' + shotId + '"] .im');
   if (!el) return;
@@ -559,29 +591,46 @@ function applyLayers(shotId){
   const locals = layers.filter(l=>l.type==='local' && l.visible);
   const ais    = layers.filter(l=>l.type==='ai' && l.visible);
 
-  // 本地调整层：合成一个 filter（按可见 + 透明度加权）
+  /* 拆成两类：
+     - 全图调整层 → 直接加在 .im 的 filter 上（快）
+     - 带蒙版的层 → 叠一层 backdrop-filter + mask（局部） */
+  const fullLocals = locals.filter(l => !(l.params && l.params.mask && l.params.mask.mode !== 'full'));
+  const maskLocals = locals.filter(l => (l.params && l.params.mask && l.params.mask.mode !== 'full'));
+
   let filterStr = '';
-  if (locals.length){
-    // 取最上面那层的参数（简化：多层就取最后一层，避免滤镜重复叠加失真）
-    const top = locals[locals.length-1];
+  if (fullLocals.length){
+    const top = fullLocals[fullLocals.length-1];
     const base = layerFilterOf(top);
-    // 透明度 <1 时减弱效果
     if (top.opacity < 0.99){
       const t = top.opacity;
       filterStr = base.replace(/([\d.]+)\)/g, (m,n)=> {
         const num = Number(n);
-        const weakened = 1 + (num - 1) * t;
-        return weakened.toFixed(3) + ')';
+        return (1 + (num - 1) * t).toFixed(3) + ')';
       });
     } else {
       filterStr = base;
     }
   }
-  // AI 层也会让画面"变了"
   if (ais.length && !filterStr){
     filterStr = 'contrast(1.1) saturate(1.15) brightness(1.05)';
   }
   if (filterStr) el.style.filter = filterStr;
+
+  /* 🆕 带蒙版的层：局部生效，用 backdrop-filter 只影响蒙版内 */
+  maskLocals.forEach(l=>{
+    const f = layerFilterOf(l);
+    if (!f || f === 'none') return;
+    const maskCSS = layerMaskCSS(l.params.mask);
+    const ov = document.createElement('div');
+    ov.className = 'lyr-ov lyr-mask';
+    ov.style.cssText = 'position:absolute;inset:0;pointer-events:none;border-radius:inherit;'
+      + 'backdrop-filter:' + f + ';'
+      + '-webkit-backdrop-filter:' + f + ';'
+      + 'mask-image:' + maskCSS + ';'
+      + '-webkit-mask-image:' + maskCSS + ';'
+      + (l.opacity < 0.99 ? 'opacity:' + l.opacity + ';' : '');
+    el.appendChild(ov);
+  });
 
   // AI 编辑层：叠一个可见的标记层（因为没法真生成）
   ais.forEach(a=>{
