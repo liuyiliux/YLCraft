@@ -59,7 +59,8 @@ ensureCurveFilter = function(){
     svg.style.position = 'absolute'; svg.style.pointerEvents = 'none';
     document.body.appendChild(svg);
   }
-  const N = 16, mk = ch => {
+  /* 🔧 采样数 16 → 64：16 个 tableValues 做线性插值，曲线会显折线感 */
+    const N = 64, mk = ch => {
     const a = [];
     for (let i = 0; i < N; i++) a.push(channelSample(ch, i/(N-1)).toFixed(4));
     return a.join(' ');
@@ -80,8 +81,8 @@ leRenderCurve = function(){
   const pts = LOCAL_ADJ.curve;
   const toPx = p => [p[0]*200, (1-p[1])*200];
   let d = '';
-  for (let i = 0; i <= 60; i++){
-    const x = i/60;
+  for (let i = 0; i <= 120; i++){
+    const x = i/120;
     const y = curveSample(pts, x);
     d += (i===0?'M':'L') + (x*200).toFixed(1) + ',' + ((1-y)*200).toFixed(1) + ' ';
   }
