@@ -34,7 +34,7 @@ const CAPS = {
     cost:6
   },
   'image-editor': {
-    label:'图片编辑', page:'/image-editor',
+    label:'图片编辑', page:'/image-editor', file:'image-editor.html',
     invoke:{ method:'POST', path:'/api/v1/images/edit' },
     map:(i,p)=>({ image:i.image, op:p.op }),
     params:{ op:'裁剪' },

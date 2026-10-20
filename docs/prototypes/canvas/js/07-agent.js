@@ -268,6 +268,7 @@ function openSkillForm(id){
           能力 <code style="font-family:var(--fm);color:var(--tx2)">${cap ? cap.invoke.method + ' ' + cap.invoke.path : '—'}</code>
         </span>
         <button class="b" onclick="openSkills()">返回</button>
+        ${cap ? `<button class="b" onclick="openPage('${s.cap}')">打开完整页面 ↗</button>` : ''}
         <button class="b solid" onclick="runSkill('${s.id}')">开始生成</button>
       </div>
     </div></div>`;
