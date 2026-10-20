@@ -115,7 +115,7 @@ function openLocalEdit(id){
             ${leSlider('temp','色温','K',4000,8000,50)}
 
             <div class="le-sec">曲线 <span class="le-sec2">RGB 合成</span>
-              <button class="le-reset" onclick="leResetCurve()">拉直</button>
+              <button class="le-reset" onclick="leResetCurve()">拉直</button><span class="le-curvecnt" id="leCurveCount"></span>
             </div>
             <div class="le-curvewrap">
               <svg class="le-curve" id="leCurveSvg" viewBox="0 0 200 200"
@@ -134,7 +134,7 @@ function openLocalEdit(id){
                 <g id="lePts"></g>
               </svg>
             </div>
-            <div class="le-hint">拖中间的点做 S 曲线 · 双击恢复</div>
+            <div class="le-hint">点空白处加点（最多 8 点）· 拖点改曲线 · 双击拉直 · 双击恢复</div>
           </div>
         </div>
 
@@ -239,8 +239,17 @@ function leRenderCurve(){
   const g = document.getElementById('lePts');
   if (g) g.innerHTML = pts.map((p,i)=>{
     const [px,py] = toPx(p);
-    return `<circle cx="${px}" cy="${py}" r="5" class="le-dot ${i===LE_DRAG?'on':''}"/>`;
+    const isEnd = (i === 0 || i === pts.length - 1);
+    /* 🔧 2026-10-20：首尾点原本就存在，但贴在角落看不清，用户以为只有 3 个点。
+       给首尾单独样式（稍大 + 亮描边），并给每个点加 title 提示。 */
+    return `<circle cx="${px}" cy="${py}" r="${isEnd ? 6 : 5}"
+      class="le-dot ${i===LE_DRAG?'on':''} ${isEnd?'end':''}"
+      data-idx="${i}"><title>第 ${i+1}/${pts.length} 点 · 拖动改曲线</title></circle>`;
   }).join('');
+
+  /* 点数提示，让用户知道还能加点 */
+  const cnt = document.getElementById('leCurveCount');
+  if (cnt) cnt.textContent = pts.length + ' 点' + (pts.length < 8 ? ' · 点空白处加点' : '（已满）');
 }
 
 function leResetCurve(){

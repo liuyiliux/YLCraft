@@ -212,3 +212,12 @@
     border-radius:var(--r1);cursor:pointer;transition:all .2s var(--ez)}
   .subseg button.on{background:var(--s3);color:var(--tx);font-weight:500}
 
+
+/* ===== 画布缩放指示（31-zoom） ===== */
+.zoom-badge{position:fixed;right:14px;bottom:74px;z-index:58;
+  font-family:var(--fm);font-size:10.5px;font-weight:600;
+  padding:4px 10px;border-radius:6px;cursor:pointer;
+  background:rgba(20,20,26,.9);border:1px solid var(--ln2);color:var(--ac);
+  backdrop-filter:blur(6px);transition:opacity .2s var(--ez)}
+.zoom-badge:hover{border-color:var(--acl)}
+.zoom-badge.off{opacity:.45;color:var(--tx3)}
