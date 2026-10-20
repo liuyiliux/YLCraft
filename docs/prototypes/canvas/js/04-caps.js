@@ -8,6 +8,7 @@ const CAPS = {
     invoke:{ method:'POST', path:'/api/v1/images/generate' },
     map:(i,p)=>({ prompt:i.prompt, refs:i.reference, model:p.model, ratio:p.ratio, n:p.count||1 }),
     params:{ model:'GPT Image 2', ratio:'2:3', count:1 },
+    price:'gpt-image-2',          // ← PRICE_BOOK 里那一条（配不到就不记人民币，不编数字）
     cost:14
   },
   'motion-gif': {
@@ -22,6 +23,7 @@ const CAPS = {
     invoke:{ method:'POST', path:'/api/v1/3d/generate-from-image' },
     map:(i,p)=>({ image:i.image, quality:p.quality }),
     params:{ quality:'标准' },
+    price:'tripo-sr',             // 节点上写的就是 TripoSR → glb
     cost:8
   },
   'previs': {
@@ -114,6 +116,14 @@ Object.assign(CAPS, {
     params:{ format:'PNG', scale:1 },
     cost:0,
     note:'按层顺序合成 · 只在导出时算像素 · 导出后参数还在'
+  },
+  'clip-render': {
+    label:'渲染出片', layer:'local', node:true, local:true,
+    invoke:{ method:'LOCAL', path:'shared/clip#render' },
+    map:(i,p)=>({ timeline:i.video, codec:p.codec }),
+    params:{ codec:'H.264' },
+    cost:0,
+    note:'把已合成好的时间线渲成文件 · 不再调模型 · 所以真的免费（和「合成时间线」不是一步）'
   },
   'image-inspect': {
     label:'巡检', layer:'local', node:true,

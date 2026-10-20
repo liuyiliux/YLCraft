@@ -24,7 +24,7 @@ function makeGroup(){
   const groupNode = {
     id: gid, x: minX, y: minY, w: 156,
     t: '我的流程', sub: members.length + ' 个节点 · Tab 进入',
-    kind: 'any', st: 'ok', runnable: false,
+    kind: 'any', st: 'ok',
     ins: ['text','image'], outs: ['image','video'],
     group: gid, userGroup: 1
   };
@@ -116,9 +116,9 @@ function addNodeFromLib(k){
   GRAPH.nodes.push({
     id, x: sx + 200 + Math.random()*120, y: sy + 120 + Math.random()*100, w:140,
     t:d.t, sub: d.comp ? '点开是页面表单' : '新加的基础节点',
-    kind:d.kind, st: d.comp ? 'todo' : 'ok',
-    runnable: !!d.runnable, ins:d.ins, outs:d.outs,
-    comp: d.comp ? 1 : 0, atomic: d.atomic ? 1 : 0, cap: d.cap || null
+    kind:d.kind, st: d.comp ? 'todo' : 'ok', ins:d.ins, outs:d.outs,
+    comp: d.comp ? 1 : 0, atomic: d.atomic ? 1 : 0,
+    cap: d.cap || null, data: d.data ? 1 : 0
   });
   renderGraph();
   closeParams();

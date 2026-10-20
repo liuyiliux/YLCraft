@@ -26,6 +26,7 @@ const GATE_RULES = [
   { k:'3d',         n:'图生 3D',    min:1,  why:'耗时且要占 GPU' },
   { k:'previs',     n:'3D 导演台',  min:1,  why:'预演会回填分镜，改了就麻烦' },
   { k:'graph-run',  n:'跑整图',     min:1,  why:'一次跑十几个节点，成本不可预估' },
+  { k:'node-run',   n:'单节点运行', min:1,  why:'一次点击就是一次真生成，一个节点也能花十几积分' },
   { k:'export',     n:'导出',       min:1,  why:'导出不改内容，但会落文件' }
 ];
 

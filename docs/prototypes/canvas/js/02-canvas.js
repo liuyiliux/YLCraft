@@ -293,9 +293,11 @@ function buildGraph(keepPos){
     return;
   }
   const N = items.length || 12;
+  /* 每个节点都要指到一个 capKey（CAPS 里那份能力）—— 指不到的就是假壳。
+     script / board 是例外：它们读文档、不调能力，用 data:true 明说。 */
   const nodes = [
-    {id:'script', x:20,  y:170, w:136, t:'分镜脚本', sub:N+' 镜',                     kind:'text',  st:'ok', runnable:false, ins:[],           outs:['text']},
-    {id:'board',  x:186, y:170, w:136, t:'分镜表',   sub:'镜号 01-'+String(N).padStart(2,'0'), kind:'text', st:'ok', runnable:false, ins:['text'], outs:['text']}
+    {id:'script', x:20,  y:170, w:136, t:'分镜脚本', sub:N+' 镜',                     kind:'text',  st:'ok', data:true, ins:[],           outs:['text']},
+    {id:'board',  x:186, y:170, w:136, t:'分镜表',   sub:'镜号 01-'+String(N).padStart(2,'0'), kind:'text', st:'ok', data:true, ins:['text'], outs:['text']}
   ];
   for (let i=0;i<N;i++){
     const col=i%3, row=Math.floor(i/3);
@@ -303,19 +305,24 @@ function buildGraph(keepPos){
       id:'g'+i, x:372+col*152, y:16+row*78, w:140,
       t:String(i+1).padStart(2,'0')+' '+items[i].name,
       sub: items[i].status==='ok'?'已生成':(items[i].status==='err'?'失败 403':(items[i].status==='run'?'生成中':'待生成')),
-      kind:'image', st:items[i].status, runnable:true, ins:['text','image'], outs:['image'], shot:i
+      kind:'image', st:items[i].status, ins:['text','image'], outs:['image'], shot:i,
+      cap:'image-gen'
     });
   }
   const rows=Math.ceil(N/3), yb=16+rows*78+18;
   nodes.push({id:'merge', x:372, y:yb, w:140, t:'合成时间线', kind:'video',
-    sub:'总时长 '+fmt(items.reduce((a,s)=>a+(s.duration||0),0)), st:'ok', runnable:false, ins:['image'], outs:['video']});
+    sub:'总时长 '+fmt(items.reduce((a,s)=>a+(s.duration||0),0)), st:'ok', ins:['image'], outs:['video'],
+    cap:'clip'});
   nodes.push({id:'out',   x:548, y:yb, w:140, t:'出片', kind:'video',
-    sub:'未开始', st:'todo', runnable:false, ins:['video'], outs:[]});
+    sub:'未开始', st:'todo', ins:['video'], outs:[],
+    cap:'clip-render'});
   // 🔴 3D 分支：图生3D（原子）→ 3D 导演台（复合）
   nodes.push({id:'to3d',   x:372, y:yb+78, w:140, t:'图生 3D', kind:'model',
-    sub:'TripoSR → glb', st:'ok', runnable:true, ins:['image'], outs:['model'], atomic:true});
+    sub:'TripoSR → glb', st:'ok', ins:['image'], outs:['model'], atomic:true,
+    cap:'model-3d'});
   nodes.push({id:'previs', x:548, y:yb+78, w:140, t:'3D 导演台', kind:'video', comp:1,
-    sub:'预演运镜 → 回填分镜', st:'todo', runnable:false, ins:['model','text'], outs:['video']});
+    sub:'预演运镜 → 回填分镜', st:'todo', ins:['model','text'], outs:['video'],
+    cap:'previs'});
 
   const edges=[{f:'script',fp:'text',t:'board',tp:'text'}];
   for(let i=0;i<N;i++) edges.push({f:'board', fp:'text',  t:'g'+i,   tp:'text'});
@@ -379,7 +386,7 @@ function renderGraph(){
       <div class="ghd"><span class="gt">${n.t}</span><span class="gd" style="background:${dot}"></span></div>
       <div class="gbd">${n.sub}</div>
       ${outs}
-      ${n.runnable?`<button class="grun" data-run="${n.id}" title="运行这个节点">▶</button>`:''}
+      ${capKeyOfNode(n)?`<button class="grun" data-run="${n.id}" title="运行这个节点（会先过门禁）">▶</button>`:''}
     </div>`;
   }).join('');
 
@@ -530,15 +537,19 @@ function redrawEdges(){
 
 /* --------- 从节点库加节点（P4：加新用途=加配置） --------- */
 const LIB_DEFS = {
-  'text':      {t:'文本',            kind:'text',  ins:[],                outs:['text'],  atomic:1},
-  'prompt':    {t:'提示词',          kind:'text',  ins:['text'],          outs:['text'],  atomic:1},
-  'image':     {t:'AI 生图',         kind:'image', ins:['text','image'],  outs:['image'], atomic:1, runnable:true, cap:'image-gen'},
-  'to3d':      {t:'图生 3D',         kind:'model', ins:['image'],         outs:['model'], atomic:1, runnable:true, cap:'model-3d'},
+  'text':      {t:'文本',            kind:'text',  ins:[],                outs:['text'],  atomic:1, data:1},
+  'prompt':    {t:'提示词',          kind:'text',  ins:['text'],          outs:['text'],  atomic:1, data:1},
+  'image':     {t:'AI 生图',         kind:'image', ins:['text','image'],  outs:['image'], atomic:1, cap:'image-gen'},
+  'to3d':      {t:'图生 3D',         kind:'model', ins:['image'],         outs:['model'], atomic:1, cap:'model-3d'},
   'crop':      {t:'裁剪（本地）',     kind:'image', ins:['image'],         outs:['image'], atomic:1, cap:'crop'},
   'filter':    {t:'滤镜（本地）',     kind:'image', ins:['image'],         outs:['image'], atomic:1, cap:'filter'},
   'gen-page':  {t:'生图工作台',       kind:'image', ins:['text','image'],  outs:['image'], comp:1, cap:'image-gen'},
   'motion-page':{t:'动图工作台',      kind:'video', ins:['image'],         outs:['video'], comp:1, cap:'motion-gif'},
   'm3d-page':  {t:'3D 工作台',        kind:'model', ins:['image','model'], outs:['model'], comp:1, cap:'model-3d'},
   'previs-page':{t:'3D 导演台',       kind:'video', ins:['model','text'],  outs:['video'], comp:1, cap:'previs'},
-  'clip-page': {t:'剪辑出片',         kind:'video', ins:['video','audio'], outs:['video'], comp:1, cap:'image-editor'}
+  /* 🔴 剪辑出片调的是 clip（/api/v1/clip/compose）。
+     之前写成 cap:'image-editor' —— 而 image-editor 在 CAPS 里明确标 node:false
+     （它只是 L2 页面容器，内部调 crop/filter/image-adjust），等于一个节点指着
+     「不是能力的能力」。 */
+  'clip-page': {t:'剪辑出片',         kind:'video', ins:['video','audio'], outs:['video'], comp:1, cap:'clip'}
 };

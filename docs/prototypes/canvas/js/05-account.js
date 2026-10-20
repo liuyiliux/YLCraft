@@ -80,11 +80,15 @@ function money(v){
 }
 
 /* 节点/技能 → 能力 的映射（这就是"加新用途=加配置"） */
-function capOfNode(n){
+function capKeyOfNode(n){
   if (!n) return null;
-  if (n.cap && CAPS[n.cap]) return CAPS[n.cap];
-  if (n.page && CAPS[n.pageKey]) return CAPS[n.pageKey];
+  if (n.cap && CAPS[n.cap]) return n.cap;
+  if (n.pageKey && CAPS[n.pageKey]) return n.pageKey;
   return null;
+}
+function capOfNode(n){
+  const k = capKeyOfNode(n);
+  return k ? CAPS[k] : null;
 }
 
 /* 模拟一次 invoke：返回可验证的产物 */
@@ -226,7 +230,7 @@ function openPage(capKey){
   const cap = CAPS[capKey];
   if (!cap){ toast('这个节点没有对应页面'); return; }
   if (!cap.page){
-    toast(cap.label + ' 是本地处理，没有独立页面（走 shared/image-ops）');
+    toast(cap.label + ' 是本地处理，没有独立页面（走 ' + cap.invoke.path + '）');
     return;
   }
   // 原型的"页面"用一张示意卡片代替，真实现是 navigate(cap.page + query)
@@ -312,7 +316,7 @@ function useMyFlow(fid){
   const groupNode = {
     id: gid, x: sx + 180, y: sy + 140, w: 156,
     t: f.n, sub: f.nodes + ' 个节点 · Tab 进入',
-    kind:'any', st:'ok', runnable:false,
+    kind:'any', st:'ok',
     ins:['text','image'], outs:['image','video'],
     group: gid, userGroup: 1
   };
@@ -341,6 +345,22 @@ function showNodeParams(id){
   if (!host) return;
   const isShot = typeof n.shot === 'number';
   const it = isShot ? DOC.items.slice().sort((a,b)=>a.order-b.order)[n.shot] : null;
+  const capKey = capKeyOfNode(n);
+  const cap = capKey ? CAPS[capKey] : null;
+  /* 这一栏就是"节点背后那份能力"：能指到就报接口和价，指不到就明说，不编 */
+  const capBlock = cap ? `
+      <div class="psep"></div>
+      <div class="prow"><span class="pk">能力</span><span class="pv">${cap.label} <code style="font-size:10px">${capKey}</code></span></div>
+      <div class="prow"><span class="pk">接口</span><span class="pv"><code style="font-size:10px">${cap.invoke.method==='LOCAL'?'本地 '+cap.invoke.path:cap.invoke.path}</code></span></div>
+      <div class="prow"><span class="pk">成本</span><span class="pv">${cap.cost?'⚡'+cap.cost:'免费'}</span></div>
+      ${it?`<div class="prow"><span class="pk">参数</span><span class="pv">${escapeHtml(Object.values(cap.params).join(' · '))}</span></div>`:''}
+      ` : (n.cap ? `
+      <div class="psep"></div>
+      <div class="pnote">🔴 节点写了 <code>${escapeHtml(String(n.cap))}</code>，但 CAPS 里没这份能力 —— 跑不了，也不给价格。</div>
+      ` : `
+      <div class="psep"></div>
+      <div class="prow"><span class="pk">能力</span><span class="pv">${n.data?'读文档 · 不调能力':(n.userGroup?'组 · 进去才是真节点':'🔴 指不到能力')}</span></div>
+      `);
   host.classList.remove('hidden');
   host.innerHTML = `
     <div class="ph2"><span class="pt">${n.t}</span>
@@ -349,22 +369,21 @@ function showNodeParams(id){
       <div class="prow"><span class="pk">类型</span><span class="pv">${n.kind}</span></div>
       <div class="prow"><span class="pk">输入</span><span class="pv">${(n.ins||[]).join(' / ')||'—'}</span></div>
       <div class="prow"><span class="pk">输出</span><span class="pv">${(n.outs||[]).join(' / ')||'—'}</span></div>
+      ${capBlock}
       ${it?`
       <div class="psep"></div>
       <div class="prow"><span class="pk">镜头</span><span class="pv">${String(n.shot+1).padStart(2,'0')} ${it.name}</span></div>
       <div class="prow"><span class="pk">时长</span><span class="pv">${it.duration>0?it.duration.toFixed(1)+'s':'—'}</span></div>
       <div class="prow"><span class="pk">状态</span><span class="pv">${n.sub}</span></div>
-      <div class="prow"><span class="pk">模型</span><span class="pv">GPT Image 2</span></div>
-      <div class="prow"><span class="pk">比例</span><span class="pv">2:3</span></div>
       <div class="psep"></div>
       <div class="pnote">改参数会标脏，点「运行」只跑这一镜。</div>
       `:''}
     </div>
     <div class="pf">
-      ${n.runnable?`<button class="b solid" style="flex:1;justify-content:center;font-size:11.5px"
+      ${capKey?`<button class="b solid" style="flex:1;justify-content:center;font-size:11.5px"
         onclick="runNode('${id}')">▶ 运行这个节点</button>`:
-        `<span style="font-size:11px;color:var(--tx3)">这个节点不产生内容</span>`}
-      ${n.cap ? `<button class="b out" style="font-size:11.5px" onclick="openPage('${n.cap}')">打开完整页面 ↗</button>` : ''}
+        `<span style="font-size:11px;color:var(--tx3)">${n.userGroup?'组节点 · 按 Tab 进去跑里面的':(n.data?'读文档 · 不调能力':'指不到能力 · 跑不了')}</span>`}
+      ${capKey ? `<button class="b out" style="font-size:11.5px" onclick="openPage('${capKey}')">打开完整页面 ↗</button>` : ''}
     </div>`;
 }
 function closeParams(){
@@ -373,43 +392,89 @@ function closeParams(){
   if (h) h.classList.add('hidden');
 }
 
-/* --------- 运行 --------- */
-function runNode(id){
+/* --------- 运行 ---------
+   🔴 两条以前漏掉的路：
+     · ▶ 单节点直接跑，⚡14 花出去没人问（跑整图反而有门禁）
+     · chargeFor 定义了却没人调，顶栏「今天花了」永远是 ¥0
+   现在：解析能力 → 过门禁 → 执行 → 按 PRICE_BOOK 落账 → 刷顶栏。 */
+async function runNode(id){
   const n = GRAPH.nodes.find(x=>x.id===id);
   if (!n) return;
-  // 生成节点（镜头）走 DOC
-  if (typeof n.shot === 'number'){
-    const items = DOC.items.slice().sort((a,b)=>a.order-b.order);
-    const it = items[n.shot];
-    n.st='run'; n.sub='生成中'; renderGraph();
-    toast('运行中：' + n.t);
-    setTimeout(()=>{
-      it.status='ok'; it.duration = it.duration || 3.5;
-      n.st='ok'; n.sub='已生成';
-      renderGraph(); renderShots(); renderTimeline(); renderMeta();
-      showNodeParams(id);
-      toast('完成：' + n.t);
-    }, 1200);
+
+  const isShot = typeof n.shot === 'number';
+  const capKey = capKeyOfNode(n);
+  if (!capKey){
+    if (n.data){ toast('「' + n.t + '」读文档，不调能力 —— 没有要跑的东西'); return; }
+    toast('这个节点指不到 CAPS 里的能力 · 没跑');
     return;
   }
-  // 🔴 有 cap 的节点统一走 invokeCap（P4：一份能力，多套外壳）
-  if (n.cap && CAPS[n.cap]){
-    const cap = CAPS[n.cap];
-    n.st='run'; n.sub='运行中…'; renderGraph();
-    const r = invokeCap(n.cap, {}, cap.params);
-    setTimeout(()=>{
-      n.st='ok';
-      n.sub = r.cost ? ('完成 · ⚡' + r.cost) : '完成 · 免费';
-      renderGraph(); showNodeParams(id);
-      agAdd('ai', '<b>' + cap.label + '</b> 跑完了。<br><br>'
-        + r.evidence + '<br>'
-        + '参数：<code>' + escapeHtml(JSON.stringify(r.payload)) + '</code><br><br>'
-        + '产物已经接到下游节点了。');
-      toast('完成：' + cap.label + (r.cost ? ' · ⚡' + r.cost : ''));
-    }, 900);
-    return;
+  const cap = CAPS[capKey];
+  const cost = cap.cost || 0;
+
+  if (cost >= GATE_COST_THRESHOLD && typeof requestGate === 'function'){
+    const approved = await requestGate({
+      kind:'node-run',
+      title:'运行「' + n.t + '」',
+      plan:[
+        '能力：' + cap.label + '（' + capKey + '）',
+        '接口：' + (cap.local ? '本地 ' + cap.invoke.path : cap.invoke.method + ' ' + cap.invoke.path),
+        '参数：' + Object.entries(cap.params).map(([k,v])=>k+'='+(Array.isArray(v)?v.join('|'):v)).join(' · '),
+        isShot ? ('只重画第 ' + String(n.shot+1).padStart(2,'0') + ' 镜') : '只跑这一个节点，不动上游'
+      ],
+      cost,
+      irreversible:false,
+      why:'一次点击就是一次真生成，价格要在你点头之前看见'
+    });
+    if (!approved){
+      toast('已取消 · 没跑 · 没花钱');
+      return;
+    }
   }
-  toast('这个节点不产生内容');
+
+  n.st='run'; n.sub='运行中…'; renderGraph();
+  toast('运行中：' + n.t);
+  const r = invokeCap(capKey, {}, cap.params);
+  /* ⚡ 之外还要落人民币：能力上没配 price 就不记，不编 */
+  const bill = (cap.price && typeof chargeFor === 'function') ? chargeFor(cap, cap.price, 1) : null;
+  const ms = isShot ? 1200 : 900;
+
+  setTimeout(()=>{
+    if (isShot){
+      const items = DOC.items.slice().sort((a,b)=>a.order-b.order);
+      const it = items[n.shot];
+      if (it){ it.status='ok'; it.duration = it.duration || 3.5; }
+    }
+    n.st='ok';
+    n.sub = cost ? ('完成 · ⚡' + cost) : '完成 · 免费';
+    renderGraph();
+    if (isShot){ renderShots(); renderTimeline(); renderMeta(); }
+    showNodeParams(id);
+    if (typeof renderUserChip === 'function') renderUserChip();
+
+    const moneyTxt = bill
+      ? (bill.ok ? ' ⚡' + cost + ' / ' + money(bill.amountCny) : ' ⚡' + cost + '（' + bill.reason + '）')
+      : (cost ? ' ⚡' + cost + '（PRICE_BOOK 没配这个模型的价，只记积分）' : ' 免费');
+
+    if (typeof PROD_LOG !== 'undefined'){
+      PROD_LOG.push({
+        at: new Date().toLocaleTimeString('zh-CN', { hour12:false }).slice(0,8),
+        kind:'gen',
+        title:'跑单节点 · ' + n.t,
+        detail: capKey + ' · <code>' + r.path + '</code> · ' + r.evidence,
+        model: cap.price || '未配价',
+        why:'跑之前过了门禁：⚡' + cost,
+        cost, ms, status:'ok'
+      });
+      if (typeof renderBoard === 'function' && typeof BOARD_TAB !== 'undefined' && BOARD_TAB === 'board') renderBoard();
+    }
+
+    agAdd('ai', '<b>' + cap.label + '</b> 跑完了。<br><br>'
+      + r.evidence + '<br>'
+      + '参数：<code>' + escapeHtml(JSON.stringify(r.payload)) + '</code><br><br>'
+      + '花费：<b>' + moneyTxt + '</b><br>'
+      + '产物已经接到下游节点了。');
+    toast('完成：' + cap.label + (cost ? ' · ⚡' + cost : ''));
+  }, ms);
 }
 
 function rerunAll(){
