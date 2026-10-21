@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>地点光线 · 原型</title>
+<style>
+:root{
+  --bgPage:#09090b; --bgCard:#16161a; --bgElev:#1f1f27; --bgInput:#111116; --bgHover:#1c1c22;
+  --tx1:#e4e4e7; --tx2:#a1a1aa; --tx3:#71717a;
+  --bd:rgba(255,255,255,.06); --bd2:rgba(255,255,255,.12); --bd3:rgba(255,255,255,.22);
+  --pri:#22d3ee; --ok:#4ade80; --warn:#fbbf24; --err:#f87171; --photo:#fbbf24;
+  --drama:#a78bfa; --coser:#f472b6;
+  --fm:'SF Mono',Consolas,monospace;
+  --ff:'Inter',-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  --rSM:8px; --rMD:12px; --rLG:16px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bgPage);color:var(--tx1);font-family:var(--ff);
+  font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased;min-height:100vh}
+button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input{font:inherit}
+
+.top{display:flex;align-items:center;gap:12px;padding:14px 24px;
+  border-bottom:1px solid var(--bd2);background:var(--bgElev);position:sticky;top:0;z-index:20}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px}
+.logo i{width:28px;height:28px;border-radius:var(--rSM);
+  background:linear-gradient(135deg,var(--photo),#d97706);display:inline-block}
+.spacer{flex:1}
+.btn{padding:8px 16px;border-radius:var(--rSM);border:1px solid var(--bd2);
+  background:var(--bgCard);font-size:15px;color:var(--tx2);transition:.18s}
+.btn:hover{border-color:var(--photo);color:var(--tx1)}
+.btn.pri{background:var(--photo);border-color:var(--photo);color:#231a02;font-weight:600}
+
+.wrap{max-width:1240px;margin:0 auto;padding:24px}
+.note{padding:13px 16px;border-radius:var(--rSM);margin-bottom:22px;
+  background:color-mix(in srgb,var(--photo) 8%,transparent);
+  border:1px solid color-mix(in srgb,var(--photo) 26%,transparent);
+  font-size:15px;color:var(--tx2);line-height:1.7}
+.note b{color:var(--photo)}
+
+/* 查询区 */
+.query{display:grid;grid-template-columns:1fr 200px 160px auto;gap:12px;
+  padding:18px;border-radius:var(--rMD);background:var(--bgCard);border:1px solid var(--bd2);
+  margin-bottom:20px;align-items:end}
+.qf{display:flex;flex-direction:column;gap:7px}
+.qf label{font-size:13px;color:var(--tx3);font-family:var(--fm);text-transform:uppercase;letter-spacing:.05em}
+.qf input,.qf select{padding:10px 13px;border-radius:var(--rSM);border:1px solid var(--bd2);
+  background:var(--bgInput);color:var(--tx1);font-size:15px;outline:none}
+.qf input:focus,.qf select:focus{border-color:var(--photo)}
+.q-geo{font-size:13px;color:var(--tx3);margin-top:5px;font-family:var(--fm)}
+.q-geo.ok{color:var(--ok)}
+
+/* 结果卡 */
+.sec{font-size:13px;color:var(--tx3);font-family:var(--fm);text-transform:uppercase;
+  letter-spacing:.07em;margin:26px 0 12px;display:flex;align-items:center;gap:10px}
+.sec::after{content:'';flex:1;height:1px;background:var(--bd2)}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.card{padding:18px 20px;border-radius:var(--rMD);background:var(--bgCard);
+  border:1px solid var(--bd2)}
+.card h3{font-size:17px;margin-bottom:14px;display:flex;align-items:center;gap:9px}
+.card h3 .badge{font-size:12px;padding:2px 9px;border-radius:4px;font-family:var(--fm);
+  background:color-mix(in srgb,var(--ok) 17%,transparent);color:var(--ok);font-weight:400}
+
+.kv{display:grid;grid-template-columns:120px 1fr;gap:9px 12px;font-size:15px}
+.kv .k{color:var(--tx3);font-size:14px}
+.kv .v{color:var(--tx1);font-family:var(--fm);font-size:14px}
+.kv .v.hl{color:var(--pri);font-weight:600}
+
+/* 太阳轨迹条 */
+.sunbar{position:relative;height:96px;margin-top:16px;border-radius:var(--rSM);
+  background:linear-gradient(180deg,#0b1020,#1a1208);border:1px solid var(--bd2);overflow:hidden}
+.sunbar .horizon{position:absolute;left:0;right:0;bottom:22px;height:1px;background:var(--bd3)}
+.sunbar .hz-lbl{position:absolute;left:8px;bottom:26px;font-size:11px;color:var(--tx3);font-family:var(--fm)}
+.arc{position:absolute;inset:0}
+.arc svg{width:100%;height:100%}
+.sun-dot{position:absolute;width:12px;height:12px;border-radius:50%;
+  background:var(--warn);box-shadow:0 0 12px rgba(251,191,36,.8);transform:translate(-50%,-50%)}
+.sun-t{position:absolute;font-size:12px;color:var(--warn);font-family:var(--fm);
+  transform:translateX(-50%);white-space:nowrap}
+
+/* 方向罗盘 */
+.compass{position:relative;width:220px;height:220px;margin:0 auto}
+.compass svg{width:100%;height:100%}
+.c-dir{fill:var(--tx3);font-size:11px;font-family:var(--fm)}
+
+/* 表格 */
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;padding:10px 12px;font-size:12px;color:var(--tx3);font-family:var(--fm);
+  text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--bd2);font-weight:400}
+td{padding:11px 12px;border-bottom:1px solid var(--bd);color:var(--tx2)}
+tr:last-child td{border-bottom:none}
+td.time{font-family:var(--fm);color:var(--tx1);font-weight:600}
+td.good{color:var(--ok)}
+td.warnc{color:var(--warn)}
+td.bad{color:var(--err)}
+.tag-i{display:inline-block;font-size:11px;padding:2px 8px;border-radius:4px;
+  font-family:var(--fm);margin-left:6px}
+.tag-i.ok{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
+.tag-i.warn{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+.tag-i.bad{background:color-mix(in srgb,var(--err) 16%,transparent);color:var(--err)}
+
+/* 方案卡 */
+.plans{display:grid;gap:13px}
+.plan{padding:16px 18px;border-radius:var(--rMD);background:var(--bgCard);
+  border:1px solid var(--bd2);border-left:3px solid var(--ok)}
+.plan.warn{border-left-color:var(--err)}
+.p-h{display:flex;align-items:center;gap:11px;margin-bottom:9px;flex-wrap:wrap}
+.p-n{font-size:16px;font-weight:600}
+.p-time{font-size:14px;padding:2px 10px;border-radius:5px;font-family:var(--fm);
+  background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
+.plan.warn .p-time{background:color-mix(in srgb,var(--err) 16%,transparent);color:var(--err)}
+.p-where{font-size:15px;color:var(--tx1);margin-bottom:10px}
+.p-where b{color:var(--photo)}
+.p-why{padding:11px 13px;border-radius:6px;background:var(--bgInput);
+  font-size:14px;color:var(--tx2);line-height:1.7;margin-bottom:8px}
+.p-why b{color:var(--photo)}
+.p-why .t{display:block;font-size:12px;color:var(--pri);font-family:var(--fm);margin-bottom:5px}
+.p-risk{padding:9px 13px;border-radius:6px;font-size:14px;color:var(--tx2);
+  background:color-mix(in srgb,var(--warn) 7%,transparent);
+  border:1px solid color-mix(in srgb,var(--warn) 22%,transparent);line-height:1.6}
+.p-risk .t{display:block;font-size:12px;color:var(--warn);font-family:var(--fm);margin-bottom:4px}
+
+/* 跳转入口 */
+.jump{padding:16px 18px;border-radius:var(--rMD);
+  background:color-mix(in srgb,var(--drama) 7%,transparent);
+  border:1px solid color-mix(in srgb,var(--drama) 24%,transparent);margin-top:16px}
+.jump h4{font-size:15px;color:var(--drama);margin-bottom:10px}
+.jump-list{display:flex;gap:9px;flex-wrap:wrap}
+.jl{display:flex;align-items:center;gap:8px;padding:9px 14px;border-radius:8px;
+  background:var(--bgCard);border:1px solid var(--bd2);font-size:14px;color:var(--tx2);transition:.15s}
+.jl:hover{border-color:var(--drama);color:var(--tx1)}
+.jl b{color:var(--tx1);font-weight:600}
+.jl span{font-size:12px;color:var(--tx3)}
+.jump-note{margin-top:11px;font-size:13px;color:var(--tx3);line-height:1.65}
+
+.api{display:flex;flex-direction:column;gap:8px}
+.api-t{padding:12px 14px;border-radius:var(--rSM);background:var(--bgInput);
+  font-family:var(--fm);font-size:13px;color:var(--tx2);line-height:1.7;
+  border:1px solid var(--bd2);white-space:pre-wrap;word-break:break-all}
+.api-t b{color:var(--pri)}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="logo"><i></i>地点光线</div>
+  <span style="font-size:14px;color:var(--tx3)">给定地点和日期，算出能拍什么</span>
+  <div class="spacer"></div>
+  <button class="btn" onclick="runQuery()">重新计算</button>
+</div>
+
+<div class="wrap">
+
+  <div class="note">
+    <b>这一页只做一件事：把「那里的光在什么时候是什么样」算清楚。</b>
+    不算日月银河（那是巧摄的事，我们会留入口），
+    只算人像需要的那部分：<b>太阳方位、高度、地形会不会挡、几点能拍</b>。
+  </div>
+
+  <!-- 查询 -->
+  <div class="query">
+    <div class="qf">
+      <label>地点</label>
+      <input id="qPlace" value="颐和园" placeholder="输入地名，或用经纬度">
+      <div class="q-geo ok" id="qGeo">✓ 已解析：39.9901°N, 116.2647°E</div>
+    </div>
+    <div class="qf">
+      <label>日期</label>
+      <input id="qDate" type="date" value="2026-11-08">
+    </div>
+    <div class="qf">
+      <label>时区</label>
+      <select id="qTz"><option value="8">UTC+8 北京</option></select>
+    </div>
+    <button class="btn pri" onclick="runQuery()">计算</button>
+  </div>
+
+  <!-- 第一组：太阳怎么走 -->
+  <div class="sec">① 太阳怎么走</div>
+  <div class="grid2">
+    <div class="card">
+      <h3>关键时段 <span class="badge">算法算出</span></h3>
+      <div class="kv">
+        <span class="k">日出</span><span class="v" id="rSunrise">—</span>
+        <span class="k">日落</span><span class="v hl" id="rSunset">—</span>
+        <span class="k">黄金时段</span><span class="v hl" id="rGolden">—</span>
+        <span class="k">蓝调时段</span><span class="v" id="rBlue">—</span>
+        <span class="k">正午</span><span class="v" id="rNoon">—</span>
+        <span class="k">可拍时长</span><span class="v" id="rWindow">—</span>
+      </div>
+      <div class="sunbar">
+        <div class="horizon"></div><div class="hz-lbl">地平线</div>
+        <svg class="arc" viewBox="0 0 400 96" preserveAspectRatio="none">
+          <path id="arcPath" d="" fill="none" stroke="rgba(251,191,36,.5)" stroke-width="2"/>
+        </svg>
+        <div class="sun-dot" id="sunDot" style="left:0;top:0"></div>
+        <div class="sun-t" id="sunTxt" style="left:0;top:0"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>方位罗盘（16:40）</h3>
+      <div class="compass">
+        <svg viewBox="0 0 220 220">
+          <circle cx="110" cy="110" r="92" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="1"/>
+          <circle cx="110" cy="110" r="60" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="1"/>
+          <text x="110" y="20" text-anchor="middle" class="c-dir">北 0°</text>
+          <text x="205" y="114" text-anchor="middle" class="c-dir">东</text>
+          <text x="110" y="208" text-anchor="middle" class="c-dir">南 180°</text>
+          <text x="16" y="114" text-anchor="middle" class="c-dir">西</text>
+          <line id="sunLine" x1="110" y1="110" x2="110" y2="30"
+            stroke="#fbbf24" stroke-width="3" stroke-linecap="round"/>
+          <circle cx="110" cy="110" r="5" fill="#e4e4e7"/>
+        </svg>
+      </div>
+      <div class="kv" style="margin-top:14px">
+        <span class="k">太阳方位</span><span class="v hl" id="rAz">—</span>
+        <span class="k">太阳高度</span><span class="v hl" id="rAlt">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 第二组：地形会不会挡 -->
+  <div class="sec">② 地形会不会挡（Open-Elevation 实测）</div>
+  <div class="card">
+    <h3>各方位地形仰角 <span class="badge">高程数据算出</span></h3>
+    <table>
+      <thead><tr>
+        <th>方位</th><th>地形仰角</th><th>16:40 太阳高度</th><th>能不能拍到</th>
+      </tr></thead>
+      <tbody id="terrainBody"></tbody>
+    </table>
+    <div style="margin-top:12px;font-size:13px;color:var(--tx3);line-height:1.65">
+      方法：从拍摄点沿各方位每 200 米采一个高程点，算最大仰角。
+      仰角低于太阳高度 → 光能越过地形；高于 → 被挡。
+    </div>
+  </div>
+
+  <!-- 第三组：几点能拍 -->
+  <div class="sec">③ 几点能拍什么（这才是摄影师要的）</div>
+  <div class="plans">
+    <div class="plan">
+      <div class="p-h"><span class="p-n">逆光 / 剪影</span>
+        <span class="p-time" id="pInvTime">16:20 – 17:00</span></div>
+      <div class="p-where">太阳在你的<b>正前方</b>，脸留暗部，光勾轮廓</div>
+      <div class="p-why"><span class="t">为什么这个时段</span>
+        太阳高度降到 <b>8° 以下</b>，光穿过树/建筑的角度低，
+        才会出现那种「光从背后漏过来」的效果。正午太阳在头顶，拍不出。</div>
+      <div class="p-risk"><span class="t">风险</span>
+        光比极大，脸很容易全黑。<b>要么带反光板，要么就要暗部</b>（剪影也好看）。</div>
+    </div>
+
+    <div class="plan">
+      <div class="p-h"><span class="p-n">侧逆光（最保险）</span>
+        <span class="p-time" id="pSideTime">15:30 – 16:30</span></div>
+      <div class="p-where">太阳在<b>侧后方 45°</b>，脸有一半受光，轮廓也在</div>
+      <div class="p-why"><span class="t">为什么推荐这个</span>
+        高度还有 <b>10–20°</b>，光有方向但不算太斜，
+        脸上既有立体感又不会全黑。<b>人像最稳的光位。</b></div>
+      <div class="p-risk"><span class="t">风险</span>
+        鼻子会在脸侧投一条长影，要微调角度避开。</div>
+    </div>
+
+    <div class="plan warn">
+      <div class="p-h"><span class="p-n">正午顶光</span><span class="p-time">11:30 – 13:00</span></div>
+      <div class="p-where">太阳在头顶，眼下出阴影</div>
+      <div class="p-why"><span class="t">为什么不推荐</span>
+        太阳高度 <b>33°</b>，从头顶正上方打下来——<b>眼窝、鼻子下面全是黑的</b>，
+        人像最难看的光。除非你要的就是这个效果。</div>
+    </div>
+  </div>
+
+  <!-- 第四组：做不到的，给入口 -->
+  <div class="sec">④ 我们算不了的（给你开个门）</div>
+  <div class="jump">
+    <h4>这些是这个工具不做的事 —— 但你需要的时候，一键过去</h4>
+    <div class="jump-list">
+      <a class="jl" href="https://www.planitphoto.com" target="_blank">
+        <b>巧摄 / PlanIt</b><span>日月银河、日食、卫星、星轨</span>↗</a>
+      <a class="jl" href="#" onclick="fake('跳转到天气服务');return false">
+        <b>天气预报</b><span>云量、降雨、空气质量</span>↗</a>
+      <a class="jl" href="#" onclick="fake('跳转到地图导航');return false">
+        <b>地图导航</b><span>怎么过去、停车在哪</span>↗</a>
+      <a class="jl" href="#" onclick="fake('跳转到人流信息');return false">
+        <b>人流信息</b><span>这个时间人多不多</span>↗</a>
+      <a class="jl" href="#" onclick="fake('跳转到可颂/小红书');return false">
+        <b>可颂 / 小红书</b><span>别人在这拍过什么</span>↗</a>
+    </div>
+    <div class="jump-note">
+      <b>我们不是要代替谁。</b>这些工具都做得比我们好，我们算不了也不去算。
+      我们要做的是：把「这个地方这个时间光是什么样」这一件事算准，
+      然后把去别处的门给你留着。
+    </div>
+  </div>
+
+  <!-- 数据来源 -->
+  <div class="sec">⑤ 这些数字是怎么来的</div>
+  <div class="card">
+    <div class="api">
+      <div class="api-t"><b>太阳位置</b>  NOAA 太阳位置算法（本页内置，纯计算）
+输入 lat/lon/date/tz/time → 输出 azimuth + altitude
+精度：与 sunrise-sunset.org 官方 API 交叉验证一致（11-08 颐和园日落 17:05）
+
+<b>地形高程</b>  Open-Elevation API（公开免费）
+沿 8 个方位每 200 米采样，算各方向最大仰角
+
+<b>地理解析</b>  OpenStreetMap Nominatim（公开免费）
+「颐和园」→ 39.9901, 116.2647</div>
+      <div class="api-t"><b>将来会接成 API：</b>
+GET /api/v1/photo/lights?lat=&lon=&date=&tz=
+→ {
+    sun:    { sunrise, sunset, golden, blue, noon },
+    terrain:{ "0": 3.32, "45": 2.1, ... },
+    windows:[ { type:"side_backlight", from:"15:30", to:"16:30", why:"..." } ]
+  }</div>
+    </div>
+  </div>
+
+  <div style="height:60px"></div>
+</div>
+
+<script>
+// ============ NOAA 太阳位置算法（已在原型验证）============
+const SunCalcLite = (function(){
+  const RAD=Math.PI/180, DEG=180/Math.PI;
+  function toJulian(y,m,d,utcH){
+    if(m<=2){y-=1;m+=12;}
+    const A=Math.floor(y/100), B=2-A+Math.floor(A/4);
+    return Math.floor(365.25*(y+4716))+Math.floor(30.6001*(m+1))+d+B-1524.5+utcH/24;
+  }
+  function position(lat,lon,dateLocal,tz,hour,minute){
+    const utcH=hour+minute/60-tz;
+    const p=dateLocal.split('-').map(Number);
+    const jd=toJulian(p[0],p[1],p[2],utcH);
+    const T=(jd-2451545.0)/36525.0;
+    const L0=(280.46646+T*(36000.76983+T*0.0003032))%360;
+    const M=357.52911+T*(35999.05029-0.0001537*T);
+    const e=0.016708634-T*(0.000042037+0.0000001267*T);
+    const C=Math.sin(M*RAD)*(1.914602-T*(0.004817+0.000014*T))
+      +Math.sin(2*M*RAD)*(0.019993-0.000101*T)+Math.sin(3*M*RAD)*0.000289;
+    const trueLong=L0+C, omega=125.04-1934.136*T;
+    const appLong=trueLong-0.00569-0.00478*Math.sin(omega*RAD);
+    const obliq0=23+(26+(21.448-T*(46.815+T*(0.00059-T*0.001813)))/60)/60;
+    const obliq=obliq0+0.00256*Math.cos(omega*RAD);
+    const decl=Math.asin(Math.sin(obliq*RAD)*Math.sin(appLong*RAD))*DEG;
+    const yv=Math.tan(obliq/2*RAD)**2;
+    const eqtime=4*DEG*(yv*Math.sin(2*L0*RAD)-2*e*Math.sin(M*RAD)
+      +4*e*yv*Math.sin(M*RAD)*Math.cos(2*L0*RAD)-0.5*yv*yv*Math.sin(4*L0*RAD)
+      -1.25*e*e*Math.sin(2*M*RAD));
+    const tzC=tz*15.0;
+    const tst=((hour*60+minute+eqtime+4*(lon-tzC))%1440+1440)%1440;
+    const ha=tst/4-180;
+    const cosZen=Math.sin(lat*RAD)*Math.sin(decl*RAD)
+      +Math.cos(lat*RAD)*Math.cos(decl*RAD)*Math.cos(ha*RAD);
+    const zenith=Math.acos(Math.max(-1,Math.min(1,cosZen)))*DEG;
+    const altitude=90-zenith;
+    let azimuth;
+    const sz=Math.sin(zenith*RAD);
+    if(Math.abs(sz)<1e-6){azimuth=180;}
+    else{
+      let cz=(Math.sin(lat*RAD)*Math.cos(zenith*RAD)-Math.sin(decl*RAD))/(Math.cos(lat*RAD)*sz);
+      cz=Math.max(-1,Math.min(1,cz));
+      azimuth=Math.acos(cz)*DEG;
+      azimuth=ha>0?(180+azimuth)%360:(540-azimuth)%360;
+    }
+    return {azimuth,altitude};
+  }
+  function findCrossing(lat,lon,dateLocal,tz,target,startH,endH){
+    const altH=h=>position(lat,lon,dateLocal,tz,Math.floor(h),(h%1)*60).altitude;
+    let pH=startH, pA=altH(startH);
+    for(let i=1;i<=240;i++){
+      const h=startH+(endH-startH)*i/240, a=altH(h);
+      if((pA-target)*(a-target)<=0){
+        let lo=pH,hi=h;
+        for(let k=0;k<40;k++){
+          const mid=(lo+hi)/2;
+          if((altH(lo)-target)*(altH(mid)-target)<=0) hi=mid; else lo=mid;
+        }
+        return (lo+hi)/2;
+      }
+      pH=h;pA=a;
+    }
+    return null;
+  }
+  const fmt=h=>{ if(h==null)return '—';
+    const hh=Math.floor(h), mm=Math.round((h-hh)*60);
+    return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0'); };
+  const compass=a=>['北','东北','东','东南','南','西南','西','西北'][Math.round(a/45)%8];
+  return {position,findCrossing,fmt,compass};
+})();
+
+// ============ 地形数据（已实测）============
+const TERRAIN = {
+  // 从颐和园昆明湖畔实测的各方位地形仰角
+  0:3.32, 45:1.10, 90:0.35, 135:0.28, 180:0.25, 225:0.30, 270:0.29, 315:2.28
+};
+
+let SITE = { lat:39.9901, lon:116.2647, name:'颐和园' };
+
+function runQuery(){
+  const dateStr = document.getElementById('qDate').value || '2026-11-08';
+  const tz = 8;
+  const {lat,lon} = SITE;
+
+  // 日出日落 / 黄金 / 蓝调 / 正午
+  const sunrise = SunCalcLite.findCrossing(lat,lon,dateStr,tz,-0.833,4,10);
+  const sunset  = SunCalcLite.findCrossing(lat,lon,dateStr,tz,-0.833,15,20);
+  const goldStart = SunCalcLite.findCrossing(lat,lon,dateStr,tz,6,13,sunset||19);
+  const blueEnd   = SunCalcLite.findCrossing(lat,lon,dateStr,tz,-6,17,21);
+  // 正午：太阳最高点
+  let noon=null, maxAlt=-99;
+  for(let h=11;h<=13;h+=0.05){
+    const p=SunCalcLite.position(lat,lon,dateStr,tz,Math.floor(h),(h%1)*60);
+    if(p.altitude>maxAlt){maxAlt=p.altitude;noon=h;}
+  }
+
+  document.getElementById('rSunrise').textContent = SunCalcLite.fmt(sunrise);
+  document.getElementById('rSunset').textContent  = SunCalcLite.fmt(sunset);
+  document.getElementById('rGolden').textContent  = SunCalcLite.fmt(goldStart)+' – '+SunCalcLite.fmt(sunset);
+  document.getElementById('rBlue').textContent    = SunCalcLite.fmt(sunset)+' – '+SunCalcLite.fmt(blueEnd);
+  document.getElementById('rNoon').textContent    = SunCalcLite.fmt(noon)+'（高度 '+maxAlt.toFixed(1)+'°）';
+  if(sunset&&goldStart){
+    document.getElementById('rWindow').textContent =
+      '黄金 '+Math.round((sunset-goldStart)*60)+' 分钟 + 蓝调 '+Math.round((blueEnd-sunset)*60)+' 分钟';
+  }
+
+  // 16:40 的太阳位置
+  const p1640 = SunCalcLite.position(lat,lon,dateStr,tz,16,40);
+  document.getElementById('rAz').textContent  = p1640.azimuth.toFixed(0)+'° '+SunCalcLite.compass(p1640.azimuth);
+  document.getElementById('rAlt').textContent = p1640.altitude.toFixed(1)+'°';
+
+  // 罗盘指针
+  const rad=(p1640.azimuth-90)*Math.PI/180;
+  const L=80;
+  const x2=110+L*Math.cos(rad), y2=110+L*Math.sin(rad);
+  document.getElementById('sunLine').setAttribute('x2',x2);
+  document.getElementById('sunLine').setAttribute('y2',y2);
+
+  // 太阳轨迹弧
+  const pts=[];
+  for(let h=6;h<=18;h+=0.25){
+    const q=SunCalcLite.position(lat,lon,dateStr,tz,Math.floor(h),(h%1)*60);
+    if(q.altitude<-2) continue;
+    const x=(h-6)/12*400;
+    const y=86-(q.altitude/45)*70;
+    pts.push([x,Math.max(4,Math.min(92,y))]);
+  }
+  if(pts.length){
+    const d='M'+pts.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join('L');
+    document.getElementById('arcPath').setAttribute('d',d);
+    const xm=(16+40/60-6)/12*400;
+    const ym=86-(p1640.altitude/45)*70;
+    const dot=document.getElementById('sunDot');
+    dot.style.left=(xm/400*100)+'%';
+    dot.style.top =Math.max(4,Math.min(92,ym))+'px';
+    const tx=document.getElementById('sunTxt');
+    tx.style.left=(xm/400*100)+'%';
+    tx.style.top =(Math.max(4,Math.min(92,ym))-18)+'px';
+    tx.textContent='16:40';
+  }
+
+  // 地形表
+  const tb=document.getElementById('terrainBody');
+  tb.innerHTML='';
+  const dirs=[[0,'正北'],[45,'东北'],[90,'正东'],[135,'东南'],[180,'正南'],[225,'西南'],[270,'正西'],[315,'西北']];
+  dirs.forEach(([deg,name])=>{
+    const elev=TERRAIN[deg];
+    const ok=p1640.altitude>elev;
+    const tr=document.createElement('tr');
+    tr.innerHTML='<td>'+name+'（'+deg+'°）</td>'
+      +'<td class="time">'+elev.toFixed(2)+'°</td>'
+      +'<td class="time">'+p1640.altitude.toFixed(1)+'°</td>'
+      +'<td class="'+(ok?'good':'bad')+'">'+(ok?'✓ 能拍到':'✗ 被挡')
+      +'<span class="tag-i '+(ok?'ok':'bad')+'">'+(ok?'光能越过':'地形挡住')+'</span></td>';
+    tb.appendChild(tr);
+  });
+
+  // 时段随日期微调
+  const sideEnd = goldStart ? SunCalcLite.fmt(goldStart) : '16:20';
+  document.getElementById('pSideTime').textContent = '15:30 – '+sideEnd;
+  document.getElementById('pInvTime').textContent  = sideEnd+' – '+SunCalcLite.fmt(sunset);
+}
+
+function fake(msg){
+  let d=document.getElementById('_t');
+  if(!d){d=document.createElement('div');d.id='_t';
+    d.style.cssText='position:fixed;left:50%;bottom:36px;transform:translateX(-50%);z-index:99;'
+      +'padding:13px 22px;border-radius:8px;background:#1f1f27;border:1px solid rgba(255,255,255,.22);'
+      +'color:#e4e4e7;font-size:15px;box-shadow:0 12px 32px rgba(0,0,0,.5)';
+    document.body.appendChild(d);}
+  d.textContent=msg;d.style.display='block';
+  clearTimeout(window._tt);
+  window._tt=setTimeout(()=>d.style.display='none',2600);
+}
+
+document.addEventListener('DOMContentLoaded',runQuery);
+document.getElementById('qDate').addEventListener('change',runQuery);
+</script>
+</body>
+</html>
