@@ -603,6 +603,129 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 .w2-img.good .ph{background:linear-gradient(150deg,#1f3a2a,#0e1a14)}
 .w2-img span{display:block;padding:7px 10px;font-size:var(--fs-xs);color:var(--tx2)}
 
+/* ===== 页面切换 ===== */
+.pagetabs{display:flex;gap:4px;padding:4px;border-radius:var(--radiusSM);
+  background:var(--bgInput);border:1px solid var(--bd2);margin-left:18px}
+.pt{padding:7px 16px;border-radius:6px;font-size:var(--fs-cap);color:var(--tx2);transition:.16s}
+.pt:hover{color:var(--tx1)}
+.pt.on{background:var(--bgCard);color:var(--tx1);box-shadow:var(--shadow);font-weight:600}
+
+/* ===== 脚本策划 ===== */
+.plan-wrap{display:grid;grid-template-columns:280px 1fr 300px;gap:0;
+  max-width:1700px;margin:0 auto;height:calc(100vh - 62px)}
+.plan-left,.plan-right{overflow:auto;padding:16px 16px;border-right:1px solid var(--bd2)}
+.plan-right{border-right:none;border-left:1px solid var(--bd2)}
+.plan-mid{overflow:auto;padding:16px 18px}
+.pl-hd{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+.pl-t{font-size:var(--fs-xs);color:var(--tx3);font-family:var(--fm);text-transform:uppercase;
+  letter-spacing:.07em}
+.pl-add{font-size:var(--fs-sm);color:var(--tx3);padding:2px 9px;border-radius:5px}
+.pl-add:hover{background:var(--bgHover);color:var(--tx1)}
+.pl-proj{padding:12px 14px;border-radius:var(--radiusMD);background:var(--bgCard);
+  border:1px solid var(--bd2)}
+.pl-proj.on{border-color:var(--photo)}
+.pl-pname{font-size:var(--fs-cap);color:var(--tx1);font-weight:600;line-height:1.4}
+.pl-pmeta{font-size:var(--fs-xs);color:var(--tx3);margin-top:4px;font-family:var(--fm)}
+.pl-scenes{margin-top:11px;display:flex;flex-direction:column;gap:5px}
+.pl-scene{display:flex;align-items:center;justify-content:space-between;padding:8px 11px;
+  border-radius:6px;cursor:pointer;transition:.15s;border:1px solid transparent}
+.pl-scene:hover{background:var(--bgHover)}
+.pl-scene.on{background:color-mix(in srgb,var(--photo) 11%,transparent);
+  border-color:color-mix(in srgb,var(--photo) 34%,transparent)}
+.pl-sn{font-size:var(--fs-sm);color:var(--tx2)}
+.pl-scene.on .pl-sn{color:var(--photo)}
+.pl-sc{font-size:var(--fs-xs);color:var(--tx3);font-family:var(--fm)}
+.pl-addsc{font-size:var(--fs-sm);color:var(--tx3);padding:7px 11px;border-radius:6px;
+  border:1px dashed var(--bd2);margin-top:3px}
+.pl-addsc:hover{border-color:var(--photo);color:var(--photo)}
+.pl-mood{margin-top:4px;display:flex;flex-direction:column;gap:8px}
+.pl-mrow{display:flex;gap:9px;font-size:var(--fs-sm);padding:7px 11px;border-radius:6px;
+  background:var(--bgCard);border:1px solid var(--bd2)}
+.pl-ml{color:var(--tx3);font-size:var(--fs-xs);font-family:var(--fm);flex-shrink:0;min-width:36px;padding-top:2px}
+.pl-mv{color:var(--tx2);line-height:1.6}
+
+.plan-mid-hd{display:flex;align-items:center;gap:11px;margin-bottom:14px}
+.pm-title{font-size:var(--fs-h4);color:var(--tx1);font-weight:600}
+.pm-sub{font-size:var(--fs-sm);color:var(--tx3);font-family:var(--fm)}
+
+.shots{display:flex;flex-direction:column;gap:12px}
+.shot{background:var(--bgCard);border:1px solid var(--bd2);border-radius:var(--radiusMD);
+  overflow:hidden;transition:.16s}
+.shot:hover{border-color:var(--bd3);box-shadow:var(--shadow)}
+.shot.on{border-color:var(--photo)}
+.sh-hd{display:flex;align-items:center;gap:9px;padding:11px 15px;
+  border-bottom:1px solid var(--bd);background:var(--bgElev)}
+.sh-n{font-size:var(--fs-sm);font-weight:600;color:var(--tx1);font-family:var(--fm)}
+.sh-st{font-size:var(--fs-xs);padding:2px 9px;border-radius:4px}
+.sh-st.done{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
+.sh-st.changed{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+.sh-st.miss{background:color-mix(in srgb,var(--err) 16%,transparent);color:var(--err)}
+.sh-x{font-size:var(--fs-sm);color:var(--tx3);padding:2px 9px;border-radius:5px}
+.sh-x:hover{background:var(--bgHover)}
+.sh-body{padding:13px 15px}
+.sh-row{display:flex;gap:11px;margin-bottom:9px;align-items:flex-start}
+.sh-l{font-size:var(--fs-xs);color:var(--tx3);font-family:var(--fm);flex-shrink:0;
+  min-width:62px;padding-top:3px}
+.sh-v{font-size:var(--fs-cap);color:var(--tx1);line-height:1.6}
+.changed-row .sh-v{color:var(--warn)}
+.sh-kv{display:flex;gap:5px;flex-wrap:wrap}
+.sh-cues{margin-top:12px;padding-top:12px;border-top:1px dashed var(--bd2)}
+.sh-cues-t{font-size:var(--fs-xs);color:var(--tx3);font-family:var(--fm);
+  text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
+.sh-cue{display:flex;align-items:center;gap:8px;padding:8px 11px;border-radius:6px;
+  background:color-mix(in srgb,var(--photo) 7%,transparent);
+  border:1px solid color-mix(in srgb,var(--photo) 22%,transparent);margin-bottom:6px}
+.shc-p{font-size:var(--fs-xs);padding:1.5px 8px;border-radius:4px;flex-shrink:0;
+  background:color-mix(in srgb,var(--photo) 18%,transparent);color:var(--photo)}
+.shc-q{flex:1;font-size:var(--fs-sm);color:var(--tx1);line-height:1.5}
+.shc-x{font-size:var(--fs-sm);color:var(--tx3);padding:1px 6px;border-radius:4px}
+.shc-x:hover{color:var(--err)}
+.sh-addcue{font-size:var(--fs-sm);color:var(--tx3);padding:6px 11px;border-radius:6px;
+  border:1px dashed var(--bd2);width:100%;text-align:left}
+.sh-addcue:hover{border-color:var(--photo);color:var(--photo)}
+.sh-refs{margin-top:12px;padding-top:12px;border-top:1px dashed var(--bd2);display:flex;
+  align-items:center;gap:9px;flex-wrap:wrap}
+.sh-refs-t{font-size:var(--fs-xs);color:var(--tx3);font-family:var(--fm);flex-shrink:0}
+.sh-ref{display:flex;align-items:center;gap:7px;padding:5px 9px;border-radius:6px;
+  background:var(--bgInput);border:1px solid var(--bd2)}
+.shr-img{width:32px;height:24px;border-radius:4px;background:linear-gradient(150deg,#2a2340,#141020);flex-shrink:0}
+.shr-img.g2{background:linear-gradient(150deg,#3a2a1a,#1a1208)}
+.sh-ref span{font-size:var(--fs-xs);color:var(--tx2)}
+.sh-addref{width:34px;height:30px;border-radius:6px;border:1px dashed var(--bd2);
+  color:var(--tx3);font-size:var(--fs-cap)}
+.sh-addref:hover{border-color:var(--photo);color:var(--photo)}
+.shot-add{padding:14px;border-radius:var(--radiusMD);border:1px dashed var(--bd2);
+  color:var(--tx3);font-size:var(--fs-cap);transition:.15s}
+.shot-add:hover{border-color:var(--photo);color:var(--photo);
+  background:color-mix(in srgb,var(--photo) 5%,transparent)}
+
+.pr-hd{display:flex;align-items:center;gap:9px;margin-bottom:14px}
+.pr-t{font-size:var(--fs-cap);color:var(--tx1);font-weight:600}
+.pr-n{font-size:var(--fs-xs);color:var(--tx3);font-family:var(--fm)}
+.pr-grp{margin-bottom:16px}
+.pr-g-h{font-size:var(--fs-xs);color:var(--tx3);font-family:var(--fm);margin-bottom:7px;
+  display:flex;align-items:center;gap:7px}
+.pr-g-h.hot{color:var(--err)}
+.pr-dot{width:7px;height:7px;border-radius:50%}
+.pr-dot.self{background:var(--pri)}
+.pr-dot.buy{background:var(--warn)}
+.pr-dot.party{background:var(--coser)}
+.pr-dot.must{background:var(--err)}
+.pr-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;
+  font-size:var(--fs-sm);color:var(--tx2);background:var(--bgCard);
+  border:1px solid var(--bd2);margin-bottom:5px}
+.pr-item.must{border-color:color-mix(in srgb,var(--err) 32%,transparent);
+  background:color-mix(in srgb,var(--err) 6%,var(--bgCard));color:var(--tx1)}
+.pr-cb{font-size:var(--fs-sm);color:var(--tx3);width:15px;flex-shrink:0}
+.pr-cb.on{color:var(--ok)}
+.pr-tag{font-size:var(--fs-xs);color:var(--tx3);margin-left:auto;font-family:var(--fm)}
+.pr-note{font-size:var(--fs-xs);color:var(--err);margin-left:auto;font-family:var(--fm)}
+.pr-hint{margin-top:16px;padding:12px 13px;border-radius:var(--radiusSM);
+  background:color-mix(in srgb,var(--photo) 7%,transparent);
+  border:1px solid color-mix(in srgb,var(--photo) 24%,transparent);
+  font-size:var(--fs-sm);color:var(--tx2);line-height:1.7}
+.pr-hint b{color:var(--photo)}
+
 /* ===== 出门前检查 ===== */
 .pf{position:fixed;inset:0;background:color-mix(in srgb,var(--bgPage) 95%,transparent);z-index:70;
   display:none;align-items:center;justify-content:center;backdrop-filter:blur(10px)}
@@ -727,6 +850,10 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 
 <div class="top">
   <div class="logo"><span class="cam">📷</span>摄影参考库</div>
+  <div class="pagetabs">
+    <button class="pt on" onclick="switchPage('ref',this)">参考库</button>
+    <button class="pt" onclick="switchPage('plan',this)">脚本策划</button>
+  </div>
   <div class="searchbox">
     <svg viewBox="0 0 24 24"><path d="M10 2a8 8 0 105.3 14l5.4 5.4 1.4-1.4-5.4-5.4A8 8 0 0010 2zm0 2a6 6 0 110 12 6 6 0 010-12z"/></svg>
     <input value="民政局门口 逆光 暖调">
@@ -742,6 +869,8 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
   <button class="btn pri" onclick="openPreflight()">出门前检查</button>
 </div>
 
+<!-- ===== 参考库页面 ===== -->
+<div id="pageRef">
 <div class="libs">
   <div class="lib d1 on" onclick="pickLib(this,'审美')">
     <h3><span class="dot"></span>审美</h3>
@@ -1122,6 +1251,200 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
     你犯一次它就热一次，很久不犯它就冷静下去，但<b>永远不会被删掉</b>。
   </div>
 </div>
+
+</div><!-- /pageRef -->
+
+<!-- ===== 脚本策划页面 ===== -->
+<div id="pagePlan" style="display:none">
+  <div class="plan-wrap">
+
+    <!-- 左：项目 → 场景 → 分镜 -->
+    <div class="plan-left">
+      <div class="pl-hd">
+        <span class="pl-t">项目</span>
+        <div class="spacer"></div>
+        <button class="pl-add" onclick="fake('新建项目')">＋</button>
+      </div>
+      <div class="pl-proj on">
+        <div class="pl-pname">10月 · 小清新人像 · 客户A</div>
+        <div class="pl-pmeta">明天 15:00 · 民宿</div>
+
+        <div class="pl-scenes">
+          <div class="pl-scene on" onclick="pickScene2(this,'窗边')">
+            <span class="pl-sn">场景 1 · 窗边</span>
+            <span class="pl-sc">3 镜</span>
+          </div>
+          <div class="pl-scene" onclick="pickScene2(this,'阳台')">
+            <span class="pl-sn">场景 2 · 阳台</span>
+            <span class="pl-sc">2 镜</span>
+          </div>
+          <div class="pl-scene" onclick="pickScene2(this,'楼下街道')">
+            <span class="pl-sn">场景 3 · 楼下街道</span>
+            <span class="pl-sc">4 镜</span>
+          </div>
+          <button class="pl-addsc" onclick="fake('加一个场景')">＋ 加场景</button>
+        </div>
+      </div>
+
+      <div class="pl-hd" style="border-top:1px solid var(--bd2);margin-top:10px">
+        <span class="pl-t">这组要什么感觉</span>
+      </div>
+      <div class="pl-mood">
+        <div class="pl-mrow"><span class="pl-ml">主题</span><span class="pl-mv">松，像在自己家</span></div>
+        <div class="pl-mrow"><span class="pl-ml">色调</span><span class="pl-mv">暖，但脸不偏黄</span></div>
+        <div class="pl-mrow"><span class="pl-ml">人群</span><span class="pl-mv">个人写真（无专门结论）</span></div>
+      </div>
+    </div>
+
+    <!-- 中：分镜 -->
+    <div class="plan-mid">
+      <div class="plan-mid-hd">
+        <span class="pm-title">场景 1 · 窗边</span>
+        <span class="pm-sub">3 个分镜</span>
+        <div class="spacer"></div>
+        <button class="btn" onclick="fake('一键从主题生成脚本 —— 主题 → 元素拆解')">AI 帮我拆</button>
+        <button class="btn pri" onclick="fake('加一个分镜')">＋ 分镜</button>
+      </div>
+
+      <div class="shots">
+        <!-- 分镜 1 -->
+        <div class="shot on">
+          <div class="sh-hd">
+            <span class="sh-n">镜 1</span>
+            <span class="sh-st done">拍了</span>
+            <div class="spacer"></div>
+            <button class="sh-x" onclick="fake('删除 / 上移 / 下移')">⋯</button>
+          </div>
+          <div class="sh-body">
+            <div class="sh-row">
+              <span class="sh-l">要的画面</span>
+              <div class="sh-v">坐在窗边，逆光只照亮脸颊，眼睛在暗部</div>
+            </div>
+            <div class="sh-row">
+              <span class="sh-l">景别</span>
+              <div class="sh-kv"><span class="tg">特写</span><span class="tg">侧逆光</span></div>
+            </div>
+
+            <div class="sh-cues">
+              <div class="sh-cues-t">这一镜用这些口令</div>
+              <div class="sh-cue">
+                <span class="shc-p">眼神</span>
+                <span class="shc-q">「现在眼睛看我手指，不用转脸」</span>
+                <button class="shc-x" onclick="fake('移掉')">✕</button>
+              </div>
+              <div class="sh-cue">
+                <span class="shc-p">下巴</span>
+                <span class="shc-q">「把额头轻轻送向镜头」</span>
+                <button class="shc-x" onclick="fake('移掉')">✕</button>
+              </div>
+              <button class="sh-addcue" onclick="fake('从口令库里选 —— 按作用位置筛')">＋ 加口令</button>
+            </div>
+
+            <div class="sh-refs">
+              <div class="sh-refs-t">参考</div>
+              <div class="sh-ref"><div class="shr-img"></div><span>逆光勾轮廓</span></div>
+              <div class="sh-ref"><div class="shr-img g2"></div><span>脸留暗部</span></div>
+              <button class="sh-addref" onclick="fake('从审美库选')">＋</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 分镜 2 -->
+        <div class="shot">
+          <div class="sh-hd">
+            <span class="sh-n">镜 2</span>
+            <span class="sh-st changed">改拍了</span>
+            <div class="spacer"></div>
+            <button class="sh-x" onclick="fake('删 / 上下移')">⋯</button>
+          </div>
+          <div class="sh-body">
+            <div class="sh-row">
+              <span class="sh-l">要的画面</span>
+              <div class="sh-v">手拿杯子，光线从侧面</div>
+            </div>
+            <div class="sh-row changed-row">
+              <span class="sh-l">改成了</span>
+              <div class="sh-v">风太大，改成抓头发被吹散的瞬间</div>
+            </div>
+            <div class="sh-cues">
+              <div class="sh-cues-t">这一镜用这些口令</div>
+              <div class="sh-cue">
+                <span class="shc-p">手</span>
+                <span class="shc-q">「手摸一下围巾就好」</span>
+                <button class="shc-x" onclick="fake('移掉')">✕</button>
+              </div>
+              <button class="sh-addcue" onclick="fake('从口令库里选')">＋ 加口令</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 分镜 3 -->
+        <div class="shot">
+          <div class="sh-hd">
+            <span class="sh-n">镜 3</span>
+            <span class="sh-st miss">没拍</span>
+            <div class="spacer"></div>
+            <button class="sh-x" onclick="fake('删 / 上下移')">⋯</button>
+          </div>
+          <div class="sh-body">
+            <div class="sh-row">
+              <span class="sh-l">要的画面</span>
+              <div class="sh-v">回头，窗帘挡住一半脸</div>
+            </div>
+            <div class="sh-row changed-row">
+              <span class="sh-l">为什么没拍</span>
+              <div class="sh-v">窗帘挂不住，光也过去了</div>
+            </div>
+            <div class="sh-cues">
+              <button class="sh-addcue" onclick="fake('从口令库里选')">＋ 加口令</button>
+            </div>
+          </div>
+        </div>
+
+        <button class="shot-add" onclick="fake('加一个分镜')">＋ 加一个分镜</button>
+      </div>
+    </div>
+
+    <!-- 右：元素清单（必带） -->
+    <div class="plan-right">
+      <div class="pr-hd">
+        <span class="pr-t">必带清单</span>
+        <span class="pr-n">12 项</span>
+      </div>
+
+      <div class="pr-grp">
+        <div class="pr-g-h"><span class="pr-dot self"></span>自带</div>
+        <div class="pr-item"><span class="pr-cb on">✓</span>相机 · 85mm</div>
+        <div class="pr-item"><span class="pr-cb on">✓</span>反光板</div>
+        <div class="pr-item"><span class="pr-cb">○</span>纱帘</div>
+        <div class="pr-item"><span class="pr-cb">○</span>白色长裙</div>
+      </div>
+
+      <div class="pr-grp">
+        <div class="pr-g-h"><span class="pr-dot buy"></span>现场买</div>
+        <div class="pr-item"><span class="pr-cb">○</span>手持小花 <span class="pr-tag">花店</span></div>
+        <div class="pr-item"><span class="pr-cb">○</span>透明水杯 <span class="pr-tag">便利店</span></div>
+      </div>
+
+      <div class="pr-grp">
+        <div class="pr-g-h"><span class="pr-dot party"></span>甲方提供</div>
+        <div class="pr-item"><span class="pr-cb">○</span>客户的围巾</div>
+      </div>
+
+      <div class="pr-grp">
+        <div class="pr-g-h hot"><span class="pr-dot must"></span>必带（标红）</div>
+        <div class="pr-item must"><span class="pr-cb">○</span>纱帘 <span class="pr-note">分镜 3 要用</span></div>
+        <div class="pr-item must"><span class="pr-cb">○</span>反光板 <span class="pr-note">逆光要补脸</span></div>
+      </div>
+
+      <div class="pr-hint">
+        <b>从脚本自动提取。</b>每个分镜写了什么，这里就自动统计出来。
+        分镜改了这里跟着变 —— 不用手维护两份。
+      </div>
+    </div>
+
+  </div>
+</div><!-- /pagePlan -->
 
 <!-- ===== 出门前检查 ===== -->
 <div class="pf" id="preflight">
@@ -2068,6 +2391,21 @@ function pickPref(el,name){
 }
 function openPreflight(){ document.getElementById('preflight').classList.add('on'); }
 function closePreflight(){ document.getElementById('preflight').classList.remove('on'); }
+
+/* 页面切换 */
+function switchPage(p,el){
+  document.querySelectorAll('.pt').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+  const isRef = p==='ref';
+  document.getElementById('pageRef').style.display = isRef?'block':'none';
+  document.getElementById('pagePlan').style.display = isRef?'none':'block';
+  fake(isRef?'参考库':'脚本策划 —— 左边项目/场景，中间分镜，右边必带清单');
+}
+function pickScene2(el,name){
+  document.querySelectorAll('.pl-scene').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+  fake('切到场景：'+name);
+}
 
 /* 口令筛选 */
 function cueFilter(el,type){
