@@ -317,6 +317,29 @@ input{font:inherit}
 .ac-h em.m{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
 .ac-b{font-size:var(--fs-sm);color:var(--tx2);line-height:1.7}
 
+/* 折叠区 */
+.fold{margin-bottom:12px;border-radius:var(--radiusSM);background:var(--bgCard);
+  border:1px solid var(--bd2);overflow:hidden}
+.fold-hd{display:flex;align-items:center;gap:9px;padding:12px 15px;cursor:pointer;
+  transition:.15s;user-select:none}
+.fold-hd:hover{background:var(--bgHover)}
+.fold-ar{font-size:var(--fs-xs);color:var(--tx3);transition:.2s;display:inline-block;width:12px}
+.fold-ar.open{transform:rotate(90deg)}
+.fold-t{font-size:var(--fs-cap);font-weight:600;color:var(--tx1)}
+.fold-src{font-size:var(--fs-xs);padding:2px 8px;border-radius:4px}
+.fold-src.auto{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
+.fold-src.manual{background:color-mix(in srgb,var(--photo) 16%,transparent);color:var(--photo)}
+.fold-hint{font-size:var(--fs-xs);color:var(--tx3)}
+.fold-bd{padding:0 15px 15px;border-top:1px solid var(--bd)}
+.fold-bd .kv{margin-top:13px}
+.fold-edit{margin-top:15px;padding-top:13px;border-top:1px dashed var(--bd2)}
+.fe-lab{font-size:var(--fs-xs);color:var(--tx3);font-family:var(--fm);display:block;margin-bottom:9px}
+.fe-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.fe-k{font-size:var(--fs-sm);color:var(--tx3);min-width:74px;flex-shrink:0}
+.fe-in{flex:1;padding:8px 12px;border-radius:6px;border:1px solid var(--bd2);
+  background:var(--bgInput);color:var(--tx1);font-size:var(--fs-sm);outline:none}
+.fe-in:focus{border-color:var(--photo)}
+
 /* 智能体侧栏 */
 .ag-hd{padding:15px 18px;border-bottom:1px solid var(--bd2);display:flex;align-items:center;gap:10px}
 .ag-hd .av{width:30px;height:30px;border-radius:var(--radiusSM);background:var(--grad);
@@ -683,38 +706,81 @@ input{font:inherit}
             <div class="ph"></div>
             <div class="ex">50mm · f/4 · 1/500s · ISO400 · 6100K · 8192×5464</div>
           </div>
+
+          <!-- 折叠区：拍摄参数 -->
+          <div class="fold" id="foldExif">
+            <div class="fold-hd" onclick="toggleFold('foldExif')">
+              <span class="fold-ar">▸</span>
+              <span class="fold-t">拍摄参数</span>
+              <span class="fold-src auto">EXIF 自动读</span>
+              <span class="spacer"></span>
+              <span class="fold-hint">点开编辑</span>
+            </div>
+            <div class="fold-bd" style="display:none">
+              <div class="kv">
+                <span class="k">相机</span><span class="v">Canon EOS R5</span>
+                <span class="k">镜头</span><span class="v">RF 85mm F1.2L USM</span>
+                <span class="k">焦距</span><span class="v hl">85mm</span>
+                <span class="k">光圈</span><span class="v hl">f/1.2</span>
+                <span class="k">快门</span><span class="v hl">1/2000s</span>
+                <span class="k">ISO</span><span class="v hl">100</span>
+                <span class="k">白平衡</span><span class="v">5200K（手动）</span>
+                <span class="k">尺寸</span><span class="v">8192 × 5464</span>
+                <span class="k">拍摄时间</span><span class="v">2024-05-12 17:24</span>
+                <span class="k">地点</span><span class="v">杭州 · 西湖区某民宿</span>
+              </div>
+              <div class="fold-edit">
+                <span class="fe-lab">补录（EXIF 里没有的）</span>
+                <div class="fe-row"><span class="fe-k">当时的光</span><input class="fe-in" value="下午 5 点，太阳在侧后方，没补光" placeholder="EXIF 看不出光从哪来"></div>
+                <div class="fe-row"><span class="fe-k">现场状况</span><input class="fe-in" value="风大，头发一直在动，抓了十几张" placeholder="天气、环境、突发情况"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 折叠区：当时的脚本 -->
+          <div class="fold" id="foldScript">
+            <div class="fold-hd" onclick="toggleFold('foldScript')">
+              <span class="fold-ar">▸</span>
+              <span class="fold-t">当时的脚本</span>
+              <span class="fold-src manual">关联摄影策划台</span>
+              <span class="spacer"></span>
+              <span class="fold-hint">点开编辑</span>
+            </div>
+            <div class="fold-bd" style="display:none">
+              <div class="kv">
+                <span class="k">项目</span><span class="v">10 月 · 小清新人像 · 客户 A</span>
+                <span class="k">场景</span><span class="v">店铺 / 民宿 / 咖啡店</span>
+                <span class="k">分镜</span><span class="v hl">第 3 镜：窗边逆光，只拍侧脸</span>
+                <span class="k">要的画面</span><span class="v">疏离感，人占画面 1/3，前景留纱</span>
+                <span class="k">必带道具</span><span class="v">纱帘 · 白色长裙 · 手持小花</span>
+              </div>
+              <div class="fold-edit">
+                <span class="fe-lab">当时怎么改的</span>
+                <div class="fe-row"><span class="fe-k">偏离了</span><input class="fe-in" value="纱帘没用上，风太大挂不住" placeholder="和脚本不一样的地方"></div>
+                <div class="fe-row"><span class="fe-k">为什么</span><input class="fe-in" value="改成了抓头发被吹散的瞬间，反而更松弛" placeholder="为什么这么改"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 折叠区：客户的反馈 -->
+          <div class="fold" id="foldFeedback">
+            <div class="fold-hd" onclick="toggleFold('foldFeedback')">
+              <span class="fold-ar">▸</span>
+              <span class="fold-t">客户 / 自己的评价</span>
+              <span class="spacer"></span>
+              <span class="fold-hint">点开编辑</span>
+            </div>
+            <div class="fold-bd" style="display:none">
+              <div class="fold-edit" style="margin-top:0">
+                <div class="fe-row"><span class="fe-k">客户说</span><input class="fe-in" value="「这张最喜欢，能不能多修几张这种感觉的」" placeholder="客户原话，别转述"></div>
+                <div class="fe-row"><span class="fe-k">我觉得</span><input class="fe-in" value="光对了，但脸有点偏暖，下次白平衡要往冷推" placeholder="自己的判断"></div>
+              </div>
+            </div>
+          </div>
+
           <div class="ana-note">
-            <b>没有参考图也能看。</b>这类作品是直接拍的，不需要「像不像谁」，
-            要的是<b>看出来这张好在哪、差在哪</b>。
-          </div>
-          <div class="ana-ask">
-            <span class="aa-lab">想从哪个角度看？</span>
-            <button class="chip on" onclick="tog(this)">整体</button>
-            <button class="chip" onclick="tog(this)">光线</button>
-            <button class="chip" onclick="tog(this)">构图</button>
-            <button class="chip" onclick="tog(this)">肤色 / 后期</button>
-            <button class="chip" onclick="tog(this)">情绪 / 引导</button>
-            <button class="chip" onclick="tog(this)">客户反馈</button>
-          </div>
-          <div class="ana-cards">
-            <div class="ac ok">
-              <div class="ac-h"><span class="ac-t">成立的地方</span><em class="a">可观察事实</em></div>
-              <div class="ac-b">逆光勾出了肩线，头发边缘有一圈亮；眼神光保住了，脸没全黑。</div>
-            </div>
-            <div class="ac warn">
-              <div class="ac-h"><span class="ac-t">可疑的地方</span><em class="m">要你判断</em></div>
-              <div class="ac-b">f/4 让背景还看得见轮廓，虚化比常见的弱。是故意保留环境，还是当时光线不够？</div>
-            </div>
-            <div class="ac">
-              <div class="ac-h"><span class="ac-t">看不到的地方</span><em class="m">参数里没有</em></div>
-              <div class="ac-b">你当时想表达什么？这张在这组片子里是开头还是结尾？
-                这些 EXIF 读不出来，需要你说。</div>
-            </div>
-          </div>
-          <div class="why" style="margin-top:14px">
-            <span class="t">⚠ 为什么这里没有分数</span>
-            连人类标注者对「构图好不好」的一致性都只有 <b>0.53</b>（AADB 数据集），
-            AI 给的 8 分是假精确。<b>这里只列「可观察事实」+「要你判断的点」</b>，不打分。
+            三类卡片已经去掉。<b>这里只给你「当时的记录」</b>——
+            参数是自动读的，脚本和判断是你补的。<b>分析你自己来，工具只负责把东西摆在眼前。</b>
           </div>
         </div>
       </div>
@@ -738,17 +804,28 @@ input{font:inherit}
         </div>
         <div class="ag-body" id="agAna" style="display:none">
           <div class="msg ai">
-            这张我只看得到参数和画面，看不到你的意图。先说我确定的：<br>
-            · 逆光，肩线和头发有轮廓<br>
-            · 眼神光保住了，脸没全黑<br>
-            · f/4 —— 背景还留着轮廓<br><br>
-            我不打分。打分是假的，连人对「构图好不好」都没共识。
+            参数我读到了，脚本和你的补录也看到了。<br>
+            想聊什么？我可以帮你把这张的复盘理一理。
+          </div>
+          <div class="msg me">
+            这张我感觉光对了，但脸有点太暖，说不上来哪不对
           </div>
           <div class="msg ai">
-            我想问你三件事，答完这张就有了「当时的判断」：
-            <span class="q" onclick="fake('这张是你要的样子吗？')">① 这张是你要的样子吗？</span>
-            <span class="q" onclick="fake('背景留轮廓是故意的吗？')">② 背景留着是故意的吗？</span>
-            <span class="q" onclick="fake('这组里它排第几？')">③ 这组里它排第几？</span>
+            看参数对上了：白平衡设的是 <b>6100K</b>，而当时的光是下午 5 点侧后方的太阳，
+            这个时段的自然光本身偏暖，相机再往暖设就叠加了。<br><br>
+            再加上你补录的「风大、抓十几张」，说明是按快门优先在抢瞬间，
+            颜色判断被牺牲了。<br><br>
+            <b>下次可以试</b>：白平衡往 5200K 压，或者拍之前先对着白纸定一次。
+          </div>
+          <div class="msg ai">
+            要不要我把这条整理成一句可以存的反思？
+            <span class="q" onclick="showSummary()">→ 生成总结，存进反思</span>
+          </div>
+          <div class="msg ai" id="agSummary" style="display:none;border-color:color-mix(in srgb,var(--photo) 40%,transparent)">
+            <b style="color:var(--photo)">可以存进反思的总结：</b><br>
+            「傍晚侧逆光拍摄时，白平衡不要跟着光走——自然光本身就暖，
+            相机再往暖设会叠加。下次压到 5200K 或先对白纸定白。」
+            <span class="q" style="margin-top:10px" onclick="fake('已存进反思 · 标签：白平衡 / 傍晚 / 逆光')">✓ 确认存进「反思」</span>
           </div>
         </div>
         <div class="ag-ft"><input placeholder="或者直接说：我当时光太硬了…"><button class="btn">发送</button></div>
@@ -842,8 +919,19 @@ function switchTab(mode){
     ? '已经读过两张图的 EXIF'
     : '已经读过这张的 EXIF';
 }
-function refSrc(el,type){
-  el.parentElement.querySelectorAll('.rs').forEach(x=>x.classList.remove('on'));
+function toggleFold(id){
+  const box=document.getElementById(id);
+  const bd=box.querySelector('.fold-bd');
+  const ar=box.querySelector('.fold-ar');
+  const open = bd.style.display!=='none';
+  bd.style.display = open?'none':'block';
+  ar.classList.toggle('open', !open);
+}
+function showSummary(){
+  document.getElementById('agSummary').style.display='block';
+  fake('已生成总结 —— 确认后存进「反思」');
+}
+function refSrc(el,type){  el.parentElement.querySelectorAll('.rs').forEach(x=>x.classList.remove('on'));
   el.classList.add('on');
   document.getElementById('uplZone').style.display = type==='lib'?'none':'block';
   if(type==='lib') fake('从审美库里选一张参考');
