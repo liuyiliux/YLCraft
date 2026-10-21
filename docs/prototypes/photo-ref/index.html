@@ -855,6 +855,26 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 .el-note b{color:var(--photo)}
 
 .shot-from-el{margin-top:20px;padding-top:16px;border-top:1px solid var(--bd2)}
+/* 分镜卡（从元素组合） */
+.sfe-empty{padding:20px;border-radius:var(--radiusSM);border:1px dashed var(--bd2);
+  color:var(--tx3);font-size:var(--fs-sm);text-align:center}
+.sfe-note{margin-top:11px;font-size:var(--fs-sm);color:var(--tx3);line-height:1.7;
+  padding:11px 14px;border-radius:var(--radiusSM);background:var(--bgInput)}
+.sfe-note b{color:var(--photo)}
+.sfe-list{display:flex;flex-direction:column;gap:10px}
+.sfe-item{background:var(--bgCard);border:1px solid var(--bd2);border-radius:var(--radiusSM);
+  padding:14px 16px;border-left:3px solid var(--photo)}
+.sfe-h{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.sfe-n{font-size:var(--fs-sm);color:var(--photo);font-family:var(--fm);font-weight:700}
+.sfe-frame{font-size:var(--fs-xs);padding:2px 9px;border-radius:4px;
+  background:color-mix(in srgb,var(--pri) 15%,transparent);color:var(--pri)}
+.sfe-combo{font-size:var(--fs-xs);color:var(--tx3);font-family:var(--fm)}
+.sfe-row{display:flex;gap:11px;padding:5px 0;font-size:var(--fs-sm);align-items:flex-start}
+.sfe-k{color:var(--tx3);font-size:var(--fs-xs);font-family:var(--fm);flex-shrink:0;
+  min-width:74px;padding-top:2px}
+.sfe-v{color:var(--tx2);line-height:1.65;flex:1}
+.sfe-k.risk{color:var(--warn)}
+.sfe-v.risk{color:var(--warn)}
 .sfe-hd{display:flex;align-items:center;gap:9px;font-size:var(--fs-xs);color:var(--tx3);
   font-family:var(--fm);text-transform:uppercase;letter-spacing:.05em;margin-bottom:11px}
 .sfe-list{display:flex;flex-direction:column;gap:7px}
@@ -1660,18 +1680,17 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
         <div class="sfe-hd">
           <span>分镜（从上面的元素组合出来）</span>
           <div class="spacer"></div>
-          <button class="btn" onclick="fake('按元素自动排几个镜头')">按元素排镜头</button>
+          <button class="btn" onclick="regenShots()">重新排镜头</button>
         </div>
-        <div class="sfe-list">
-          <div class="sfe"><span class="sfe-n">镜 1</span>
-            <span class="sfe-d">逆光站定 · 摸围巾 · 风吹头发</span>
-            <span class="sfe-tag">侧逆光 + 动态 + 口令</span></div>
-          <div class="sfe"><span class="sfe-n">镜 2</span>
-            <span class="sfe-d">抛落叶 · 抓笑出来的那一刻</span>
-            <span class="sfe-tag">动态元素 + 连续拍</span></div>
-          <div class="sfe"><span class="sfe-n">镜 3</span>
-            <span class="sfe-d">走路回头 · 远处塔做背景</span>
-            <span class="sfe-tag">口令 + 环境元素</span></div>
+        <div class="sfe-list" id="sfeList">
+          <div class="sfe-empty" id="sfeEmpty">
+            还没选方案 —— 元素定下来，这里会自动排出分镜
+          </div>
+        </div>
+        <div class="sfe-note" id="sfeNote" style="display:none">
+          <b>分镜不是凭空写的。</b>每一镜都从上面的元素里取：
+          一个光位 + 一个动态元素 + 一句口令 + 一个构图。
+          <b>改元素，分镜跟着变。</b>
         </div>
       </div>
     </div>
@@ -3097,8 +3116,11 @@ function pickPlan(which){
     parent.innerHTML = '<div class="pr-g-h hot"><span class="pr-dot must"></span>别忘（标红）</div>' + items;
   }
 
-  // 4. 提示
-  fake('已选「方案 ' + which + ' · ' + el.name + '」—— 元素清单、时段、光位都按它填好了');
+  // 4. 排分镜
+  genShots(which);
+
+  // 5. 提示
+  fake('已选「方案 ' + which + '」—— 元素清单和分镜都按它排好了');
 }
 
 function renderPlanTimes(){
@@ -3115,6 +3137,67 @@ function renderPlanTimes(){
   if (bEl && gold){
     bEl.textContent = '15:30 – ' + SunCalcLite.fmtTime(gold);
   }
+}
+/* ===== 分镜从元素组合生成 ===== */
+
+// 每个方案的「镜头配方」：一镜 = 光位 + 元素 + 口令 + 构图
+const SHOT_RECIPES = {
+  A: [
+    { light:'逆光（太阳正前方）', elem:'桥洞做前景框', pose:'站定 · 侧脸',
+      frame:'全身 / 桥在中轴', why:'逆光时最有层次的是轮廓，站定不动才能等到光穿过来',
+      take:'连拍 8–10 张，等风', risk:'脸会黑，先保轮廓' },
+    { light:'逆光', elem:'风中头发', pose:'不看镜头 · 微侧',
+      frame:'近景 / 特写脸侧', why:'风吹动头发，逆光会把发丝点亮——这是这组最出彩的一镜',
+      take:'连拍抓，头发落下的一瞬', risk:'风太大头发全盖脸，等一阵' },
+    { light:'逆光转蓝调', elem:'远处塔 + 天空渐层', pose:'回头',
+      frame:'半身 / 人物靠右', why:'日落后 10 分钟天空渐变，塔做背景，人物轮廓变成剪影',
+      take:'单张精拍，手要稳', risk:'光掉得很快，先测好曝光' }
+  ],
+  B: [
+    { light:'侧逆光 45°', elem:'柱子投长影', pose:'靠柱子',
+      frame:'半身 / 柱子当分割线', why:'侧逆光让人物一半亮一半暗，柱子影子增加纵深',
+      take:'连拍 5 张，调整角度', risk:'光比大，必须上反光板' },
+    { light:'侧逆光', elem:'柱间漏光', pose:'走两步回头',
+      frame:'全身 / 长廊消失点', why:'长廊的消失点本身就是最好的构图线，人走进去画面就活了',
+      take:'连拍，人走到 1/3 处按', risk:'游客会入镜，要等空档' },
+    { light:'侧顺光（转身后）', elem:'柱子特写', pose:'手扶栏杆 · 看远处',
+      frame:'特写 / 柱子做前景', why:'转身后光变顺，脸亮起来，可以拍表情',
+      take:'单张，抓表情', risk:'这时脸会偏暖，注意白平衡' }
+  ]
+};
+
+function genShots(planKey){
+  const recipes = SHOT_RECIPES[planKey];
+  if(!recipes) return;
+  const list = document.getElementById('sfeList');
+  document.getElementById('sfeEmpty').style.display = 'none';
+  document.getElementById('sfeNote').style.display = 'block';
+
+  list.innerHTML = recipes.map((r,i)=>{
+    const n = i+1;
+    return '<div class="sfe-item">'
+      + '<div class="sfe-h">'
+      +   '<span class="sfe-n">镜 '+n+'</span>'
+      +   '<span class="sfe-frame">'+r.frame+'</span>'
+      +   '<div class="spacer"></div>'
+      +   '<span class="sfe-combo">'+r.light+' + '+r.elem+' + '+r.pose+'</span>'
+      + '</div>'
+      + '<div class="sfe-row"><span class="sfe-k">画面</span>'
+      +   '<span class="sfe-v">'+r.elem+' · '+r.pose+'</span></div>'
+      + '<div class="sfe-row"><span class="sfe-k">为什么这么拍</span>'
+      +   '<span class="sfe-v">'+r.why+'</span></div>'
+      + '<div class="sfe-row"><span class="sfe-k">怎么按快门</span>'
+      +   '<span class="sfe-v">'+r.take+'</span></div>'
+      + '<div class="sfe-row"><span class="sfe-k risk">风险</span>'
+      +   '<span class="sfe-v risk">'+r.risk+'</span></div>'
+      + '</div>';
+  }).join('');
+}
+
+function regenShots(){
+  if(!currentPlan){ fake('先选一个方案'); return; }
+  genShots(currentPlan);
+  fake('已按元素重排 '+SHOT_RECIPES[currentPlan].length+' 个镜头');
 }
 function openVague(){ document.getElementById('vagueSheet').classList.add('on'); }
 function closeVague(){ document.getElementById('vagueSheet').classList.remove('on'); }
