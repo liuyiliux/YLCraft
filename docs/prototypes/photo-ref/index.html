@@ -584,6 +584,191 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 .cq-save:hover{background:var(--tx2)}
 .cq-save:disabled{background:var(--bd2);color:var(--tx3);cursor:not-allowed}
 .cq-status{font-size:14px;font-family:var(--fm)}
+/* ===== 新建拍摄 · 双模式 ===== */
+.np{position:fixed;inset:0;background:color-mix(in srgb,var(--bgPage) 92%,transparent);
+  z-index:75;display:none;align-items:center;justify-content:center;backdrop-filter:blur(12px)}
+.np.on{display:flex}
+.np-box{width:min(720px,94vw);max-height:92vh;background:var(--bgCard);
+  border:1px solid var(--bd3);border-radius:14px;display:flex;flex-direction:column;overflow:hidden}
+.np-hd{position:relative;padding:26px 30px 20px;border-bottom:1px solid var(--bd2)}
+.np-title{font-size:24px;font-weight:600;letter-spacing:-.02em;color:var(--tx1);margin-bottom:6px}
+.np-sub{font-size:15px;color:var(--tx3)}
+.np-x{position:absolute;top:22px;right:24px;width:32px;height:32px;border-radius:6px;
+  color:var(--tx3);font-size:16px;transition:.16s}
+.np-x:hover{background:var(--bgHover);color:var(--tx1)}
+
+/* 模式切换 */
+.np-modes{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--bd2);
+  border-bottom:1px solid var(--bd2)}
+.np-mode{position:relative;padding:18px 22px;background:var(--bgCard);text-align:left;
+  transition:.16s;display:flex;flex-direction:column;gap:3px}
+.np-mode:hover{background:var(--bgHover)}
+.np-mode.on{background:color-mix(in srgb,var(--photo) 8%,var(--bgCard))}
+.np-mode.on::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:2px;
+  background:var(--photo)}
+.nm-i{font-size:11px;font-family:var(--fm);letter-spacing:.06em;text-transform:uppercase;
+  color:var(--tx3);margin-bottom:3px}
+.np-mode.on .nm-i{color:var(--photo)}
+.nm-t{font-size:16px;font-weight:600;color:var(--tx1)}
+.nm-s{font-size:13px;color:var(--tx3)}
+.nm-badge{position:absolute;top:16px;right:18px;font-size:11px;padding:2px 8px;
+  border-radius:4px;background:var(--bd2);color:var(--tx3);font-family:var(--fm)}
+
+.np-pane{display:none;flex-direction:column;overflow:hidden;flex:1;min-height:0}
+.np-pane.on{display:flex}
+.np-body{padding:22px 30px;overflow:auto;flex:1}
+
+.np-field{margin-bottom:18px}
+.np-l{display:block;font-size:13px;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--tx3);font-family:var(--fm);margin-bottom:7px}
+.np-in{width:100%;padding:11px 14px;border-radius:8px;border:1px solid var(--bd2);
+  background:var(--bgInput);color:var(--tx1);font-size:15px;outline:none;
+  transition:.16s;font-family:var(--ff);resize:none;overflow:hidden}
+.np-in:focus{border-color:var(--photo)}
+.np-in-lg{font-size:19px;padding:14px 16px;font-weight:500}
+.np-ta{min-height:88px;line-height:1.65}
+.np-row2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+.np-tags{display:flex;gap:7px;flex-wrap:wrap}
+.np-tag{font-size:14px;padding:7px 14px;border-radius:7px;border:1px solid var(--bd2);
+  background:var(--bgInput);color:var(--tx2);transition:.16s}
+.np-tag:hover{border-color:var(--bd3);color:var(--tx1)}
+.np-tag.on{background:color-mix(in srgb,var(--photo) 15%,transparent);
+  border-color:var(--photo);color:var(--photo)}
+
+.np-ft{display:flex;align-items:center;gap:12px;padding:16px 30px;
+  border-top:1px solid var(--bd2);flex-shrink:0}
+.np-btn{padding:10px 18px;border-radius:6px;border:1px solid var(--bd2);
+  color:var(--tx2);font-size:15px;transition:.16s}
+.np-btn:hover{border-color:var(--bd3);color:var(--tx1)}
+.np-save{padding:10px 22px;border-radius:6px;background:var(--tx1);color:var(--bgPage);
+  border:none;font-size:15px;font-weight:600;transition:.16s}
+.np-save:hover{background:var(--tx2)}
+
+/* AI 模式 */
+.np-aiwarn{padding:13px 16px;border-radius:8px;margin-bottom:20px;
+  background:color-mix(in srgb,var(--warn) 8%,transparent);
+  border:1px solid color-mix(in srgb,var(--warn) 26%,transparent);
+  font-size:14px;color:var(--tx2);line-height:1.65}
+.np-aiwarn b{color:var(--warn);display:block;margin-bottom:3px;font-size:15px}
+.np-input-wrap{border:1px solid var(--bd2);border-radius:10px;overflow:hidden;
+  margin-bottom:22px;transition:.16s}
+.np-input-wrap:focus-within{border-color:var(--photo)}
+.np-input{width:100%;min-height:104px;padding:18px 20px;background:transparent;
+  border:none;outline:none;resize:none;font-size:16px;line-height:1.65;
+  color:var(--tx1);font-family:var(--ff)}
+.np-input::placeholder{color:var(--tx3)}
+.np-input-foot{display:flex;align-items:center;gap:12px;padding:11px 16px;
+  border-top:1px solid var(--bd);background:var(--bgInput)}
+.np-hint{font-size:13px;color:var(--tx3);font-family:var(--fm)}
+.np-send{margin-left:auto;padding:9px 20px;border-radius:6px;background:var(--tx1);
+  color:var(--bgPage);font-size:15px;font-weight:600;transition:.16s}
+.np-send:hover{background:var(--tx2)}
+
+.np-quick{margin-bottom:24px}
+.np-quick-t{font-size:13px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--tx3);font-family:var(--fm);margin-bottom:10px}
+.np-quick-list{display:flex;flex-direction:column;gap:7px}
+.np-q{text-align:left;padding:11px 15px;border-radius:8px;background:var(--bgInput);
+  border:1px solid var(--bd2);font-size:15px;color:var(--tx2);transition:.16s}
+.np-q:hover{border-color:var(--photo);color:var(--tx1);background:var(--bgHover)}
+
+.np-chat{border-top:1px solid var(--bd2);padding-top:20px}
+.np-chat-hd{margin-bottom:14px}
+.np-chat-t{font-size:15px;font-weight:600;color:var(--tx1);display:block;margin-bottom:3px}
+.np-chat-s{font-size:14px;color:var(--tx3)}
+.np-msgs{display:flex;flex-direction:column;gap:10px;margin-bottom:13px;
+  max-height:170px;overflow:auto}
+.np-msg{padding:12px 15px;border-radius:10px;font-size:15px;line-height:1.65}
+.np-msg.ai{background:var(--bgInput);border:1px solid var(--bd2);color:var(--tx2);
+  border-radius:10px 10px 10px 3px}
+.np-msg.ai b{color:var(--photo)}
+.np-msg.me{align-self:flex-end;background:color-mix(in srgb,var(--pri) 14%,transparent);
+  border:1px solid color-mix(in srgb,var(--pri) 30%,transparent);color:var(--tx1);
+  border-radius:10px 10px 3px 10px;max-width:86%}
+.np-chat-input{display:flex;gap:9px}
+.np-ci{flex:1;padding:11px 15px;border-radius:8px;border:1px solid var(--bd2);
+  background:var(--bgInput);color:var(--tx1);font-size:15px;outline:none}
+.np-ci:focus{border-color:var(--pri)}
+.np-ci-btn{padding:11px 20px;border-radius:8px;border:1px solid var(--bd2);
+  color:var(--tx2);font-size:15px;transition:.16s}
+.np-ci-btn:hover{border-color:var(--pri);color:var(--tx1)}
+/* ===== 口令录入 ===== */
+.cq{position:fixed;inset:0;background:color-mix(in srgb,var(--bgPage) 92%,transparent);
+  z-index:78;display:none;align-items:center;justify-content:center;backdrop-filter:blur(12px)}
+.cq.on{display:flex}
+.cq-box{width:min(720px,94vw);max-height:92vh;background:var(--bgCard);
+  border:1px solid var(--bd3);border-radius:14px;display:flex;flex-direction:column;overflow:hidden}
+.cq-hd{display:flex;align-items:flex-start;padding:26px 30px 20px;
+  border-bottom:1px solid var(--bd2)}
+.cq-title{font-size:24px;font-weight:600;letter-spacing:-.02em;color:var(--tx1);margin-bottom:6px}
+.cq-sub{font-size:15px;color:var(--tx3)}
+.cq-x{margin-left:auto;width:32px;height:32px;border-radius:6px;color:var(--tx3);
+  font-size:16px;transition:.16s;flex-shrink:0}
+.cq-x:hover{background:var(--bgHover);color:var(--tx1)}
+.cq-body{padding:22px 30px;overflow:auto;flex:1}
+
+.cq-field{margin-bottom:20px}
+.cq-l{display:block;font-size:13px;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--tx3);font-family:var(--fm);margin-bottom:8px}
+.cq-must{color:var(--err);font-size:11px;letter-spacing:0;text-transform:none;
+  background:color-mix(in srgb,var(--err) 15%,transparent);padding:1px 7px;border-radius:4px;
+  margin-left:6px}
+.cq-in{width:100%;padding:11px 14px;border-radius:8px;border:1px solid var(--bd2);
+  background:var(--bgInput);color:var(--tx1);font-size:15px;outline:none;
+  transition:.16s;font-family:var(--ff)}
+.cq-in:focus{border-color:var(--photo)}
+.cq-in-lg{font-size:19px;padding:15px 18px;font-weight:500}
+.cq-tip{font-size:13px;color:var(--tx3);margin-top:7px;line-height:1.55}
+.cq-live{margin-top:8px;font-size:15px;line-height:1.6;min-height:0}
+
+.cq-row2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.cq-chips{display:flex;gap:6px;flex-wrap:wrap}
+.cq-chip{font-size:14px;padding:7px 14px;border-radius:7px;border:1px solid var(--bd2);
+  background:var(--bgInput);color:var(--tx2);transition:.16s}
+.cq-chip:hover{border-color:var(--bd3);color:var(--tx1)}
+.cq-chip.on{background:color-mix(in srgb,var(--photo) 15%,transparent);
+  border-color:var(--photo);color:var(--photo)}
+
+/* 五道检查 */
+.cq-gates{border-top:1px solid var(--bd2);padding-top:20px;margin-top:4px}
+.cq-gates-h{font-size:13px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--tx3);font-family:var(--fm);margin-bottom:14px}
+.cq-gate{display:flex;align-items:flex-start;gap:13px;padding:12px 14px;
+  border-radius:8px;margin-bottom:7px;background:var(--bgInput);
+  border:1px solid var(--bd2);transition:.16s}
+.cq-gate.pass{background:color-mix(in srgb,var(--ok) 7%,transparent);
+  border-color:color-mix(in srgb,var(--ok) 24%,transparent)}
+.cq-gate.fail{background:color-mix(in srgb,var(--err) 7%,transparent);
+  border-color:color-mix(in srgb,var(--err) 26%,transparent)}
+.cq-gate.warn{background:color-mix(in srgb,var(--warn) 7%,transparent);
+  border-color:color-mix(in srgb,var(--warn) 24%,transparent)}
+.cq-gi{width:22px;height:22px;border-radius:50%;background:var(--bd2);
+  color:var(--tx3);font-size:12px;font-family:var(--fm);display:flex;
+  align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+.cq-gate.pass .cq-gi{background:var(--ok);color:#04120a}
+.cq-gate.fail .cq-gi{background:var(--err);color:#1a0505}
+.cq-gate.warn .cq-gi{background:var(--warn);color:#1a1205}
+.cq-gb{flex:1;font-size:15px;line-height:1.5}
+.cq-gb b{color:var(--tx1);display:block;margin-bottom:2px;font-weight:500}
+.cq-gb span{color:var(--tx3);font-size:14px;display:block}
+.cq-gate.fail .cq-gb span{color:var(--err)}
+.cq-gate.warn .cq-gb span{color:var(--warn)}
+.cq-gs{font-size:13px;font-family:var(--fm);flex-shrink:0;margin-top:1px}
+.cq-gate.pass .cq-gs{color:var(--ok)}
+.cq-gate.fail .cq-gs{color:var(--err)}
+.cq-gate.warn .cq-gs{color:var(--warn)}
+
+.cq-ft{display:flex;align-items:center;gap:12px;padding:16px 30px;
+  border-top:1px solid var(--bd2);flex-shrink:0}
+.cq-btn{padding:10px 18px;border-radius:6px;border:1px solid var(--bd2);
+  color:var(--tx2);font-size:15px;transition:.16s}
+.cq-btn:hover{border-color:var(--bd3);color:var(--tx1)}
+.cq-save{padding:10px 22px;border-radius:6px;background:var(--tx1);color:var(--bgPage);
+  border:none;font-size:15px;font-weight:600;transition:.16s}
+.cq-save:hover{background:var(--tx2)}
+.cq-save:disabled{background:var(--bd2);color:var(--tx3);cursor:not-allowed}
+.cq-status{font-size:14px;font-family:var(--fm)}
 /* ===== 新建项目 ===== */
 .np{position:fixed;inset:0;background:color-mix(in srgb,var(--bgPage) 92%,transparent);
   z-index:75;display:none;align-items:center;justify-content:center;backdrop-filter:blur(12px)}
@@ -2196,57 +2381,122 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 
     <div class="np-hd">
       <div class="np-title">新建拍摄</div>
-      <div class="np-sub">说一句就行，或者直接告诉我你想拍什么</div>
+      <div class="np-sub">记下来就行。有 AI 的话能帮你规划，没有也能用。</div>
       <button class="np-x" onclick="closeNewProj()">✕</button>
     </div>
 
-    <div class="np-body">
+    <!-- 模式切换 -->
+    <div class="np-modes">
+      <button class="np-mode on" onclick="npMode(this,'note')">
+        <span class="nm-i">笔</span>
+        <span class="nm-t">简单笔记</span>
+        <span class="nm-s">随手记，不需要配置</span>
+      </button>
+      <button class="np-mode" onclick="npMode(this,'ai')">
+        <span class="nm-i">AI</span>
+        <span class="nm-t">AI 帮我规划</span>
+        <span class="nm-s">算光线、给方案、排分镜</span>
+        <span class="nm-badge">需配置</span>
+      </button>
+    </div>
 
-      <!-- 输入区 -->
-      <div class="np-input-wrap">
-        <textarea class="np-input" id="npInput"
-          placeholder="例如：秋天去颐和园和朋友拍照&#10;&#10;也可以更具体：下周三下午，带小林去颐和园拍银杏，想要逆光"
-          onkeydown="if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){npStart()}"></textarea>
-        <div class="np-input-foot">
-          <span class="np-hint">⌘/Ctrl + Enter 直接开始</span>
-          <button class="np-send" onclick="npStart()">开始规划</button>
+    <!-- ===== 模式 A：简单笔记 ===== -->
+    <div class="np-pane on" id="npPaneNote">
+      <div class="np-body">
+        <div class="np-field">
+          <input class="np-in np-in-lg" id="npName" placeholder="这次拍什么？例如：秋天颐和园">
         </div>
-      </div>
 
-      <!-- 快捷入口 -->
-      <div class="np-quick">
-        <div class="np-quick-t">或者从这些开始</div>
-        <div class="np-quick-list">
-          <button class="np-q" onclick="npUse('这周末去海边拍朋友，想要清冷一点的感觉')">
-            这周末去海边拍朋友，想要清冷一点的感觉</button>
-          <button class="np-q" onclick="npUse('下个月给小林拍一组室内小清新')">
-            下个月给小林拍一组室内小清新</button>
-          <button class="np-q" onclick="npUse('领证跟拍，民政局，半天')">
-            领证跟拍，民政局，半天</button>
-        </div>
-      </div>
-
-      <!-- ⭐ 和 agent 聊 -->
-      <div class="np-chat">
-        <div class="np-chat-hd">
-          <span class="np-chat-t">也可以直接跟我聊</span>
-          <span class="np-chat-s">你说需求，我来算光线、给方案、排分镜</span>
-        </div>
-        <div class="np-msgs" id="npMsgs">
-          <div class="np-msg ai">
-            你想拍什么？<br>
-            告诉我 <b>大概的时间</b>、<b>地图上大概哪</b>、<b>拍谁</b>，
-            剩下的我来查——太阳几点落、那个方向有没有光、几点能拍。
+        <div class="np-row2">
+          <div class="np-field">
+            <label class="np-l">什么时候</label>
+            <input class="np-in" id="npWhen" placeholder="11月待定 / 下周三下午">
+          </div>
+          <div class="np-field">
+            <label class="np-l">在哪</label>
+            <input class="np-in" id="npWhere" placeholder="颐和园">
           </div>
         </div>
-        <div class="np-chat-input">
-          <input class="np-ci" id="npChatInput" placeholder="随便说，不用讲究格式"
-            onkeydown="if(event.key==='Enter')npChat()">
-          <button class="np-ci-btn" onclick="npChat()">发送</button>
+
+        <div class="np-field">
+          <label class="np-l">拍谁</label>
+          <input class="np-in" id="npWho" placeholder="朋友 / 小林 / 客户B">
+        </div>
+
+        <div class="np-field">
+          <label class="np-l">想拍成什么样</label>
+          <textarea class="np-in np-ta" id="npIdea"
+            placeholder="想到什么写什么，不用组织语言。&#10;&#10;例如：想要秋天的感觉，银杏，逆光，不要太摆拍，随手抓着拍"></textarea>
+        </div>
+
+        <div class="np-field">
+          <label class="np-l">要带什么</label>
+          <div class="np-tags" id="npTags">
+            <button class="np-tag on" onclick="pickTag(this)">相机</button>
+            <button class="np-tag" onclick="pickTag(this)">反光板</button>
+            <button class="np-tag" onclick="pickTag(this)">外套</button>
+            <button class="np-tag" onclick="pickTag(this)">＋ 加一项</button>
+          </div>
         </div>
       </div>
-
+      <div class="np-ft">
+        <button class="np-btn" onclick="closeNewProj()">取消</button>
+        <div class="spacer"></div>
+        <button class="np-save" onclick="npSaveNote()">存下这个笔记</button>
+      </div>
     </div>
+
+    <!-- ===== 模式 B：AI 规划 ===== -->
+    <div class="np-pane" id="npPaneAI">
+      <div class="np-body">
+        <div class="np-aiwarn">
+          <b>需要先配置 AI</b>
+          没配置也能用 —— 切回「简单笔记」就行。
+        </div>
+
+        <div class="np-input-wrap">
+          <textarea class="np-input" id="npInput"
+            placeholder="说一句就行&#10;&#10;例如：秋天去颐和园和朋友拍照&#10;或者更具体：下周三下午，带小林去颐和园拍银杏，想要逆光"
+            onkeydown="if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){npStart()}"></textarea>
+          <div class="np-input-foot">
+            <span class="np-hint">⌘/Ctrl + Enter 直接开始</span>
+            <button class="np-send" onclick="npStart()">开始规划</button>
+          </div>
+        </div>
+
+        <div class="np-quick">
+          <div class="np-quick-t">或者从这些开始</div>
+          <div class="np-quick-list">
+            <button class="np-q" onclick="npUse('这周末去海边拍朋友，想要清冷一点的感觉')">
+              这周末去海边拍朋友，想要清冷一点的感觉</button>
+            <button class="np-q" onclick="npUse('下个月给小林拍一组室内小清新')">
+              下个月给小林拍一组室内小清新</button>
+            <button class="np-q" onclick="npUse('领证跟拍，民政局，半天')">
+              领证跟拍，民政局，半天</button>
+          </div>
+        </div>
+
+        <div class="np-chat">
+          <div class="np-chat-hd">
+            <span class="np-chat-t">也可以直接跟我聊</span>
+            <span class="np-chat-s">你说需求，我来算光线、给方案、排分镜</span>
+          </div>
+          <div class="np-msgs" id="npMsgs">
+            <div class="np-msg ai">
+              你想拍什么？<br>
+              告诉我 <b>大概的时间</b>、<b>地图上大概哪</b>、<b>拍谁</b>，
+              剩下的我来查——太阳几点落、那个方向有没有光、几点能拍。
+            </div>
+          </div>
+          <div class="np-chat-input">
+            <input class="np-ci" id="npChatInput" placeholder="随便说，不用讲究格式"
+              onkeydown="if(event.key==='Enter')npChat()">
+            <button class="np-ci-btn" onclick="npChat()">发送</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 <!-- ===== AI 拆方向 v2：先知识，后建议，再参考 ===== -->
@@ -3897,8 +4147,71 @@ function openProject(name){
   window.scrollTo(0,0);
   fake('打开项目：'+name);
 }
+/* ===== 新建拍摄 · 双模式 ===== */
 function newProject(){ openNewProj(); }
-/* ===== 口令录入 + 五道检查 ===== */
+function openNewProj(){
+  document.getElementById('newProjSheet').classList.add('on');
+  setTimeout(()=>{ const t=document.getElementById('npName'); if(t) t.focus(); }, 200);
+}
+function closeNewProj(){ document.getElementById('newProjSheet').classList.remove('on'); }
+function npMode(el, m){
+  el.parentElement.querySelectorAll('.np-mode').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById('npPaneNote').classList.toggle('on', m==='note');
+  document.getElementById('npPaneAI').classList.toggle('on', m==='ai');
+  setTimeout(()=>{
+    const t = m==='note' ? document.getElementById('npName') : document.getElementById('npInput');
+    if(t) t.focus();
+  }, 150);
+}
+function pickTag(el){
+  if(el.textContent.includes('＋')){ fake('加一项要带的东西'); return; }
+  el.classList.toggle('on');
+}
+function npSaveNote(){
+  const name = (document.getElementById('npName').value||'').trim();
+  const when = (document.getElementById('npWhere').value||'').trim();
+  if(!name){ document.getElementById('npName').focus(); return; }
+  closeNewProj();
+  document.getElementById('pageProjects').style.display='none';
+  document.getElementById('pagePlan').style.display='block';
+  const t = document.querySelector('.pz-title');
+  if(t) t.innerHTML = name + '<span class="pz-title-sub">刚建</span>';
+  window.scrollTo(0,0);
+  fake('已建笔记 —— 之后可以慢慢补');
+}
+function npUse(text){
+  document.getElementById('npInput').value = text;
+  document.getElementById('npInput').focus();
+}
+function npStart(){
+  const v = (document.getElementById('npInput').value || '').trim();
+  if(!v){ document.getElementById('npInput').focus(); return; }
+  closeNewProj();
+  document.getElementById('pageProjects').style.display='none';
+  document.getElementById('pagePlan').style.display='block';
+  const t = document.querySelector('.pz-title');
+  if(t) t.innerHTML = '新拍摄计划<span class="pz-title-sub">刚建</span>';
+  window.scrollTo(0,0);
+  setTimeout(()=>openVague(), 320);
+}
+function npChat(){
+  const inp = document.getElementById('npChatInput');
+  const v = (inp.value||'').trim();
+  if(!v) return;
+  const box = document.getElementById('npMsgs');
+  const me = document.createElement('div');
+  me.className='np-msg me'; me.textContent=v; box.appendChild(me);
+  inp.value=''; box.scrollTop=box.scrollHeight;
+  setTimeout(()=>{
+    const ai=document.createElement('div');
+    ai.className='np-msg ai';
+    ai.innerHTML='明白了。我需要确认两件事才能算准：<br>'
+      +'<b>大概什么时间</b>（哪天，或者哪一周）？<br>'
+      +'<b>在哪</b>（具体地点，或者城市+大概区域）？';
+    box.appendChild(ai); box.scrollTop=box.scrollHeight;
+  },500);
+}
 const ADJ = ['自然','放松','自信','高级','好看','温柔','大气','随性','随意','优雅','舒服','有感觉','氛围感','尽量'];
 const LR  = ['往左','往右','向左','向右','左边','右边','多点','少点','多一点','少一点','往上','往下'];
 const REF = ['窗','灯','镜','我的','这边','那边','远处','背后','上面','下面','手'];
