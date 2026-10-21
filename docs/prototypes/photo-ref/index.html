@@ -508,6 +508,91 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
   font-size:var(--fs-sm);color:var(--tx2);line-height:1.65}
 .keys-note b{color:var(--photo)}
 
+/* ===== 出门前检查 ===== */
+.pf{position:fixed;inset:0;background:color-mix(in srgb,var(--bgPage) 95%,transparent);z-index:70;
+  display:none;align-items:center;justify-content:center;backdrop-filter:blur(10px)}
+.pf.on{display:flex}
+.pf-box{width:min(1560px,97vw);height:min(950px,95vh);background:var(--bgElev);
+  border:1px solid var(--bd3);border-radius:var(--radiusLG);display:flex;flex-direction:column;
+  overflow:hidden;box-shadow:var(--shadowModal)}
+.pf-hd{display:flex;align-items:center;gap:12px;padding:16px 22px;border-bottom:1px solid var(--bd2);flex-shrink:0}
+.pf-hd h2{font-size:var(--fs-h3)}
+.pf-sub{font-size:var(--fs-sm);color:var(--tx3)}
+.pf-main{flex:1;display:grid;grid-template-columns:340px 1fr 300px;overflow:hidden}
+.pf-left,.pf-mid,.pf-right{overflow:auto;padding:18px 20px}
+.pf-left{border-right:1px solid var(--bd2)}
+.pf-right{border-left:1px solid var(--bd2)}
+.pf-sec{margin-bottom:22px}
+.pf-sec-t{font-size:var(--fs-xs);font-family:var(--fm);text-transform:uppercase;letter-spacing:.07em;
+  color:var(--tx3);margin-bottom:11px;display:flex;align-items:center;gap:9px}
+.pf-grp-h{font-size:var(--fs-xs);color:var(--tx3);margin:11px 0 6px}
+.pf-grp-h:first-child{margin-top:0}
+.pf-chips{display:flex;gap:6px;flex-wrap:wrap}
+.pf-chip{font-size:var(--fs-sm);padding:6px 12px;border-radius:20px;border:1px solid var(--bd2);
+  background:var(--bgCard);color:var(--tx2);transition:.16s}
+.pf-chip:hover{border-color:var(--photo);color:var(--tx1)}
+.pf-chip.on{background:color-mix(in srgb,var(--photo) 15%,transparent);
+  border-color:var(--photo);color:var(--photo)}
+.pf-chip.ghost{opacity:.62;border-style:dashed}
+.pf-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.pf-l{font-size:var(--fs-xs);color:var(--tx3);font-family:var(--fm);min-width:32px}
+.pf-know{display:flex;flex-direction:column;gap:9px}
+.pk-item{padding:11px 13px;border-radius:var(--radiusSM);background:var(--bgCard);
+  border:1px solid var(--bd2)}
+.pk-h{font-size:var(--fs-sm);font-weight:600;color:var(--photo);margin-bottom:5px}
+.pk-b{font-size:var(--fs-sm);color:var(--tx2);line-height:1.7}
+
+.pf-match{font-size:var(--fs-xs);padding:2px 8px;border-radius:9px;text-transform:none;
+  letter-spacing:0;font-family:var(--ff);
+  background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+.pf-risks{display:flex;flex-direction:column;gap:10px}
+.pf-risk{padding:13px 15px;border-radius:var(--radiusSM);background:var(--bgCard);
+  border:1px solid var(--bd2);border-left:3px solid var(--bd2)}
+.pf-risk.hot{border-left-color:var(--err);
+  background:color-mix(in srgb,var(--err) 5%,var(--bgCard))}
+.pr-h{font-size:var(--fs-cap);font-weight:600;color:var(--tx1);display:flex;
+  align-items:center;gap:9px;flex-wrap:wrap}
+.pr-hot{font-size:var(--fs-xs);padding:2px 8px;border-radius:4px;font-weight:400;
+  background:color-mix(in srgb,var(--err) 18%,transparent);color:var(--err)}
+.pr-b{font-size:var(--fs-sm);color:var(--tx2);line-height:1.7;margin-top:6px}
+.pr-w{font-size:var(--fs-xs);color:var(--tx3);margin-top:7px;
+  padding-top:7px;border-top:1px dashed var(--bd2);font-family:var(--fm)}
+
+.pf-more{font-size:var(--fs-xs);color:var(--pri);padding:2px 9px;border-radius:5px;
+  text-transform:none;letter-spacing:0;font-family:var(--ff)}
+.pf-more:hover{background:color-mix(in srgb,var(--pri) 12%,transparent)}
+.pf-poses{display:grid;grid-template-columns:repeat(4,1fr);gap:11px}
+.pf-pose{background:var(--bgCard);border:1px solid var(--bd2);border-radius:var(--radiusSM);overflow:hidden}
+.pp-img{aspect-ratio:4/3;background:linear-gradient(150deg,#2a2340,#141020);
+  display:flex;align-items:center;justify-content:center}
+.pp-img .ph{width:34%;height:58%;border-radius:40% 40% 18% 18%/14% 14% 7% 7%;
+  background:linear-gradient(175deg,#e8d5bd,#a8825c)}
+.pp-t{font-size:var(--fs-sm);color:var(--tx1);padding:8px 10px 2px}
+.pp-c{font-size:var(--fs-xs);color:var(--photo);padding:0 10px 9px;line-height:1.5}
+
+.pf-moods{display:grid;grid-template-columns:repeat(4,1fr);gap:11px}
+.pf-mood{background:var(--bgCard);border:1px solid var(--bd2);border-radius:var(--radiusSM);overflow:hidden}
+.pm-img{aspect-ratio:16/10;background:linear-gradient(150deg,#2a2340,#141020)}
+.pm-img.g2{background:linear-gradient(150deg,#3a2a1a,#1a1208)}
+.pm-img.g3{background:linear-gradient(150deg,#1a2a3a,#081018)}
+.pm-img.g4{background:linear-gradient(150deg,#2a3a2a,#101a10)}
+.pm-t{font-size:var(--fs-xs);color:var(--tx2);padding:8px 10px;line-height:1.5}
+
+.pf-card{padding:14px 16px;border-radius:var(--radiusMD);background:var(--bgCard);
+  border:1px solid var(--bd2);margin-bottom:12px}
+.pf-card.tip{background:color-mix(in srgb,var(--warn) 7%,transparent);
+  border-color:color-mix(in srgb,var(--warn) 26%,transparent)}
+.pc-h{font-size:var(--fs-cap);font-weight:600;color:var(--tx1);margin-bottom:8px}
+.pf-card.tip .pc-h{color:var(--warn)}
+.pc-b{font-size:var(--fs-sm);color:var(--tx2);line-height:1.7}
+.pc-b b{color:var(--photo)}
+.pf-fix{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.fx-i{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;
+  border-radius:6px;background:var(--bgInput);font-size:var(--fs-sm)}
+.fx-t{color:var(--tx1)}
+.fx-b{color:var(--tx3);font-size:var(--fs-xs)}
+.pf-ft{display:flex;gap:9px;padding:14px 22px;border-top:1px solid var(--bd2);flex-shrink:0}
+
 /* 智能体侧栏 */
 .ag-hd{padding:15px 18px;border-bottom:1px solid var(--bd2);display:flex;align-items:center;gap:10px}
 .ag-hd .av{width:30px;height:30px;border-radius:var(--radiusSM);background:var(--grad);
@@ -559,6 +644,7 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
   </div>
   <button class="btn" onclick="fake('批量上传：100–500 张，先勾一批标签整批套用')">批量上传</button>
   <button class="btn" onclick="fake('截帧入库：取前后各 1–2 秒的 3–5 张候选帧，自动带时间码')">截帧入库</button>
+  <button class="btn pri" onclick="openPreflight()">出门前检查</button>
 </div>
 
 <div class="libs">
@@ -939,6 +1025,193 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
     一条经验不代表学会了就永远不犯 —— 它只在<b>相似条件再出现时</b>提醒你一下。<br>
     所以每条反思挂的是「<b>会在什么情况下重现</b>」，不是「已改掉 / 还会犯」。
     你犯一次它就热一次，很久不犯它就冷静下去，但<b>永远不会被删掉</b>。
+  </div>
+</div>
+
+<!-- ===== 出门前检查 ===== -->
+<div class="pf" id="preflight">
+  <div class="pf-box">
+    <div class="pf-hd">
+      <h2>出门前检查</h2>
+      <span class="pf-sub">这次要拍什么 · 以前踩过什么 · 手上有什么参考</span>
+      <div class="spacer"></div>
+      <button class="btn" onclick="closePreflight()">✕</button>
+    </div>
+
+    <div class="pf-main">
+      <!-- 左：这次拍什么 -->
+      <div class="pf-left">
+        <div class="pf-sec">
+          <div class="pf-sec-t">这次拍的是谁</div>
+          <div class="pf-groups" id="pfCrowd">
+            <div class="pf-grp-h">证据最足（有具体口令结论）</div>
+            <div class="pf-chips">
+              <button class="pf-chip on" onclick="pickPref(this,'老年')">老年 / 中老年</button>
+              <button class="pf-chip" onclick="pickPref(this,'情侣')">情侣</button>
+              <button class="pf-chip" onclick="pickPref(this,'领证')">领证跟拍</button>
+              <button class="pf-chip" onclick="pickPref(this,'coser')">coser / 角色扮演</button>
+            </div>
+            <div class="pf-grp-h">有分组方法（按关系 / 流程组织）</div>
+            <div class="pf-chips">
+              <button class="pf-chip" onclick="pickPref(this,'婚纱')">婚纱 / 婚礼</button>
+              <button class="pf-chip" onclick="pickPref(this,'家庭')">家庭 / 亲子 / 儿童</button>
+              <button class="pf-chip" onclick="pickPref(this,'旅拍')">旅拍</button>
+            </div>
+            <div class="pf-grp-h">暂时没有专门结论</div>
+            <div class="pf-chips">
+              <button class="pf-chip ghost" onclick="pickPref(this,'个人写真')">个人写真 / 形象照</button>
+              <button class="pf-chip ghost" onclick="pickPref(this,'博主')">小红书博主</button>
+              <button class="pf-chip ghost" onclick="pickPref(this,'商业')">商业 / 产品人像</button>
+              <button class="pf-chip ghost" onclick="fake('一个库里没有的类型 —— 拍完可以自己补一条结论进去')">＋ 其他</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="pf-sec">
+          <div class="pf-sec-t">这次的光和场景</div>
+          <div class="pf-row">
+            <span class="pf-l">光</span>
+            <button class="chip on" onclick="tog(this)">逆光</button>
+            <button class="chip" onclick="tog(this)">侧逆光</button>
+            <button class="chip" onclick="tog(this)">顺光</button>
+            <button class="chip" onclick="tog(this)">阴天柔光</button>
+            <button class="chip" onclick="tog(this)">硬光</button>
+          </div>
+          <div class="pf-row">
+            <span class="pf-l">时段</span>
+            <button class="chip on" onclick="tog(this)">傍晚</button>
+            <button class="chip" onclick="tog(this)">白天</button>
+            <button class="chip" onclick="tog(this)">蓝调</button>
+            <button class="chip" onclick="tog(this)">夜</button>
+          </div>
+          <div class="pf-row">
+            <span class="pf-l">场景</span>
+            <button class="chip" onclick="tog(this)">公园 / 校园</button>
+            <button class="chip on" onclick="tog(this)">海边 / 水边</button>
+            <button class="chip" onclick="tog(this)">室内居家</button>
+            <button class="chip" onclick="tog(this)">街拍</button>
+          </div>
+        </div>
+
+        <div class="pf-sec">
+          <div class="pf-sec-t">这一类的偏好（调研结论）</div>
+          <div class="pf-know" id="pfKnow">
+            <div class="pk-item">
+              <div class="pk-h">口令要慢、一次一个</div>
+              <div class="pk-b">不要喊「看镜头笑一个」。换成「手碰一下围巾」「往前走两步再回头」。
+                指令越多越忙乱。</div>
+            </div>
+            <div class="pk-item">
+              <div class="pk-h">目标是「松弛」，不是「好看」</div>
+              <div class="pk-b">僵硬的表现：双脚并拢、手贴裤缝、肩膀抬高、脸上挂刻意的笑。</div>
+            </div>
+            <div class="pk-item">
+              <div class="pk-h">身体部位级微调</div>
+              <div class="pk-b">一侧肩靠近相机 / 下巴略向前向下 / 手臂和身体留缝 / 重心放后腿 /
+                坐椅子前三分之一。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 中：这次容易踩什么 -->
+      <div class="pf-mid">
+        <div class="pf-sec">
+          <div class="pf-sec-t">
+            这次最容易踩的
+            <span class="pf-match">匹配到 3 条</span>
+          </div>
+          <div class="pf-risks">
+            <div class="pf-risk hot">
+              <div class="pr-h"><span class="pr-hot">最近又犯了</span>傍晚侧逆光 · 白平衡会往上飘</div>
+              <div class="pr-b">自然光本身就暖，相机再往暖设会叠加。压到 5200K 或先对白纸定白。</div>
+              <div class="pr-w">为什么弹出来：你选了「傍晚」+「逆光」，这条的触发条件命中</div>
+            </div>
+            <div class="pf-risk">
+              <div class="pr-h">逆光时脸容易全黑</div>
+              <div class="pr-b">先保证眼神光，再考虑轮廓。脸留暗部可以，但眼睛不能没光。</div>
+              <div class="pr-w">为什么弹出来：触发条件「逆光」命中</div>
+            </div>
+            <div class="pf-risk">
+              <div class="pr-h">老年人拍超过 2 小时状态会垮</div>
+              <div class="pr-b">中途要安排坐着休息的镜头，不要一路走一路拍。</div>
+              <div class="pr-w">为什么弹出来：你选了「老年」，这条挂在老年类型上</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pf-sec">
+          <div class="pf-sec-t">
+            这一类的姿势参考
+            <button class="pf-more" onclick="fake('打开完整姿势库，按这次的条件筛')">全部 26 条 →</button>
+          </div>
+          <div class="pf-poses">
+            <div class="pf-pose"><div class="pp-img"><div class="ph"></div></div>
+              <div class="pp-t">手碰围巾</div><div class="pp-c">「手摸一下围巾就好」</div></div>
+            <div class="pf-pose"><div class="pp-img"><div class="ph"></div></div>
+              <div class="pp-t">走两步回头</div><div class="pp-c">「先往前走，我数三下你回头」</div></div>
+            <div class="pf-pose"><div class="pp-img"><div class="ph"></div></div>
+              <div class="pp-t">坐椅子前三分之一</div><div class="pp-c">「坐前面一点，人会更挺」</div></div>
+            <div class="pf-pose"><div class="pp-img"><div class="ph"></div></div>
+              <div class="pp-t">扶帽檐</div><div class="pp-c">「手扶着帽子别动」</div></div>
+          </div>
+        </div>
+
+        <div class="pf-sec">
+          <div class="pf-sec-t">
+            审美参考
+            <button class="pf-more" onclick="fake('打开审美库，按这次的条件筛')">全部 12 张 →</button>
+          </div>
+          <div class="pf-moods">
+            <div class="pf-mood"><div class="pm-img"></div><div class="pm-t">逆光勾轮廓，脸留暗部</div></div>
+            <div class="pf-mood"><div class="pm-img g2"></div><div class="pm-t">傍晚暖调，但肤色不偏黄</div></div>
+            <div class="pf-mood"><div class="pm-img g3"></div><div class="pm-t">海边低饱和，留白多</div></div>
+            <div class="pf-mood"><div class="pm-img g4"></div><div class="pm-t">松，不要摆拍感</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右：现场模式 + 修图前 -->
+      <div class="pf-right">
+        <div class="pf-card">
+          <div class="pc-h">📱 到现场了</div>
+          <div class="pc-b">
+            手机上打开这三样：姿势、审美、这次的坑。
+            <b>能离线看</b>，棚拍和民政局经常没信号。
+          </div>
+          <button class="btn pri" style="width:100%;margin-top:10px"
+            onclick="fake('生成现场模式链接 —— 大图、左右滑、单手能翻、可离线')">打开现场模式</button>
+        </div>
+
+        <div class="pf-card">
+          <div class="pc-h">🖌 修图前</div>
+          <div class="pc-b">开始修之前，先看客户以前提过什么。</div>
+          <div class="pf-fix">
+            <div class="fx-i"><span class="fx-t">磨皮</span><span class="fx-b">「磨太狠脸会假」· 3 次</span></div>
+            <div class="fx-i"><span class="fx-t">肤色</span><span class="fx-b">「不要偏黄」· 2 次</span></div>
+            <div class="fx-i"><span class="fx-t">背景</span><span class="fx-b">「把后面人修掉」· 4 次</span></div>
+          </div>
+          <button class="btn" style="width:100%;margin-top:10px"
+            onclick="fake('打开修图前检查：列出这类问题的处理规范和历史上翻车点')">看修图前清单</button>
+        </div>
+
+        <div class="pf-card tip">
+          <div class="pc-h">⚠ 这批里有一个是猜的</div>
+          <div class="pc-b">
+            你选了「老年」，但库里关于「老年」的口令结论只有 3 条，
+            而且都来自公开教程，<b>没有你自己的实战验证过</b>。
+            建议拍完补一条你自己的。
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pf-ft">
+      <button class="btn" onclick="closePreflight()">关闭</button>
+      <div class="spacer"></div>
+      <button class="btn" onclick="fake('导出成一张纸，打印带走')">导出成纸</button>
+      <button class="btn pri" onclick="fake('存为这次拍摄的方案，明天直接从这里进现场模式')">存为这次方案</button>
+    </div>
   </div>
 </div>
 
@@ -1485,8 +1758,64 @@ function markPick(){
   renderFilm();
   fake(picked[id]?'★ 已收藏':'取消收藏');
 }
-function showKeys(){ document.getElementById('keysSheet').classList.add('on'); }
-function hideKeys(){ document.getElementById('keysSheet').classList.remove('on'); }
+const PREF={
+  '老年':[
+    ['口令要慢、一次一个','不要喊「看镜头笑一个」。换成「手碰一下围巾」「往前走两步再回头」。指令越多越忙乱。'],
+    ['目标是「松弛」，不是「好看」','僵硬的表现：双脚并拢、手贴裤缝、肩膀抬高、脸上挂刻意的笑。'],
+    ['身体部位级微调','一侧肩靠近相机 / 下巴略向前向下 / 手臂和身体留缝 / 重心放后腿 / 坐椅子前三分之一。']
+  ],
+  '情侣':[
+    ['给任务，不给形状','别说「摆个好看的姿势」，说「凑近一点，说句话」——笑是自然出来的，演不出来。'],
+    ['一个锚点姿势能拆出十几张','90° 对站 → 换手 / 换头 / 换表情 / 站定 vs 走动，不用换地方。'],
+    ['anchored 和 motion 交替','站定拍几张，走起来拍几张，节奏不单调。']
+  ],
+  '领证':[
+    ['按流程节点找参考，不按姿势找','门口 → 大厅填表 → 按指纹签字 → 宣誓台 → 道具区 → 车内 → 附近外景。'],
+    ['口令举例','「把证举到胸口，互相看，不要看镜头。」'],
+    ['注意禁拍区和排队','部分民政局内部区域不让拍，宣誓台热门日子排很久，要留时间余量。']
+  ],
+  'coser':[
+    ['组织单位是「角色/作品」，不是姿势','同一套「回头、拔剑、跳跃」，不同角色味道完全不一样。'],
+    ['口令带角色感','「手向镜头伸、下巴收、眼神越过镜头」——不是「手抬起来一点」。'],
+    ['痛点是「姿势迷路」','官方画里没有的姿势想不出来 / 每次都同一个 / 和摄影师一起时僵住。']
+  ],
+  '婚纱':[
+    ['按关系分组','couple → 新娘单人 → 新郎单人 → 伴娘伴郎 → 全家福 → 父母。'],
+    ['每组再分 anchored / motion','站定看镜头 vs 走动转起来，两种都要。'],
+    ['一个姿势的变体很多','一个 90° 对站能拆出 10+ 张，不用换位置。']
+  ],
+  '家庭':[
+    ['先拍大人，再拍孩子','孩子耐心最短，等他们跑开了再想拍全家福就来不及。'],
+    ['用「玩」代替「摆」','让他们做件事（抱一下 / 举起来 / 一起走），不要喊「看镜头」。'],
+    ['多拍连拍','孩子的表情只有一两张能用。']
+  ],
+  '旅拍':[
+    ['按城市 → 景点组织','不是按姿势，是按「到了这个地方拍什么」。'],
+    ['一个地点出多种场景','比如一个海湾里就有沙滩 / 礁石 / 草坪 / 花园，一天能拍出好几组感觉。'],
+    ['风格和地点分开问','客户说「想要海边感觉」和「想去某城市」是两件事。']
+  ],
+  '个人写真':[
+    ['这个类型我还没有专门结论','拍完可以自己补一条进来 —— 你补的会进这个列表，下次直接用。'],
+  ],
+  '博主':[
+    ['这个类型我还没有专门结论','小红书风格的人像，市面上参考很多但还没系统调研过。'],
+  ],
+  '商业':[
+    ['这个类型我还没有专门结论','商业人像和写真逻辑差别大，需要单独调研。'],
+  ]
+};
+function pickPref(el,name){
+  el.parentElement.parentElement.querySelectorAll('.pf-chip').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+  const box=document.getElementById('pfKnow');
+  const items=PREF[name]||[['还没有这个类型的结论','下次拍完可以自己补一条。']];
+  box.innerHTML=items.map(([h,b])=>
+    `<div class="pk-item"><div class="pk-h">${h}</div><div class="pk-b">${b}</div></div>`).join('');
+  fake('已切到「'+name+'」的偏好');
+}
+function openPreflight(){ document.getElementById('preflight').classList.add('on'); }
+function closePreflight(){ document.getElementById('preflight').classList.remove('on'); }
+function showKeys(){ document.getElementById('keysSheet').classList.add('on'); }function hideKeys(){ document.getElementById('keysSheet').classList.remove('on'); }
 function hideDetail(){ document.getElementById('dt').classList.remove('on'); }
 function showCompare(){ openCmp('compare'); }
 function hideCompare(){ document.getElementById('cmp').classList.remove('on'); }
