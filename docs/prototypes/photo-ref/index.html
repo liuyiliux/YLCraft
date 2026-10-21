@@ -2,26 +2,23 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>摄影参考库 · 原型 v1</title>
+<title>摄影参考库 · 原型 v2</title>
 <style>
 :root{
   --bg:#0b0b10; --bg2:#111117; --pnl:#15151d; --ln:#242430; --ln2:#32323f;
   --tx:#e8e8ee; --tx2:#a8a8b8; --tx3:#6c6c80;
-  --ac:#22d3ee; --ac-d:#0e7490;
-  --ok:#34d399; --warn:#fbbf24; --bad:#f87171;
+  --ac:#22d3ee; --ok:#34d399; --warn:#fbbf24; --bad:#f87171; --vi:#a78bfa;
   --fm:'SF Mono',Consolas,monospace;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--tx);font:13px/1.6 -apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
-  -webkit-font-smoothing:antialiased;min-height:100vh}
+  -webkit-font-smoothing:antialiased}
 button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 
-/* ---------- 顶栏 ---------- */
 .top{display:flex;align-items:center;gap:10px;padding:10px 16px;
   border-bottom:1px solid var(--ln);background:var(--bg2);position:sticky;top:0;z-index:20}
 .logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px}
-.logo i{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,var(--ac),#7c3aed);
-  display:inline-block}
+.logo i{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,var(--ac),#7c3aed);display:inline-block}
 .searchbox{flex:1;max-width:520px;margin-left:20px;position:relative}
 .searchbox input{width:100%;padding:7px 12px 7px 32px;border-radius:8px;border:1px solid var(--ln2);
   background:var(--pnl);color:var(--tx);font-size:12px;outline:none}
@@ -33,8 +30,9 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 .btn:hover{border-color:var(--ac);color:var(--tx)}
 .btn.pri{background:var(--ac);border-color:var(--ac);color:#04222b;font-weight:600}
 .btn.pri:hover{filter:brightness(1.1)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn:disabled:hover{border-color:var(--ln2);color:var(--tx2)}
 
-/* ---------- 三库切换 ---------- */
 .libs{display:flex;gap:8px;padding:14px 16px 0;max-width:1500px;margin:0 auto}
 .lib{flex:1;padding:12px 14px;border-radius:10px;border:1px solid var(--ln);
   background:var(--pnl);cursor:pointer;transition:.18s}
@@ -48,17 +46,19 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 .lib p{font-size:10.5px;color:var(--tx3);margin-top:4px;line-height:1.5}
 .lib .cnt{font-family:var(--fm);font-size:11px;color:var(--tx2);margin-top:6px}
 
-/* ---------- 筛选条 ---------- */
+.note{max-width:1500px;margin:8px auto 0;padding:0 16px}
+.note-in{padding:9px 13px;border-radius:8px;background:rgba(34,211,238,.06);
+  border:1px solid rgba(34,211,238,.22);font-size:10.5px;color:var(--tx2);line-height:1.6}
+.note-in b{color:var(--ac)}
+
 .filters{display:flex;gap:6px;flex-wrap:wrap;padding:14px 16px 6px;max-width:1500px;margin:0 auto}
 .chip{font-size:10.5px;padding:4px 10px;border-radius:20px;border:1px solid var(--ln2);
   background:var(--pnl);color:var(--tx2);cursor:pointer;transition:.15s}
 .chip:hover{border-color:var(--ac)}
 .chip.on{background:rgba(34,211,238,.16);border-color:var(--ac);color:var(--ac)}
 .fgroup{display:flex;align-items:center;gap:5px;margin-right:14px}
-.fgroup>span{font-size:9.5px;color:var(--tx3);font-family:var(--fm);text-transform:uppercase;
-  letter-spacing:.06em;margin-right:2px}
+.fgroup>span{font-size:9.5px;color:var(--tx3);font-family:var(--fm);text-transform:uppercase;letter-spacing:.06em}
 
-/* ---------- 网格 ---------- */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;
   padding:14px 16px 40px;max-width:1500px;margin:0 auto}
 .card{background:var(--pnl);border:1px solid var(--ln);border-radius:10px;overflow:hidden;
@@ -74,6 +74,7 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 .badge{position:absolute;top:7px;left:7px;font-size:9px;padding:2px 7px;border-radius:5px;
   background:rgba(0,0,0,.6);backdrop-filter:blur(4px);font-family:var(--fm)}
 .badge.steal{background:rgba(34,211,238,.85);color:#04222b;font-weight:600;left:auto;right:7px}
+.badge.raw{background:rgba(167,139,250,.85);color:#1e1b3a;font-weight:600;left:auto;right:7px;top:30px}
 .hoverbar{position:absolute;inset:auto 0 0 0;padding:7px 9px;
   background:linear-gradient(0deg,rgba(0,0,0,.85),transparent);
   display:flex;gap:5px;opacity:0;transition:.15s}
@@ -88,18 +89,57 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 .tg{font-size:8.5px;padding:1.5px 6px;border-radius:4px;background:rgba(255,255,255,.06);
   color:var(--tx3);font-family:var(--fm)}
 
-/* ---------- 对比面板（重点） ---------- */
-.compare{position:fixed;inset:0;background:rgba(5,5,10,.93);z-index:50;
+/* ---------- 大图详情 ---------- */
+.detail{position:fixed;inset:0;background:rgba(5,5,10,.95);z-index:60;
+  display:none;align-items:center;justify-content:center;backdrop-filter:blur(8px)}
+.detail.on{display:flex}
+.dt-box{width:min(1280px,96vw);height:min(880px,94vh);background:var(--bg2);
+  border:1px solid var(--ln2);border-radius:14px;display:flex;overflow:hidden}
+.dt-img{flex:1;background:linear-gradient(150deg,#2a2340,#141020);position:relative;
+  display:flex;align-items:center;justify-content:center;min-width:0}
+.dt-img .ph{width:34%;height:66%;border-radius:40% 40% 18% 18%/14% 14% 7% 7%;
+  background:linear-gradient(175deg,#e8d5bd,#a8825c)}
+.dt-img .nav{position:absolute;top:50%;transform:translateY(-50%);width:34px;height:34px;
+  border-radius:50%;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;
+  font-size:16px;color:#fff}
+.dt-img .nav.l{left:12px} .dt-img .nav.r{right:12px}
+.dt-side{width:400px;border-left:1px solid var(--ln);display:flex;flex-direction:column;flex-shrink:0}
+.dt-hd{padding:14px 16px;border-bottom:1px solid var(--ln);display:flex;align-items:center;gap:8px}
+.dt-hd h3{font-size:13px}
+.dt-body{flex:1;overflow:auto;padding:14px 16px}
+.sec{margin-bottom:18px}
+.sec-t{font-size:9.5px;font-family:var(--fm);text-transform:uppercase;letter-spacing:.08em;
+  color:var(--tx3);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.sec-t .src{font-size:8px;padding:1px 5px;border-radius:3px;text-transform:none;letter-spacing:0}
+.sec-t .src.auto{background:rgba(52,211,153,.16);color:var(--ok)}
+.sec-t .src.manual{background:rgba(251,191,36,.16);color:var(--warn)}
+.steal-box{padding:11px 13px;border-radius:9px;background:rgba(34,211,238,.09);
+  border:1px solid rgba(34,211,238,.3);font-size:12.5px;line-height:1.6;color:var(--ac)}
+.steal-box .lbl{font-size:9px;color:var(--tx3);font-family:var(--fm);display:block;margin-bottom:4px}
+.kv{display:grid;grid-template-columns:88px 1fr;gap:5px 10px;font-size:11.5px}
+.kv .k{color:var(--tx3);font-size:10.5px}
+.kv .v{color:var(--tx);font-family:var(--fm);font-size:11px}
+.kv .v.hl{color:var(--ac)}
+.rawbox{padding:10px 12px;border-radius:8px;background:rgba(167,139,250,.09);
+  border:1px solid rgba(167,139,250,.28);font-size:10.5px;line-height:1.6;color:var(--tx2)}
+.rawbox b{color:var(--vi)}
+.dt-ft{padding:12px 16px;border-top:1px solid var(--ln);display:flex;gap:7px;flex-wrap:wrap}
+
+/* ---------- 对比 ---------- */
+.compare{position:fixed;inset:0;background:rgba(5,5,10,.95);z-index:55;
   display:none;align-items:center;justify-content:center;backdrop-filter:blur(8px)}
 .compare.on{display:flex}
-.cmp-box{width:min(1180px,95vw);max-height:92vh;background:var(--bg2);border:1px solid var(--ln2);
-  border-radius:14px;display:flex;flex-direction:column;overflow:hidden}
-.cmp-hd{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--ln)}
+.cmp-box{width:min(1400px,97vw);height:min(920px,95vh);background:var(--bg2);
+  border:1px solid var(--ln2);border-radius:14px;display:flex;flex-direction:column;overflow:hidden}
+.cmp-hd{display:flex;align-items:center;gap:10px;padding:13px 18px;border-bottom:1px solid var(--ln);flex-shrink:0}
 .cmp-hd h2{font-size:14px}
-.cmp-hd .sub{font-size:10.5px;color:var(--tx3);margin-left:4px}
-.cmp-body{padding:16px 18px;overflow:auto}
-.cmp-modes{display:flex;gap:6px;margin-bottom:14px}
-.cmp-stage{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.cmp-hd .sub{font-size:10.5px;color:var(--tx3)}
+.cmp-main{flex:1;display:flex;overflow:hidden}
+.cmp-left{flex:1;overflow:auto;padding:16px 18px;min-width:0}
+.cmp-right{width:360px;border-left:1px solid var(--ln);display:flex;flex-direction:column;flex-shrink:0}
+
+.cmp-modes{display:flex;gap:6px;margin-bottom:14px;align-items:center;flex-wrap:wrap}
+.cmp-stage{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .cmp-side{position:relative;border-radius:10px;overflow:hidden;border:1px solid var(--ln2);
   aspect-ratio:4/3;background:linear-gradient(150deg,#2a2340,#141020)}
 .cmp-side .ph{position:absolute;left:34%;top:20%;width:32%;height:58%;
@@ -108,32 +148,53 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 .cmp-side .lbl{position:absolute;top:8px;left:8px;font-size:9.5px;padding:3px 8px;
   border-radius:5px;background:rgba(0,0,0,.7);font-family:var(--fm)}
 .cmp-side.real .lbl{background:rgba(34,211,238,.85);color:#04222b;font-weight:600}
-.cmp-del{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-  background:rgba(0,0,0,.45);font-family:var(--fm);font-size:10px;text-align:center;padding:14px;line-height:1.7}
-.cmp-slider{margin-top:16px;padding:12px 14px;border-radius:10px;background:var(--pnl);
-  border:1px solid var(--ln)}
-.cmp-slider .row{display:flex;align-items:center;gap:10px;font-size:10px;color:var(--tx3)}
-.cmp-slider input[type=range]{flex:1;accent-color:var(--ac)}
-.cmp-verdict{margin-top:14px;padding:12px 14px;border-radius:10px;
-  background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.28);font-size:11.5px;line-height:1.7}
-.cmp-verdict b{color:var(--warn)}
-.cmp-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
-.cmp-item{padding:10px;border-radius:8px;background:var(--pnl);border:1px solid var(--ln);font-size:10.5px}
-.cmp-item .k{font-size:9px;color:var(--tx3);font-family:var(--fm);text-transform:uppercase;letter-spacing:.05em}
-.cmp-item .v{margin-top:4px;color:var(--tx)}
-.cmp-item .d{margin-top:3px;font-size:9.5px}
-.cmp-item.diff{border-color:rgba(251,191,36,.4)}
-.cmp-item.diff .d{color:var(--warn)}
-.cmp-item.same .d{color:var(--tx3)}
-.cmp-ft{display:flex;gap:8px;padding:14px 18px;border-top:1px solid var(--ln)}
+.cmp-side .ex{position:absolute;bottom:7px;left:7px;right:7px;font-size:9px;
+  font-family:var(--fm);color:rgba(255,255,255,.75);background:rgba(0,0,0,.55);
+  padding:4px 7px;border-radius:5px;line-height:1.5}
 
-/* ---------- 提示条 ---------- */
-.note{max-width:1500px;margin:8px auto 0;padding:0 16px}
-.note-in{padding:9px 13px;border-radius:8px;background:rgba(34,211,238,.06);
-  border:1px solid rgba(34,211,238,.22);font-size:10.5px;color:var(--tx2);line-height:1.6}
-.note-in b{color:var(--ac)}
+.why{padding:11px 13px;border-radius:9px;background:rgba(251,191,36,.08);
+  border:1px solid rgba(251,191,36,.28);font-size:11px;line-height:1.75;color:var(--tx2)}
+.why b{color:var(--warn)}
+.why .t{font-size:10px;color:var(--warn);font-family:var(--fm);display:block;margin-bottom:5px}
+
+.cmp-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-top:13px}
+.ci{padding:9px 11px;border-radius:8px;background:var(--pnl);border:1px solid var(--ln);font-size:10.5px}
+.ci .k{font-size:8.5px;color:var(--tx3);font-family:var(--fm);text-transform:uppercase;letter-spacing:.05em;
+  display:flex;justify-content:space-between}
+.ci .k em{font-style:normal;font-size:7.5px;padding:0 4px;border-radius:3px}
+.ci .k em.a{background:rgba(52,211,153,.18);color:var(--ok)}
+.ci .k em.m{background:rgba(251,191,36,.18);color:var(--warn)}
+.ci .v{margin-top:4px;font-family:var(--fm);font-size:10.5px}
+.ci .d{margin-top:3px;font-size:9.5px;color:var(--tx3)}
+.ci.diff{border-color:rgba(251,191,36,.4)}
+.ci.diff .d{color:var(--warn)}
+.ci.same .d{color:var(--ok)}
+
+/* 智能体侧栏 */
+.ag-hd{padding:12px 14px;border-bottom:1px solid var(--ln);display:flex;align-items:center;gap:8px}
+.ag-hd .av{width:24px;height:24px;border-radius:7px;background:linear-gradient(135deg,var(--vi),var(--ac));
+  display:flex;align-items:center;justify-content:center;font-size:12px}
+.ag-hd .nm{font-size:12px;font-weight:600}
+.ag-hd .st{font-size:9px;color:var(--tx3)}
+.ag-body{flex:1;overflow:auto;padding:12px 14px;display:flex;flex-direction:column;gap:11px}
+.msg{font-size:11px;line-height:1.65}
+.msg.me{align-self:flex-end;max-width:88%;padding:8px 11px;border-radius:10px 10px 3px 10px;
+  background:rgba(34,211,238,.14);border:1px solid rgba(34,211,238,.3);color:var(--tx)}
+.msg.ai{max-width:94%;padding:9px 12px;border-radius:10px 10px 10px 3px;
+  background:var(--pnl);border:1px solid var(--ln)}
+.msg.ai b{color:var(--ac)}
+.msg .q{display:block;margin-top:7px;padding:6px 9px;border-radius:6px;
+  background:rgba(167,139,250,.1);border:1px solid rgba(167,139,250,.25);
+  font-size:10px;color:var(--vi);cursor:pointer}
+.msg .q:hover{background:rgba(167,139,250,.2)}
+.ag-ft{padding:10px 14px;border-top:1px solid var(--ln);display:flex;gap:7px}
+.ag-ft input{flex:1;padding:7px 11px;border-radius:7px;border:1px solid var(--ln2);
+  background:var(--pnl);color:var(--tx);font-size:11px;outline:none}
+.ag-ft input:focus{border-color:var(--vi)}
+.cmp-ft{display:flex;gap:8px;padding:11px 18px;border-top:1px solid var(--ln);flex-shrink:0}
+
 .wip{font-size:8.5px;padding:1px 6px;border-radius:4px;background:rgba(251,191,36,.16);
-  color:var(--warn);margin-left:6px;font-family:var(--fm);vertical-align:middle}
+  color:var(--warn);margin-left:5px;font-family:var(--fm)}
 </style>
 </head>
 <body>
@@ -142,42 +203,40 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
   <div class="logo"><i></i>摄影参考库</div>
   <div class="searchbox">
     <svg viewBox="0 0 24 24"><path d="M10 2a8 8 0 105.3 14l5.4 5.4 1.4-1.4-5.4-5.4A8 8 0 0010 2zm0 2a6 6 0 110 12 6 6 0 010-12z"/></svg>
-    <input placeholder="搜「民政局门口 逆光 暖调」这种自然语句">
+    <input value="民政局门口 逆光 暖调">
   </div>
   <div class="spacer"></div>
-  <button class="btn" onclick="fake('批量上传：一次 100–500 张，先勾一批标签整批套用')">批量上传</button>
-  <button class="btn" onclick="fake('截帧入库：播放器里按快捷键，取前后各 1–2 秒的 3–5 张候选帧')">截帧入库</button>
-  <button class="btn pri" onclick="showCompare()">参考 vs 实拍</button>
+  <button class="btn" onclick="fake('批量上传：100–500 张，先勾一批标签整批套用')">批量上传</button>
+  <button class="btn" onclick="fake('截帧入库：取前后各 1–2 秒的 3–5 张候选帧，自动带时间码')">截帧入库</button>
+  <button class="btn pri" onclick="showCompare()">参考 vs 作品</button>
 </div>
 
-<!-- 三个库 -->
 <div class="libs">
-  <div class="lib d1 on" onclick="pickLib(this,'好库')">
-    <h3><span class="dot"></span>好库 <span class="wip">学别人的</span></h3>
-    <p>电影截帧、大师作品、别人拍得好的——用来学、找参考</p>
+  <div class="lib d1 on" onclick="pickLib(this,'审美')">
+    <h3><span class="dot"></span>审美</h3>
+    <p>别人的好片子——电影截帧、大师作品、网上看到的。用来学</p>
     <div class="cnt">1,284 张 · 本季新增 216</div>
   </div>
-  <div class="lib d2" onclick="pickLib(this,'不好库')">
-    <h3><span class="dot"></span>不好库 <span class="wip">别再犯</span></h3>
-    <p>客户/老师给的审核意见截图、自己拍坏的——哪里错、正确做法</p>
+  <div class="lib d2" onclick="pickLib(this,'反思')">
+    <h3><span class="dot"></span>反思</h3>
+    <p>审核意见截图、自己拍坏的、修过头的。记下别再犯</p>
     <div class="cnt">37 条 · 待复盘 5</div>
   </div>
-  <div class="lib d3" onclick="pickLib(this,'我的库')">
-    <h3><span class="dot"></span>我的库 <span class="wip">复盘进步</span></h3>
-    <p>自己的成片，带参数、地点、当时的判断</p>
+  <div class="lib d3" onclick="pickLib(this,'作品')">
+    <h3><span class="dot"></span>作品</h3>
+    <p>自己的成片，带完整拍摄参数、地点、当时的判断</p>
     <div class="cnt">412 张 · 本月 28</div>
   </div>
 </div>
 
 <div class="note">
   <div class="note-in">
-    <b>核心字段是「一句话偷师点」，不是标签。</b>
-    标签解决检索，句子解决学习。存图时写一句「我要从它身上拿走哪一项」（≤40 字），
-    否则图存了还是一个更漂亮的收藏夹。
+    <b>点任意一张看大图 + 完整参数。</b>
+    参数从照片 EXIF / RAW 里自动读（相机、镜头、焦距、光圈、快门、ISO、白平衡），
+    不用手填。「偷师点」是你自己写的一句话。
   </div>
 </div>
 
-<!-- 筛选 -->
 <div class="filters">
   <div class="fgroup"><span>光</span>
     <button class="chip on" onclick="tog(this)">逆光</button>
@@ -192,9 +251,11 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
     <button class="chip" onclick="tog(this)">半身</button>
     <button class="chip" onclick="tog(this)">全身</button>
   </div>
-  <div class="fgroup"><span>关系</span>
-    <button class="chip" onclick="tog(this)">单人</button>
-    <button class="chip on" onclick="tog(this)">双人</button>
+  <div class="fgroup"><span>场景</span>
+    <button class="chip on" onclick="tog(this)">室外</button>
+    <button class="chip" onclick="tog(this)">影棚</button>
+    <button class="chip" onclick="tog(this)">街景</button>
+    <button class="chip" onclick="tog(this)">室内</button>
   </div>
   <div class="fgroup"><span>题材</span>
     <button class="chip" onclick="tog(this)">领证</button>
@@ -203,30 +264,30 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
   </div>
 </div>
 
-<!-- 网格 -->
 <div class="grid">
-  <div class="card c1">
+  <div class="card c1" onclick="showDetail('ref1')">
     <div class="thumb"><div class="ph"></div>
       <span class="badge">电影 · 2.39</span>
       <span class="badge steal">已写偷师点</span>
+      <span class="badge raw">RAW</span>
       <div class="hoverbar">
         <button class="mini" onclick="event.stopPropagation();fake('找相似：按这张找库内相近的')">找相似</button>
-        <button class="mini" onclick="event.stopPropagation();showCompare()">对成片</button>
+        <button class="mini" onclick="event.stopPropagation();showCompare()">对作品</button>
       </div>
     </div>
     <div class="card-bd">
       <div class="steal-txt">逆光把发丝和背景分开，脸留暗部</div>
-      <div class="tags"><span class="tg">逆光</span><span class="tg">特写</span><span class="tg">暖调</span></div>
+      <div class="tags"><span class="tg">逆光</span><span class="tg">特写</span><span class="tg">室外</span></div>
     </div>
   </div>
 
-  <div class="card c2">
+  <div class="card c2" onclick="showDetail('ref2')">
     <div class="thumb"><div class="ph"></div>
       <span class="badge">小红书</span>
       <span class="badge steal">已写偷师点</span>
       <div class="hoverbar">
         <button class="mini" onclick="event.stopPropagation();fake('找相似')">找相似</button>
-        <button class="mini" onclick="event.stopPropagation();showCompare()">对成片</button>
+        <button class="mini" onclick="event.stopPropagation();showCompare()">对作品</button>
       </div>
     </div>
     <div class="card-bd">
@@ -235,13 +296,13 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
     </div>
   </div>
 
-  <div class="card c3">
+  <div class="card c3" onclick="showDetail('ref3')">
     <div class="thumb"><div class="ph"></div>
-      <span class="badge">B站截帧</span>
+      <span class="badge">B站截帧 03:24</span>
       <span class="badge steal">已写偷师点</span>
       <div class="hoverbar">
         <button class="mini" onclick="event.stopPropagation();fake('找相似')">找相似</button>
-        <button class="mini" onclick="event.stopPropagation();showCompare()">对成片</button>
+        <button class="mini" onclick="event.stopPropagation();showCompare()">对作品</button>
       </div>
     </div>
     <div class="card-bd">
@@ -250,27 +311,28 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
     </div>
   </div>
 
-  <div class="card c4">
+  <div class="card c4" onclick="showDetail('ref4')">
     <div class="thumb"><div class="ph"></div>
-      <span class="badge">大师</span>
+      <span class="badge">大师作品</span>
+      <span class="badge raw">RAW</span>
       <div class="hoverbar">
-        <button class="mini" onclick="event.stopPropagation();fake('待确认：还没写偷师点')">写偷师点</button>
-        <button class="mini" onclick="event.stopPropagation();showCompare()">对成片</button>
+        <button class="mini" onclick="event.stopPropagation();fake('还没写偷师点')">写偷师点</button>
+        <button class="mini" onclick="event.stopPropagation();showCompare()">对作品</button>
       </div>
     </div>
     <div class="card-bd">
       <div class="steal-txt" style="color:var(--warn)">⚠ 还没写偷师点</div>
-      <div class="tags"><span class="tg">顶光</span><span class="tg">单人</span></div>
+      <div class="tags"><span class="tg">顶光</span><span class="tg">单人</span><span class="tg">室内</span></div>
     </div>
   </div>
 
-  <div class="card c1">
+  <div class="card c1" onclick="showDetail('ref5')">
     <div class="thumb"><div class="ph"></div>
       <span class="badge">电影</span>
       <span class="badge steal">已写偷师点</span>
       <div class="hoverbar">
         <button class="mini" onclick="event.stopPropagation();fake('找相似')">找相似</button>
-        <button class="mini" onclick="event.stopPropagation();showCompare()">对成片</button>
+        <button class="mini" onclick="event.stopPropagation();showCompare()">对作品</button>
       </div>
     </div>
     <div class="card-bd">
@@ -279,13 +341,13 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
     </div>
   </div>
 
-  <div class="card c2">
+  <div class="card c2" onclick="showDetail('ref6')">
     <div class="thumb"><div class="ph"></div>
       <span class="badge">小红书</span>
       <span class="badge steal">已写偷师点</span>
       <div class="hoverbar">
         <button class="mini" onclick="event.stopPropagation();fake('找相似')">找相似</button>
-        <button class="mini" onclick="event.stopPropagation();showCompare()">对成片</button>
+        <button class="mini" onclick="event.stopPropagation();showCompare()">对作品</button>
       </div>
     </div>
     <div class="card-bd">
@@ -295,108 +357,216 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
   </div>
 </div>
 
-<!-- ================= 参考 vs 实拍 对比（核心占位） ================= -->
+<!-- ============ 大图 + 详情 ============ -->
+<div class="detail" id="dt">
+  <div class="dt-box">
+    <div class="dt-img">
+      <button class="nav l">‹</button>
+      <div class="ph"></div>
+      <button class="nav r">›</button>
+    </div>
+    <div class="dt-side">
+      <div class="dt-hd">
+        <h3 id="dtTitle">参考图</h3>
+        <div class="spacer"></div>
+        <button class="btn" onclick="hideDetail()">✕</button>
+      </div>
+      <div class="dt-body">
+        <div class="sec">
+          <div class="sec-t">偷师点 <span class="src manual">你写的</span></div>
+          <div class="steal-box">
+            <span class="lbl">我要从它身上拿走的那一项</span>
+            <span id="dtSteal">逆光把发丝和背景分开，脸留暗部</span>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-t">标签</div>
+          <div class="tags" style="margin-top:0">
+            <span class="tg">逆光</span><span class="tg">特写</span><span class="tg">室外</span>
+            <span class="tg">单人</span><span class="tg">暖调</span>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-t">拍摄参数 <span class="src auto">EXIF 自动读</span></div>
+          <div class="kv">
+            <span class="k">相机</span><span class="v">Canon EOS R5</span>
+            <span class="k">镜头</span><span class="v">RF 85mm F1.2L USM</span>
+            <span class="k">焦距</span><span class="v hl">85mm</span>
+            <span class="k">光圈</span><span class="v hl">f/1.2</span>
+            <span class="k">快门</span><span class="v hl">1/2000s</span>
+            <span class="k">ISO</span><span class="v hl">100</span>
+            <span class="k">白平衡</span><span class="v">5200K（手动）</span>
+            <span class="k">尺寸</span><span class="v">8192 × 5464</span>
+            <span class="k">拍摄时间</span><span class="v">2024-05-12 17:24</span>
+            <span class="k">地点</span><span class="v">杭州 · 某民宿</span>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-t">来源</div>
+          <div class="kv">
+            <span class="k">来源</span><span class="v">小红书 @某某某</span>
+            <span class="k">原链接</span><span class="v" style="color:var(--ac);cursor:pointer">打开原始笔记 ↗</span>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-t">RAW 支持</div>
+          <div class="rawbox">
+            <b>这张带 RAW 原件</b>（.CR3，41.2 MB）<br>
+            RAW 能读到传感器原始数据，参数比 JPEG 更完整——<br>
+            尤其是<b>白平衡是「真实设置值」还是「后期改的」</b>，JPEG 看不出来，RAW 能。
+          </div>
+        </div>
+      </div>
+      <div class="dt-ft">
+        <button class="btn" onclick="fake('编辑偷师点 / 标签')">编辑</button>
+        <button class="btn" onclick="hideDetail();showCompare()">对作品</button>
+        <button class="btn pri" onclick="fake('存为参考，挂到某个分镜上')">用到分镜</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 参考 vs 作品 对比 ============ -->
 <div class="compare" id="cmp">
   <div class="cmp-box">
     <div class="cmp-hd">
-      <h2>参考 vs 实拍</h2>
-      <span class="sub">拍完拿当初的参考图对一遍，一眼看出差在哪</span>
+      <h2>参考 vs 作品</h2>
+      <span class="sub">拍完拿当初的参考对一遍</span>
       <div class="spacer"></div>
       <button class="btn" onclick="hideCompare()">✕</button>
     </div>
 
-    <div class="cmp-body">
-      <div class="cmp-modes">
-        <button class="chip on" onclick="cmpMode(this,'并排')">并排</button>
-        <button class="chip" onclick="cmpMode(this,'叠加')">叠加（挖空看）</button>
-        <button class="chip" onclick="cmpMode(this,'滑块')">滑块分割</button>
-        <button class="chip" onclick="cmpMode(this,'差异')">像素差异</button>
-        <span style="font-size:9.5px;color:var(--tx3);margin-left:auto;align-self:center">
-          ⚠ 叠加/差异要求同尺寸已对齐，否则要先手动对齐
-        </span>
+    <div class="cmp-main">
+      <div class="cmp-left">
+        <div class="cmp-modes">
+          <button class="chip on" onclick="cmpMode(this,1)">并排</button>
+          <button class="chip" onclick="cmpMode(this,0)">叠加</button>
+          <button class="chip" onclick="cmpMode(this,0)">滑块分割</button>
+          <button class="chip" onclick="cmpMode(this,0)">像素差异</button>
+        </div>
+
+        <div class="cmp-stage">
+          <div class="cmp-side">
+            <span class="lbl">参考</span>
+            <div class="ph"></div>
+            <div class="ex">85mm · f/1.2 · 1/2000s · ISO100 · 5200K</div>
+          </div>
+          <div class="cmp-side real">
+            <span class="lbl">我的作品</span>
+            <div class="ph"></div>
+            <div class="ex">50mm · f/4 · 1/500s · ISO400 · 6100K</div>
+          </div>
+        </div>
+
+        <div class="why" style="margin-top:14px">
+          <span class="t">⚠ 为什么「叠加」和「像素差异」现在不能用</span>
+          这两张<b>构图和焦段都不一样</b>（85mm vs 50mm，人物占比 1/3 vs 1/2）。
+          叠加要两张精确重合才有意义，构图不同硬叠出来只会是一团糊。
+          <br>要先<b>手动对齐</b>（缩放/旋转/平移）才对得起来，
+          不然这个功能做出来就是废的。
+        </div>
+
+        <div class="cmp-grid">
+          <div class="ci diff">
+            <div class="k"><span>光位</span><em class="m">怎么判</em></div>
+            <div class="v">侧逆光 / 顺光</div>
+            <div class="d">← 差在这。参考有轮廓光，你的脸是平的</div>
+          </div>
+          <div class="ci diff">
+            <div class="k"><span>色温</span><em class="a">EXIF</em></div>
+            <div class="v">5200K / 6100K</div>
+            <div class="d">← 差 900K，你的偏暖</div>
+          </div>
+          <div class="ci diff">
+            <div class="k"><span>光圈 / 景深</span><em class="a">EXIF</em></div>
+            <div class="v">f/1.2 / f/4</div>
+            <div class="d">← 差 3 档，你的背景虚化不够</div>
+          </div>
+          <div class="ci diff">
+            <div class="k"><span>焦段</span><em class="a">EXIF</em></div>
+            <div class="v">85mm / 50mm</div>
+            <div class="d">← 85mm 压缩感更强，脸更「正」</div>
+          </div>
+          <div class="ci same">
+            <div class="k"><span>景别</span><em class="m">怎么判</em></div>
+            <div class="v">特写 / 特写</div>
+            <div class="d">对上了</div>
+          </div>
+          <div class="ci diff">
+            <div class="k"><span>构图</span><em class="m">怎么判</em></div>
+            <div class="v">留白+前景 / 居中</div>
+            <div class="d">← 差在这</div>
+          </div>
+        </div>
+
+        <div class="why" style="margin-top:13px;background:rgba(52,211,153,.07);border-color:rgba(52,211,153,.28)">
+          <span class="t" style="color:var(--ok)">✓ 这张表的数据是从哪来的</span>
+          <b>绿色标 EXIF</b>：从照片文件里直接读出来的，<b>100% 准确</b>（光圈、快门、ISO、焦段、白平衡）。<br>
+          <b>黄色标「怎么判」</b>：这些判断不了——<b>不是 AI 猜的</b>。要么你自己选，
+          要么右边的智能体问你，你答完它记下来。<br>
+          <span style="color:var(--tx3)">原型里这些值是我手写的示例，不是真读出来的。</span>
+        </div>
       </div>
 
-      <div class="cmp-stage">
-        <div class="cmp-side">
-          <span class="lbl">参考图</span>
-          <div class="ph"></div>
-          <div class="cmp-del" style="display:none"></div>
+      <!-- 智能体侧栏 -->
+      <div class="cmp-right">
+        <div class="ag-hd">
+          <div class="av">✦</div>
+          <div>
+            <div class="nm">对比助手</div>
+            <div class="st">已经读过两张图的 EXIF</div>
+          </div>
         </div>
-        <div class="cmp-side real">
-          <span class="lbl">实拍</span>
-          <div class="ph"></div>
-          <div class="cmp-del" style="display:none"></div>
+        <div class="ag-body">
+          <div class="msg ai">
+            我看完两张图的参数了。硬数据上差在这几处：<br>
+            · 光圈 <b>f/1.2 → f/4</b>（你的背景虚化不够）<br>
+            · 白平衡 <b>5200K → 6100K</b>（你的偏暖 900K）<br>
+            · 焦段 <b>85mm → 50mm</b>（压缩感弱了）<br><br>
+            但有一件事参数看不出来：<b>参考是侧逆光，你像是顺光</b>。
+            这是你当时站的方位问题。
+          </div>
+          <div class="msg ai">
+            我问你三个问题，答完我帮你写成偷师点：
+            <span class="q" onclick="fake('你当时是正对着光拍的吗？')">① 你当时是正对着光拍的吗？</span>
+            <span class="q" onclick="fake('你是故意收小光圈的吗？')">② 收小光圈是故意的吗？</span>
+            <span class="q" onclick="fake('下次会先绕到侧后方试试吗？')">③ 下次会先绕到侧后方吗？</span>
+          </div>
         </div>
-      </div>
-
-      <div class="cmp-slider">
-        <div class="row">
-          <span>透明度</span>
-          <input type="range" min="0" max="100" value="50" oninput="fake('拖到 50% 看两张的重合度')">
-          <span>50%</span>
-          <button class="mini" onclick="fake('锁定缩放平移：拖动时两张同步')">锁定缩放</button>
+        <div class="ag-ft">
+          <input placeholder="或者直接说：我当时光太硬了…">
+          <button class="btn">发送</button>
         </div>
-      </div>
-
-      <div class="cmp-verdict">
-        <b>差异诊断（占位文案，具体实现后接真比较）</b><br>
-        光位：参考是<b>侧逆光</b>（轮廓+鼻头有光），实拍偏<b>顺光</b>（脸很匀但平）<br>
-        色温：参考偏冷 ≈5200K，实拍偏暖 ≈6100K<br>
-        构图：参考人物占 1/3 且前景有遮挡，实拍人物占 1/2 无前景
-      </div>
-
-      <div class="cmp-grid">
-        <div class="cmp-item diff">
-          <div class="k">光位</div><div class="v">参考 侧逆光 / 实拍 顺光</div>
-          <div class="d">← 差在这，下次提前 45° 站</div>
-        </div>
-        <div class="cmp-item diff">
-          <div class="k">色温</div><div class="v">参考 5200K / 实拍 6100K</div>
-          <div class="d">← 差在这，白平衡往冷推</div>
-        </div>
-        <div class="cmp-item same">
-          <div class="k">景别</div><div class="v">特写 / 特写</div>
-          <div class="d">对上了</div>
-        </div>
-        <div class="cmp-item diff">
-          <div class="k">构图</div><div class="v">参考 留白+前景 / 实拍 居中</div>
-          <div class="d">← 差在这</div>
-        </div>
-        <div class="cmp-item same">
-          <div class="k">情绪</div><div class="v">松弛 / 松弛</div>
-          <div class="d">对上了</div>
-        </div>
-        <div class="cmp-item same">
-          <div class="k">背景</div><div class="v">虚化 / 虚化</div>
-          <div class="d">对上了</div>
-        </div>
-      </div>
-
-      <div class="note-in" style="margin-top:14px">
-        <b>这个功能是调研里确认的空白位：</b>参考图库类产品（ShotDeck / FilmGrab / Savee / Cosmos）
-        <b>全都没有</b>「参考 vs 自己的成片」对照；只有 Lightroom 在修图软件里做了 Reference View。
-        <span class="wip">原型占位</span> 具体实现后做：真实差异诊断、单应性对齐、导出对比图。
       </div>
     </div>
 
     <div class="cmp-ft">
       <button class="btn" onclick="hideCompare()">关闭</button>
       <div class="spacer"></div>
-      <button class="btn" onclick="fake('导出对比图（带诊断结论），发给客户或存进作品库')">导出对比图</button>
-      <button class="btn pri" onclick="fake('把这次差异写成一条新偷师点，存进好库')">存成一条偷师点</button>
+      <button class="btn" onclick="fake('导出对比图（带结论），发给客户或存进作品库')">导出对比图</button>
+      <button class="btn pri" onclick="fake('把这次的差异存成一条反思，下次别再犯')">存成一条反思</button>
     </div>
   </div>
 </div>
 
 <script>
+let toastTimer=null;
 function fake(msg){
-  const d=document.createElement('div');
-  d.style.cssText='position:fixed;left:50%;bottom:32px;transform:translateX(-50%);z-index:99;'
-    +'padding:10px 18px;border-radius:9px;background:rgba(20,20,28,.97);border:1px solid #32323f;'
-    +'color:#e8e8ee;font-size:11.5px;box-shadow:0 8px 30px rgba(0,0,0,.6);max-width:80vw';
-  d.textContent=msg;
-  document.body.appendChild(d);
-  setTimeout(()=>d.remove(),2600);
+  let d=document.getElementById('_toast');
+  if(!d){
+    d=document.createElement('div'); d.id='_toast';
+    d.style.cssText='position:fixed;left:50%;bottom:32px;transform:translateX(-50%);z-index:99;'
+      +'padding:10px 18px;border-radius:9px;background:rgba(20,20,28,.97);border:1px solid #32323f;'
+      +'color:#e8e8ee;font-size:11.5px;box-shadow:0 8px 30px rgba(0,0,0,.6);max-width:80vw';
+    document.body.appendChild(d);
+  }
+  d.textContent=msg; d.style.display='block';
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>d.style.display='none',2600);
 }
 function pickLib(el,name){
   document.querySelectorAll('.lib').forEach(x=>x.classList.remove('on'));
@@ -404,15 +574,30 @@ function pickLib(el,name){
   fake('切到「'+name+'」');
 }
 function tog(el){ el.classList.toggle('on'); }
+
+const STEAL={
+  ref1:'逆光把发丝和背景分开，脸留暗部',
+  ref2:'把证举到胸口，互相看，不要看镜头',
+  ref3:'阴影加青、高光加蓝、整体降饱和',
+  ref4:'（还没写）',
+  ref5:'前景用纱做一层雾，人物只占三分之一',
+  ref6:'一次只提醒一个动作，别同时说三件事'
+};
+function showDetail(id){
+  document.getElementById('dtSteal').textContent=STEAL[id]||'（还没写）';
+  document.getElementById('dtTitle').textContent = id==='ref4' ? '大师作品' : '参考图';
+  document.getElementById('dt').classList.add('on');
+}
+function hideDetail(){ document.getElementById('dt').classList.remove('on'); }
 function showCompare(){ document.getElementById('cmp').classList.add('on'); }
 function hideCompare(){ document.getElementById('cmp').classList.remove('on'); }
-function cmpMode(el,name){
+function cmpMode(el,ok){
+  if(!ok){ fake('这个模式要先手动对齐两张图才能用 —— 现在两张构图不同，硬叠没意义'); return; }
   el.parentElement.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));
   el.classList.add('on');
-  fake('对比模式：'+name+'（具体实现后做）');
 }
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape') hideCompare();
+  if(e.key==='Escape'){ hideDetail(); hideCompare(); }
 });
 </script>
 </body>
