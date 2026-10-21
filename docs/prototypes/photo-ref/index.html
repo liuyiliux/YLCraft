@@ -340,6 +340,63 @@ input{font:inherit}
   background:var(--bgInput);color:var(--tx1);font-size:var(--fs-sm);outline:none}
 .fe-in:focus{border-color:var(--photo)}
 
+/* ===== 反思视图 ===== */
+.rf-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  max-width:1600px;margin:18px auto 0;padding:0 24px}
+.rf-count{font-size:var(--fs-cap);color:var(--tx2)}
+.rf-count b{font-size:var(--fs-h4);color:var(--tx1);font-weight:700;margin-right:2px}
+.rf-sep{width:1px;height:20px;background:var(--bd2)}
+.rf-tab{padding:6px 14px;border-radius:var(--radiusSM);font-size:var(--fs-sm);
+  color:var(--tx2);transition:.18s;display:flex;align-items:center;gap:7px}
+.rf-tab:hover{background:var(--bgHover);color:var(--tx1)}
+.rf-tab.on{background:var(--bgCard);color:var(--tx1);box-shadow:var(--shadow);
+  border:1px solid var(--bd2)}
+.rf-n{font-size:var(--fs-xs);padding:1px 7px;border-radius:9px;
+  background:color-mix(in srgb,var(--tx2) 14%,transparent);color:var(--tx3)}
+
+.rf-list{max-width:1600px;margin:16px auto 0;padding:0 24px 24px;
+  display:flex;flex-direction:column;gap:11px}
+.rf{display:flex;gap:0;background:var(--bgCard);border:1px solid var(--bd2);
+  border-radius:var(--radiusMD);overflow:hidden;transition:.18s;position:relative}
+.rf:hover{border-color:var(--bd3);box-shadow:var(--shadow)}
+.rf.done{opacity:.72}
+.rf-pri{width:4px;flex-shrink:0;background:var(--bd2)}
+.rf-pri.bad{background:var(--err)}
+.rf-pri.good{background:var(--ok)}
+.rf-main{flex:1;padding:15px 18px;min-width:0}
+.rf-hd{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.rf-badge{font-size:var(--fs-xs);padding:2.5px 9px;border-radius:5px;
+  background:color-mix(in srgb,var(--tx2) 13%,transparent);color:var(--tx2)}
+.rf-badge.bad{background:color-mix(in srgb,var(--err) 17%,transparent);color:var(--err)}
+.rf-badge.good{background:color-mix(in srgb,var(--ok) 17%,transparent);color:var(--ok)}
+.rf-when{font-size:var(--fs-xs);color:var(--tx3);font-family:var(--fm)}
+.rf-text{font-size:var(--fs-cap);line-height:1.7;color:var(--tx1)}
+.rf-text b{color:var(--photo)}
+.rf-foot{display:flex;align-items:center;gap:8px;margin-top:11px;flex-wrap:wrap}
+.rf-tags{display:flex;gap:5px;flex-wrap:wrap}
+.rf-link{font-size:var(--fs-sm);color:var(--pri);padding:4px 9px;border-radius:5px}
+.rf-link:hover{background:color-mix(in srgb,var(--pri) 12%,transparent)}
+.rf-act{font-size:var(--fs-sm);color:var(--tx3);padding:4px 11px;border-radius:5px;
+  border:1px solid var(--bd2);transition:.15s}
+.rf-act:hover{border-color:var(--pri);color:var(--tx1)}
+.rf-thumb{width:132px;flex-shrink:0;position:relative;
+  background:linear-gradient(150deg,#2a2340,#141020);
+  display:flex;align-items:center;justify-content:center;border-left:1px solid var(--bd2)}
+.rf-thumb.warn{background:linear-gradient(150deg,#3a2a1a,#1a1208)}
+.rf-thumb .ph{width:34%;height:58%;border-radius:40% 40% 18% 18%/14% 14% 7% 7%;
+  background:linear-gradient(175deg,#e8d5bd,#a8825c)}
+.rf-shot{position:absolute;top:7px;left:7px;font-size:var(--fs-xs);padding:2px 7px;
+  border-radius:4px;background:rgba(0,0,0,.6);color:#fff;font-family:var(--fm)}
+.rf-note{max-width:1600px;margin:8px auto 48px;padding:0 24px}
+.rf-note{padding-left:24px;padding-right:24px}
+.rf-note{background:none}
+.rf-note{font-size:var(--fs-sm);color:var(--tx3);line-height:1.7;
+  padding:14px 18px;border-radius:var(--radiusSM);
+  background:color-mix(in srgb,var(--photo) 6%,transparent);
+  border:1px solid color-mix(in srgb,var(--photo) 22%,transparent);
+  margin:0 auto 48px;max-width:1552px}
+.rf-note b{color:var(--photo)}
+
 /* 智能体侧栏 */
 .ag-hd{padding:15px 18px;border-bottom:1px solid var(--bd2);display:flex;align-items:center;gap:10px}
 .ag-hd .av{width:30px;height:30px;border-radius:var(--radiusSM);background:var(--grad);
@@ -411,6 +468,8 @@ input{font:inherit}
   </div>
 </div>
 
+<!-- ===== 网格视图（审美 / 作品） ===== -->
+<div id="viewGrid">
 <div class="note">
   <div class="note-in">
     <b>点任意一张看大图 + 完整参数。</b>
@@ -545,6 +604,163 @@ input{font:inherit}
     <div class="card-bd">
       <div class="steal-txt">一次只提醒一个动作，别同时说三件事</div>
       <div class="tags"><span class="tg">老年</span><span class="tg">单人</span><span class="tg">柔光</span></div></div>
+  </div>
+</div>
+</div><!-- /viewGrid -->
+
+<!-- ===== 反思视图（文字条目，不是图片网格） ===== -->
+<div id="viewReflect" style="display:none">
+  <div class="rf-bar">
+    <div class="rf-count"><b>37</b> 条反思</div>
+    <div class="rf-sep"></div>
+    <button class="rf-tab on" onclick="rfTab(this,'all')">全部</button>
+    <button class="rf-tab" onclick="rfTab(this,'open')">还会犯 <span class="rf-n">5</span></button>
+    <button class="rf-tab" onclick="rfTab(this,'fixed')">已改掉 <span class="rf-n">32</span></button>
+    <button class="rf-tab" onclick="rfTab(this,'unseen')">很久没看 <span class="rf-n">8</span></button>
+    <div class="spacer"></div>
+    <div class="fgroup"><span>按什么筛</span>
+      <button class="chip on" onclick="tog(this)">白平衡</button>
+      <button class="chip" onclick="tog(this)">站位 / 光位</button>
+      <button class="chip" onclick="tog(this)">构图</button>
+      <button class="chip" onclick="tog(this)">引导</button>
+      <button class="chip" onclick="tog(this)">磨皮</button>
+      <button class="chip" onclick="tog(this)">交付</button>
+    </div>
+  </div>
+
+  <div class="rf-list">
+    <!-- 待办型：还会犯 -->
+    <div class="rf">
+      <div class="rf-pri bad"></div>
+      <div class="rf-main">
+        <div class="rf-hd">
+          <span class="rf-badge bad">还会犯</span>
+          <span class="rf-when">3 天前 · 来自分析作品</span>
+        </div>
+        <div class="rf-text">傍晚侧逆光拍摄时，白平衡不要跟着光走——自然光本身就暖，相机再往暖设会叠加。下次压到 5200K 或先对白纸定白。</div>
+        <div class="rf-foot">
+          <div class="rf-tags">
+            <span class="tg">白平衡</span><span class="tg">傍晚</span><span class="tg">逆光</span>
+          </div>
+          <div class="spacer"></div>
+          <button class="rf-link" onclick="fake('打开原图 · 10月小清新人像 · 第 12 张')">↗ 看原图</button>
+          <button class="rf-act" onclick="markFixed(this)">标为已改掉</button>
+          <button class="rf-act" onclick="fake('再想想这条 —— 补充或改写')">改一改</button>
+        </div>
+      </div>
+      <div class="rf-thumb"><div class="ph"></div></div>
+    </div>
+
+    <div class="rf">
+      <div class="rf-pri bad"></div>
+      <div class="rf-main">
+        <div class="rf-hd">
+          <span class="rf-badge bad">还会犯</span>
+          <span class="rf-when">1 周前 · 来自参考对照</span>
+        </div>
+        <div class="rf-text">参考是侧逆光，我是顺光。差在站位，不在器材。下次先绕到侧后方再举机，不要一上来就正面拍。</div>
+        <div class="rf-foot">
+          <div class="rf-tags">
+            <span class="tg">站位</span><span class="tg">侧逆光</span><span class="tg">顺光</span>
+          </div>
+          <div class="spacer"></div>
+          <button class="rf-link" onclick="fake('打开原图 · 客户 B · 街拍')">↗ 看原图</button>
+          <button class="rf-act" onclick="markFixed(this)">标为已改掉</button>
+          <button class="rf-act" onclick="fake('再想想这条')">改一改</button>
+        </div>
+      </div>
+      <div class="rf-thumb"><div class="ph"></div></div>
+    </div>
+
+    <div class="rf">
+      <div class="rf-pri bad"></div>
+      <div class="rf-main">
+        <div class="rf-hd">
+          <span class="rf-badge bad">还会犯</span>
+          <span class="rf-when">2 周前 · 来自审核截图</span>
+        </div>
+        <div class="rf-text">客户说「脸有点假」的时候，多半不是磨皮太重，是<b>高光阴影结构被磨平了</b>——鼻子没立体感、颧骨没阴影。磨皮前先标记高光和阴影的位置，磨的时候不要越过它们。</div>
+        <div class="rf-foot">
+          <div class="rf-tags">
+            <span class="tg">磨皮</span><span class="tg">高光阴影</span><span class="tg">客户反馈</span>
+          </div>
+          <div class="spacer"></div>
+          <button class="rf-link" onclick="fake('打开原图 · 客户 C · 室内')">↗ 看原图</button>
+          <button class="rf-act" onclick="markFixed(this)">标为已改掉</button>
+          <button class="rf-act" onclick="fake('再想想这条')">改一改</button>
+        </div>
+      </div>
+      <div class="rf-thumb warn"><div class="ph"></div><span class="rf-shot">截图</span></div>
+    </div>
+
+    <!-- 已改掉型 -->
+    <div class="rf done">
+      <div class="rf-pri good"></div>
+      <div class="rf-main">
+        <div class="rf-hd">
+          <span class="rf-badge good">已改掉</span>
+          <span class="rf-when">1 个月前 · 来自分析作品</span>
+        </div>
+        <div class="rf-text">f/1.2 拍全身不够景深，眼睛清楚了鼻尖会糊。全身至少收到 f/2.8。</div>
+        <div class="rf-foot">
+          <div class="rf-tags">
+            <span class="tg">光圈</span><span class="tg">景深</span><span class="tg">全身</span>
+          </div>
+          <div class="spacer"></div>
+          <button class="rf-link" onclick="fake('打开原图')">↗ 看原图</button>
+          <button class="rf-act" onclick="markFixed(this,true)">重新标记为还会犯</button>
+        </div>
+      </div>
+      <div class="rf-thumb"><div class="ph"></div></div>
+    </div>
+
+    <div class="rf done">
+      <div class="rf-pri good"></div>
+      <div class="rf-main">
+        <div class="rf-hd">
+          <span class="rf-badge good">已改掉</span>
+          <span class="rf-when">2 个月前 · 来自参考对照</span>
+        </div>
+        <div class="rf-text">老年人拍的时候，说「看镜头笑一个」比不说还僵。改成「手碰一下围巾」或者「往前走两步再回头」，人自然就松了。</div>
+        <div class="rf-foot">
+          <div class="rf-tags">
+            <span class="tg">引导</span><span class="tg">老年</span><span class="tg">口令</span>
+          </div>
+          <div class="spacer"></div>
+          <button class="rf-link" onclick="fake('打开原图')">↗ 看原图</button>
+          <button class="rf-act" onclick="markFixed(this,true)">重新标记为还会犯</button>
+        </div>
+      </div>
+      <div class="rf-thumb"><div class="ph"></div></div>
+    </div>
+
+    <div class="rf">
+      <div class="rf-pri"></div>
+      <div class="rf-main">
+        <div class="rf-hd">
+          <span class="rf-badge">未标状态</span>
+          <span class="rf-when">3 周前 · 来自分析作品</span>
+        </div>
+        <div class="rf-text">这组片子场景是民宿，但拍出来的光完全是窗外的自然光，房间里的灯一个都没用上。下次可以借室内灯做层次。</div>
+        <div class="rf-foot">
+          <div class="rf-tags">
+            <span class="tg">用光</span><span class="tg">室内</span><span class="tg">混合光</span>
+          </div>
+          <div class="spacer"></div>
+          <button class="rf-link" onclick="fake('打开原图')">↗ 看原图</button>
+          <button class="rf-act" onclick="markFixed(this)">标为已改掉</button>
+          <button class="rf-act" onclick="fake('再想想这条')">改一改</button>
+        </div>
+      </div>
+      <div class="rf-thumb"><div class="ph"></div></div>
+    </div>
+  </div>
+
+  <div class="rf-note">
+    <b>反思是独立的库，不是作品的附属。</b>
+    它能脱离原图单独搜（比如搜「白平衡」把所有的调出来），但每条挂着原图，
+    随时点得回去看当时是什么情况。<br>
+    <b>「还会犯 / 已改掉」</b>是唯一需要你维护的状态 —— 不是所有经验都值得一直挂着。
   </div>
 </div>
 
@@ -859,7 +1075,27 @@ function setTheme(t,el){
 function pickLib(el,name){
   document.querySelectorAll('.lib').forEach(x=>x.classList.remove('on'));
   el.classList.add('on');
-  fake('切到「'+name+'」');
+  const isRf = name==='反思';
+  document.getElementById('viewGrid').style.display = isRf?'none':'block';
+  document.getElementById('viewReflect').style.display = isRf?'block':'none';
+  fake('切到「'+name+'」' + (isRf?' —— 文字条目，不是图片网格':''));
+}
+function rfTab(el,key){
+  el.parentElement.querySelectorAll('.rf-tab').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+  const map={all:'全部',open:'还会犯',fixed:'已改掉',unseen:'很久没看'};
+  fake('筛选：'+map[key]);
+}
+function markFixed(el,undo){
+  const card=el.closest('.rf');
+  const badge=card.querySelector('.rf-badge');
+  card.classList.toggle('done', !undo);
+  card.querySelector('.rf-pri').className = 'rf-pri ' + (undo?'bad':'good');
+  badge.className='rf-badge ' + (undo?'bad':'good');
+  badge.textContent = undo?'还会犯':'已改掉';
+  el.textContent = undo?'标为已改掉':'重新标记为还会犯';
+  el.setAttribute('onclick', undo?'markFixed(this)':'markFixed(this,true)');
+  fake(undo?'已改回「还会犯」':'已标为「已改掉」—— 这条经验算是收下了');
 }
 function tog(el){ el.classList.toggle('on'); }
 function toggleScenes(){
