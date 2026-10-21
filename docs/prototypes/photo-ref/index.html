@@ -362,7 +362,53 @@ input{font:inherit}
 .rf.done{opacity:.72}
 .rf-pri{width:4px;flex-shrink:0;background:var(--bd2)}
 .rf-pri.bad{background:var(--err)}
+.rf-pri.warn{background:var(--warn)}
 .rf-pri.good{background:var(--ok)}
+
+/* 触发条件 */
+.rf-trigger{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:10px;
+  padding:9px 12px;border-radius:var(--radiusSM);
+  background:color-mix(in srgb,var(--warn) 7%,transparent);
+  border:1px solid color-mix(in srgb,var(--warn) 22%,transparent)}
+.rt-lab{font-size:var(--fs-xs);color:var(--warn);font-family:var(--fm);flex-shrink:0}
+.rt{font-size:var(--fs-sm);padding:2px 10px;border-radius:12px;color:var(--tx2);
+  background:color-mix(in srgb,var(--tx2) 11%,transparent);border:1px solid var(--bd2)}
+
+/* 不带图的总结 */
+.rf.nopic{background:color-mix(in srgb,var(--bgCard) 70%,transparent)}
+.rf-thumb.nopic{width:96px;background:var(--bgInput)}
+.rf-np{font-size:var(--fs-xs);color:var(--tx3);font-family:var(--fm)}
+.rf-badge.nopic{background:color-mix(in srgb,var(--drama) 16%,transparent);color:var(--drama)}
+.rf.quiet{opacity:.78}
+.rf-tip{font-size:var(--fs-xs);color:var(--tx3);line-height:1.6;max-width:520px;text-align:right}
+.rf-tip b{color:var(--warn)}
+
+/* 作品分组 */
+.grp-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  max-width:1600px;margin:18px auto 0;padding:0 24px}
+.grp-t{font-size:var(--fs-cap);color:var(--tx2)}
+.grp-t b{font-size:var(--fs-h4);color:var(--tx1)}
+.grp-list{display:flex;gap:9px;flex-wrap:wrap;max-width:1600px;margin:12px auto 0;padding:0 24px}
+.grp{display:flex;align-items:center;gap:9px;padding:9px 14px;border-radius:var(--radiusMD);
+  background:var(--bgCard);border:1px solid var(--bd2);cursor:pointer;transition:.18s}
+.grp:hover{border-color:var(--bd3);box-shadow:var(--shadow)}
+.grp.on{border-color:var(--photo);background:color-mix(in srgb,var(--photo) 8%,transparent)}
+.grp .gi{width:30px;height:30px;border-radius:6px;background:linear-gradient(150deg,#2a2340,#141020);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.grp .gi .ph{width:30%;height:56%;border-radius:40% 40% 18% 18%/14% 14% 7% 7%;
+  background:linear-gradient(175deg,#e8d5bd,#a8825c)}
+.grp .gn{font-size:var(--fs-cap);color:var(--tx1)}
+.grp .gm{font-size:var(--fs-xs);color:var(--tx3);font-family:var(--fm)}
+.grp.new{border-style:dashed}
+.grp.new .gi{background:transparent;font-size:18px;color:var(--tx3)}
+
+/* 修图打通 */
+.edit-entry{display:flex;gap:8px;align-items:center;padding:11px 14px;margin-top:14px;
+  border-radius:var(--radiusSM);background:color-mix(in srgb,var(--pri) 7%,transparent);
+  border:1px solid color-mix(in srgb,var(--pri) 24%,transparent);font-size:var(--fs-sm);
+  color:var(--tx2);line-height:1.65}
+.edit-entry b{color:var(--pri)}
+.edit-entry .btn{padding:5px 11px;font-size:var(--fs-sm)}
 .rf-main{flex:1;padding:15px 18px;min-width:0}
 .rf-hd{display:flex;align-items:center;gap:10px;margin-bottom:9px}
 .rf-badge{font-size:var(--fs-xs);padding:2.5px 9px;border-radius:5px;
@@ -673,16 +719,57 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 </div>
 </div><!-- /viewGrid -->
 
+<!-- ===== 作品分组栏（只在「作品」库显示） ===== -->
+<div id="workGroups" style="display:none">
+  <div class="grp-bar">
+    <div class="grp-t"><b>23</b> 个拍摄批次 · 共 412 张</div>
+    <div class="spacer"></div>
+    <button class="btn" onclick="fake('按日期排序 / 按客户排序')">排序</button>
+    <button class="btn pri" onclick="fake('新建一个拍摄批次：选文件夹或拖图进来')">＋ 新建批次</button>
+  </div>
+  <div class="grp-list">
+    <div class="grp on" onclick="pickGroup(this,'今天 · 小清新人像 · 客户A')">
+      <div class="gi"><div class="ph"></div></div>
+      <div><div class="gn">今天 · 小清新人像 · 客户A</div><div class="gm">18 张 · 民宿 · 已修 12</div></div>
+    </div>
+    <div class="grp" onclick="pickGroup(this,'今天 · 街拍 · 客户B')">
+      <div class="gi"><div class="ph"></div></div>
+      <div><div class="gn">今天 · 街拍 · 客户B</div><div class="gm">31 张 · 城市街拍 · 未修</div></div>
+    </div>
+    <div class="grp" onclick="pickGroup(this,'10月12日 · 领证跟拍')">
+      <div class="gi"><div class="ph"></div></div>
+      <div><div class="gn">10月12日 · 领证跟拍</div><div class="gm">54 张 · 民政局 · 已交付</div></div>
+    </div>
+    <div class="grp" onclick="pickGroup(this,'10月08日 · coser 角色')">
+      <div class="gi"><div class="ph"></div></div>
+      <div><div class="gn">10月08日 · coser 角色</div><div class="gm">42 张 · 实景基地 · 已修 30</div></div>
+    </div>
+    <div class="grp" onclick="pickGroup(this,'10月03日 · 老年旅拍')">
+      <div class="gi"><div class="ph"></div></div>
+      <div><div class="gn">10月03日 · 老年旅拍</div><div class="gm">26 张 · 海边 · 已交付</div></div>
+    </div>
+    <div class="grp new" onclick="fake('新建批次')">
+      <div class="gi">＋</div>
+      <div><div class="gn">新建批次</div></div>
+    </div>
+  </div>
+</div>
+
 <!-- ===== 反思视图（文字条目，不是图片网格） ===== -->
 <div id="viewReflect" style="display:none">
   <div class="rf-bar">
     <div class="rf-count"><b>37</b> 条反思</div>
     <div class="rf-sep"></div>
     <button class="rf-tab on" onclick="rfTab(this,'all')">全部</button>
-    <button class="rf-tab" onclick="rfTab(this,'open')">还会犯 <span class="rf-n">5</span></button>
-    <button class="rf-tab" onclick="rfTab(this,'fixed')">已改掉 <span class="rf-n">32</span></button>
-    <button class="rf-tab" onclick="rfTab(this,'unseen')">很久没看 <span class="rf-n">8</span></button>
+    <button class="rf-tab" onclick="rfTab(this,'trigger')">有触发条件 <span class="rf-n">12</span></button>
+    <button class="rf-tab" onclick="rfTab(this,'repeat')">最近又犯了 <span class="rf-n">3</span></button>
+    <button class="rf-tab" onclick="rfTab(this,'quiet')">很久没犯 <span class="rf-n">22</span></button>
+    <button class="rf-tab" onclick="rfTab(this,'nopic')">不带图的总结 <span class="rf-n">6</span></button>
     <div class="spacer"></div>
+    <button class="btn pri" onclick="newReflect()">＋ 写一条反思</button>
+  </div>
+
+  <div class="rf-bar" style="padding-top:6px">
     <div class="fgroup"><span>按什么筛</span>
       <button class="chip on" onclick="tog(this)">白平衡</button>
       <button class="chip" onclick="tog(this)">站位 / 光位</button>
@@ -691,130 +778,156 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
       <button class="chip" onclick="tog(this)">磨皮</button>
       <button class="chip" onclick="tog(this)">交付</button>
     </div>
+    <div class="spacer"></div>
+    <div class="rf-tip">
+      <b>反思不是「学会了就不会再犯」。</b>它管的是：下次碰上类似情况，先提醒你别踩同一个坑。
+    </div>
   </div>
 
   <div class="rf-list">
-    <!-- 待办型：还会犯 -->
+    <!-- 有触发条件 + 又犯了 -->
     <div class="rf">
       <div class="rf-pri bad"></div>
       <div class="rf-main">
         <div class="rf-hd">
-          <span class="rf-badge bad">还会犯</span>
+          <span class="rf-badge bad">最近又犯了</span>
           <span class="rf-when">3 天前 · 来自分析作品</span>
         </div>
         <div class="rf-text">傍晚侧逆光拍摄时，白平衡不要跟着光走——自然光本身就暖，相机再往暖设会叠加。下次压到 5200K 或先对白纸定白。</div>
+        <div class="rf-trigger">
+          <span class="rt-lab">会在这些情况下重现</span>
+          <span class="rt">傍晚</span><span class="rt">逆光</span><span class="rt">白平衡手动</span>
+        </div>
         <div class="rf-foot">
           <div class="rf-tags">
             <span class="tg">白平衡</span><span class="tg">傍晚</span><span class="tg">逆光</span>
           </div>
           <div class="spacer"></div>
           <button class="rf-link" onclick="fake('打开原图 · 10月小清新人像 · 第 12 张')">↗ 看原图</button>
-          <button class="rf-act" onclick="markFixed(this)">标为已改掉</button>
-          <button class="rf-act" onclick="fake('再想想这条 —— 补充或改写')">改一改</button>
+          <button class="rf-act" onclick="fake('已标记：最近又犯了 —— 这条热度往上调')">又犯了</button>
+          <button class="rf-act" onclick="fake('修改触发条件')">改条件</button>
         </div>
       </div>
       <div class="rf-thumb"><div class="ph"></div></div>
     </div>
 
     <div class="rf">
-      <div class="rf-pri bad"></div>
+      <div class="rf-pri warn"></div>
       <div class="rf-main">
         <div class="rf-hd">
-          <span class="rf-badge bad">还会犯</span>
+          <span class="rf-badge warn">有触发条件</span>
           <span class="rf-when">1 周前 · 来自参考对照</span>
         </div>
         <div class="rf-text">参考是侧逆光，我是顺光。差在站位，不在器材。下次先绕到侧后方再举机，不要一上来就正面拍。</div>
+        <div class="rf-trigger">
+          <span class="rt-lab">会在这些情况下重现</span>
+          <span class="rt">户外自然光</span><span class="rt">要拍轮廓</span><span class="rt">时间紧</span>
+        </div>
         <div class="rf-foot">
           <div class="rf-tags">
             <span class="tg">站位</span><span class="tg">侧逆光</span><span class="tg">顺光</span>
           </div>
           <div class="spacer"></div>
           <button class="rf-link" onclick="fake('打开原图 · 客户 B · 街拍')">↗ 看原图</button>
-          <button class="rf-act" onclick="markFixed(this)">标为已改掉</button>
-          <button class="rf-act" onclick="fake('再想想这条')">改一改</button>
+          <button class="rf-act" onclick="fake('已标记：又犯了')">又犯了</button>
+          <button class="rf-act" onclick="fake('修改触发条件')">改条件</button>
         </div>
       </div>
       <div class="rf-thumb"><div class="ph"></div></div>
     </div>
 
     <div class="rf">
-      <div class="rf-pri bad"></div>
+      <div class="rf-pri warn"></div>
       <div class="rf-main">
         <div class="rf-hd">
-          <span class="rf-badge bad">还会犯</span>
+          <span class="rf-badge warn">有触发条件</span>
           <span class="rf-when">2 周前 · 来自审核截图</span>
         </div>
         <div class="rf-text">客户说「脸有点假」的时候，多半不是磨皮太重，是<b>高光阴影结构被磨平了</b>——鼻子没立体感、颧骨没阴影。磨皮前先标记高光和阴影的位置，磨的时候不要越过它们。</div>
+        <div class="rf-trigger">
+          <span class="rt-lab">会在这些情况下重现</span>
+          <span class="rt">磨皮</span><span class="rt">客户要求「更自然」</span>
+        </div>
         <div class="rf-foot">
           <div class="rf-tags">
             <span class="tg">磨皮</span><span class="tg">高光阴影</span><span class="tg">客户反馈</span>
           </div>
           <div class="spacer"></div>
           <button class="rf-link" onclick="fake('打开原图 · 客户 C · 室内')">↗ 看原图</button>
-          <button class="rf-act" onclick="markFixed(this)">标为已改掉</button>
-          <button class="rf-act" onclick="fake('再想想这条')">改一改</button>
+          <button class="rf-act" onclick="fake('已标记：又犯了')">又犯了</button>
+          <button class="rf-act" onclick="fake('修改触发条件')">改条件</button>
         </div>
       </div>
       <div class="rf-thumb warn"><div class="ph"></div><span class="rf-shot">截图</span></div>
     </div>
 
-    <!-- 已改掉型 -->
-    <div class="rf done">
+    <!-- ⭐ 不带图的总结 -->
+    <div class="rf nopic">
+      <div class="rf-pri"></div>
+      <div class="rf-main">
+        <div class="rf-hd">
+          <span class="rf-badge nopic">写完拍的总结</span>
+          <span class="rf-when">昨天 · 你自己写的 · 不带图</span>
+        </div>
+        <div class="rf-text">今天这组整体比上次松，因为提前把「一次只说一个动作」记住了。但中途客户来了朋友围观，节奏乱了，后半组又开始赶。下次这种场合要提前说好「拍到一半不接待人」。</div>
+        <div class="rf-trigger">
+          <span class="rt-lab">会在这些情况下重现</span>
+          <span class="rt">客户带朋友/家人</span><span class="rt">拍摄超 2 小时</span>
+        </div>
+        <div class="rf-foot">
+          <div class="rf-tags">
+            <span class="tg">节奏</span><span class="tg">现场管理</span><span class="tg">客户沟通</span>
+          </div>
+          <div class="spacer"></div>
+          <button class="rf-act" onclick="fake('修改这条总结')">改一改</button>
+        </div>
+      </div>
+      <div class="rf-thumb nopic"><span class="rf-np">不带图</span></div>
+    </div>
+
+    <div class="rf nopic">
+      <div class="rf-pri"></div>
+      <div class="rf-main">
+        <div class="rf-hd">
+          <span class="rf-badge nopic">写完拍的总结</span>
+          <span class="rf-when">1 个月前 · 你自己写的 · 不带图</span>
+        </div>
+        <div class="rf-text">这个月十八组里，有九组是逆光。发现自己总在同一个安全区。下个月强制自己拍两组正面硬光。</div>
+        <div class="rf-trigger">
+          <span class="rt-lab">会在这些情况下重现</span>
+          <span class="rt">选题时</span><span class="rt">不知道拍什么时（习惯性回到逆光）</span>
+        </div>
+        <div class="rf-foot">
+          <div class="rf-tags">
+            <span class="tg">风格</span><span class="tg">复盘</span><span class="tg">自我观察</span>
+          </div>
+          <div class="spacer"></div>
+          <button class="rf-act" onclick="fake('修改这条总结')">改一改</button>
+        </div>
+      </div>
+      <div class="rf-thumb nopic"><span class="rf-np">不带图</span></div>
+    </div>
+
+    <!-- 很久没犯 -->
+    <div class="rf quiet">
       <div class="rf-pri good"></div>
       <div class="rf-main">
         <div class="rf-hd">
-          <span class="rf-badge good">已改掉</span>
+          <span class="rf-badge good">很久没犯</span>
           <span class="rf-when">1 个月前 · 来自分析作品</span>
         </div>
         <div class="rf-text">f/1.2 拍全身不够景深，眼睛清楚了鼻尖会糊。全身至少收到 f/2.8。</div>
+        <div class="rf-trigger">
+          <span class="rt-lab">会在这些情况下重现</span>
+          <span class="rt">全身</span><span class="rt">大光圈</span>
+        </div>
         <div class="rf-foot">
           <div class="rf-tags">
             <span class="tg">光圈</span><span class="tg">景深</span><span class="tg">全身</span>
           </div>
           <div class="spacer"></div>
           <button class="rf-link" onclick="fake('打开原图')">↗ 看原图</button>
-          <button class="rf-act" onclick="markFixed(this,true)">重新标记为还会犯</button>
-        </div>
-      </div>
-      <div class="rf-thumb"><div class="ph"></div></div>
-    </div>
-
-    <div class="rf done">
-      <div class="rf-pri good"></div>
-      <div class="rf-main">
-        <div class="rf-hd">
-          <span class="rf-badge good">已改掉</span>
-          <span class="rf-when">2 个月前 · 来自参考对照</span>
-        </div>
-        <div class="rf-text">老年人拍的时候，说「看镜头笑一个」比不说还僵。改成「手碰一下围巾」或者「往前走两步再回头」，人自然就松了。</div>
-        <div class="rf-foot">
-          <div class="rf-tags">
-            <span class="tg">引导</span><span class="tg">老年</span><span class="tg">口令</span>
-          </div>
-          <div class="spacer"></div>
-          <button class="rf-link" onclick="fake('打开原图')">↗ 看原图</button>
-          <button class="rf-act" onclick="markFixed(this,true)">重新标记为还会犯</button>
-        </div>
-      </div>
-      <div class="rf-thumb"><div class="ph"></div></div>
-    </div>
-
-    <div class="rf">
-      <div class="rf-pri"></div>
-      <div class="rf-main">
-        <div class="rf-hd">
-          <span class="rf-badge">未标状态</span>
-          <span class="rf-when">3 周前 · 来自分析作品</span>
-        </div>
-        <div class="rf-text">这组片子场景是民宿，但拍出来的光完全是窗外的自然光，房间里的灯一个都没用上。下次可以借室内灯做层次。</div>
-        <div class="rf-foot">
-          <div class="rf-tags">
-            <span class="tg">用光</span><span class="tg">室内</span><span class="tg">混合光</span>
-          </div>
-          <div class="spacer"></div>
-          <button class="rf-link" onclick="fake('打开原图')">↗ 看原图</button>
-          <button class="rf-act" onclick="markFixed(this)">标为已改掉</button>
-          <button class="rf-act" onclick="fake('再想想这条')">改一改</button>
+          <button class="rf-act" onclick="fake('已标记：又犯了 —— 热度上升')">又犯了</button>
         </div>
       </div>
       <div class="rf-thumb"><div class="ph"></div></div>
@@ -822,10 +935,10 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
   </div>
 
   <div class="rf-note">
-    <b>反思是独立的库，不是作品的附属。</b>
-    它能脱离原图单独搜（比如搜「白平衡」把所有的调出来），但每条挂着原图，
-    随时点得回去看当时是什么情况。<br>
-    <b>「还会犯 / 已改掉」</b>是唯一需要你维护的状态 —— 不是所有经验都值得一直挂着。
+    <b>反思不是待办清单，它不会「完成」。</b>
+    一条经验不代表学会了就永远不犯 —— 它只在<b>相似条件再出现时</b>提醒你一下。<br>
+    所以每条反思挂的是「<b>会在什么情况下重现</b>」，不是「已改掉 / 还会犯」。
+    你犯一次它就热一次，很久不犯它就冷静下去，但<b>永远不会被删掉</b>。
   </div>
 </div>
 
@@ -918,6 +1031,14 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
         <div class="spacer"></div>
         <button class="btn" onclick="hideDetail();openCmp('compare')">找参考对比</button>
         <button class="btn pri" onclick="hideDetail();openCmp('analyze')">分析这张</button>
+      </div>
+      <div class="edit-entry">
+        <span>🖌</span>
+        <div style="flex:1">
+          <b>作品能直接进修图。</b>
+          修图的调整记在文档层，不破坏原图；修完的版本回到这里，能看「修前 / 修后」。
+        </div>
+        <button class="btn pri" onclick="fake('打开图片编辑器：裁剪/旋转/滤镜/调色/曲线，修完存回这个作品')">去修图</button>
       </div>
     </div>
   </div>
@@ -1206,14 +1327,75 @@ function pickLib(el,name){
   document.querySelectorAll('.lib').forEach(x=>x.classList.remove('on'));
   el.classList.add('on');
   const isRf = name==='反思';
+  const isWork = name==='作品';
   document.getElementById('viewGrid').style.display = isRf?'none':'block';
   document.getElementById('viewReflect').style.display = isRf?'block':'none';
-  fake('切到「'+name+'」' + (isRf?' —— 文字条目，不是图片网格':''));
+  document.getElementById('workGroups').style.display = isWork?'block':'none';
+  fake('切到「'+name+'」' + (isRf?' —— 文字条目，不是图片网格':(isWork?' —— 按拍摄批次分组':'')));
+}
+function pickGroup(el,name){
+  document.querySelectorAll('.grp').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+  fake('看这一批：'+name);
+}
+function newReflect(){
+  const modal=document.createElement('div');
+  modal.style.cssText='position:fixed;inset:0;background:rgba(5,5,10,.86);z-index:80;'
+    +'display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px)';
+  modal.onclick=e=>{ if(e.target===modal) modal.remove(); };
+  modal.innerHTML=`
+    <div style="width:min(680px,93vw);background:var(--bgElev);border:1px solid var(--bd3);
+      border-radius:var(--radiusLG);box-shadow:var(--shadowModal);overflow:hidden">
+      <div style="padding:16px 20px;border-bottom:1px solid var(--bd2);display:flex;align-items:center;gap:10px">
+        <span style="font-size:var(--fs-h4);font-weight:600">写一条反思</span>
+        <span style="font-size:var(--fs-xs);padding:3px 9px;border-radius:5px;
+          background:color-mix(in srgb,var(--drama) 18%,transparent);color:var(--drama)">可以不带图</span>
+        <div style="flex:1"></div>
+        <button class="btn" onclick="this.closest('div[style*=fixed]').remove()">✕</button>
+      </div>
+      <div style="padding:18px 20px">
+        <div style="font-size:var(--fs-sm);color:var(--tx3);margin-bottom:8px">这条经验是什么</div>
+        <textarea placeholder="例：今天这组整体比上次松，因为提前把「一次只说一个动作」记住了。但中途客户来了朋友围观，节奏乱了。"
+          style="width:100%;height:92px;padding:12px 14px;border-radius:var(--radiusSM);
+          border:1px solid var(--bd2);background:var(--bgInput);color:var(--tx1);
+          font-size:var(--fs-cap);line-height:1.6;outline:none;resize:vertical;font-family:var(--ff)"></textarea>
+
+        <div style="font-size:var(--fs-sm);color:var(--tx3);margin:16px 0 8px">
+          会在什么情况下重现 <span style="color:var(--warn)">（这是它以后提醒你的依据）</span>
+        </div>
+        <input placeholder="例：客户带朋友/家人 · 拍摄超 2 小时 · 逆光"
+          style="width:100%;padding:10px 13px;border-radius:var(--radiusSM);
+          border:1px solid var(--bd2);background:var(--bgInput);color:var(--tx1);
+          font-size:var(--fs-sm);outline:none">
+
+        <div style="font-size:var(--fs-sm);color:var(--tx3);margin:16px 0 8px">挂不挂图</div>
+        <div style="display:flex;gap:8px">
+          <button class="chip on" onclick="tog(this)">不挂图（纯文字总结）</button>
+          <button class="chip" onclick="tog(this)">挂一张作品</button>
+          <button class="chip" onclick="tog(this)">挂一整组</button>
+        </div>
+
+        <div style="margin-top:16px;padding:12px 14px;border-radius:var(--radiusSM);
+          background:color-mix(in srgb,var(--warn) 8%,transparent);
+          border:1px solid color-mix(in srgb,var(--warn) 26%,transparent);
+          font-size:var(--fs-sm);color:var(--tx2);line-height:1.65">
+          <b style="color:var(--warn)">它不是待办。</b>
+          存进来不会「完成」，也不会因为你学会了就消失 ——
+          它只是在上面那些情况再次出现时，提醒你别踩同一个坑。
+        </div>
+      </div>
+      <div style="padding:14px 20px;border-top:1px solid var(--bd2);display:flex;gap:9px">
+        <button class="btn" onclick="this.closest('div[style*=fixed]').remove()">取消</button>
+        <div style="flex:1"></div>
+        <button class="btn pri" onclick="this.closest('div[style*=fixed]').remove();fake('已存进反思 · 会在相关情况出现时提醒你')">存进反思</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
 }
 function rfTab(el,key){
   el.parentElement.querySelectorAll('.rf-tab').forEach(x=>x.classList.remove('on'));
   el.classList.add('on');
-  const map={all:'全部',open:'还会犯',fixed:'已改掉',unseen:'很久没看'};
+  const map={all:'全部',trigger:'有触发条件',repeat:'最近又犯了',quiet:'很久没犯',nopic:'不带图的总结'};
   fake('筛选：'+map[key]);
 }
 function markFixed(el,undo){
