@@ -616,6 +616,40 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 .plan-left,.plan-right{overflow:auto;padding:16px 16px;border-right:1px solid var(--bd2)}
 .plan-right{border-right:none;border-left:1px solid var(--bd2)}
 .plan-mid{overflow:auto;padding:16px 18px}
+/* 这次拍谁 */
+.who{display:flex;flex-direction:column;gap:6px}
+.who-btn{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:8px;
+  background:var(--bgCard);border:1px solid var(--bd2);transition:.15s;text-align:left}
+.who-btn:hover{border-color:var(--coser)}
+.who-btn.on{border-color:var(--coser);
+  background:color-mix(in srgb,var(--coser) 11%,transparent)}
+.wh-av{width:26px;height:26px;border-radius:50%;flex-shrink:0;
+  background:linear-gradient(150deg,#2a2340,#141020);display:flex;align-items:center;
+  justify-content:center;font-size:13px;color:var(--tx2)}
+.who-btn.on .wh-av{background:color-mix(in srgb,var(--coser) 30%,transparent);
+  color:var(--coser)}
+.wh-n{flex:1;font-size:var(--fs-sm);color:var(--tx1)}
+.wh-c{font-size:var(--fs-xs);color:var(--tx3);font-family:var(--fm)}
+
+.who-card{margin-top:10px;padding:13px 14px;border-radius:var(--radiusSM);
+  background:color-mix(in srgb,var(--coser) 7%,transparent);
+  border:1px solid color-mix(in srgb,var(--coser) 26%,transparent)}
+.wc-h{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+.wc-t{font-size:var(--fs-sm);color:var(--tx3)}
+.wc-badge{font-size:var(--fs-xs);padding:2px 9px;border-radius:4px;
+  background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}
+.wc-b{font-size:var(--fs-sm);color:var(--tx2);line-height:1.65;margin-bottom:9px}
+.wc-b b{color:var(--coser)}
+.wc-cues{display:flex;flex-direction:column;gap:5px;margin-bottom:9px}
+.wc-cue{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;
+  font-size:var(--fs-sm);background:var(--bgInput)}
+.wc-cue span{margin-left:auto;font-size:var(--fs-xs);font-family:var(--fm);flex-shrink:0}
+.wc-cue.ok{color:var(--ok)} .wc-cue.ok span{color:var(--ok)}
+.wc-cue.bad{color:var(--err);opacity:.85} .wc-cue.bad span{color:var(--err)}
+.wc-warn{padding:9px 11px;border-radius:6px;font-size:var(--fs-xs);color:var(--tx2);
+  line-height:1.6;background:color-mix(in srgb,var(--warn) 8%,transparent);
+  border:1px solid color-mix(in srgb,var(--warn) 22%,transparent)}
+.wc-warn b{color:var(--warn)}
 .pl-hd{display:flex;align-items:center;gap:9px;margin-bottom:10px}
 .pl-t{font-size:var(--fs-xs);color:var(--tx3);font-family:var(--fm);text-transform:uppercase;
   letter-spacing:.07em}
@@ -858,6 +892,8 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 /* 分镜卡（从元素组合） */
 .sfe-empty{padding:20px;border-radius:var(--radiusSM);border:1px dashed var(--bd2);
   color:var(--tx3);font-size:var(--fs-sm);text-align:center}
+.sfe-k.who{color:var(--coser)}
+.sfe-v.who{color:var(--coser)}
 .sfe-note{margin-top:11px;font-size:var(--fs-sm);color:var(--tx3);line-height:1.7;
   padding:11px 14px;border-radius:var(--radiusSM);background:var(--bgInput)}
 .sfe-note b{color:var(--photo)}
@@ -1503,8 +1539,49 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
       <div class="pl-hd"><span class="pl-t">项目</span><div class="spacer"></div>
         <button class="pl-add" onclick="fake('新建项目')">＋</button></div>
       <div class="pl-proj on">
-        <div class="pl-pname">11月 · 秋天颐和园 · 朋友</div>
+        <div class="pl-pname">11月 · 秋天颐和园 · 小林</div>
         <div class="pl-pmeta">待定 · 颐和园</div>
+      </div>
+
+      <!-- ⭐ 这次拍谁 -->
+      <div class="pl-hd" style="margin-top:16px"><span class="pl-t">这次拍谁</span>
+        <div class="spacer"></div>
+        <button class="pl-add" onclick="window.open('model-profile.html','_blank')">档案 ↗</button>
+      </div>
+      <div class="who">
+        <button class="who-btn on" onclick="pickWho(this,'xiaolin')">
+          <span class="wh-av">林</span>
+          <span class="wh-n">小林</span>
+          <span class="wh-c">8次</span>
+        </button>
+        <button class="who-btn" onclick="pickWho(this,'a-yun')">
+          <span class="wh-av">芸</span>
+          <span class="wh-n">阿芸</span>
+          <span class="wh-c">3次</span>
+        </button>
+        <button class="who-btn" onclick="pickWho(this,'new')">
+          <span class="wh-av">＋</span>
+          <span class="wh-n">新客户</span>
+        </button>
+      </div>
+
+      <!-- 选人后带出的信息 -->
+      <div class="who-card" id="whoCard">
+        <div class="wc-h">
+          <span class="wc-t">怎么拍她</span>
+          <span class="wc-badge">本色出演</span>
+        </div>
+        <div class="wc-b">
+          <b>别让她笑。</b>给她事情做，让她自己进入状态——
+          她发呆、走路、整理头发的时候最好看。
+        </div>
+        <div class="wc-cues">
+          <div class="wc-cue ok">「你就当我不在，做你自己的事」<span>5/6次</span></div>
+          <div class="wc-cue bad">❌「笑一个」「放松一点」<span>已失败4次</span></div>
+        </div>
+        <div class="wc-warn">
+          <b>两个雷区：</b>一次只给一个指令；第 40 分钟她会累，安排坐下。
+        </div>
       </div>
 
       <div class="pl-hd" style="margin-top:16px"><span class="pl-t">你只记得这些</span></div>
@@ -3083,6 +3160,7 @@ const PLAN_ELEMENTS = {
 };
 
 let currentPlan = null;
+let currentWho = 'xiaolin';
 
 function pickPlan(which){
   const el = PLAN_ELEMENTS[which];
@@ -3191,6 +3269,11 @@ function genShots(planKey){
       +   '<span class="sfe-v">'+r.take+'</span></div>'
       + '<div class="sfe-row"><span class="sfe-k risk">风险</span>'
       +   '<span class="sfe-v risk">'+r.risk+'</span></div>'
+      + (currentWho && WHO[currentWho]
+          ? '<div class="sfe-row"><span class="sfe-k who">对'+WHO[currentWho].name+'</span>'
+            + '<span class="sfe-v who">'+WHO[currentWho].cues[0].t
+            + '<span style="color:var(--tx3);margin-left:6px">（'+WHO[currentWho].cues[0].n+'）</span></span></div>'
+          : '')
       + '</div>';
   }).join('');
 }
@@ -3199,6 +3282,58 @@ function regenShots(){
   if(!currentPlan){ fake('先选一个方案'); return; }
   genShots(currentPlan);
   fake('已按元素重排 '+SHOT_RECIPES[currentPlan].length+' 个镜头');
+}
+/* ===== 选人 → 带出档案 ===== */
+const WHO = {
+  xiaolin: {
+    name:'小林', act:'本色出演',
+    brief:'<b>别让她笑。</b>给她事情做，让她自己进入状态——她发呆、走路、整理头发的时候最好看。',
+    cues:[
+      {ok:true,  t:'「你就当我不在，做你自己的事」', n:'5/6次'},
+      {ok:false, t:'❌「笑一个」「放松一点」', n:'已失败4次'}
+    ],
+    warn:'<b>两个雷区：</b>一次只给一个指令；第 40 分钟她会累，安排坐下。'
+  },
+  'a-yun': {
+    name:'阿芸', act:'角色扮演',
+    brief:'她能演，而且喜欢演。<b>给她一个设定</b>（比如「刚下班的杂志编辑」），她进入状态很快。',
+    cues:[
+      {ok:true,  t:'「你现在是刚下班的编辑」', n:'3/3次'},
+      {ok:false, t:'「随便站着就行」', n:'失败2次'}
+    ],
+    warn:'<b>注意：</b>她入戏快但容易演过，记得提醒「收一点」。'
+  },
+  new: {
+    name:'新客户', act:'还不知道',
+    brief:'<b>第一次合作，全是猜的。</b>先按「任务式口令」试，拍的过程中观察她哪种状态最放松。',
+    cues:[
+      {ok:true,  t:'「往前走，我数到三你回头」', n:'通用'},
+      {ok:false, t:'❌「自然一点」', n:'对谁都无效'}
+    ],
+    warn:'<b>拍完记得回来更新档案</b>——这次就是她档案的第 1 条。'
+  }
+};
+
+function pickWho(el, key){
+  document.querySelectorAll('.who-btn').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+  currentWho = key;
+  const w = WHO[key];
+  const card = document.getElementById('whoCard');
+  card.innerHTML = '<div class="wc-h"><span class="wc-t">怎么拍她</span>'
+    + '<span class="wc-badge">'+w.act+'</span></div>'
+    + '<div class="wc-b">'+w.brief+'</div>'
+    + '<div class="wc-cues">'
+    + w.cues.map(c=>'<div class="wc-cue '+(c.ok?'ok':'bad')+'">'+c.t
+        + '<span>'+c.n+'</span></div>').join('')
+    + '</div>'
+    + '<div class="wc-warn">'+w.warn+'</div>';
+
+  // 项目名跟着变
+  const nm = document.querySelector('.pl-pname');
+  if(nm) nm.textContent = nm.textContent.replace(/·\s*[^·]+$/, '· ' + w.name);
+
+  fake('已选「'+w.name+'」—— 怎么拍她、管用的口令、雷区都带出来了');
 }
 function openVague(){ document.getElementById('vagueSheet').classList.add('on'); }
 function closeVague(){ document.getElementById('vagueSheet').classList.remove('on'); }
