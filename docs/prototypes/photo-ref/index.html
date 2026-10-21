@@ -508,12 +508,57 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
   font-size:var(--fs-sm);color:var(--tx2);line-height:1.65}
 .keys-note b{color:var(--photo)}
 
+/* ===== 项目列表 ===== */
+.px{max-width:880px;margin:0 auto;padding:48px 32px 96px}
+.px-hd{display:flex;align-items:flex-end;gap:24px;margin-bottom:44px;flex-wrap:wrap}
+.px-eyebrow{font-size:13px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--tx3);font-family:var(--fm);margin-bottom:10px}
+.px-title{font-size:38px;font-weight:600;letter-spacing:-.03em;line-height:1.15;
+  color:var(--tx1);margin-bottom:10px}
+.px-meta{font-size:15px;color:var(--tx3);font-family:var(--fm)}
+.px-primary{padding:11px 22px;border-radius:6px;background:var(--tx1);color:var(--bgPage);
+  border:none;font-size:15px;font-weight:600;transition:.16s;margin-left:auto}
+.px-primary:hover{background:var(--tx2)}
+.px-primary:active{transform:scale(.98)}
+
+.px-sec{margin-bottom:44px}
+.px-sec-h{display:flex;align-items:center;gap:10px;margin-bottom:16px;
+  padding-bottom:12px;border-bottom:1px solid var(--bd2)}
+.px-sec-t{font-size:16px;font-weight:600;color:var(--tx1)}
+.px-sec-n{font-size:13px;font-family:var(--fm);color:var(--tx3);
+  padding:1px 8px;border-radius:9px;background:var(--bd2)}
+
+.px-list{border:1px solid var(--bd2);border-radius:10px;overflow:hidden;
+  background:var(--bd2);display:flex;flex-direction:column;gap:1px}
+.px-item{display:flex;align-items:center;gap:16px;padding:20px 24px;
+  background:var(--bgCard);cursor:pointer;transition:.16s}
+.px-item:hover{background:var(--bgHover)}
+.px-item.done{opacity:.72}
+.px-item-l{flex:1;min-width:0}
+.px-item-name{font-size:17px;font-weight:600;color:var(--tx1);margin-bottom:6px;
+  letter-spacing:-.01em}
+.px-item-who{font-size:14px;font-weight:400;color:var(--tx3);margin-left:6px}
+.px-item-meta{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--tx3);
+  flex-wrap:wrap}
+.px-item-meta i{font-style:normal;color:var(--bd3)}
+.px-warn{color:var(--warn)}
+.px-item-r{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0}
+.px-badge{font-size:12px;padding:3px 10px;border-radius:999px;
+  font-family:var(--fm);letter-spacing:.04em}
+.px-badge.draft{background:var(--bd2);color:var(--tx3)}
+.px-badge.ready{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+.px-badge.shot{background:color-mix(in srgb,var(--pri) 13%,transparent);color:var(--pri)}
+.px-date{font-size:12px;color:var(--tx3);font-family:var(--fm)}
+.px-more{margin-top:14px;font-size:15px;color:var(--tx3);padding:8px 0;transition:.16s}
+.px-more:hover{color:var(--tx1)}
 /* ===== 策划页 · 极简重做（Premium Utilitarian Minimalism）===== */
 .pz{max-width:1080px;margin:0 auto;padding:48px 32px 96px}
 
 /* 头部 */
 .pz-hd{display:flex;align-items:flex-end;gap:24px;margin-bottom:40px;flex-wrap:wrap}
 .pz-hd-l{flex:1;min-width:280px}
+.pz-back{font-size:13px;color:var(--tx3);letter-spacing:.08em;transition:.16s;text-transform:uppercase}
+.pz-back:hover{color:var(--tx1)}
 .pz-eyebrow{font-size:13px;letter-spacing:.08em;text-transform:uppercase;
   color:var(--tx3);font-family:var(--fm);margin-bottom:10px}
 .pz-title{font-size:38px;font-weight:600;letter-spacing:-.03em;line-height:1.15;
@@ -643,12 +688,14 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 .pz-shot-cue-h{font-size:13px;color:var(--tx3);margin-top:6px;font-family:var(--fm)}
 
 /* 必带 */
-.pz-kit{display:flex;flex-direction:column;gap:32px;max-width:560px}
+.pz-kit{max-width:560px}
+.pz-kg{margin-bottom:32px}
 .pz-kg-h{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--tx3);
-  font-family:var(--fm);margin-bottom:12px}
+  font-family:var(--fm);margin-bottom:4px;text-align:left}
 .pz-kg-h.must{color:var(--err)}
-.pz-ki{display:flex;align-items:center;gap:13px;padding:14px 0;
-  border-bottom:1px solid var(--bd);font-size:16px;color:var(--tx1);cursor:pointer}
+.pz-ki{display:flex;align-items:center;gap:12px;padding:13px 2px;
+  border-bottom:1px solid var(--bd);font-size:16px;color:var(--tx1);cursor:pointer;
+  text-align:left;width:100%}
 .pz-ki:last-child{border-bottom:none}
 .pz-ki input{width:19px;height:19px;accent-color:var(--photo);flex-shrink:0}
 .pz-ki span{flex:1}
@@ -1678,13 +1725,74 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 
 </div><!-- /pageRef -->
 
+<!-- ===== 项目列表页 ===== -->
+<div id="pageProjects" style="display:none">
+  <div class="px">
+    <header class="px-hd">
+      <div>
+        <div class="px-eyebrow">拍摄计划</div>
+        <h1 class="px-title">所有项目</h1>
+        <div class="px-meta">3 个待拍 · 12 个已拍 · 共 15 个</div>
+      </div>
+      <button class="px-primary" onclick="newProject()">新建拍摄</button>
+    </header>
+
+    <section class="px-sec">
+      <div class="px-sec-h"><span class="px-sec-t">待拍</span><span class="px-sec-n">3</span></div>
+      <div class="px-list">
+        <article class="px-item" onclick="openProject('秋天颐和园')">
+          <div class="px-item-l">
+            <div class="px-item-name">秋天颐和园 <span class="px-item-who">小林</span></div>
+            <div class="px-item-meta"><span>11月待定</span><i>·</i><span>颐和园</span><i>·</i><span class="px-warn">还没定日期</span></div>
+          </div>
+          <div class="px-item-r"><span class="px-badge draft">草稿</span><span class="px-date">3 天前编辑</span></div>
+        </article>
+        <article class="px-item" onclick="openProject('领证跟拍')">
+          <div class="px-item-l">
+            <div class="px-item-name">领证跟拍 <span class="px-item-who">客户B</span></div>
+            <div class="px-item-meta"><span>10-28 周二</span><i>·</i><span>民政局</span><i>·</i><span>黄金 16:40–17:20</span></div>
+          </div>
+          <div class="px-item-r"><span class="px-badge ready">已就绪</span><span class="px-date">昨天编辑</span></div>
+        </article>
+        <article class="px-item" onclick="openProject('coser 外景')">
+          <div class="px-item-l">
+            <div class="px-item-name">coser 外景 <span class="px-item-who">阿桐</span></div>
+            <div class="px-item-meta"><span>11-02 周日</span><i>·</i><span>实景基地</span><i>·</i><span class="px-warn">元素还差光线</span></div>
+          </div>
+          <div class="px-item-r"><span class="px-badge draft">草稿</span><span class="px-date">1 周前编辑</span></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="px-sec">
+      <div class="px-sec-h"><span class="px-sec-t">已拍</span><span class="px-sec-n">12</span></div>
+      <div class="px-list">
+        <article class="px-item done" onclick="fake('打开已拍项目')">
+          <div class="px-item-l">
+            <div class="px-item-name">小清新人像 <span class="px-item-who">客户A</span></div>
+            <div class="px-item-meta"><span>10-20</span><i>·</i><span>民宿</span><i>·</i><span>拍了 18 张</span></div>
+          </div>
+          <div class="px-item-r"><span class="px-badge shot">已拍</span><span class="px-date">2 天前</span></div>
+        </article>
+        <article class="px-item done" onclick="fake('打开已拍项目')">
+          <div class="px-item-l">
+            <div class="px-item-name">街拍 <span class="px-item-who">客户B</span></div>
+            <div class="px-item-meta"><span>10-18</span><i>·</i><span>城市街拍</span><i>·</i><span>拍了 31 张</span></div>
+          </div>
+          <div class="px-item-r"><span class="px-badge shot">已拍</span><span class="px-date">4 天前</span></div>
+        </article>
+      </div>
+      <button class="px-more" onclick="fake('展开全部 12 个已拍项目')">看全部 12 个 →</button>
+    </section>
+  </div>
+</div>
 <!-- ===== 脚本策划页面（极简重做） ===== -->
 <div id="pagePlan" style="display:none">
   <div class="pz">
 
     <header class="pz-hd">
       <div class="pz-hd-l">
-        <div class="pz-eyebrow">拍摄计划</div>
+        <div class="pz-eyebrow"><button class="pz-back" onclick="openProjects()">‹ 所有项目</button></div>
         <h1 class="pz-title">秋天颐和园<span class="pz-title-sub">小林</span></h1>
         <div class="pz-meta">
           <span>11月待定</span><i>·</i><span>颐和园</span><i>·</i>
@@ -3462,6 +3570,29 @@ function renderPzTimes(){
   if(light && gold && sunset) light.textContent = '黄金 '+SunCalcLite.fmtTime(gold)+'–'+SunCalcLite.fmtTime(sunset);
 }
 
+
+/* ===== 项目列表 ===== */
+function openProjects(){
+  document.getElementById('pageRef').style.display='none';
+  document.getElementById('pagePlan').style.display='none';
+  document.getElementById('pageProjects').style.display='block';
+  window.scrollTo(0,0);
+}
+function openProject(name){
+  document.getElementById('pageProjects').style.display='none';
+  document.getElementById('pagePlan').style.display='block';
+  const t = document.querySelector('.pz-title');
+  if(t) t.innerHTML = name + '<span class="pz-title-sub">小林</span>';
+  window.scrollTo(0,0);
+  fake('打开项目：'+name);
+}
+function newProject(){
+  document.getElementById('pageProjects').style.display='none';
+  document.getElementById('pagePlan').style.display='block';
+  window.scrollTo(0,0);
+  openVague();
+}
+
 function openVague(){ document.getElementById('vagueSheet').classList.add('on'); }
 function closeVague(){ document.getElementById('vagueSheet').classList.remove('on'); }
 function pickDir(el,name){
@@ -3476,10 +3607,13 @@ function closePreflight(){ document.getElementById('preflight').classList.remove
 function switchPage(p,el){
   document.querySelectorAll('.pt').forEach(x=>x.classList.remove('on'));
   el.classList.add('on');
-  const isRef = p==='ref';
-  document.getElementById('pageRef').style.display = isRef?'block':'none';
-  document.getElementById('pagePlan').style.display = isRef?'none':'block';
-  fake(isRef?'参考库':'脚本策划 —— 一句话拆方向，元素清单为主，分镜由元素组合');
+  const ref = document.getElementById('pageRef');
+  const plan = document.getElementById('pagePlan');
+  const proj = document.getElementById('pageProjects');
+  ref.style.display = 'none'; plan.style.display='none'; proj.style.display='none';
+  if(p==='ref'){ ref.style.display='block'; }
+  else if(p==='plan'){ proj.style.display='block'; }
+  window.scrollTo(0,0);
 }
 function pickScene2(el,name){
   document.querySelectorAll('.pl-scene').forEach(x=>x.classList.remove('on'));
