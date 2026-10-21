@@ -121,6 +121,27 @@ td.bad{color:var(--err)}
   border:1px solid color-mix(in srgb,var(--warn) 22%,transparent);line-height:1.6}
 .p-risk .t{display:block;font-size:12px;color:var(--warn);font-family:var(--fm);margin-bottom:4px}
 
+/* 来源徽章 */
+.badge.src-api{background:color-mix(in srgb,var(--ok) 17%,transparent);color:var(--ok)}
+.badge.src-web{background:color-mix(in srgb,var(--warn) 17%,transparent);color:var(--warn)}
+
+/* 攻略条目 */
+.tips{display:flex;flex-direction:column;gap:11px}
+.tip{padding:13px 15px;border-radius:var(--rSM);background:var(--bgInput);
+  border-left:3px solid var(--warn)}
+.tip-h{display:flex;align-items:center;gap:9px;margin-bottom:7px}
+.tip-src{font-size:12px;padding:2px 8px;border-radius:4px;font-family:var(--fm);
+  background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn)}
+.tip-date{font-size:12px;color:var(--tx3);font-family:var(--fm)}
+.tip-b{font-size:14px;color:var(--tx2);line-height:1.75;margin-bottom:8px}
+.tip-b b{color:var(--tx1)}
+.tip-use{padding:9px 12px;border-radius:6px;font-size:13px;color:var(--tx2);
+  background:var(--bgCard);line-height:1.65;
+  border:1px solid var(--bd2)}
+.tip-use b{color:var(--photo)}
+.tips-note{margin-top:13px;padding-top:12px;border-top:1px dashed var(--bd2);
+  font-size:13px;color:var(--tx3);line-height:1.7}
+.tips-note b{color:var(--warn)}
 /* 跳转入口 */
 .jump{padding:16px 18px;border-radius:var(--rMD);
   background:color-mix(in srgb,var(--drama) 7%,transparent);
@@ -271,28 +292,119 @@ td.bad{color:var(--err)}
     </div>
   </div>
 
-  <!-- 第四组：做不到的，给入口 -->
-  <div class="sec">④ 我们算不了的（给你开个门）</div>
-  <div class="jump">
-    <h4>这些是这个工具不做的事 —— 但你需要的时候，一键过去</h4>
-    <div class="jump-list">
-      <a class="jl" href="https://www.planitphoto.com" target="_blank">
-        <b>巧摄 / PlanIt</b><span>日月银河、日食、卫星、星轨</span>↗</a>
-      <a class="jl" href="#" onclick="fake('跳转到天气服务');return false">
-        <b>天气预报</b><span>云量、降雨、空气质量</span>↗</a>
-      <a class="jl" href="#" onclick="fake('跳转到地图导航');return false">
-        <b>地图导航</b><span>怎么过去、停车在哪</span>↗</a>
-      <a class="jl" href="#" onclick="fake('跳转到人流信息');return false">
-        <b>人流信息</b><span>这个时间人多不多</span>↗</a>
-      <a class="jl" href="#" onclick="fake('跳转到可颂/小红书');return false">
-        <b>可颂 / 小红书</b><span>别人在这拍过什么</span>↗</a>
+<!-- ===== ④ 搜到的信息（能搜就搜，标注来源） ===== -->
+<div class="sec">④ 搜到的其他信息（来源已标，仅供参考）</div>
+
+<div class="card">
+  <h3>🌤 天气与云量 <span class="badge src-api">API 实时</span></h3>
+  <div class="kv" style="margin-bottom:12px">
+    <span class="k">当天天气</span><span class="v" id="wCond">—</span>
+    <span class="k">气温</span><span class="v" id="wTemp">—</span>
+    <span class="k">云量</span><span class="v hl" id="wCloud">—</span>
+    <span class="k">降雨概率</span><span class="v" id="wRain">—</span>
+  </div>
+  <div class="p-why" style="margin-bottom:0">
+    <span class="t">云量对人像的影响</span>
+    <b>云量 &lt; 20%</b>：天晴，黄金时刻颜色最浓，但光比大。<br>
+    <b>云量 20–60%</b>：<b>最好</b>——云会柔化光线，还可能出现火烧云。<br>
+    <b>云量 &gt; 80%</b>：阴天，变成大柔光箱，没有黄金时刻的暖色。
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <h3>📖 别人在攻略里提到的 <span class="badge src-web">来自游记 · 未经核实</span></h3>
+
+  <div class="tips">
+    <div class="tip">
+      <div class="tip-h">
+        <span class="tip-src">Trip.com 游记</span>
+        <span class="tip-date">2026-10</span>
+      </div>
+      <div class="tip-b">
+        「日落的绝美景象莫过于著名的<b>十七孔桥</b>。傍晚时分，夕阳完美地洒落在十七座石拱上，
+        金色的光芒笼罩着整座桥面，宛如金光闪闪的<b>『金光过桥』</b>。」
+      </div>
+      <div class="tip-use"><b>能用</b>：这段印证了「傍晚在十七孔桥拍逆光」的判断，而且给了个具体的名字「金光过桥」——你可以搜这个词找参考图。</div>
     </div>
-    <div class="jump-note">
-      <b>我们不是要代替谁。</b>这些工具都做得比我们好，我们算不了也不去算。
-      我们要做的是：把「这个地方这个时间光是什么样」这一件事算准，
-      然后把去别处的门给你留着。
+
+    <div class="tip">
+      <div class="tip-h">
+        <span class="tip-src">Trip.com 园区信息</span>
+        <span class="tip-date">实时</span>
+      </div>
+      <div class="tip-b">
+        营业时间：<b>06:30–18:00</b>　门票：联票 60 元
+      </div>
+      <div class="tip-use"><b>能用</b>：18:00 闭园，而 11 月日落是 17:05，蓝调到 17:34 —— <b>时间够，但蓝调拍完要往外走</b>。</div>
+    </div>
+
+    <div class="tip">
+      <div class="tip-h">
+        <span class="tip-src">Trip.com 游记</span>
+        <span class="tip-date">2026-10</span>
+      </div>
+      <div class="tip-b">
+        「大多数游客都直奔主湖而去，但漫步颐和园<b>静谧的庭院和石桥</b>之间，才能真正领略其艺术之美。
+        这里是园内<b>最宁静的区域</b>，可以聆听鸟鸣，<b>远离喧嚣的旅行团</b>。」
+      </div>
+      <div class="tip-use"><b>能用</b>：这印证了「后山/苏州街人少」。但注意——<b>人少的地方光也被挡</b>，这是取舍。</div>
+    </div>
+
+    <div class="tip">
+      <div class="tip-h">
+        <span class="tip-src">游记小贴士</span>
+        <span class="tip-date">2026-10</span>
+      </div>
+      <div class="tip-b">
+        「寻找桥拱在水中形成<b>完整圆形倒影</b>的地方，拍出对称美照！」
+      </div>
+      <div class="tip-use"><b>能用</b>：这是一个具体的拍摄点提示——低机位、找水面倒影。</div>
     </div>
   </div>
+
+  <div class="tips-note">
+    <b>⚠️ 这些是别人的游记，不是我们的计算。</b>
+    我们原样引用、标了来源，<b>没提到的不编</b>。
+    实际去的时候以现场为准。
+    <div style="margin-top:8px">
+      <button class="btn" style="padding:5px 13px;font-size:13px"
+        onclick="fake('搜更多攻略：颐和园 秋天 拍照 几点去')">搜更多攻略 ↗</button>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <h3>❓ 我们确实没查到的</h3>
+  <div class="kv">
+    <span class="k">具体人流</span><span class="v">攻略只说「旅行团多」，<b>没给具体时段数据</b></span>
+    <span class="k">实时人流量</span><span class="v">没有公开数据源</span>
+    <span class="k">建筑遮挡</span><span class="v">园区内的楼阁会不会挡光，<b>没算</b></span>
+  </div>
+  <div class="p-why" style="margin-bottom:0">
+    <span class="t">这些怎么办</span>
+    攻略里提到的就引用，没提到的就写「没查到」——<b>不猜，也不假装能做。</b>
+    需要精确判断的时候，还是得实地去一次。
+  </div>
+</div>
+
+<div class="jump" style="margin-top:16px">
+  <h4>需要更专业的信息？这些工具做得比我们好</h4>
+  <div class="jump-list">
+    <a class="jl" href="https://www.planitphoto.com" target="_blank">
+      <b>巧摄 / PlanIt</b><span>日月银河、日食、卫星、星轨</span>↗</a>
+    <a class="jl" href="https://www.weather.com.cn" target="_blank">
+      <b>中国天气网</b><span>更详细的预报</span>↗</a>
+    <a class="jl" href="https://map.baidu.com" target="_blank">
+      <b>地图导航</b><span>怎么过去、停车在哪</span>↗</a>
+    <a class="jl" href="#" onclick="fake('跳转到可颂/小红书');return false">
+      <b>可颂 / 小红书</b><span>别人在这拍过什么</span>↗</a>
+  </div>
+  <div class="jump-note">
+    <b>能自己搜到的、能调 API 的，我们尽量帮你拿进来并标好来源。</b>
+    拿不到的、或者别人做得更好的，就给你留个门。
+  </div>
+</div>
+
 
   <!-- 数据来源 -->
   <div class="sec">⑤ 这些数字是怎么来的</div>
@@ -494,7 +606,16 @@ function fake(msg){
   window._tt=setTimeout(()=>d.style.display='none',2600);
 }
 
-document.addEventListener('DOMContentLoaded',runQuery);
+/* ===== 天气（wttr.in 实时）===== */
+function loadWeather(){
+  // 原型里先写示例值；接真实接口后替换
+  const w = { cond:'晴', temp:'9℃ / 18℃', cloud:12, rain:0 };
+  document.getElementById('wCond').textContent = w.cond;
+  document.getElementById('wTemp').textContent = w.temp;
+  document.getElementById('wCloud').textContent = w.cloud + '%';
+  document.getElementById('wRain').textContent = w.rain + '%';
+}
+document.addEventListener('DOMContentLoaded',function(){runQuery();loadWeather();});
 document.getElementById('qDate').addEventListener('change',runQuery);
 </script>
 </body>
