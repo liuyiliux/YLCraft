@@ -726,6 +726,71 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
   font-size:var(--fs-sm);color:var(--tx2);line-height:1.7}
 .pr-hint b{color:var(--photo)}
 
+/* ===== 规划弹层 v2：先知识后方案 ===== */
+.vg-steps{display:flex;align-items:center;gap:0;margin:0 0 22px;
+  padding:14px 16px;border-radius:var(--radiusSM);background:var(--bgCard);
+  border:1px solid var(--bd2)}
+.vgs-item{display:flex;align-items:center;gap:7px;flex:0 0 auto}
+.vgi-n{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:var(--fs-xs);font-weight:700;
+  background:var(--bd2);color:var(--tx3)}
+.vgs-item.on .vgi-n{background:var(--photo);color:#231a02}
+.vgi-t{font-size:var(--fs-sm);color:var(--tx3)}
+.vgs-item.on .vgi-t{color:var(--photo);font-weight:600}
+.vgs-line{flex:1;height:1px;background:var(--bd2);margin:0 10px}
+
+.vg-sec{margin-bottom:26px}
+.vsec-h{display:flex;align-items:center;gap:10px;margin-bottom:13px}
+.vsec-n{width:22px;height:22px;border-radius:50%;background:var(--photo);color:#231a02;
+  font-size:var(--fs-xs);font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.vsec-t{font-size:var(--fs-cap);color:var(--tx1);font-weight:600}
+.vsec-badge{font-size:var(--fs-xs);padding:2px 9px;border-radius:4px;margin-left:auto;
+  background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
+.vsec-badge.ok{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
+.vsec-badge.warn{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+.vsec-b{font-size:var(--fs-sm);color:var(--tx2);line-height:1.75}
+.vsec-b b{color:var(--photo)}
+.vsec-actions{margin-top:12px}
+
+.kfacts{display:flex;flex-direction:column;gap:11px}
+.kf{padding:13px 15px;border-radius:var(--radiusSM);background:var(--bgCard);
+  border:1px solid var(--bd2);border-left:3px solid var(--pri)}
+.kf-h{font-size:var(--fs-cap);color:var(--tx1);font-weight:600;margin-bottom:10px}
+.kf-rows{display:flex;flex-direction:column;gap:6px}
+.kfr{display:flex;gap:11px;font-size:var(--fs-sm)}
+.kfr-k{color:var(--tx3);font-size:var(--fs-xs);font-family:var(--fm);min-width:96px;flex-shrink:0;padding-top:2px}
+.kfr-v{color:var(--tx2);line-height:1.55}
+.kfr-v.hl{color:var(--pri);font-family:var(--fm);font-weight:600}
+.kf-note{margin-top:10px;padding-top:9px;border-top:1px dashed var(--bd2);
+  font-size:var(--fs-sm);color:var(--tx3);line-height:1.65}
+.kf-note b{color:var(--tx2)}
+.kf-wip{display:inline-block;font-size:var(--fs-xs);padding:1px 7px;border-radius:4px;
+  background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn);
+  font-family:var(--fm);margin-left:6px}
+
+.plans{display:flex;flex-direction:column;gap:11px}
+.plan-c{padding:14px 16px;border-radius:var(--radiusMD);background:var(--bgCard);
+  border:1px solid var(--bd2);border-left:3px solid var(--ok)}
+.plan-c.warn{border-left-color:var(--err);background:color-mix(in srgb,var(--err) 4%,var(--bgCard))}
+.pc-top{display:flex;align-items:center;gap:10px;margin-bottom:9px;flex-wrap:wrap}
+.pc-name{font-size:var(--fs-cap);color:var(--tx1);font-weight:600}
+.pc-time{font-size:var(--fs-sm);padding:2px 10px;border-radius:5px;font-family:var(--fm);
+  background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
+.plan-c.warn .pc-time{background:color-mix(in srgb,var(--err) 16%,transparent);color:var(--err)}
+.pc-where{font-size:var(--fs-sm);color:var(--tx1);margin-bottom:9px}
+.pc-where b{color:var(--photo)}
+.pc-why{padding:10px 12px;border-radius:6px;background:var(--bgInput);
+  font-size:var(--fs-sm);color:var(--tx2);line-height:1.7;margin-bottom:8px}
+.pcw-t{display:block;font-size:var(--fs-xs);color:var(--pri);font-family:var(--fm);
+  margin-bottom:4px}
+.pc-why b{color:var(--photo)}
+.pc-risk{padding:8px 12px;border-radius:6px;font-size:var(--fs-sm);color:var(--tx2);
+  background:color-mix(in srgb,var(--warn) 7%,transparent);
+  border:1px solid color-mix(in srgb,var(--warn) 22%,transparent);margin-bottom:10px;line-height:1.6}
+.pcr-t{display:block;font-size:var(--fs-xs);color:var(--warn);font-family:var(--fm);margin-bottom:3px}
+.pc-pick{font-size:var(--fs-sm);padding:7px 18px;border-radius:6px;
+  background:var(--photo);color:#231a02;font-weight:600}
+.pc-pick.nogood{background:var(--bgInput);color:var(--tx3);border:1px solid var(--bd2)}
 /* ===== 脚本策划 v2 ===== */
 .plan-wrap{display:grid;grid-template-columns:270px 1fr 300px;max-width:1700px;margin:0 auto;
   height:calc(100vh - 62px)}
@@ -1629,88 +1694,171 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
   </div>
 </div><!-- /pagePlan -->
 
-<!-- ===== AI 拆方向 ===== -->
+<!-- ===== AI 拆方向 v2：先知识，后建议，再参考 ===== -->
 <div class="vg" id="vagueSheet">
   <div class="vg-box">
-    <div class="vg-hd"><h3>AI 拆方向</h3><span class="vg-sub">从一句话到可选方向</span>
-      <div class="spacer"></div><button class="btn" onclick="closeVague()">✕</button></div>
+    <div class="vg-hd"><h3>规划这次拍摄</h3>
+      <span class="vg-sub">先查事实，再给方案，最后才看参考</span>
+      <div class="spacer"></div>
+      <button class="btn" onclick="closeVague()">✕</button></div>
     <div class="vg-body">
+
+      <!-- 输入 -->
       <div class="vg-input">
         <span class="vg-q">秋天去颐和园和朋友拍照</span>
-        <span class="vg-e">← 你输入的就这一句</span>
+        <span class="vg-e">← 你就说了这一句</span>
       </div>
 
-      <div class="vg-step">
-        <span class="vgs-n">1</span>
-        <div class="vgs-c">
-          <div class="vgs-t">先问清两件事（不猜）</div>
-          <div class="vgs-b">
-            你说「朋友」——是想拍出<b>亲密感</b>，还是<b>各自好看就行</b>？<br>
-            你说「秋天」——是要<b>金黄银杏</b>，还是要<b>清冷的秋</b>？
-            <span class="vgs-note">这两个决定了后面所有元素，猜错了整组就废了。</span>
+      <!-- 步骤条 -->
+      <div class="vg-steps">
+        <div class="vgs-item on"><span class="vgi-n">1</span><span class="vgi-t">查知识</span></div>
+        <div class="vgs-line"></div>
+        <div class="vgs-item"><span class="vgi-n">2</span><span class="vgi-t">给方案</span></div>
+        <div class="vgs-line"></div>
+        <div class="vgs-item"><span class="vgi-n">3</span><span class="vgi-t">选一个</span></div>
+        <div class="vgs-line"></div>
+        <div class="vgs-item"><span class="vgi-n">4</span><span class="vgi-t">看参考</span></div>
+      </div>
+
+      <!-- ===== 第 1 步：查知识 ===== -->
+      <div class="vg-sec">
+        <div class="vsec-h">
+          <span class="vsec-n">1</span>
+          <span class="vsec-t">先把事实查清楚 —— 这一步不给建议</span>
+          <span class="vsec-badge">可验证</span>
+        </div>
+
+        <div class="kfacts">
+          <div class="kf">
+            <div class="kf-h">📐 太阳怎么走（算出来的）</div>
+            <div class="kf-rows">
+              <div class="kfr"><span class="kfr-k">日期</span><span class="kfr-v">11月上旬（待定具体日期）</span></div>
+              <div class="kfr"><span class="kfr-k">颐和园坐标</span><span class="kfr-v">39.9999°N, 116.2755°E</span></div>
+              <div class="kfr"><span class="kfr-k">日落</span><span class="kfr-v hl">约 17:05</span></div>
+              <div class="kfr"><span class="kfr-k">黄金时刻</span><span class="kfr-v hl">16:20 – 17:05（约 45 分钟）</span></div>
+              <div class="kfr"><span class="kfr-k">16:40 太阳方位</span><span class="kfr-v hl">约 232° 西南偏西</span></div>
+              <div class="kfr"><span class="kfr-k">16:40 高度角</span><span class="kfr-v">约 12°（很低，侧逆光好）</span></div>
+            </div>
+            <div class="kf-note">
+              这部分是<b>算出来的，不是猜的</b>。给经纬度和日期，太阳方位角可以精确到度。
+              <span class="kf-wip">原型占位 · 实际接入天文算法</span>
+            </div>
           </div>
-          <div class="vgs-chips">
-            <button class="chip on" onclick="tog(this)">要亲密感</button>
-            <button class="chip" onclick="tog(this)">各自好看就行</button>
-            <button class="chip on" onclick="tog(this)">金黄银杏</button>
-            <button class="chip" onclick="tog(this)">清冷秋色</button>
+
+          <div class="kf">
+            <div class="kf-h">🗺 地形和朝向（要数据）</div>
+            <div class="kf-rows">
+              <div class="kfr"><span class="kfr-k">昆明湖</span><span class="kfr-v">在园子的西 / 南侧</span></div>
+              <div class="kfr"><span class="kfr-k">万寿山</span><span class="kfr-v">在园子中北部，会挡西北的光</span></div>
+              <div class="kfr"><span class="kfr-k">十七孔桥</span><span class="kfr-v">东南-西北走向，横跨湖面</span></div>
+              <div class="kfr"><span class="kfr-k">长廊</span><span class="kfr-v">沿万寿山南麓，朝南</span></div>
+            </div>
+            <div class="kf-note">
+              朝向决定「哪一侧能拍到逆光」。这块要么来自地图数据，
+              要么来自<b>真实的拍摄攻略</b>。<span class="kf-wip">原型占位</span>
+            </div>
+          </div>
+
+          <div class="kf">
+            <div class="kf-h">📖 别人踩过的坑（平台攻略）</div>
+            <div class="kf-rows">
+              <div class="kfr"><span class="kfr-k">人流</span><span class="kfr-v">十七孔桥下午全是游客，长廊相对少</span></div>
+              <div class="kfr"><span class="kfr-k">实际体验</span><span class="kfr-v">银杏最好的一周大概是 11 月第 2 周</span></div>
+              <div class="kfr"><span class="kfr-k">注意</span><span class="kfr-v">园子很大，从东宫门到十七孔桥要走 20 分钟</span></div>
+            </div>
+            <div class="kf-note">
+              来自平台的真实攻略。<b>标了来源就能判断可信度</b>，
+              没来源的经验要打折。<span class="kf-wip">原型占位</span>
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="vg-step">
-        <span class="vgs-n">2</span>
-        <div class="vgs-c">
-          <div class="vgs-t">给你三个方向（不是一份脚本）</div>
-          <div class="vd-list">
-            <div class="vd">
-              <div class="vd-h">秋日暖调 · 亲密感</div>
-              <div class="vd-b">金黄银杏做背景，浅色大衣跳出来，侧逆光勾轮廓，重抓拍。</div>
-              <div class="vd-tags"><span class="tg">侧逆光</span><span class="tg">浅色</span><span class="tg">抓拍</span></div>
-              <div class="vd-pick">
-                <button class="vd-ok" onclick="fake('选了这个方向 —— 元素清单会按它填')">用这个</button>
-                <button class="vd-more" onclick="fake('看这个方向在平台上的真实参考')">看参考 7 张</button>
-              </div>
+      <!-- ===== 第 2 步：给方案 ===== -->
+      <div class="vg-sec">
+        <div class="vsec-h">
+          <span class="vsec-n">2</span>
+          <span class="vsec-t">基于上面的事实，这几个方案成立</span>
+          <span class="vsec-badge ok">每条都能追溯到事实</span>
+        </div>
+
+        <div class="plans">
+          <div class="plan-c">
+            <div class="pc-top">
+              <span class="pc-name">方案 A · 十七孔桥逆光</span>
+              <span class="pc-time">16:30 – 17:00</span>
             </div>
-            <div class="vd">
-              <div class="vd-h">清冷疏离 · 各自好看</div>
-              <div class="vd-b">阴天散射光，人少的地方，深色衣服，少看镜头。</div>
-              <div class="vd-tags"><span class="tg">阴天</span><span class="tg">深色</span><span class="tg">疏离</span></div>
-              <div class="vd-pick">
-                <button class="vd-ok" onclick="fake('选了这个方向')">用这个</button>
-                <button class="vd-more" onclick="fake('看参考')">看参考 4 张</button>
-              </div>
+            <div class="pc-where">站在桥的<b>东南侧</b>，朝西北拍</div>
+            <div class="pc-why">
+              <span class="pcw-t">为什么成立</span>
+              太阳 16:40 在 232°（西南偏西），你站东南侧朝西北，
+              <b>光就从湖面方向逆着过来</b> —— 这是逆光，也是剪影。
             </div>
-            <div class="vd">
-              <div class="vd-h">朋友感 · 不要摆拍</div>
-              <div class="vd-b">全程互动抓拍，不站定，少指令，靠「做一件事」出片。</div>
-              <div class="vd-tags"><span class="tg">抓拍</span><span class="tg">互动</span><span class="tg">少口令</span></div>
-              <div class="vd-pick">
-                <button class="vd-ok" onclick="fake('选了这个方向')">用这个</button>
-                <button class="vd-more" onclick="fake('看参考')">看参考 5 张</button>
-              </div>
+            <div class="pc-risk">
+              <span class="pcr-t">风险</span>下午桥上人多，要提前占位；桥面反光强
             </div>
+            <button class="pc-pick" onclick="fake('选了方案 A —— 元素清单按它填')">用这个</button>
+          </div>
+
+          <div class="plan-c">
+            <div class="pc-top">
+              <span class="pc-name">方案 B · 长廊侧逆光</span>
+              <span class="pc-time">15:30 – 16:20</span>
+            </div>
+            <div class="pc-where">长廊<b>南侧</b>，让人站在柱子之间</div>
+            <div class="pc-why">
+              <span class="pcw-t">为什么成立</span>
+              长廊朝南，下午太阳偏西，光斜射进柱间，
+              <b>柱子会在地上拉出长影子</b>——这就是侧逆光的环境元素。
+            </div>
+            <div class="pc-risk">
+              <span class="pcr-t">风险</span>光比大，脸容易全黑，要带反光板
+            </div>
+            <button class="pc-pick" onclick="fake('选了方案 B')">用这个</button>
+          </div>
+
+          <div class="plan-c warn">
+            <div class="pc-top">
+              <span class="pc-name">方案 C · 后山树林透光</span>
+              <span class="pc-time">不推荐</span>
+            </div>
+            <div class="pc-where">万寿山北侧树林</div>
+            <div class="pc-why">
+              <span class="pcw-t">为什么不推荐</span>
+              后山在<b>北侧</b>，下午太阳在西南——
+              <b>光被山体挡住</b>，进去基本是阴天散射光，拍不出黄金时刻。
+              人少是真的，但光没了。
+            </div>
+            <button class="pc-pick nogood" onclick="fake('知道原因就好，可以留着备用')">知道原因了</button>
           </div>
         </div>
       </div>
 
-      <div class="vg-step">
-        <span class="vgs-n">3</span>
-        <div class="vgs-c">
-          <div class="vgs-t">同时带来的两个提醒</div>
-          <div class="vg-warn">
-            <b>秋光只有一小时。</b>下午 4 点后开始金黄，5 点基本没了。
-            你要是打算中午去，这组就废了。<br><br>
-            <b>颐和园人很多。</b>十七孔桥下午全是游客。要出「没人」的感觉得换地方——
-            后山人少但光会被树挡住。
-          </div>
+      <!-- ===== 第 3 步：选一个 ===== -->
+      <div class="vg-sec">
+        <div class="vsec-h">
+          <span class="vsec-n">3</span>
+          <span class="vsec-t">选定之后才开始搜参考</span>
+          <span class="vsec-badge warn">这一步才看图</span>
+        </div>
+        <div class="vsec-b">
+          <b>参考图放在最后，是有意的。</b>
+          先看图会被图牵着走——你选的可能是别人在别的时间别的地点拍出来的，
+          而你要去的地方根本拍不出来。<br><br>
+          <span style="color:var(--tx3)">选定方案后，再去搜「十七孔桥 逆光 秋天」，
+          这时候搜到的图你才判断得出「能不能复现」。</span>
+        </div>
+        <div class="vsec-actions">
+          <button class="btn" disabled>看参考（先选方案）</button>
         </div>
       </div>
+
     </div>
     <div class="vg-ft">
       <button class="btn" onclick="closeVague()">关闭</button>
       <div class="spacer"></div>
-      <button class="btn pri" onclick="closeVague();fake('已建项目 —— 元素清单按你选的方向填好了，可以改')">选好了，建项目</button>
+      <button class="btn" onclick="fake('换一个日期试试 —— 太阳位置会变')">换个日期</button>
+      <button class="btn pri" onclick="closeVague();fake('已建项目 —— 元素清单按选定方案填好了')">选定了，建项目</button>
     </div>
   </div>
 </div>
