@@ -797,7 +797,10 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
   background:color-mix(in srgb,var(--warn) 7%,transparent);
   border:1px solid color-mix(in srgb,var(--warn) 22%,transparent);margin-bottom:10px;line-height:1.6}
 .pcr-t{display:block;font-size:var(--fs-xs);color:var(--warn);font-family:var(--fm);margin-bottom:3px}
-.pc-pick{font-size:var(--fs-sm);padding:7px 18px;border-radius:6px;
+.plan-tag{font-size:12px;padding:2px 8px;border-radius:4px;font-family:var(--fm);
+  background:color-mix(in srgb,var(--pri) 15%,transparent);color:var(--pri)}
+.pc-pick.picked{background:var(--ok);color:#04120a}
+.pc-pick.picked::before{content:'✓ '}.pc-pick{font-size:var(--fs-sm);padding:7px 18px;border-radius:6px;
   background:var(--photo);color:#231a02;font-weight:600}
 .pc-pick.nogood{background:var(--bgInput);color:var(--tx3);border:1px solid var(--bd2)}
 /* ===== 脚本策划 v2 ===== */
@@ -1517,7 +1520,7 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
       </div>
 
       <div class="els">
-        <div class="el">
+        <div class="el el-scenes">
           <div class="el-hd">
             <span class="el-n">场景</span><span class="el-d">在哪拍</span>
             <div class="spacer"></div>
@@ -1531,7 +1534,7 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
           </div>
         </div>
 
-        <div class="el">
+        <div class="el el-clothes">
           <div class="el-hd">
             <span class="el-n">服装穿搭</span><span class="el-d">由场景和主题决定</span>
             <div class="spacer"></div>
@@ -1549,9 +1552,24 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
           </div>
         </div>
 
-        <div class="el">
+        <div class="el el-times">
           <div class="el-hd">
-            <span class="el-n">光线</span><span class="el-d">什么时候去</span>
+            <span class="el-n">时段</span><span class="el-d">几点去（由太阳算出）</span>
+            <div class="spacer"></div>
+            <button class="el-add" onclick="fake('改时段')">＋</button>
+          </div>
+          <div class="el-b">
+            <span class="el-c on">等选定方案</span>
+          </div>
+          <div class="el-note" id="timeNote">
+            <b>时段是算出来的，不是拍的脑袋。</b>
+            改日期会跟着变。选定方案后这里会填上具体的可拍窗口。
+          </div>
+        </div>
+
+        <div class="el el-lights">
+          <div class="el-hd">
+            <span class="el-n">光线</span><span class="el-d">什么方向的光</span>
             <div class="spacer"></div>
             <button class="el-add" onclick="fake('加光线元素')">＋</button>
           </div>
@@ -1565,7 +1583,7 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
           </div>
         </div>
 
-        <div class="el">
+        <div class="el el-env">
           <div class="el-hd">
             <span class="el-n">环境元素</span><span class="el-d">画面里会出现的</span>
             <div class="spacer"></div>
@@ -1583,7 +1601,7 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
           </div>
         </div>
 
-        <div class="el">
+        <div class="el el-dynamics">
           <div class="el-hd">
             <span class="el-n">动态元素</span><span class="el-d">什么在动</span>
             <div class="spacer"></div>
@@ -1597,7 +1615,7 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
           </div>
         </div>
 
-        <div class="el">
+        <div class="el el-props">
           <div class="el-hd">
             <span class="el-n">道具</span><span class="el-d">带什么</span>
             <div class="spacer"></div>
@@ -1610,7 +1628,7 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
           </div>
         </div>
 
-        <div class="el">
+        <div class="el el-poses">
           <div class="el-hd">
             <span class="el-n">姿势 / 口令</span><span class="el-d">怎么让她动起来</span>
             <div class="spacer"></div>
@@ -1624,7 +1642,7 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
           </div>
         </div>
 
-        <div class="el">
+        <div class="el el-colors">
           <div class="el-hd">
             <span class="el-n">色彩元素</span><span class="el-d">整组的调子</span>
             <div class="spacer"></div>
@@ -1804,7 +1822,8 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
           <div class="plan-c">
             <div class="pc-top">
               <span class="pc-name">方案 A · 十七孔桥逆光</span>
-              <span class="pc-time">16:30 – 17:00</span>
+              <span class="pc-time" id="planATime">16:26 – 17:05</span>
+              <span class="plan-tag" id="planATag">太阳算出</span>
             </div>
             <div class="pc-where">站在桥的<b>东南侧</b>，朝西北拍</div>
             <div class="pc-why">
@@ -1816,13 +1835,14 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
             <div class="pc-risk">
               <span class="pcr-t">风险</span>下午桥上人多，要提前占位；桥面反光强
             </div>
-            <button class="pc-pick" onclick="fake('选了方案 A —— 元素清单按它填')">用这个</button>
+            <button class="pc-pick" onclick="pickPlan('A')">用这个</button>
           </div>
 
           <div class="plan-c">
             <div class="pc-top">
               <span class="pc-name">方案 B · 长廊侧逆光</span>
-              <span class="pc-time">15:30 – 16:20</span>
+              <span class="pc-time" id="planBTime">15:30 – 16:26</span>
+              <span class="plan-tag" id="planBTag">太阳算出</span>
             </div>
             <div class="pc-where">长廊<b>南侧</b>，让人站在柱子之间</div>
             <div class="pc-why">
@@ -1833,7 +1853,7 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
             <div class="pc-risk">
               <span class="pcr-t">风险</span>光比大，脸容易全黑，要带反光板
             </div>
-            <button class="pc-pick" onclick="fake('选了方案 B')">用这个</button>
+            <button class="pc-pick" onclick="pickPlan('B')">用这个</button>
           </div>
 
           <div class="plan-c warn">
@@ -2996,6 +3016,7 @@ function renderSun(){
   if (azEl) azEl.textContent = Math.round(p.azimuth) + '°（' + SunCalcLite.compass(p.azimuth) + '）';
 
   // 方案 A 的可行性判断
+  if (typeof renderPlanTimes === 'function') renderPlanTimes();
   const warnEl = document.getElementById('planAWarn');
   if (warnEl){
     if (p.altitude < 0){
@@ -3013,6 +3034,88 @@ function renderSun(){
 }
 
 document.addEventListener('DOMContentLoaded', renderSun);
+/* ===== 方案 ↔ 光线 ↔ 元素清单 联动 ===== */
+
+// 每个方案需要的元素（选定后自动填进元素清单）
+const PLAN_ELEMENTS = {
+  A: {
+    name: '十七孔桥逆光',
+    scenes: ['颐和园 · 十七孔桥（东南侧）'],
+    lights: ['逆光', '太阳在正前方', '脸留暗部'],
+    times: ['16:26 – 17:00（黄金时段后半）'],
+    colors: ['金黄 + 暖调剪影', '天空渐层'],
+    dynamics: ['风（水面/头发）', '逆光穿过桥洞'],
+    props: ['反光板（补脸）', '热饮（拍完暖手）'],
+    poses: ['站定背影', '侧脸轮廓', '回头'],
+    risks: ['光比极大，脸容易全黑', '桥上人多要提前占位', '桥面反光强']
+  },
+  B: {
+    name: '长廊侧逆光',
+    scenes: ['颐和园 · 长廊（南侧）'],
+    lights: ['侧逆光 45°', '光斜射进柱间', '柱子投长影'],
+    times: ['15:30 – 16:26（黄金时段前半）'],
+    colors: ['暖调 + 柱影层次', '木色 / 朱红'],
+    dynamics: ['走动', '袖子摆动'],
+    props: ['反光板（必带）'],
+    poses: ['走两步回头', '靠柱子', '手扶栏杆'],
+    risks: ['光比大，脸容易全黑——必须带反光板', '长廊游客多']
+  }
+};
+
+let currentPlan = null;
+
+function pickPlan(which){
+  const el = PLAN_ELEMENTS[which];
+  if(!el) return;
+  currentPlan = which;
+
+  // 1. 按钮变选中态
+  document.querySelectorAll('.pc-pick').forEach(b=>b.classList.remove('picked'));
+  const btn = event && event.target ? event.target : document.querySelectorAll('.pc-pick')[which==='A'?0:1];
+  if (btn && btn.classList) btn.classList.add('picked');
+
+  // 2. 填元素清单
+  const fill = (rootSelector, items) => {
+    const box = document.querySelector(rootSelector + ' .el-b');
+    if(!box) return;
+    box.innerHTML = items.map(t=>'<span class="el-c on">'+t+'</span>').join('');
+  };
+  fill('.el-scenes', el.scenes);
+  fill('.el-lights', el.lights);
+  fill('.el-times', el.times);
+  fill('.el-colors', el.colors);
+  fill('.el-dynamics', el.dynamics);
+  fill('.el-props', el.props);
+  fill('.el-poses', el.poses);
+
+  // 3. 填风险（必带清单里的标红项）
+  const riskBox = document.querySelector('.pr-grp .pr-g-h.hot');
+  if(riskBox){
+    const parent = riskBox.parentElement;
+    const items = el.risks.map(r=>'<div class="pr-item must"><span class="pr-cb">○</span>'
+      + r + '</div>').join('');
+    parent.innerHTML = '<div class="pr-g-h hot"><span class="pr-dot must"></span>别忘（标红）</div>' + items;
+  }
+
+  // 4. 提示
+  fake('已选「方案 ' + which + ' · ' + el.name + '」—— 元素清单、时段、光位都按它填好了');
+}
+
+function renderPlanTimes(){
+  const dateStr = document.getElementById('sunDate') ? document.getElementById('sunDate').value : '2026-11-08';
+  if (!dateStr) return;
+  const {lat,lon,tz} = {lat:39.9901, lon:116.2647, tz:8};
+  const sunset = SunCalcLite.findAltitudeCrossing(lat,lon,dateStr,tz,-0.833,14,19);
+  const gold = SunCalcLite.findAltitudeCrossing(lat,lon,dateStr,tz,6,13,sunset||19);
+  const aEl = document.getElementById('planATime');
+  const bEl = document.getElementById('planBTime');
+  if (aEl && gold && sunset){
+    aEl.textContent = SunCalcLite.fmtTime(gold) + ' – ' + SunCalcLite.fmtTime(sunset);
+  }
+  if (bEl && gold){
+    bEl.textContent = '15:30 – ' + SunCalcLite.fmtTime(gold);
+  }
+}
 function openVague(){ document.getElementById('vagueSheet').classList.add('on'); }
 function closeVague(){ document.getElementById('vagueSheet').classList.remove('on'); }
 function pickDir(el,name){
