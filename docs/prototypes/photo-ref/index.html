@@ -508,6 +508,68 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
   font-size:var(--fs-sm);color:var(--tx2);line-height:1.65}
 .keys-note b{color:var(--photo)}
 
+/* ===== 新建项目 ===== */
+.np{position:fixed;inset:0;background:color-mix(in srgb,var(--bgPage) 92%,transparent);
+  z-index:75;display:none;align-items:center;justify-content:center;backdrop-filter:blur(12px)}
+.np.on{display:flex}
+.np-box{width:min(760px,94vw);max-height:90vh;background:var(--bgCard);
+  border:1px solid var(--bd3);border-radius:14px;display:flex;flex-direction:column;
+  overflow:hidden}
+.np-hd{position:relative;padding:28px 32px 22px;border-bottom:1px solid var(--bd2)}
+.np-title{font-size:26px;font-weight:600;letter-spacing:-.02em;color:var(--tx1);
+  margin-bottom:7px}
+.np-sub{font-size:15px;color:var(--tx3)}
+.np-x{position:absolute;top:22px;right:24px;width:32px;height:32px;border-radius:6px;
+  color:var(--tx3);font-size:16px;transition:.16s}
+.np-x:hover{background:var(--bgHover);color:var(--tx1)}
+.np-body{padding:24px 32px 28px;overflow:auto}
+
+/* 输入框 */
+.np-input-wrap{border:1px solid var(--bd2);border-radius:10px;overflow:hidden;
+  margin-bottom:24px;transition:.16s}
+.np-input-wrap:focus-within{border-color:var(--photo)}
+.np-input{width:100%;min-height:104px;padding:18px 20px;background:transparent;
+  border:none;outline:none;resize:none;font-size:16px;line-height:1.65;
+  color:var(--tx1);font-family:var(--ff)}
+.np-input::placeholder{color:var(--tx3)}
+.np-input-foot{display:flex;align-items:center;gap:12px;padding:11px 16px;
+  border-top:1px solid var(--bd);background:var(--bgInput)}
+.np-hint{font-size:13px;color:var(--tx3);font-family:var(--fm)}
+.np-send{margin-left:auto;padding:9px 20px;border-radius:6px;background:var(--tx1);
+  color:var(--bgPage);font-size:15px;font-weight:600;transition:.16s}
+.np-send:hover{background:var(--tx2)}
+.np-send:active{transform:scale(.98)}
+
+/* 快捷 */
+.np-quick{margin-bottom:28px}
+.np-quick-t{font-size:13px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--tx3);font-family:var(--fm);margin-bottom:11px}
+.np-quick-list{display:flex;flex-direction:column;gap:8px}
+.np-q{text-align:left;padding:12px 16px;border-radius:8px;background:var(--bgInput);
+  border:1px solid var(--bd2);font-size:15px;color:var(--tx2);transition:.16s}
+.np-q:hover{border-color:var(--photo);color:var(--tx1);background:var(--bgHover)}
+
+/* 聊天 */
+.np-chat{border-top:1px solid var(--bd2);padding-top:22px}
+.np-chat-hd{margin-bottom:16px}
+.np-chat-t{font-size:15px;font-weight:600;color:var(--tx1);display:block;margin-bottom:4px}
+.np-chat-s{font-size:14px;color:var(--tx3)}
+.np-msgs{display:flex;flex-direction:column;gap:11px;margin-bottom:14px;
+  max-height:180px;overflow:auto}
+.np-msg{padding:13px 16px;border-radius:10px;font-size:15px;line-height:1.65}
+.np-msg.ai{background:var(--bgInput);border:1px solid var(--bd2);color:var(--tx2);
+  border-radius:10px 10px 10px 3px}
+.np-msg.ai b{color:var(--photo)}
+.np-msg.me{align-self:flex-end;background:color-mix(in srgb,var(--pri) 14%,transparent);
+  border:1px solid color-mix(in srgb,var(--pri) 30%,transparent);color:var(--tx1);
+  border-radius:10px 10px 3px 10px;max-width:86%}
+.np-chat-input{display:flex;gap:9px}
+.np-ci{flex:1;padding:12px 16px;border-radius:8px;border:1px solid var(--bd2);
+  background:var(--bgInput);color:var(--tx1);font-size:15px;outline:none}
+.np-ci:focus{border-color:var(--pri)}
+.np-ci-btn{padding:12px 22px;border-radius:8px;border:1px solid var(--bd2);
+  color:var(--tx2);font-size:15px;transition:.16s}
+.np-ci-btn:hover{border-color:var(--pri);color:var(--tx1)}
 /* ===== 项目列表 ===== */
 .px{max-width:880px;margin:0 auto;padding:48px 32px 96px}
 .px-hd{display:flex;align-items:flex-end;gap:24px;margin-bottom:44px;flex-wrap:wrap}
@@ -1938,6 +2000,65 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
   </div>
 </div><!-- /pagePlan -->
 
+<!-- ===== 新建项目 ===== -->
+<div class="np" id="newProjSheet">
+  <div class="np-box">
+
+    <div class="np-hd">
+      <div class="np-title">新建拍摄</div>
+      <div class="np-sub">说一句就行，或者直接告诉我你想拍什么</div>
+      <button class="np-x" onclick="closeNewProj()">✕</button>
+    </div>
+
+    <div class="np-body">
+
+      <!-- 输入区 -->
+      <div class="np-input-wrap">
+        <textarea class="np-input" id="npInput"
+          placeholder="例如：秋天去颐和园和朋友拍照&#10;&#10;也可以更具体：下周三下午，带小林去颐和园拍银杏，想要逆光"
+          onkeydown="if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){npStart()}"></textarea>
+        <div class="np-input-foot">
+          <span class="np-hint">⌘/Ctrl + Enter 直接开始</span>
+          <button class="np-send" onclick="npStart()">开始规划</button>
+        </div>
+      </div>
+
+      <!-- 快捷入口 -->
+      <div class="np-quick">
+        <div class="np-quick-t">或者从这些开始</div>
+        <div class="np-quick-list">
+          <button class="np-q" onclick="npUse('这周末去海边拍朋友，想要清冷一点的感觉')">
+            这周末去海边拍朋友，想要清冷一点的感觉</button>
+          <button class="np-q" onclick="npUse('下个月给小林拍一组室内小清新')">
+            下个月给小林拍一组室内小清新</button>
+          <button class="np-q" onclick="npUse('领证跟拍，民政局，半天')">
+            领证跟拍，民政局，半天</button>
+        </div>
+      </div>
+
+      <!-- ⭐ 和 agent 聊 -->
+      <div class="np-chat">
+        <div class="np-chat-hd">
+          <span class="np-chat-t">也可以直接跟我聊</span>
+          <span class="np-chat-s">你说需求，我来算光线、给方案、排分镜</span>
+        </div>
+        <div class="np-msgs" id="npMsgs">
+          <div class="np-msg ai">
+            你想拍什么？<br>
+            告诉我 <b>大概的时间</b>、<b>地图上大概哪</b>、<b>拍谁</b>，
+            剩下的我来查——太阳几点落、那个方向有没有光、几点能拍。
+          </div>
+        </div>
+        <div class="np-chat-input">
+          <input class="np-ci" id="npChatInput" placeholder="随便说，不用讲究格式"
+            onkeydown="if(event.key==='Enter')npChat()">
+          <button class="np-ci-btn" onclick="npChat()">发送</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
 <!-- ===== AI 拆方向 v2：先知识，后建议，再参考 ===== -->
 <div class="vg" id="vagueSheet">
   <div class="vg-box">
@@ -3586,11 +3707,51 @@ function openProject(name){
   window.scrollTo(0,0);
   fake('打开项目：'+name);
 }
-function newProject(){
+function newProject(){ openNewProj(); }
+function openNewProj(){
+  document.getElementById('newProjSheet').classList.add('on');
+  setTimeout(()=>{ const t=document.getElementById('npInput'); if(t) t.focus(); }, 200);
+}
+function closeNewProj(){
+  document.getElementById('newProjSheet').classList.remove('on');
+}
+function npUse(text){
+  document.getElementById('npInput').value = text;
+  document.getElementById('npInput').focus();
+}
+function npStart(){
+  const v = (document.getElementById('npInput').value || '').trim();
+  if(!v){ document.getElementById('npInput').focus(); return; }
+  closeNewProj();
   document.getElementById('pageProjects').style.display='none';
   document.getElementById('pagePlan').style.display='block';
+  const t = document.querySelector('.pz-title');
+  if(t) t.innerHTML = '新拍摄计划<span class="pz-title-sub">刚建</span>';
   window.scrollTo(0,0);
-  openVague();
+  fake('已建项目 —— 开始查光线');
+  setTimeout(()=>openVague(), 320);
+}
+function npChat(){
+  const inp = document.getElementById('npChatInput');
+  const v = (inp.value||'').trim();
+  if(!v) return;
+  const box = document.getElementById('npMsgs');
+  const me = document.createElement('div');
+  me.className = 'np-msg me'; me.textContent = v;
+  box.appendChild(me);
+  inp.value = '';
+  box.scrollTop = box.scrollHeight;
+
+  setTimeout(()=>{
+    const ai = document.createElement('div');
+    ai.className = 'np-msg ai';
+    ai.innerHTML = '明白了。我需要确认两件事才能算准：<br>'
+      + '<b>大概什么时间</b>（哪天，或者哪一周）？<br>'
+      + '<b>在哪</b>（具体地点，或者城市+大概区域）？<br><br>'
+      + '有了这两个我就能算太阳、给方案了。';
+    box.appendChild(ai);
+    box.scrollTop = box.scrollHeight;
+  }, 500);
 }
 
 function openVague(){ document.getElementById('vagueSheet').classList.add('on'); }
