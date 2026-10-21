@@ -508,6 +508,82 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
   font-size:var(--fs-sm);color:var(--tx2);line-height:1.65}
 .keys-note b{color:var(--photo)}
 
+/* ===== 口令录入 ===== */
+.cq{position:fixed;inset:0;background:color-mix(in srgb,var(--bgPage) 92%,transparent);
+  z-index:78;display:none;align-items:center;justify-content:center;backdrop-filter:blur(12px)}
+.cq.on{display:flex}
+.cq-box{width:min(720px,94vw);max-height:92vh;background:var(--bgCard);
+  border:1px solid var(--bd3);border-radius:14px;display:flex;flex-direction:column;overflow:hidden}
+.cq-hd{display:flex;align-items:flex-start;padding:26px 30px 20px;
+  border-bottom:1px solid var(--bd2)}
+.cq-title{font-size:24px;font-weight:600;letter-spacing:-.02em;color:var(--tx1);margin-bottom:6px}
+.cq-sub{font-size:15px;color:var(--tx3)}
+.cq-x{margin-left:auto;width:32px;height:32px;border-radius:6px;color:var(--tx3);
+  font-size:16px;transition:.16s;flex-shrink:0}
+.cq-x:hover{background:var(--bgHover);color:var(--tx1)}
+.cq-body{padding:22px 30px;overflow:auto;flex:1}
+
+.cq-field{margin-bottom:20px}
+.cq-l{display:block;font-size:13px;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--tx3);font-family:var(--fm);margin-bottom:8px}
+.cq-must{color:var(--err);font-size:11px;letter-spacing:0;text-transform:none;
+  background:color-mix(in srgb,var(--err) 15%,transparent);padding:1px 7px;border-radius:4px;
+  margin-left:6px}
+.cq-in{width:100%;padding:11px 14px;border-radius:8px;border:1px solid var(--bd2);
+  background:var(--bgInput);color:var(--tx1);font-size:15px;outline:none;
+  transition:.16s;font-family:var(--ff)}
+.cq-in:focus{border-color:var(--photo)}
+.cq-in-lg{font-size:19px;padding:15px 18px;font-weight:500}
+.cq-tip{font-size:13px;color:var(--tx3);margin-top:7px;line-height:1.55}
+.cq-live{margin-top:8px;font-size:15px;line-height:1.6;min-height:0}
+
+.cq-row2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.cq-chips{display:flex;gap:6px;flex-wrap:wrap}
+.cq-chip{font-size:14px;padding:7px 14px;border-radius:7px;border:1px solid var(--bd2);
+  background:var(--bgInput);color:var(--tx2);transition:.16s}
+.cq-chip:hover{border-color:var(--bd3);color:var(--tx1)}
+.cq-chip.on{background:color-mix(in srgb,var(--photo) 15%,transparent);
+  border-color:var(--photo);color:var(--photo)}
+
+/* 五道检查 */
+.cq-gates{border-top:1px solid var(--bd2);padding-top:20px;margin-top:4px}
+.cq-gates-h{font-size:13px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--tx3);font-family:var(--fm);margin-bottom:14px}
+.cq-gate{display:flex;align-items:flex-start;gap:13px;padding:12px 14px;
+  border-radius:8px;margin-bottom:7px;background:var(--bgInput);
+  border:1px solid var(--bd2);transition:.16s}
+.cq-gate.pass{background:color-mix(in srgb,var(--ok) 7%,transparent);
+  border-color:color-mix(in srgb,var(--ok) 24%,transparent)}
+.cq-gate.fail{background:color-mix(in srgb,var(--err) 7%,transparent);
+  border-color:color-mix(in srgb,var(--err) 26%,transparent)}
+.cq-gate.warn{background:color-mix(in srgb,var(--warn) 7%,transparent);
+  border-color:color-mix(in srgb,var(--warn) 24%,transparent)}
+.cq-gi{width:22px;height:22px;border-radius:50%;background:var(--bd2);
+  color:var(--tx3);font-size:12px;font-family:var(--fm);display:flex;
+  align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+.cq-gate.pass .cq-gi{background:var(--ok);color:#04120a}
+.cq-gate.fail .cq-gi{background:var(--err);color:#1a0505}
+.cq-gate.warn .cq-gi{background:var(--warn);color:#1a1205}
+.cq-gb{flex:1;font-size:15px;line-height:1.5}
+.cq-gb b{color:var(--tx1);display:block;margin-bottom:2px;font-weight:500}
+.cq-gb span{color:var(--tx3);font-size:14px;display:block}
+.cq-gate.fail .cq-gb span{color:var(--err)}
+.cq-gate.warn .cq-gb span{color:var(--warn)}
+.cq-gs{font-size:13px;font-family:var(--fm);flex-shrink:0;margin-top:1px}
+.cq-gate.pass .cq-gs{color:var(--ok)}
+.cq-gate.fail .cq-gs{color:var(--err)}
+.cq-gate.warn .cq-gs{color:var(--warn)}
+
+.cq-ft{display:flex;align-items:center;gap:12px;padding:16px 30px;
+  border-top:1px solid var(--bd2);flex-shrink:0}
+.cq-btn{padding:10px 18px;border-radius:6px;border:1px solid var(--bd2);
+  color:var(--tx2);font-size:15px;transition:.16s}
+.cq-btn:hover{border-color:var(--bd3);color:var(--tx1)}
+.cq-save{padding:10px 22px;border-radius:6px;background:var(--tx1);color:var(--bgPage);
+  border:none;font-size:15px;font-weight:600;transition:.16s}
+.cq-save:hover{background:var(--tx2)}
+.cq-save:disabled{background:var(--bd2);color:var(--tx3);cursor:not-allowed}
+.cq-status{font-size:14px;font-family:var(--fm)}
 /* ===== 新建项目 ===== */
 .np{position:fixed;inset:0;background:color-mix(in srgb,var(--bgPage) 92%,transparent);
   z-index:75;display:none;align-items:center;justify-content:center;backdrop-filter:blur(12px)}
@@ -1873,6 +1949,7 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
       <button class="pz-tab" onclick="pzTab(this,'els')">元素<em>8</em></button>
       <button class="pz-tab" onclick="pzTab(this,'shots')">分镜<em id="pzShotN">0</em></button>
       <button class="pz-tab" onclick="pzTab(this,'kit')">必带<em>8</em></button>
+      <button class="pz-tab" style="margin-left:auto;color:var(--tx3)" onclick="openCue()">＋ 录口令</button>
     </nav>
 
     <section class="pz-pane on" id="pz-plan">
@@ -1999,6 +2076,119 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 
   </div>
 </div><!-- /pagePlan -->
+
+<!-- ===== 口令录入 ===== -->
+<div class="cq" id="cueSheet">
+  <div class="cq-box">
+    <div class="cq-hd">
+      <div>
+        <div class="cq-title">录一条口令</div>
+        <div class="cq-sub">你说出口的那句话。存之前会过五道检查。</div>
+      </div>
+      <button class="cq-x" onclick="closeCue()">✕</button>
+    </div>
+
+    <div class="cq-body">
+
+      <!-- ⭐ 主输入 -->
+      <div class="cq-field">
+        <label class="cq-l">原话</label>
+        <input class="cq-in cq-in-lg" id="cqText" placeholder="例如：下巴先轻轻往前，再往下放一点"
+          oninput="cqCheck()">
+        <div class="cq-live" id="cqLive"></div>
+      </div>
+
+      <!-- 作用位置 + 句式 -->
+      <div class="cq-row2">
+        <div class="cq-field">
+          <label class="cq-l">改哪里</label>
+          <div class="cq-chips" id="cqPart">
+            <button class="cq-chip on" onclick="pick1(this)">下巴</button>
+            <button class="cq-chip" onclick="pick1(this)">眼神</button>
+            <button class="cq-chip" onclick="pick1(this)">手</button>
+            <button class="cq-chip" onclick="pick1(this)">肩</button>
+            <button class="cq-chip" onclick="pick1(this)">重心</button>
+            <button class="cq-chip" onclick="pick1(this)">表情</button>
+            <button class="cq-chip" onclick="pick1(this)">全身</button>
+          </div>
+        </div>
+        <div class="cq-field">
+          <label class="cq-l">句式</label>
+          <div class="cq-chips" id="cqType">
+            <button class="cq-chip" onclick="pick1(this)">指令式</button>
+            <button class="cq-chip on" onclick="pick1(this)">任务式</button>
+            <button class="cq-chip" onclick="pick1(this)">场景式</button>
+            <button class="cq-chip" onclick="pick1(this)">反问式</button>
+            <button class="cq-chip" onclick="pick1(this)">计数式</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 重试 / 过头 -->
+      <div class="cq-field">
+        <label class="cq-l">重试说法 <span class="cq-must">必填</span></label>
+        <input class="cq-in" id="cqRetry" placeholder="第一次说不对时换什么说法"
+          oninput="cqCheck()">
+        <div class="cq-tip">七成第一次说不对。没有这句，现场就卡住了。</div>
+      </div>
+
+      <div class="cq-field">
+        <label class="cq-l">做过头长什么样</label>
+        <input class="cq-in" id="cqOver" placeholder="例如：整个脖子前探，像在憋气">
+      </div>
+
+      <!-- 来源 -->
+      <div class="cq-field">
+        <label class="cq-l">来源 <span class="cq-must">必填</span></label>
+        <input class="cq-in" id="cqSrc" placeholder="链接，或写明「自己实战沉淀」"
+          oninput="cqCheck()">
+      </div>
+
+      <!-- ⭐ 五道检查 -->
+      <div class="cq-gates">
+        <div class="cq-gates-h">五道检查</div>
+        <div class="cq-gate" id="g1">
+          <span class="cq-gi">1</span>
+          <div class="cq-gb"><b>不含形容词</b>
+            <span>「自然」「放松」「自信」这类做不到</span></div>
+          <span class="cq-gs"></span>
+        </div>
+        <div class="cq-gate" id="g2">
+          <span class="cq-gi">2</span>
+          <div class="cq-gb"><b>没有坐标系歧义</b>
+            <span>「往左一点」——谁的左？</span></div>
+          <span class="cq-gs"></span>
+        </div>
+        <div class="cq-gate" id="g3">
+          <span class="cq-gi">3</span>
+          <div class="cq-gb"><b>不是纯禁止式</b>
+            <span>「不要耸肩」要配正向替代</span></div>
+          <span class="cq-gs"></span>
+        </div>
+        <div class="cq-gate" id="g4">
+          <span class="cq-gi">4</span>
+          <div class="cq-gb"><b>有重试说法</b>
+            <span>七成第一次不对</span></div>
+          <span class="cq-gs"></span>
+        </div>
+        <div class="cq-gate" id="g5">
+          <span class="cq-gi">5</span>
+          <div class="cq-gb"><b>有来源</b>
+            <span>无来源不入口令库</span></div>
+          <span class="cq-gs"></span>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="cq-ft">
+      <button class="cq-btn" onclick="closeCue()">取消</button>
+      <div class="spacer"></div>
+      <span class="cq-status" id="cqStatus"></span>
+      <button class="cq-save" id="cqSave" onclick="cqSave()">存入口令库</button>
+    </div>
+  </div>
+</div>
 
 <!-- ===== 新建项目 ===== -->
 <div class="np" id="newProjSheet">
@@ -3708,6 +3898,120 @@ function openProject(name){
   fake('打开项目：'+name);
 }
 function newProject(){ openNewProj(); }
+/* ===== 口令录入 + 五道检查 ===== */
+const ADJ = ['自然','放松','自信','高级','好看','温柔','大气','随性','随意','优雅','舒服','有感觉','氛围感','尽量'];
+const LR  = ['往左','往右','向左','向右','左边','右边','多点','少点','多一点','少一点','往上','往下'];
+const REF = ['窗','灯','镜','我的','这边','那边','远处','背后','上面','下面','手'];
+const NEG = ['不要','别','不准','不能'];
+
+function openCue(){
+  document.getElementById('cueSheet').classList.add('on');
+  setTimeout(()=>{ const t=document.getElementById('cqText'); if(t) t.focus(); }, 200);
+  cqCheck();
+}
+function closeCue(){ document.getElementById('cueSheet').classList.remove('on'); }
+function pick1(el){
+  el.parentElement.querySelectorAll('.cq-chip').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+}
+
+function cqCheck(){
+  const text  = (document.getElementById('cqText').value||'').trim();
+  const retry = (document.getElementById('cqRetry').value||'').trim();
+  const src   = (document.getElementById('cqSrc').value||'').trim();
+  const over  = (document.getElementById('cqOver').value||'').trim();
+
+  const setGate = (id, state, msg) => {
+    const el = document.getElementById(id);
+    el.classList.remove('pass','fail','warn');
+    if(state) el.classList.add(state);
+    const s = el.querySelector('.cq-gs');
+    s.textContent = state==='pass'?'✓':(state==='fail'?'✕':(state==='warn'?'!':''));
+    if(msg) el.querySelector('.cq-gb span').textContent = msg;
+  };
+
+  // 重置默认描述
+  const defs = {
+    g1: '「自然」「放松」「自信」这类做不到',
+    g2: '「往左一点」——谁的左？',
+    g3: '「不要耸肩」要配正向替代',
+    g4: '七成第一次不对',
+    g5: '无来源不入口令库'
+  };
+  Object.keys(defs).forEach(k=>{
+    const el=document.getElementById(k);
+    if(!el.classList.contains('pass')&&!el.classList.contains('fail')&&!el.classList.contains('warn'))
+      el.querySelector('.cq-gb span').textContent = defs[k];
+  });
+
+  if(!text){ cqRender(null); return; }
+
+  const found = [];
+  let hasAdj=false, hasLR=false, hasNeg=false, hasRef=false;
+  ADJ.forEach(w=>{ if(text.includes(w)){ hasAdj=true; found.push(w); }});
+  LR.forEach(w=>{ if(text.includes(w)){ hasLR=true; }});
+  NEG.forEach(w=>{ if(text.includes(w)){ hasNeg=true; }});
+  REF.forEach(w=>{ if(text.includes(w)){ hasRef=true; }});
+
+  // 1 形容词
+  if(hasAdj) setGate('g1','fail','检测到：「'+found.join('、')+'」——这是形容词，要求对方表演一种情绪');
+  else if(text.length>0) setGate('g1','pass','没有形容词');
+
+  // 2 坐标系
+  if(hasLR && !hasRef) setGate('g2','fail','出现了左/右但没给参照物。加一个：「窗边」「我的手指」「远一点那边」');
+  else if(hasLR && hasRef) setGate('g2','pass','有参照物，不歧义');
+  else if(text.length>0) setGate('g2','pass','没有方向词');
+
+  // 3 禁止式
+  if(hasNeg && text.length<10) setGate('g3','warn','是纯禁止式。建议改成正面说法，或补一句要做什么');
+  else if(hasNeg) setGate('g3','pass','有禁止但有正向内容');
+  else if(text.length>0) setGate('g3','pass','不是禁止式');
+
+  // 4 重试说法
+  if(retry) setGate('g4','pass','有重试说法');
+  else setGate('g4','warn','还没填 —— 七成第一次说不对，这句很重要');
+
+  // 5 来源
+  if(src) setGate('g5','pass','有来源');
+  else setGate('g5','warn','还没填 —— 无来源不入口令库');
+
+  // 判定能否保存
+  const g1 = document.getElementById('g1').classList.contains('pass');
+  const g2 = document.getElementById('g2').classList.contains('pass');
+  const g5 = document.getElementById('g5').classList.contains('pass');
+  const can = text && g1 && g2 && g5;
+
+  const save = document.getElementById('cqSave');
+  save.disabled = !can;
+  const st = document.getElementById('cqStatus');
+  if(!text){ st.textContent=''; }
+  else if(!g1){ st.textContent='先改掉形容词'; st.style.color='var(--err)'; }
+  else if(!g2){ st.textContent='先补参照物'; st.style.color='var(--err)'; }
+  else if(!g5){ st.textContent='先补来源'; st.style.color='var(--warn)'; }
+  else if(!retry){ st.textContent='可以存，但标为「未完成」'; st.style.color='var(--warn)'; }
+  else { st.textContent='五项都过了'; st.style.color='var(--ok)'; }
+
+  cqRender({text, retry, over, can, retryOk: !!retry});
+}
+
+function cqRender(r){
+  const live = document.getElementById('cqLive');
+  if(!r){ live.innerHTML=''; return; }
+  if(r.can && r.retryOk){
+    live.innerHTML = '<span style="color:var(--ok)">✓ 可以存</span>';
+  } else if(r.can){
+    live.innerHTML = '<span style="color:var(--warn)">可以存，但会标「未完成」（缺重试说法）</span>';
+  } else {
+    live.innerHTML = '<span style="color:var(--err)">还不能存</span>';
+  }
+}
+
+function cqSave(){
+  const btn = document.getElementById('cqSave');
+  if(btn.disabled) return;
+  closeCue();
+  fake('已存入口令库'+(document.getElementById('cqRetry').value?'':'（标为未完成）'));
+}
 function openNewProj(){
   document.getElementById('newProjSheet').classList.add('on');
   setTimeout(()=>{ const t=document.getElementById('npInput'); if(t) t.focus(); }, 200);
