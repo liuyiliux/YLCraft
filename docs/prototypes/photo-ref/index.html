@@ -831,6 +831,65 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 .np-ci-btn{padding:12px 22px;border-radius:8px;border:1px solid var(--bd2);
   color:var(--tx2);font-size:15px;transition:.16s}
 .np-ci-btn:hover{border-color:var(--pri);color:var(--tx1)}
+/* ===== 口令库 ===== */
+.cl{max-width:1080px;margin:0 auto;padding:48px 32px 96px}
+.cl-hd{display:flex;align-items:flex-end;gap:24px;margin-bottom:40px;flex-wrap:wrap}
+.cl-eyebrow{font-size:13px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--tx3);font-family:var(--fm);margin-bottom:10px}
+.cl-title{font-size:38px;font-weight:600;letter-spacing:-.03em;line-height:1.15;
+  color:var(--tx1);margin-bottom:10px}
+.cl-meta{font-size:15px;color:var(--tx3);font-family:var(--fm)}
+.cl-primary{padding:11px 22px;border-radius:6px;background:var(--tx1);color:var(--bgPage);
+  border:none;font-size:15px;font-weight:600;transition:.16s;margin-left:auto}
+.cl-primary:hover{background:var(--tx2)}
+.cl-primary:active{transform:scale(.98)}
+
+.cl-filters{display:flex;flex-direction:column;gap:12px;margin-bottom:28px;
+  padding-bottom:20px;border-bottom:1px solid var(--bd2)}
+.cl-fg{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.cl-fg-l{font-size:12px;color:var(--tx3);font-family:var(--fm);
+  text-transform:uppercase;letter-spacing:.05em;min-width:44px}
+.cl-f{font-size:14px;padding:6px 14px;border-radius:14px;border:1px solid var(--bd2);
+  background:var(--bgInput);color:var(--tx2);transition:.16s}
+.cl-f:hover{border-color:var(--bd3);color:var(--tx1)}
+.cl-f.on{background:color-mix(in srgb,var(--photo) 15%,transparent);
+  border-color:var(--photo);color:var(--photo)}
+
+.cl-list{display:flex;flex-direction:column;gap:12px}
+.cl-item{display:flex;gap:20px;padding:22px 24px;background:var(--bgCard);
+  border:1px solid var(--bd2);border-radius:10px;transition:.16s}
+.cl-item:hover{border-color:var(--bd3)}
+.cl-item.pending{border-left:3px solid var(--warn)}
+.cl-item-l{flex:1;min-width:0}
+.cl-item-top{display:flex;align-items:center;gap:8px;margin-bottom:11px;flex-wrap:wrap}
+.cl-pill{font-size:12px;padding:3px 10px;border-radius:5px;font-family:var(--fm)}
+.cl-pill.part{background:color-mix(in srgb,var(--photo) 16%,transparent);color:var(--photo)}
+.cl-pill.type{background:var(--bd2);color:var(--tx3)}
+.cl-ok{font-size:12px;color:var(--ok);margin-left:auto;font-family:var(--fm)}
+.cl-pending{font-size:12px;color:var(--warn);margin-left:auto;font-family:var(--fm)}
+.cl-q{font-size:20px;font-weight:600;color:var(--tx1);letter-spacing:-.01em;
+  margin-bottom:12px;line-height:1.45}
+.cl-extra{display:flex;gap:11px;padding:5px 0;font-size:14px;align-items:flex-start}
+.cl-x-l{font-size:12px;color:var(--tx3);font-family:var(--fm);flex-shrink:0;
+  min-width:34px;padding-top:2px}
+.cl-x-v{color:var(--tx2);line-height:1.6;flex:1}
+.cl-pending-hint{margin-top:11px;padding:10px 13px;border-radius:6px;
+  background:color-mix(in srgb,var(--warn) 8%,transparent);
+  border:1px solid color-mix(in srgb,var(--warn) 23%,transparent);
+  font-size:13px;color:var(--warn);display:flex;align-items:center;gap:10px;line-height:1.55}
+.cl-fix{margin-left:auto;font-size:13px;padding:4px 11px;border-radius:5px;
+  background:var(--warn);color:#1a1205;font-weight:600;flex-shrink:0}
+.cl-item-r{display:flex;flex-direction:column;align-items:flex-end;gap:11px;
+  flex-shrink:0;justify-content:space-between}
+.cl-src{font-size:12px;color:var(--tx3);font-family:var(--fm);text-align:right;
+  max-width:190px;line-height:1.5}
+.cl-use{font-size:14px;padding:7px 15px;border-radius:6px;border:1px solid var(--bd2);
+  color:var(--tx2);transition:.16s}
+.cl-use:hover{border-color:var(--photo);color:var(--photo)}
+
+.cl-note{margin-top:36px;padding:18px 22px;border-radius:8px;background:var(--bgCard);
+  border:1px solid var(--bd2);font-size:14px;color:var(--tx2);line-height:1.75}
+.cl-note b{color:var(--tx1)}
 /* ===== 项目列表 ===== */
 .px{max-width:880px;margin:0 auto;padding:48px 32px 96px}
 .px-hd{display:flex;align-items:flex-end;gap:24px;margin-bottom:44px;flex-wrap:wrap}
@@ -1658,6 +1717,7 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
   </div>
   <button class="btn" onclick="fake('批量上传：100–500 张，先勾一批标签整批套用')">批量上传</button>
   <button class="btn" onclick="fake('截帧入库：取前后各 1–2 秒的 3–5 张候选帧，自动带时间码')">截帧入库</button>
+  <button class="btn" onclick="openCueLib()">口令库</button>
   <button class="btn" onclick="window.open('model-profile.html','_blank')">模特档案</button>
   <button class="btn" onclick="window.open('light-api.html','_blank')">地点光线</button>
   <button class="btn pri" onclick="openPreflight()">出门前检查</button>
@@ -2048,6 +2108,157 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 
 </div><!-- /pageRef -->
 
+<!-- ===== 口令库 ===== -->
+<div id="pageCueLib" style="display:none">
+  <div class="cl">
+
+    <header class="cl-hd">
+      <div>
+        <div class="cl-eyebrow">参考库</div>
+        <h1 class="cl-title">口令库</h1>
+        <div class="cl-meta">48 条 · 32 条验证过 · 6 条待补</div>
+      </div>
+      <button class="cl-primary" onclick="openCue()">录一条口令</button>
+    </header>
+
+    <!-- 筛选 -->
+    <div class="cl-filters">
+      <div class="cl-fg">
+        <span class="cl-fg-l">改哪里</span>
+        <button class="cl-f on" onclick="clFilter(this)">全部</button>
+        <button class="cl-f" onclick="clFilter(this)">下巴</button>
+        <button class="cl-f" onclick="clFilter(this)">眼神</button>
+        <button class="cl-f" onclick="clFilter(this)">手</button>
+        <button class="cl-f" onclick="clFilter(this)">肩</button>
+        <button class="cl-f" onclick="clFilter(this)">重心</button>
+        <button class="cl-f" onclick="clFilter(this)">表情</button>
+      </div>
+      <div class="cl-fg">
+        <span class="cl-fg-l">状态</span>
+        <button class="cl-f on" onclick="clFilter(this)">全部</button>
+        <button class="cl-f" onclick="clFilter(this)">验证过</button>
+        <button class="cl-f" onclick="clFilter(this)">待补</button>
+      </div>
+    </div>
+
+    <!-- 列表 -->
+    <div class="cl-list">
+
+      <article class="cl-item">
+        <div class="cl-item-l">
+          <div class="cl-item-top">
+            <span class="cl-pill part">下巴</span>
+            <span class="cl-pill type">任务式</span>
+            <span class="cl-ok">验证过 5 次</span>
+          </div>
+          <div class="cl-q">「把额头轻轻送向镜头」</div>
+          <div class="cl-extra">
+            <span class="cl-x-l">重试</span>
+            <span class="cl-x-v">「再往前一点点，不用探脖子」</span>
+          </div>
+          <div class="cl-extra">
+            <span class="cl-x-l">过头</span>
+            <span class="cl-x-v">整个脖子前探，像在憋气</span>
+          </div>
+        </div>
+        <div class="cl-item-r">
+          <div class="cl-src">来源：Lindsay Adler 中文教材</div>
+          <button class="cl-use" onclick="fake('挂到分镜上')">用到分镜</button>
+        </div>
+      </article>
+
+      <article class="cl-item">
+        <div class="cl-item-l">
+          <div class="cl-item-top">
+            <span class="cl-pill part">手</span>
+            <span class="cl-pill type">任务式</span>
+            <span class="cl-ok">验证过 3 次</span>
+          </div>
+          <div class="cl-q">「手摸一下围巾就好」</div>
+          <div class="cl-extra">
+            <span class="cl-x-l">重试</span>
+            <span class="cl-x-v">「摸一下就好，不用抓」</span>
+          </div>
+          <div class="cl-extra">
+            <span class="cl-x-l">过头</span>
+            <span class="cl-x-v">抓住了围巾，显得紧张</span>
+          </div>
+        </div>
+        <div class="cl-item-r">
+          <div class="cl-src">来源：实战沉淀</div>
+          <button class="cl-use" onclick="fake('挂到分镜上')">用到分镜</button>
+        </div>
+      </article>
+
+      <article class="cl-item">
+        <div class="cl-item-l">
+          <div class="cl-item-top">
+            <span class="cl-pill part">眼神</span>
+            <span class="cl-pill type">任务式</span>
+            <span class="cl-ok">验证过 8 次</span>
+          </div>
+          <div class="cl-q">「现在眼睛看我手指，不用转脸」</div>
+          <div class="cl-extra">
+            <span class="cl-x-l">重试</span>
+            <span class="cl-x-v">「脸别动，就眼睛过来」</span>
+          </div>
+        </div>
+        <div class="cl-item-r">
+          <div class="cl-src">来源：Lindsay Adler 中文教材</div>
+          <button class="cl-use" onclick="fake('挂到分镜上')">用到分镜</button>
+        </div>
+      </article>
+
+      <article class="cl-item">
+        <div class="cl-item-l">
+          <div class="cl-item-top">
+            <span class="cl-pill part">肩</span>
+            <span class="cl-pill type">指令式</span>
+            <span class="cl-ok">验证过 2 次</span>
+          </div>
+          <div class="cl-q">「远一点那边的肩膀往后走半步」</div>
+          <div class="cl-extra">
+            <span class="cl-x-l">重试</span>
+            <span class="cl-x-v">「再往后退一点点就好」</span>
+          </div>
+        </div>
+        <div class="cl-item-r">
+          <div class="cl-src">来源：Lindsay Adler 中文教材</div>
+          <button class="cl-use" onclick="fake('挂到分镜上')">用到分镜</button>
+        </div>
+      </article>
+
+      <article class="cl-item pending">
+        <div class="cl-item-l">
+          <div class="cl-item-top">
+            <span class="cl-pill part">表情</span>
+            <span class="cl-pill type">场景式</span>
+            <span class="cl-pending">待补重试说法</span>
+          </div>
+          <div class="cl-q">「闭眼听十秒风声，睁眼以后看向车窗里面」</div>
+          <div class="cl-extra">
+            <span class="cl-x-l">过头</span>
+            <span class="cl-x-v">对方自由发挥跑偏，姿势和你要的差很远</span>
+          </div>
+          <div class="cl-pending-hint">
+            缺「重试说法」—— 七成第一次说不对，这句很重要。
+            <button class="cl-fix" onclick="openCue()">补上</button>
+          </div>
+        </div>
+        <div class="cl-item-r">
+          <div class="cl-src">来源：微澜 Mag 案例</div>
+        </div>
+      </article>
+
+    </div>
+
+    <div class="cl-note">
+      <b>「验证过 N 次」是怎么来的</b>：每次在分镜里用这条口令并记录「拍了」，
+      这里就 +1。用得越多，你越知道哪些话对大多数人都管用。
+    </div>
+
+  </div>
+</div>
 <!-- ===== 项目列表页 ===== -->
 <div id="pageProjects" style="display:none">
   <div class="px">
@@ -4133,6 +4344,17 @@ function renderPzTimes(){
 
 
 /* ===== 项目列表 ===== */
+
+function openCueLib(){
+  ['pageRef','pagePlan','pageProjects'].forEach(id=>document.getElementById(id).style.display='none');
+  document.getElementById('pageCueLib').style.display='block';
+  window.scrollTo(0,0);
+}
+function clFilter(el){
+  el.parentElement.querySelectorAll('.cl-f').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+}
+
 function openProjects(){
   document.getElementById('pageRef').style.display='none';
   document.getElementById('pagePlan').style.display='none';
@@ -4324,6 +4546,7 @@ function cqSave(){
   if(btn.disabled) return;
   closeCue();
   fake('已存入口令库'+(document.getElementById('cqRetry').value?'':'（标为未完成）'));
+  if(document.getElementById('pageCueLib').style.display==='block'){ openCueLib(); }
 }
 function openNewProj(){
   document.getElementById('newProjSheet').classList.add('on');
