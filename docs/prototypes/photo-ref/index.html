@@ -391,8 +391,6 @@ input{font:inherit}
   </div>
   <button class="btn" onclick="fake('批量上传：100–500 张，先勾一批标签整批套用')">批量上传</button>
   <button class="btn" onclick="fake('截帧入库：取前后各 1–2 秒的 3–5 张候选帧，自动带时间码')">截帧入库</button>
-  <button class="btn" onclick="openCmp('analyze')">分析作品</button>
-  <button class="btn pri" onclick="openCmp('compare')">参考对照</button>
 </div>
 
 <div class="libs">
@@ -623,8 +621,10 @@ input{font:inherit}
       </div>
       <div class="dt-ft">
         <button class="btn" onclick="fake('编辑偷师点 / 标签')">编辑</button>
-        <button class="btn" onclick="hideDetail();showCompare()">对作品</button>
-        <button class="btn pri" onclick="fake('存为参考，挂到某个分镜上')">用到分镜</button>
+        <button class="btn" onclick="fake('存为参考，挂到某个分镜上')">用到分镜</button>
+        <div class="spacer"></div>
+        <button class="btn" onclick="hideDetail();openCmp('compare')">找参考对比</button>
+        <button class="btn pri" onclick="hideDetail();openCmp('analyze')">分析这张</button>
       </div>
     </div>
   </div>
@@ -825,7 +825,7 @@ input{font:inherit}
             <b style="color:var(--photo)">可以存进反思的总结：</b><br>
             「傍晚侧逆光拍摄时，白平衡不要跟着光走——自然光本身就暖，
             相机再往暖设会叠加。下次压到 5200K 或先对白纸定白。」
-            <span class="q" style="margin-top:10px" onclick="fake('已存进反思 · 标签：白平衡 / 傍晚 / 逆光')">✓ 确认存进「反思」</span>
+            <span class="q" style="margin-top:10px" onclick="saveToReflect()">✓ 确认存进「反思」</span>
           </div>
         </div>
         <div class="ag-ft"><input placeholder="或者直接说：我当时光太硬了…"><button class="btn">发送</button></div>
@@ -835,7 +835,7 @@ input{font:inherit}
       <button class="btn" onclick="hideCompare()">关闭</button>
       <div class="spacer"></div>
       <button class="btn" onclick="fake('导出对比图 / 分析结论，发给客户或存进作品库')">导出</button>
-      <button class="btn pri" onclick="fake('把这次的结论存成一条记录')">存成一条记录</button>
+      <button class="btn pri" onclick="saveToReflect()">存成一条反思 →「反思」库</button>
     </div>
   </div>
 </div>
@@ -930,6 +930,52 @@ function toggleFold(id){
 function showSummary(){
   document.getElementById('agSummary').style.display='block';
   fake('已生成总结 —— 确认后存进「反思」');
+}
+function saveToReflect(){
+  const isAna = document.getElementById('viewAnalyze').style.display!=='none';
+  const modal = document.createElement('div');
+  modal.style.cssText='position:fixed;inset:0;background:rgba(5,5,10,.86);z-index:80;'
+    +'display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px)';
+  modal.onclick=e=>{ if(e.target===modal) modal.remove(); };
+  modal.innerHTML=`
+    <div style="width:min(640px,92vw);background:var(--bgElev);border:1px solid var(--bd3);
+      border-radius:var(--radiusLG);box-shadow:var(--shadowModal);overflow:hidden">
+      <div style="padding:16px 20px;border-bottom:1px solid var(--bd2);display:flex;align-items:center;gap:10px">
+        <span style="font-size:var(--fs-h4);font-weight:600">存成一条反思</span>
+        <span style="font-size:var(--fs-xs);padding:3px 9px;border-radius:5px;
+          background:color-mix(in srgb,var(--err) 18%,transparent);color:var(--err)">→ 反思库</span>
+        <div style="flex:1"></div>
+        <button class="btn" onclick="this.closest('div[style*=fixed]').remove()">✕</button>
+      </div>
+      <div style="padding:18px 20px">
+        <div style="font-size:var(--fs-sm);color:var(--tx3);margin-bottom:9px">
+          ${isAna?'这句话会成为反思库的一条，和这张作品挂着':'这句话会成为反思库的一条，和这张作品+参考图挂着'}
+        </div>
+        <textarea style="width:100%;height:96px;padding:12px 14px;border-radius:var(--radiusSM);
+          border:1px solid var(--bd2);background:var(--bgInput);color:var(--tx1);
+          font-size:var(--fs-cap);line-height:1.6;outline:none;resize:vertical;
+          font-family:var(--ff)">${isAna
+            ?'傍晚侧逆光拍摄时，白平衡不要跟着光走——自然光本身就暖，相机再往暖设会叠加。下次压到 5200K 或先对白纸定白。'
+            :'参考是侧逆光，我是顺光。差在站位，不在器材。下次先绕到侧后方再举机。'}</textarea>
+        <div style="margin-top:14px;font-size:var(--fs-xs);color:var(--tx3);margin-bottom:8px">自动带上的标签</div>
+        <div class="tags" style="margin-top:0">
+          <span class="tg">白平衡</span><span class="tg">傍晚</span><span class="tg">逆光</span>
+          <span class="tg">50mm</span><span class="tg">f/4</span>
+        </div>
+        <div style="margin-top:14px;padding:12px 14px;border-radius:var(--radiusSM);
+          background:var(--bgCard);border:1px solid var(--bd2);font-size:var(--fs-sm);color:var(--tx2);line-height:1.65">
+          <b style="color:var(--tx1)">反思库里会是这一条：</b><br>
+          「${isAna?'傍晚侧逆光拍摄时，白平衡不要跟着光走——自然光本身就暖，相机再往暖设会叠加。下次压到 5200K 或先对白纸定白。':'参考是侧逆光，我是顺光。差在站位，不在器材。下次先绕到侧后方再举机。'}」<br>
+          <span style="color:var(--tx3)">挂着：这张作品 · ${isAna?'10 月小清新人像':'对比：参考 × 你的作品'}</span>
+        </div>
+      </div>
+      <div style="padding:14px 20px;border-top:1px solid var(--bd2);display:flex;gap:9px">
+        <button class="btn" onclick="this.closest('div[style*=fixed]').remove()">取消</button>
+        <div style="flex:1"></div>
+        <button class="btn pri" onclick="this.closest('div[style*=fixed]').remove();hideCompare();fake('已存进「反思」库 · 挂着这张作品')">确认存进反思</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
 }
 function refSrc(el,type){  el.parentElement.querySelectorAll('.rs').forEach(x=>x.classList.remove('on'));
   el.classList.add('on');
