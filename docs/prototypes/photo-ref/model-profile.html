@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>模特档案 · 原型</title>
+<style>
+:root{
+  --bgPage:#09090b; --bgCard:#16161a; --bgElev:#1f1f27; --bgInput:#111116; --bgHover:#1c1c22;
+  --tx1:#e4e4e7; --tx2:#a1a1aa; --tx3:#71717a;
+  --bd:rgba(255,255,255,.06); --bd2:rgba(255,255,255,.12); --bd3:rgba(255,255,255,.22);
+  --pri:#22d3ee; --ok:#4ade80; --warn:#fbbf24; --err:#f87171; --photo:#fbbf24;
+  --drama:#a78bfa; --coser:#f472b6; --ecom:#f87171;
+  --fm:'SF Mono',Consolas,monospace;
+  --ff:'Inter',-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  --rSM:8px; --rMD:12px; --rLG:16px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bgPage);color:var(--tx1);font-family:var(--ff);
+  font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased}
+button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,textarea,select{font:inherit}
+
+.top{display:flex;align-items:center;gap:12px;padding:14px 24px;
+  border-bottom:1px solid var(--bd2);background:var(--bgElev);position:sticky;top:0;z-index:20}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px}
+.logo i{width:28px;height:28px;border-radius:var(--rSM);background:var(--grad);
+  background:linear-gradient(135deg,var(--coser),#be185d);display:inline-block}
+.spacer{flex:1}
+.btn{padding:8px 16px;border-radius:var(--rSM);border:1px solid var(--bd2);
+  background:var(--bgCard);font-size:15px;color:var(--tx2);transition:.18s}
+.btn:hover{border-color:var(--coser);color:var(--tx1)}
+.btn.pri{background:var(--coser);border-color:var(--coser);color:#2b0518;font-weight:600}
+
+.wrap{max-width:1400px;margin:0 auto;padding:24px}
+.note{padding:13px 16px;border-radius:var(--rSM);margin-bottom:22px;
+  background:color-mix(in srgb,var(--coser) 8%,transparent);
+  border:1px solid color-mix(in srgb,var(--coser) 26%,transparent);
+  font-size:15px;color:var(--tx2);line-height:1.7}
+.note b{color:var(--coser)}
+
+/* 两人栏 */
+.cols{display:grid;grid-template-columns:280px 1fr;gap:20px;align-items:start}
+
+/* 左：列表 */
+.plist{background:var(--bgCard);border:1px solid var(--bd2);border-radius:var(--rMD);overflow:hidden}
+.pl-hd{display:flex;align-items:center;gap:9px;padding:14px 16px;border-bottom:1px solid var(--bd2)}
+.pl-t{font-size:15px;font-weight:600}
+.pl-n{font-size:13px;color:var(--tx3);font-family:var(--fm)}
+.p-item{display:flex;align-items:center;gap:11px;padding:12px 16px;cursor:pointer;
+  border-bottom:1px solid var(--bd);transition:.15s}
+.p-item:hover{background:var(--bgHover)}
+.p-item.on{background:color-mix(in srgb,var(--coser) 11%,transparent);
+  border-left:3px solid var(--coser)}
+.p-av{width:38px;height:38px;border-radius:50%;flex-shrink:0;
+  background:linear-gradient(150deg,#2a2340,#141020);display:flex;align-items:center;
+  justify-content:center;font-size:15px;color:var(--tx2)}
+.p-info{flex:1;min-width:0}
+.p-nm{font-size:15px;color:var(--tx1);font-weight:500}
+.p-sub{font-size:12px;color:var(--tx3);margin-top:2px}
+.p-cnt{font-size:12px;color:var(--tx3);font-family:var(--fm);flex-shrink:0}
+
+/* 右：详情 */
+.detail{display:flex;flex-direction:column;gap:16px}
+.card{background:var(--bgCard);border:1px solid var(--bd2);border-radius:var(--rMD);
+  padding:18px 20px}
+.card h3{font-size:17px;margin-bottom:14px;display:flex;align-items:center;gap:9px}
+.card h3 .src{font-size:12px;padding:2px 9px;border-radius:4px;font-family:var(--fm);
+  font-weight:400}
+.src.me{background:color-mix(in srgb,var(--photo) 16%,transparent);color:var(--photo)}
+.src.obs{background:color-mix(in srgb,var(--pri) 16%,transparent);color:var(--pri)}
+.src.client{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
+
+/* 头部卡 */
+.hero{display:flex;gap:18px;align-items:center}
+.hero-av{width:78px;height:78px;border-radius:50%;flex-shrink:0;
+  background:linear-gradient(150deg,#2a2340,#141020);display:flex;align-items:center;
+  justify-content:center;font-size:28px;color:var(--tx3);
+  border:2px solid color-mix(in srgb,var(--coser) 40%,transparent)}
+.hero-info{flex:1}
+.hero-nm{font-size:24px;font-weight:700;margin-bottom:5px}
+.hero-meta{font-size:14px;color:var(--tx3);display:flex;gap:14px;flex-wrap:wrap}
+.hero-meta b{color:var(--tx2);font-weight:500}
+
+/* 个性标签 */
+.tagrow{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+.tg2{font-size:14px;padding:5px 13px;border-radius:16px;
+  background:color-mix(in srgb,var(--tx2) 12%,transparent);color:var(--tx2)}
+.tg2.hot{background:color-mix(in srgb,var(--coser) 18%,transparent);color:var(--coser)}
+
+/* 表演方式 */
+.act{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.act-c{padding:14px 16px;border-radius:var(--rSM);background:var(--bgInput);
+  border:1px solid var(--bd2)}
+.act-c.on{border-color:var(--coser);
+  background:color-mix(in srgb,var(--coser) 8%,transparent)}
+.act-h{font-size:15px;font-weight:600;margin-bottom:7px;display:flex;align-items:center;gap:8px}
+.act-b{font-size:14px;color:var(--tx2);line-height:1.7}
+.act-b b{color:var(--photo)}
+.act-note{margin-top:11px;font-size:13px;color:var(--tx3);line-height:1.65}
+
+/* 攻略式字段 */
+.kv{display:grid;grid-template-columns:110px 1fr;gap:10px 12px;font-size:15px}
+.kv .k{color:var(--tx3);font-size:14px}
+.kv .v{color:var(--tx1);line-height:1.6}
+
+/* 注意事项 */
+.warns{display:flex;flex-direction:column;gap:9px}
+.warn-i{display:flex;gap:11px;padding:12px 14px;border-radius:var(--rSM);
+  background:color-mix(in srgb,var(--warn) 8%,transparent);
+  border:1px solid color-mix(in srgb,var(--warn) 24%,transparent)}
+.warn-i.hot{background:color-mix(in srgb,var(--err) 8%,transparent);
+  border-color:color-mix(in srgb,var(--err) 24%,transparent)}
+.warn-ico{font-size:16px;flex-shrink:0}
+.warn-b{font-size:14px;color:var(--tx2);line-height:1.65}
+.warn-b b{color:var(--tx1)}
+
+/* 拍过的片子 */
+.shoots{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:11px}
+.shoot{background:var(--bgInput);border-radius:var(--rSM);overflow:hidden;
+  border:1px solid var(--bd2)}
+.shoot-i{aspect-ratio:4/3;background:linear-gradient(150deg,#2a2340,#141020)}
+.shoot-i.g2{background:linear-gradient(150deg,#3a2a1a,#1a1208)}
+.shoot-i.g3{background:linear-gradient(150deg,#1a2a3a,#081018)}
+.shoot-t{padding:8px 10px;font-size:13px;color:var(--tx2);line-height:1.4}
+.shoot-d{padding:0 10px 9px;font-size:11px;color:var(--tx3);font-family:var(--fm)}
+
+/* 时间线 */
+.timeline{position:relative;padding-left:22px}
+.timeline::before{content:'';position:absolute;left:5px;top:6px;bottom:6px;
+  width:1px;background:var(--bd2)}
+.tl{position:relative;margin-bottom:14px}
+.tl::before{content:'';position:absolute;left:-20px;top:6px;width:9px;height:9px;
+  border-radius:50%;background:var(--coser)}
+.tl-d{font-size:12px;color:var(--tx3);font-family:var(--fm);margin-bottom:3px}
+.tl-t{font-size:14px;color:var(--tx2);line-height:1.65}
+.tl-t b{color:var(--tx1)}
+
+/* 建议 */
+.suggest{padding:14px 16px;border-radius:var(--rSM);
+  background:color-mix(in srgb,var(--drama) 8%,transparent);
+  border:1px solid color-mix(in srgb,var(--drama) 26%,transparent);margin-top:12px}
+.suggest h4{font-size:15px;color:var(--drama);margin-bottom:9px}
+.suggest li{font-size:14px;color:var(--tx2);line-height:1.8;margin-left:18px}
+.suggest li b{color:var(--tx1)}
+
+#_t{position:fixed;left:50%;bottom:36px;transform:translateX(-50%);z-index:99;
+  padding:13px 22px;border-radius:8px;background:#1f1f27;
+  border:1px solid rgba(255,255,255,.22);color:#e4e4e7;font-size:15px;
+  box-shadow:0 12px 32px rgba(0,0,0,.5);display:none}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="logo"><i></i>模特档案</div>
+  <span style="font-size:14px;color:var(--tx3)">先了解这个人，才知道该让她演什么</span>
+  <div class="spacer"></div>
+  <button class="btn" onclick="fake('新建一个模特/客户档案')">＋ 新建</button>
+  <button class="btn pri" onclick="window.open('index.html','_blank')">回参考库</button>
+</div>
+
+<div class="wrap">
+
+  <div class="note">
+    <b>为什么要建这个？</b>
+    拍「本色出演」的前提是<b>你真的了解她</b>——她的性格、她在镜头前什么样、她喜欢什么。
+    这些东西散在聊天记录和记忆里，每次复拍都要重新想一遍。<b>建一次，以后都在。</b>
+  </div>
+
+  <div class="cols">
+
+    <!-- 左：列表 -->
+    <div class="plist">
+      <div class="pl-hd">
+        <span class="pl-t">模特 / 客户</span>
+        <div class="spacer"></div>
+        <span class="pl-n">4 人</span>
+      </div>
+      <div class="p-item on" onclick="pick(this,'s1')">
+        <div class="p-av">福</div>
+        <div class="p-info">
+          <div class="p-nm">福子</div>
+          <div class="p-sub">老客户 · 合作 8 次</div>
+        </div>
+        <span class="p-cnt">8</span>
+      </div>
+      <div class="p-item" onclick="pick(this,'s2')">
+        <div class="p-av">星</div>
+        <div class="p-info">
+          <div class="p-nm">星星</div>
+          <div class="p-sub">模特 · 合作 3 次</div>
+        </div>
+        <span class="p-cnt">3</span>
+      </div>
+      <div class="p-item" onclick="pick(this,'s3')">
+        <div class="p-av">七</div>
+        <div class="p-info">
+          <div class="p-nm">七七</div>
+          <div class="p-sub">客户 · 合作 2 次</div>
+        </div>
+        <span class="p-cnt">2</span>
+      </div>
+      <div class="p-item" onclick="pick(this,'s4')">
+        <div class="p-av">A</div>
+        <div class="p-info">
+          <div class="p-nm">客户 A（10月小清新）</div>
+          <div class="p-sub">客户 · 首次</div>
+        </div>
+        <span class="p-cnt">1</span>
+      </div>
+    </div>
+
+    <!-- 右：详情 -->
+    <div class="detail">
+
+      <!-- 头部 -->
+      <div class="card">
+        <div class="hero">
+          <div class="hero-av">福</div>
+          <div class="hero-info">
+            <div class="hero-nm">福子</div>
+            <div class="hero-meta">
+              <span>合作 <b>8 次</b></span>
+              <span>最近 <b>2026-09</b></span>
+              <span>类型 <b>老客户 / 长期合作</b></span>
+            </div>
+            <div class="tagrow">
+              <span class="tg2 hot">说话直来直去</span>
+              <span class="tg2 hot">不怕丑</span>
+              <span class="tg2">能接受慢节奏</span>
+              <span class="tg2">偏爱胶片感</span>
+              <span class="tg2">不喜欢大笑</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ⭐ 核心：表演方式 -->
+      <div class="card">
+        <h3>这个人该怎么拍 <span class="src me">你的判断</span></h3>
+        <div class="act">
+          <div class="act-c on">
+            <div class="act-h">🎭 本色出演 <span style="font-size:12px;color:var(--ok)">推荐</span></div>
+            <div class="act-b">
+              她不需要演。<b>给她空间和环境，让她自己做事情</b>就行——
+              她发呆、走路、整理头发的时候最好看。
+            </div>
+          </div>
+          <div class="act-c">
+            <div class="act-h">🎬 角色扮演</div>
+            <div class="act-b">
+              她演不了「甜」和「活泼」，会明显僵。<b>别让她对着镜头笑</b>，
+              一要求笑就出戏。
+            </div>
+          </div>
+        </div>
+        <div class="act-note">
+          ⚠️ 这是<b>每次拍完更新</b>的判断，不是一开始就有的。第 1 次是猜，第 8 次是准的。
+        </div>
+      </div>
+
+      <!-- 攻略式档案 -->
+      <div class="card">
+        <h3>拍之前要知道的 <span class="src obs">观察到的</span></h3>
+        <div class="kv">
+          <span class="k">性格</span><span class="v">说话直来直去，不绕弯。不喜欢被夸，夸多了会不自在</span>
+          <span class="k">镜头前</span><span class="v">不怕丑，但<b>在意「假」</b>——一张图她觉得摆拍就会直接说</span>
+          <span class="k">节奏</span><span class="v">能接受慢，不催。可以一个镜头拍半小时</span>
+          <span class="k">偏好</span><span class="v">喜欢胶片感、低饱和、真实皮肤。不喜欢过度磨皮</span>
+          <span class="k">禁忌</span><span class="v">别让她「笑一个」；别用太甜的引导词（「小可爱」这种她会翻白眼）</span>
+        </div>
+      </div>
+
+      <!-- 引导口令（专属） -->
+      <div class="card">
+        <h3>对她管用的口令 <span class="src me">实测有效</span></h3>
+        <div class="warns" style="gap:11px">
+          <div class="tip-like" style="padding:13px 15px;border-radius:8px;
+            background:var(--bgInput);border-left:3px solid var(--ok)">
+            <div style="font-size:15px;color:var(--tx1);font-weight:600;margin-bottom:6px">
+              「你就当我不在，做你自己的事」
+            </div>
+            <div style="font-size:14px;color:var(--tx2);line-height:1.65">
+              <b style="color:var(--ok)">为什么有效</b>：她讨厌被注视，这句话把「拍摄」变成「记录」。
+              实测有效 5 次 / 共 6 次。
+            </div>
+          </div>
+          <div class="tip-like" style="padding:13px 15px;border-radius:8px;
+            background:var(--bgInput);border-left:3px solid var(--ok)">
+            <div style="font-size:15px;color:var(--tx1);font-weight:600;margin-bottom:6px">
+              「往前走，我数到五你再回头」
+            </div>
+            <div style="font-size:14px;color:var(--tx2);line-height:1.65">
+              <b style="color:var(--ok)">为什么有效</b>：计数给了她明确的任务，
+              不用想「我该摆什么」。
+            </div>
+          </div>
+          <div class="tip-like" style="padding:13px 15px;border-radius:8px;
+            background:color-mix(in srgb,var(--err) 6%,transparent);
+            border-left:3px solid var(--err)">
+            <div style="font-size:15px;color:var(--tx1);font-weight:600;margin-bottom:6px">
+              ❌ 「笑一个」「放松一点」
+            </div>
+            <div style="font-size:14px;color:var(--tx2);line-height:1.65">
+              <b style="color:var(--err)">为什么无效</b>：她一听到「笑」就进入执行态，
+              嘴角僵，眼睛没笑。<b>这条已经失败 4 次了，别再用了。</b>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 注意事项 -->
+      <div class="card">
+        <h3>⚠️ 容易出问题的地方 <span class="src obs">踩过的坑</span></h3>
+        <div class="warns">
+          <div class="warn-i hot">
+            <span class="warn-ico">🔴</span>
+            <div class="warn-b">
+              <b>不要一次给多个指令。</b>她说过「一下说太多我脑子是空的」。
+              一次只说一个动作，做完再说下一个。
+            </div>
+          </div>
+          <div class="warn-i">
+            <span class="warn-ico">🟡</span>
+            <div class="warn-b">
+              <b>拍到第 40 分钟左右会累。</b>她不会主动说，但表情会开始僵。
+              建议这时候安排坐着或靠着的镜头。
+            </div>
+          </div>
+          <div class="warn-i">
+            <span class="warn-ico">🟡</span>
+            <div class="warn-b">
+              <b>风大的天她会睁不开眼。</b>2025-10 那次拍废了半小时。
+              风大要换到背风处，或者干脆拍闭眼的。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 拍过的片子 -->
+      <div class="card">
+        <h3>拍过的（8 次）</h3>
+        <div class="shoots">
+          <div class="shoot"><div class="shoot-i"></div>
+            <div class="shoot-t">小清新人像 · 民宿</div><div class="shoot-d">2026-09</div></div>
+          <div class="shoot"><div class="shoot-i g2"></div>
+            <div class="shoot-t">情绪人像 · 窗前</div><div class="shoot-d">2026-06</div></div>
+          <div class="shoot"><div class="shoot-i g3"></div>
+            <div class="shoot-t">胶片混片 · 湖边</div><div class="shoot-d">2026-03</div></div>
+          <div class="shoot"><div class="shoot-i"></div>
+            <div class="shoot-t">居家 · 室内</div><div class="shoot-d">2025-12</div></div>
+          <div class="shoot"><div class="shoot-i g2"></div>
+            <div class="shoot-t">街头 · 夜</div><div class="shoot-d">2025-10</div></div>
+          <button class="shoot" style="display:flex;align-items:center;justify-content:center;
+            min-height:110px;color:var(--tx3);border-style:dashed"
+            onclick="fake('看全部 8 次合作记录')">还有 3 次 →</button>
+        </div>
+      </div>
+
+      <!-- 时间线 -->
+      <div class="card">
+        <h3>了解的过程（时间线）</h3>
+        <div class="timeline">
+          <div class="tl">
+            <div class="tl-d">2026-09 · 第 8 次</div>
+            <div class="tl-t">确认「你就当我不在」最有效。她开始主动提想法了。</div>
+          </div>
+          <div class="tl">
+            <div class="tl-d">2026-06 · 第 6 次</div>
+            <div class="tl-t">发现她<b>不喜欢大笑</b>，但喜欢<b>闭眼</b>的片子。调整了引导方向。</div>
+          </div>
+          <div class="tl">
+            <div class="tl-d">2026-03 · 第 4 次</div>
+            <div class="tl-t">开始能预测她在哪个环节会僵。第 40 分钟定律第一次被记下来。</div>
+          </div>
+          <div class="tl">
+            <div class="tl-d">2025-10 · 第 1 次</div>
+            <div class="tl-t">
+              第一次合作。<b>当时全是猜的</b>——以为她喜欢甜一点的风格，拍出来她一张都没选。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 建议 -->
+      <div class="suggest">
+        <h4>✦ 下次拍她之前，这三点最该记住</h4>
+        <ul>
+          <li><b>别让她笑。</b>给她事情做，让她自己进入状态。</li>
+          <li><b>一次一个指令。</b>她明确说过指令多了脑子是空的。</li>
+          <li><b>第 40 分钟安排坐下。</b>她自己不会说累，但脸会出卖她。</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+
+  <div style="height:60px"></div>
+</div>
+
+<script>
+function pick(el,id){
+  document.querySelectorAll('.p-item').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+  fake('切换到：' + el.querySelector('.p-nm').textContent);
+}
+function fake(msg){
+  let d=document.getElementById('_t');
+  if(!d){d=document.createElement('div');d.id='_t';document.body.appendChild(d);}
+  d.textContent=msg;d.style.display='block';
+  clearTimeout(window._tt);
+  window._tt=setTimeout(()=>d.style.display='none',2600);
+}
+</script>
+</body>
+</html>
