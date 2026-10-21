@@ -508,6 +508,101 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
   font-size:var(--fs-sm);color:var(--tx2);line-height:1.65}
 .keys-note b{color:var(--photo)}
 
+/* ===== 口令卡 ===== */
+.pf-hint{font-size:var(--fs-xs);color:var(--tx3);text-transform:none;letter-spacing:0;
+  font-family:var(--ff)}
+.pf-filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:11px}
+.cue-f{font-size:var(--fs-xs);padding:4px 11px;border-radius:14px;border:1px solid var(--bd2);
+  background:var(--bgCard);color:var(--tx3);transition:.15s}
+.cue-f:hover{border-color:var(--photo);color:var(--tx1)}
+.cue-f.on{background:color-mix(in srgb,var(--photo) 16%,transparent);
+  border-color:var(--photo);color:var(--photo)}
+.pf-cues{display:grid;grid-template-columns:repeat(2,1fr);gap:11px}
+.cue{background:var(--bgCard);border:1px solid var(--bd2);border-radius:var(--radiusSM);
+  padding:13px 15px;border-left:3px solid var(--photo)}
+.cue.warn{border-left-color:var(--warn)}
+.cue.danger{border-left-color:var(--err);background:color-mix(in srgb,var(--err) 4%,var(--bgCard))}
+.cue-top{display:flex;align-items:center;gap:7px;margin-bottom:9px;flex-wrap:wrap}
+.cue-part{font-size:var(--fs-xs);padding:2px 9px;border-radius:4px;
+  background:color-mix(in srgb,var(--photo) 16%,transparent);color:var(--photo);font-weight:600}
+.cue-type{font-size:var(--fs-xs);color:var(--tx3);font-family:var(--fm)}
+.cue-trust{font-size:var(--fs-xs);padding:2px 8px;border-radius:4px;margin-left:auto}
+.cue-trust.ok{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+.cue-trust.warn{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn)}
+.cue-trust.bad{background:color-mix(in srgb,var(--err) 15%,transparent);color:var(--err)}
+.cue-q{font-size:var(--fs-body);color:var(--tx1);font-weight:600;line-height:1.5;
+  margin-bottom:7px}
+.cue.danger .cue-q{color:var(--err);text-decoration:line-through;text-decoration-thickness:1px}
+.cue-why{font-size:var(--fs-sm);color:var(--tx2);line-height:1.65;margin-bottom:9px}
+.cue-why b{color:var(--photo)}
+.cue-row{display:flex;gap:9px;padding:5px 0;border-top:1px dashed var(--bd2);
+  font-size:var(--fs-sm);align-items:flex-start}
+.cr-l{font-size:var(--fs-xs);color:var(--tx3);font-family:var(--fm);flex-shrink:0;
+  min-width:34px;padding-top:2px}
+.cr-v{color:var(--tx2);line-height:1.6}
+.cue.warn .cr-l,.cue.danger .cr-l{color:var(--warn)}
+.cue.danger .cr-l{color:var(--err)}
+
+/* ===== 现场模式 ===== */
+.live{position:fixed;inset:0;background:#000;z-index:200;display:none;flex-direction:column;
+  color:#fff;font-family:var(--ff)}
+.live.on{display:flex}
+.live-hd{display:flex;align-items:center;gap:12px;padding:14px 18px;
+  border-bottom:1px solid rgba(255,255,255,.1)}
+.lv-back{font-size:16px;color:rgba(255,255,255,.7);padding:4px 8px;cursor:pointer}
+.lv-title{font-size:15px;color:rgba(255,255,255,.8)}
+.lv-idx{font-size:14px;font-family:var(--fm);color:rgba(255,255,255,.5)}
+.lv-black{font-size:13px;padding:5px 12px;border-radius:6px;
+  background:rgba(255,255,255,.12);cursor:pointer}
+.live-body{flex:1;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;padding:20px;gap:22px;min-height:0}
+.lv-img{width:min(400px,64vw);aspect-ratio:4/3;border-radius:14px;overflow:hidden;
+  background:linear-gradient(150deg,#2a2340,#141020);display:flex;align-items:center;justify-content:center}
+.lv-img .ph{width:34%;height:58%;border-radius:40% 40% 18% 18%/14% 14% 7% 7%;
+  background:linear-gradient(175deg,#e8d5bd,#a8825c)}
+.lv-cue{font-size:clamp(28px,6vw,52px);font-weight:700;line-height:1.3;text-align:center;
+  color:#fff;letter-spacing:.02em;max-width:900px;
+  text-shadow:0 2px 20px rgba(0,0,0,.6)}
+.lv-meta{font-size:15px;color:rgba(255,255,255,.45);font-family:var(--fm)}
+.live-acts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:0 16px 12px}
+.lv-btn{display:flex;flex-direction:column;align-items:center;gap:5px;
+  padding:16px 12px;border-radius:12px;background:rgba(255,255,255,.1);
+  border:1px solid rgba(255,255,255,.16);transition:.15s;min-height:78px;justify-content:center}
+.lv-btn:active{background:rgba(255,255,255,.22);transform:scale(.97)}
+.lv-btn.ok{background:rgba(52,211,153,.22);border-color:rgba(52,211,153,.45)}
+.lb-t{font-size:19px;font-weight:600;color:#fff}
+.lb-s{font-size:13px;color:rgba(255,255,255,.6);text-align:center;line-height:1.4}
+.live-ft{display:flex;align-items:center;gap:9px;padding:0 16px 18px;
+  border-top:1px solid rgba(255,255,255,.08);padding-top:12px}
+.lf-hint{font-size:12px;color:rgba(255,255,255,.35)}
+.lf-btn{font-size:13px;padding:7px 14px;border-radius:8px;color:rgba(255,255,255,.75);
+  background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.14)}
+
+/* 长按为什么 */
+.why2{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:210;display:none;
+  align-items:center;justify-content:center;backdrop-filter:blur(6px)}
+.why2.on{display:flex}
+.why2-box{width:min(560px,94vw);max-height:88vh;background:var(--bgElev);
+  border:1px solid var(--bd3);border-radius:var(--radiusLG);overflow:hidden;
+  display:flex;flex-direction:column;box-shadow:var(--shadowModal)}
+.why2-hd{display:flex;align-items:center;padding:14px 18px;border-bottom:1px solid var(--bd2)}
+.why2-hd h3{font-size:var(--fs-h4)}
+.why2-body{padding:16px 18px;overflow:auto}
+.w2-q{font-size:var(--fs-h4);font-weight:600;color:var(--photo);margin-bottom:16px;
+  line-height:1.5}
+.w2-sec{margin-bottom:16px}
+.w2-t{font-size:var(--fs-xs);color:var(--tx3);font-family:var(--fm);
+  text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px}
+.w2-b{font-size:var(--fs-cap);color:var(--tx2);line-height:1.75}
+.w2-b b{color:var(--photo)}
+.w2-imgs{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.w2-img{border-radius:var(--radiusSM);overflow:hidden;border:1px solid var(--bd2)}
+.w2-img.bad{border-color:color-mix(in srgb,var(--err) 40%,transparent)}
+.w2-img.good{border-color:color-mix(in srgb,var(--ok) 40%,transparent)}
+.w2-img .ph{aspect-ratio:4/3;width:100%;background:linear-gradient(150deg,#3a1f1f,#1a0e0e)}
+.w2-img.good .ph{background:linear-gradient(150deg,#1f3a2a,#0e1a14)}
+.w2-img span{display:block;padding:7px 10px;font-size:var(--fs-xs);color:var(--tx2)}
+
 /* ===== 出门前检查 ===== */
 .pf{position:fixed;inset:0;background:color-mix(in srgb,var(--bgPage) 95%,transparent);z-index:70;
   display:none;align-items:center;justify-content:center;backdrop-filter:blur(10px)}
@@ -1142,18 +1237,103 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 
         <div class="pf-sec">
           <div class="pf-sec-t">
-            这一类的姿势参考
-            <button class="pf-more" onclick="fake('打开完整姿势库，按这次的条件筛')">全部 26 条 →</button>
+            这一类的口令
+            <span class="pf-hint">按作用位置选，图只是验证</span>
           </div>
-          <div class="pf-poses">
-            <div class="pf-pose"><div class="pp-img"><div class="ph"></div></div>
-              <div class="pp-t">手碰围巾</div><div class="pp-c">「手摸一下围巾就好」</div></div>
-            <div class="pf-pose"><div class="pp-img"><div class="ph"></div></div>
-              <div class="pp-t">走两步回头</div><div class="pp-c">「先往前走，我数三下你回头」</div></div>
-            <div class="pf-pose"><div class="pp-img"><div class="ph"></div></div>
-              <div class="pp-t">坐椅子前三分之一</div><div class="pp-c">「坐前面一点，人会更挺」</div></div>
-            <div class="pf-pose"><div class="pp-img"><div class="ph"></div></div>
-              <div class="pp-t">扶帽檐</div><div class="pp-c">「手扶着帽子别动」</div></div>
+          <div class="pf-filters">
+            <button class="cue-f on" onclick="cueFilter(this,'all')">全部</button>
+            <button class="cue-f" onclick="cueFilter(this,'下巴')">下巴</button>
+            <button class="cue-f" onclick="cueFilter(this,'眼神')">眼神</button>
+            <button class="cue-f" onclick="cueFilter(this,'手')">手</button>
+            <button class="cue-f" onclick="cueFilter(this,'肩')">肩</button>
+            <button class="cue-f" onclick="cueFilter(this,'重心')">重心</button>
+            <button class="cue-f" onclick="cueFilter(this,'表情')">表情</button>
+          </div>
+
+          <div class="pf-cues">
+            <div class="cue">
+              <div class="cue-top">
+                <span class="cue-part">手</span>
+                <span class="cue-type">任务式</span>
+                <span class="cue-trust ok">多来源共识</span>
+              </div>
+              <div class="cue-q">「手摸一下围巾就好」</div>
+              <div class="cue-why">给她一件事做，手自然有地方放，不用解释「手放哪」。</div>
+              <div class="cue-row">
+                <span class="cr-l">重试</span><span class="cr-v">「摸一下就好，不用抓」</span>
+              </div>
+              <div class="cue-row">
+                <span class="cr-l">过头</span><span class="cr-v">抓得太紧会显得紧张</span>
+              </div>
+            </div>
+
+            <div class="cue">
+              <div class="cue-top">
+                <span class="cue-part">下巴</span>
+                <span class="cue-type">任务式</span>
+                <span class="cue-trust ok">多来源共识</span>
+              </div>
+              <div class="cue-q">「把额头轻轻送向镜头」</div>
+              <div class="cue-why">不强调下巴，下巴会自己找到位置。比「收下巴」有效。</div>
+              <div class="cue-row">
+                <span class="cr-l">重试</span><span class="cr-v">「再往前一点点，不用探脖子」</span>
+              </div>
+              <div class="cue-row">
+                <span class="cr-l">过头</span><span class="cr-v">整个脖子前探，像在憋气</span>
+              </div>
+            </div>
+
+            <div class="cue">
+              <div class="cue-top">
+                <span class="cue-part">眼神</span>
+                <span class="cue-type">任务式</span>
+                <span class="cue-trust ok">多来源共识</span>
+              </div>
+              <div class="cue-q">「现在眼睛看我手指，不用转脸」</div>
+              <div class="cue-why"><b>把脸和眼解耦</b>——一句话管两件事，脸不动只要眼神过来。</div>
+              <div class="cue-row">
+                <span class="cr-l">重试</span><span class="cr-v">「脸别动，就眼睛过来」</span>
+              </div>
+            </div>
+
+            <div class="cue">
+              <div class="cue-top">
+                <span class="cue-part">肩</span>
+                <span class="cue-type">指令式</span>
+                <span class="cue-trust ok">多来源共识</span>
+              </div>
+              <div class="cue-q">「远一点那边的肩膀往后走半步」</div>
+              <div class="cue-why"><b>用参照物代替左右</b>——不说「左肩」，因为她不知道谁的左。</div>
+              <div class="cue-row">
+                <span class="cr-l">别用</span><span class="cr-v">「肩膀放下」——对方不懂怎么放</span>
+              </div>
+            </div>
+
+            <div class="cue warn">
+              <div class="cue-top">
+                <span class="cue-part">表情</span>
+                <span class="cue-type">场景式</span>
+                <span class="cue-trust warn">⚠ 只解情绪</span>
+              </div>
+              <div class="cue-q">「闭眼听十秒风声，睁眼以后看向车窗里面」</div>
+              <div class="cue-why">场景式只解决情绪，<b>不能用来定下巴和手的位置</b>——否则对方自由发挥跑偏。</div>
+              <div class="cue-row">
+                <span class="cr-l">别用</span><span class="cr-v">「孤独一点」——形容词，做不到</span>
+              </div>
+            </div>
+
+            <div class="cue danger">
+              <div class="cue-top">
+                <span class="cue-part">眼神</span>
+                <span class="cue-type">解剖式</span>
+                <span class="cue-trust bad">⚠ 有专业反证</span>
+              </div>
+              <div class="cue-q">squinch（眯起下眼睑）</div>
+              <div class="cue-why">眼科医生指出：<b>人没有单独的肌肉能抬起下眼睑</b>，这个口令在解剖上做不到。</div>
+              <div class="cue-row">
+                <span class="cr-l">替代</span><span class="cr-v">「做完整的真笑，再非常轻微把眼睛睁开」</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1180,7 +1360,7 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
             <b>能离线看</b>，棚拍和民政局经常没信号。
           </div>
           <button class="btn pri" style="width:100%;margin-top:10px"
-            onclick="fake('生成现场模式链接 —— 大图、左右滑、单手能翻、可离线')">打开现场模式</button>
+            onclick="closePreflight();openLive()">打开现场模式</button>
         </div>
 
         <div class="pf-card">
@@ -1211,6 +1391,79 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
       <div class="spacer"></div>
       <button class="btn" onclick="fake('导出成一张纸，打印带走')">导出成纸</button>
       <button class="btn pri" onclick="fake('存为这次拍摄的方案，明天直接从这里进现场模式')">存为这次方案</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 现场模式（手机） ===== -->
+<div class="live" id="liveMode">
+  <div class="live-hd">
+    <span class="lv-back" onclick="closeLive()">‹ 退出</span>
+    <span class="lv-title">现场 · 老年 · 逆光</span>
+    <div class="spacer"></div>
+    <span class="lv-idx" id="lvIdx">1 / 6</span>
+    <span class="lv-black" onclick="fake('一键黑屏 —— 客户凑过来看时用')">暗</span>
+  </div>
+
+  <div class="live-body">
+    <div class="lv-img"><div class="ph"></div></div>
+
+    <div class="lv-cue" id="lvCue">手摸一下围巾就好</div>
+
+    <div class="lv-meta" id="lvMeta">手 · 任务式 · 多来源共识</div>
+  </div>
+
+  <div class="live-acts">
+    <button class="lv-btn" onclick="lvAction('retry')">
+      <span class="lb-t">重试</span>
+      <span class="lb-s" id="lbRetry">摸一下就好，不用抓</span>
+    </button>
+    <button class="lv-btn" onclick="lvAction('over')">
+      <span class="lb-t">过头了</span>
+      <span class="lb-s" id="lbOver">抓得太紧会显得紧张</span>
+    </button>
+    <button class="lv-btn ok" onclick="lvAction('ok')">
+      <span class="lb-t">✓ 好了</span>
+      <span class="lb-s">下一句</span>
+    </button>
+  </div>
+
+  <div class="live-ft">
+    <span class="lf-hint">长按这一句看「为什么」「做过头长什么样」</span>
+    <div class="spacer"></div>
+    <button class="lf-btn" onclick="openWhy()">为什么</button>
+    <button class="lf-btn" onclick="fake('给摄影师看，不是给我看')">给她看</button>
+  </div>
+</div>
+
+<!-- 长按「为什么」 -->
+<div class="why2" id="whySheet">
+  <div class="why2-box">
+    <div class="why2-hd"><h3>为什么这句有效</h3><div class="spacer"></div>
+      <button class="btn" onclick="closeWhy()">✕</button></div>
+    <div class="why2-body">
+      <div class="w2-q">「手摸一下围巾就好」</div>
+      <div class="w2-sec">
+        <div class="w2-t">为什么有效</div>
+        <div class="w2-b">给她一件事做，手自然有地方放。<b>不用解释「手放哪」</b>——
+          她自己会找到位置，而且看起来不刻意。</div>
+      </div>
+      <div class="w2-sec">
+        <div class="w2-t">做过头长什么样</div>
+        <div class="w2-imgs">
+          <div class="w2-img bad"><div class="ph"></div><span>✗ 抓住了围巾，显得紧张</span></div>
+          <div class="w2-img good"><div class="ph"></div><span>✓ 轻轻搭着</span></div>
+        </div>
+      </div>
+      <div class="w2-sec">
+        <div class="w2-t">什么时候别用</div>
+        <div class="w2-b">没有围巾/帽子这类可碰的东西时换个任务，
+          比如「手扶着栏杆」。<b>别硬让她摸衣服</b>。</div>
+      </div>
+      <div class="w2-sec">
+        <div class="w2-t">证据</div>
+        <div class="w2-b">多来源共识（中英文教材与从业者独立提到）。</div>
+      </div>
     </div>
   </div>
 </div>
@@ -1815,6 +2068,60 @@ function pickPref(el,name){
 }
 function openPreflight(){ document.getElementById('preflight').classList.add('on'); }
 function closePreflight(){ document.getElementById('preflight').classList.remove('on'); }
+
+/* 口令筛选 */
+function cueFilter(el,type){
+  el.parentElement.querySelectorAll('.cue-f').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+  document.querySelectorAll('.pf-cues .cue').forEach(c=>{
+    const part=c.querySelector('.cue-part').textContent;
+    c.style.display = (type==='all'||part===type)?'':'none';
+  });
+}
+
+/* ===== 现场模式 ===== */
+const LIVE=[
+  {q:'手摸一下围巾就好',meta:'手 · 任务式 · 多来源共识',
+   retry:'摸一下就好，不用抓', over:'抓得太紧会显得紧张'},
+  {q:'把额头轻轻送向镜头',meta:'下巴 · 任务式 · 多来源共识',
+   retry:'再往前一点点，不用探脖子', over:'整个脖子前探，像在憋气'},
+  {q:'现在眼睛看我手指，不用转脸',meta:'眼神 · 任务式 · 多来源共识',
+   retry:'脸别动，就眼睛过来', over:'整张脸都转过去了'},
+  {q:'远一点那边的肩膀往后走半步',meta:'肩 · 指令式 · 多来源共识',
+   retry:'往后退一点就行', over:'退太多，人会僵'},
+  {q:'往前走两步，我数三下你回头',meta:'全身 · 计数式 · 多来源共识',
+   retry:'慢一点，不用急着回头', over:'回头看太猛，脖子会扭'},
+  {q:'现在只是试一下，别管表情',meta:'全脸 · 降低压力 · 多来源共识',
+   retry:'真的只是试一下，我不拍', over:'——'}
+];
+let lvCur=0;
+function openLive(){
+  lvCur=0; renderLive();
+  document.getElementById('liveMode').classList.add('on');
+}
+function closeLive(){ document.getElementById('liveMode').classList.remove('on'); }
+function renderLive(){
+  const c=LIVE[lvCur];
+  document.getElementById('lvCue').textContent=c.q;
+  document.getElementById('lvMeta').textContent=c.meta;
+  document.getElementById('lbRetry').textContent=c.retry;
+  document.getElementById('lbOver').textContent=c.over;
+  document.getElementById('lvIdx').textContent=(lvCur+1)+' / '+LIVE.length;
+}
+function lvAction(k){
+  if(k==='ok'){
+    lvCur=(lvCur+1)%LIVE.length;
+    renderLive();
+    fake('✓ 记下来了 —— 下一句');
+  } else if(k==='retry'){
+    fake('换一种说法：'+LIVE[lvCur].retry);
+  } else {
+    fake('做过头了：'+LIVE[lvCur].over);
+  }
+}
+function openWhy(){ document.getElementById('whySheet').classList.add('on'); }
+function closeWhy(){ document.getElementById('whySheet').classList.remove('on'); }
+
 function showKeys(){ document.getElementById('keysSheet').classList.add('on'); }function hideKeys(){ document.getElementById('keysSheet').classList.remove('on'); }
 function hideDetail(){ document.getElementById('dt').classList.remove('on'); }
 function showCompare(){ openCmp('compare'); }
