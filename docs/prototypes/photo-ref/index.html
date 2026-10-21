@@ -397,6 +397,71 @@ input{font:inherit}
   margin:0 auto 48px;max-width:1552px}
 .rf-note b{color:var(--photo)}
 
+/* ===== 大图 + 胶片条 + 快捷键 ===== */
+.dt-wrap{width:min(1400px,97vw);height:min(940px,95vh);display:flex;flex-direction:column;
+  background:var(--bgElev);border:1px solid var(--bd3);border-radius:var(--radiusLG);
+  overflow:hidden;box-shadow:var(--shadowModal)}
+.dt-wrap .dt-box{flex:1;border:none;border-radius:0;box-shadow:none;width:100%;height:auto;min-height:0}
+.dt-hud{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);
+  display:flex;gap:7px;align-items:center;flex-wrap:wrap;justify-content:center;
+  padding:6px 12px;border-radius:20px;background:rgba(0,0,0,.55);backdrop-filter:blur(8px)}
+.hud-i{font-size:var(--fs-xs);color:rgba(255,255,255,.72);font-family:var(--fm);white-space:nowrap}
+.hud-k{font-size:var(--fs-xs);color:var(--pri);cursor:pointer;padding:2px 8px;border-radius:10px;
+  background:rgba(34,211,238,.15)}
+.hud-k:hover{background:rgba(34,211,238,.28)}
+.dt-idx{font-size:var(--fs-xs);color:var(--tx3);font-family:var(--fm);margin-left:4px}
+#dtPh{transition:.22s}
+#dtPh.swap{opacity:0;transform:scale(.97)}
+
+.film{border-top:1px solid var(--bd2);background:var(--bgCard);
+  display:flex;flex-direction:column;flex-shrink:0;max-height:150px;transition:.22s}
+.film.hide{max-height:0;overflow:hidden;border-top:none}
+.film-hd{display:flex;align-items:center;gap:9px;padding:8px 14px;border-bottom:1px solid var(--bd)}
+.film-t{font-size:var(--fs-xs);color:var(--tx2);font-family:var(--fm);text-transform:uppercase;letter-spacing:.05em}
+.film-s{font-size:var(--fs-xs);color:var(--tx3)}
+.film-act{font-size:var(--fs-xs);padding:4px 10px;border-radius:5px;border:1px solid var(--bd2);
+  color:var(--tx3);transition:.15s}
+.film-act:hover{border-color:var(--pri);color:var(--tx1)}
+.film-strip{display:flex;gap:7px;padding:9px 14px;overflow-x:auto;overflow-y:hidden}
+.film-strip::-webkit-scrollbar{height:6px}
+.film-strip::-webkit-scrollbar-thumb{background:var(--bd3);border-radius:3px}
+.fm{width:74px;height:52px;flex-shrink:0;border-radius:6px;border:2px solid transparent;
+  background:linear-gradient(150deg,#2a2340,#141020);display:flex;align-items:center;
+  justify-content:center;cursor:pointer;transition:.16s;position:relative;overflow:hidden}
+.fm .ph{width:34%;height:58%;border-radius:40% 40% 18% 18%/14% 14% 7% 7%;
+  background:linear-gradient(175deg,#e8d5bd,#a8825c)}
+.fm:hover{border-color:var(--bd3)}
+.fm.on{border-color:var(--pri);box-shadow:0 0 0 2px color-mix(in srgb,var(--pri) 30%,transparent)}
+.fm.more{width:auto;padding:0 13px;font-size:var(--fs-xs);color:var(--tx3);
+  background:var(--bgInput);border:1px dashed var(--bd2)}
+.fm .fm-pick{position:absolute;top:2px;right:3px;font-size:var(--fs-xs);color:var(--ok)}
+
+.keys{position:fixed;inset:0;background:rgba(5,5,10,.9);z-index:90;display:none;
+  align-items:center;justify-content:center;backdrop-filter:blur(8px)}
+.keys.on{display:flex}
+.keys-box{width:min(760px,94vw);max-height:90vh;background:var(--bgElev);
+  border:1px solid var(--bd3);border-radius:var(--radiusLG);overflow:hidden;
+  box-shadow:var(--shadowModal);display:flex;flex-direction:column}
+.keys-hd{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--bd2)}
+.keys-hd h3{font-size:var(--fs-h4)}
+.keys-sub{font-size:var(--fs-xs);color:var(--tx3)}
+.keys-body{display:grid;grid-template-columns:1fr 1fr;gap:22px;padding:18px 20px;overflow:auto}
+.keys-grp{font-size:var(--fs-xs);color:var(--tx3);font-family:var(--fm);text-transform:uppercase;
+  letter-spacing:.06em;margin:14px 0 8px}
+.keys-grp:first-child{margin-top:0}
+.kr{display:flex;align-items:center;gap:6px;padding:5px 0;font-size:var(--fs-sm);color:var(--tx2)}
+.kr span{margin-left:4px;color:var(--tx2)}
+.kr.off span{color:var(--tx3)}
+.kr.off kbd{opacity:.4}
+kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-align:center;
+  background:var(--bgInput);border:1px solid var(--bd2);border-bottom-width:2px;
+  font-family:var(--fm);font-size:var(--fs-xs);color:var(--tx1)}
+.keys-note{margin-top:10px;padding:11px 13px;border-radius:var(--radiusSM);
+  background:color-mix(in srgb,var(--photo) 9%,transparent);
+  border:1px solid color-mix(in srgb,var(--photo) 26%,transparent);
+  font-size:var(--fs-sm);color:var(--tx2);line-height:1.65}
+.keys-note b{color:var(--photo)}
+
 /* 智能体侧栏 */
 .ag-hd{padding:15px 18px;border-bottom:1px solid var(--bd2);display:flex;align-items:center;gap:10px}
 .ag-hd .av{width:30px;height:30px;border-radius:var(--radiusSM);background:var(--grad);
@@ -766,12 +831,24 @@ input{font:inherit}
 
 <!-- 大图详情 -->
 <div class="detail" id="dt">
+  <div class="dt-wrap">
   <div class="dt-box">
     <div class="dt-img">
-      <button class="nav l">‹</button><div class="ph"></div><button class="nav r">›</button>
+      <button class="nav l" onclick="stepPhoto(-1)">‹</button>
+      <div class="ph" id="dtPh"></div>
+      <button class="nav r" onclick="stepPhoto(1)">›</button>
+      <div class="dt-hud">
+        <span class="hud-i">←/→ 切图</span>
+        <span class="hud-i">空格 放大</span>
+        <span class="hud-i">F6 胶片条</span>
+        <span class="hud-i">Shift+P 收藏并下一张</span>
+        <span class="hud-k" onclick="showKeys()">? 全部快捷键</span>
+      </div>
     </div>
     <div class="dt-side">
-      <div class="dt-hd"><h3 id="dtTitle">参考图</h3><div class="spacer"></div>
+      <div class="dt-hd"><h3 id="dtTitle">参考图</h3>
+        <span class="dt-idx" id="dtIdx">1 / 6</span>
+        <div class="spacer"></div>
         <button class="btn" onclick="hideDetail()">✕</button></div>
       <div class="dt-body">
         <div class="sec">
@@ -841,6 +918,59 @@ input{font:inherit}
         <div class="spacer"></div>
         <button class="btn" onclick="hideDetail();openCmp('compare')">找参考对比</button>
         <button class="btn pri" onclick="hideDetail();openCmp('analyze')">分析这张</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部胶片条：只渲染当前图前后几张 -->
+  <div class="film" id="dtFilm">
+    <div class="film-hd">
+      <span class="film-t">胶片条</span>
+      <span class="film-s">只加载当前前后 5 张</span>
+      <div class="spacer"></div>
+      <button class="film-act" onclick="markPick()">P 收藏</button>
+      <button class="film-act" onclick="fake('X 淘汰')">X 淘汰</button>
+      <button class="film-act" onclick="toggleFilm()">F6 收起</button>
+    </div>
+    <div class="film-strip" id="filmStrip"></div>
+  </div>
+  </div>
+</div>
+
+<!-- 快捷键帮助 -->
+<div class="keys" id="keysSheet">
+  <div class="keys-box">
+    <div class="keys-hd"><h3>快捷键</h3>
+      <span class="keys-sub">照 Lightroom / Photo Mechanic 的事实标准，不发明新键</span>
+      <div class="spacer"></div>
+      <button class="btn" onclick="hideKeys()">✕</button></div>
+    <div class="keys-body">
+      <div class="keys-col">
+        <div class="keys-grp">翻页</div>
+        <div class="kr"><kbd>←</kbd><kbd>→</kbd><span>上一张 / 下一张</span></div>
+        <div class="kr"><kbd>空格</kbd><span>放大 / 还原</span></div>
+        <div class="kr"><kbd>F6</kbd><span>显隐胶片条</span></div>
+        <div class="kr"><kbd>F8</kbd><span>显隐右侧参数面板</span></div>
+        <div class="kr"><kbd>Esc</kbd><span>关闭大图</span></div>
+        <div class="keys-grp">标记</div>
+        <div class="kr"><kbd>1</kbd>–<kbd>5</kbd><span>打星</span></div>
+        <div class="kr"><kbd>0</kbd><span>清除星</span></div>
+        <div class="kr"><kbd>P</kbd><span>收藏</span></div>
+        <div class="kr"><kbd>X</kbd><span>淘汰</span></div>
+        <div class="kr"><kbd>6</kbd>–<kbd>9</kbd><span>颜色标签</span></div>
+      </div>
+      <div class="keys-col">
+        <div class="keys-grp">⭐ 标记并自动跳下一张</div>
+        <div class="kr"><kbd>Shift</kbd>+<kbd>P</kbd><span>收藏并下一张</span></div>
+        <div class="kr"><kbd>Shift</kbd>+<kbd>X</kbd><span>淘汰并下一张</span></div>
+        <div class="kr"><kbd>Shift</kbd>+<kbd>1</kbd>–<kbd>5</kbd><span>打星并下一张</span></div>
+        <div class="keys-note">
+          这组组合键是摄影师觉得「快」的关键 —— <b>把「标记」和「翻页」合成一个动作</b>，
+          一晚上少按几千次方向键。
+        </div>
+        <div class="keys-grp">⚠️ 不这样用</div>
+        <div class="kr off"><kbd>↑</kbd><kbd>↓</kbd><span>不用来切图（留给滚动胶片条）</span></div>
+        <div class="kr off"><kbd>J</kbd><kbd>K</kbd><span>不用来翻页（Lightroom 里它们另有含义）</span></div>
       </div>
     </div>
   </div>
@@ -1127,11 +1257,54 @@ const STEAL={
   ref5:'前景用纱做一层雾，人物只占三分之一',
   ref6:'一次只提醒一个动作，别同时说三件事'
 };
+const ORDER=['ref1','ref2','ref3','ref4','ref5','ref6'];
+let dtCur=0, picked={};
 function showDetail(id){
+  dtCur = Math.max(0, ORDER.indexOf(id));
   document.getElementById('dtSteal').textContent=STEAL[id]||'（还没写）';
   document.getElementById('dtTitle').textContent = id==='ref4' ? '大师作品' : '参考图';
   document.getElementById('dt').classList.add('on');
+  renderFilm();
 }
+function stepPhoto(d){
+  dtCur = Math.max(0, Math.min(ORDER.length-1, dtCur+d));
+  const ph=document.getElementById('dtPh');
+  ph.classList.add('swap');
+  setTimeout(()=>{
+    const id=ORDER[dtCur];
+    document.getElementById('dtSteal').textContent=STEAL[id]||'（还没写）';
+    document.getElementById('dtTitle').textContent = id==='ref4'?'大师作品':'参考图';
+    renderFilm();
+    ph.classList.remove('swap');
+  },110);
+}
+function renderFilm(){
+  const strip=document.getElementById('filmStrip');
+  document.getElementById('dtIdx').textContent=(dtCur+1)+' / '+ORDER.length;
+  // 只渲染前后各 3 张（PM 的做法：只加载附近窗口）
+  const from=Math.max(0,dtCur-3), to=Math.min(ORDER.length,dtCur+4);
+  let html='';
+  if(from>0) html+=`<div class="fm more" onclick="stepPhoto(${-(dtCur)})">← 前 ${from} 张</div>`;
+  for(let i=from;i<to;i++){
+    html+=`<div class="fm ${i===dtCur?'on':''}" onclick="jumpPhoto(${i})">
+      <div class="ph"></div>
+      ${picked[ORDER[i]]?'<span class="fm-pick">★</span>':''}</div>`;
+  }
+  if(to<ORDER.length) html+=`<div class="fm more" onclick="stepPhoto(${ORDER.length-1-dtCur})">后 ${ORDER.length-to} 张 →</div>`;
+  strip.innerHTML=html;
+  const on=strip.querySelector('.fm.on');
+  if(on) on.scrollIntoView({block:'nearest',inline:'center',behavior:'smooth'});
+}
+function jumpPhoto(i){ const d=i-dtCur; if(d!==0) stepPhoto(d); }
+function toggleFilm(){ document.getElementById('dtFilm').classList.toggle('hide'); }
+function markPick(){
+  const id=ORDER[dtCur];
+  picked[id]=!picked[id];
+  renderFilm();
+  fake(picked[id]?'★ 已收藏':'取消收藏');
+}
+function showKeys(){ document.getElementById('keysSheet').classList.add('on'); }
+function hideKeys(){ document.getElementById('keysSheet').classList.remove('on'); }
 function hideDetail(){ document.getElementById('dt').classList.remove('on'); }
 function showCompare(){ openCmp('compare'); }
 function hideCompare(){ document.getElementById('cmp').classList.remove('on'); }
@@ -1226,7 +1399,34 @@ function cmpMode(el,ok){
   el.classList.add('on');
 }
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){ hideDetail(); hideCompare(); }
+  const dtOpen = document.getElementById('dt').classList.contains('on');
+  const cmpOpen = document.getElementById('cmp').classList.contains('on');
+  const keysOpen = document.getElementById('keysSheet').classList.contains('on');
+
+  if(e.key==='Escape'){
+    if(keysOpen){ hideKeys(); return; }
+    hideDetail(); hideCompare(); return;
+  }
+  if(!dtOpen || cmpOpen) return;
+
+  // 翻页：←/→（事实标准，不是上下）
+  if(e.key==='ArrowLeft'){ e.preventDefault(); stepPhoto(-1); return; }
+  if(e.key==='ArrowRight'){ e.preventDefault(); stepPhoto(1); return; }
+  // 胶片条显隐
+  if(e.key==='F6'){ e.preventDefault(); toggleFilm(); return; }
+  // 标记
+  if(e.key==='p'||e.key==='P'){
+    e.preventDefault();
+    if(e.shiftKey){ markPick(); setTimeout(()=>stepPhoto(1),160); }
+    else markPick();
+    return;
+  }
+  if(e.key==='x'||e.key==='X'){
+    e.preventDefault(); fake('X 淘汰'+(e.shiftKey?' 并跳下一张':'')); return;
+  }
+  if(/^[1-5]$/.test(e.key)){ fake('打 '+e.key+' 星'+(e.shiftKey?' 并跳下一张':'')); return; }
+  if(e.key==='0'){ fake('清除星级'); return; }
+  if(e.key==='?'){ e.preventDefault(); showKeys(); return; }
 });
 </script>
 </body>
