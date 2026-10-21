@@ -508,6 +508,154 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
   font-size:var(--fs-sm);color:var(--tx2);line-height:1.65}
 .keys-note b{color:var(--photo)}
 
+﻿/* ===== 策划页 · 极简重做（Premium Utilitarian Minimalism）===== */
+.pz{max-width:1080px;margin:0 auto;padding:48px 32px 96px}
+
+/* 头部 */
+.pz-hd{display:flex;align-items:flex-end;gap:24px;margin-bottom:40px;flex-wrap:wrap}
+.pz-hd-l{flex:1;min-width:280px}
+.pz-eyebrow{font-size:13px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--tx3);font-family:var(--fm);margin-bottom:10px}
+.pz-title{font-size:38px;font-weight:600;letter-spacing:-.03em;line-height:1.15;
+  color:var(--tx1);margin-bottom:12px}
+.pz-title-sub{font-size:20px;font-weight:400;color:var(--tx3);margin-left:8px;
+  letter-spacing:0}
+.pz-meta{display:flex;align-items:center;gap:9px;font-size:15px;color:var(--tx3)}
+.pz-meta i{font-style:normal;color:var(--bd3)}
+.pz-light{color:var(--photo);font-family:var(--fm)}
+.pz-hd-r{display:flex;gap:9px}
+.pz-ghost{padding:9px 17px;border-radius:6px;border:1px solid var(--bd2);
+  background:transparent;color:var(--tx2);font-size:15px;transition:.16s}
+.pz-ghost:hover{border-color:var(--bd3);color:var(--tx1)}
+.pz-primary{padding:9px 20px;border-radius:6px;background:var(--tx1);color:var(--bgPage);
+  border:none;font-size:15px;font-weight:600;transition:.16s}
+.pz-primary:hover{background:var(--tx2)}
+.pz-primary:active{transform:scale(.98)}
+
+/* Tab */
+.pz-tabs{display:flex;gap:2px;border-bottom:1px solid var(--bd2);margin-bottom:36px}
+.pz-tab{padding:13px 20px;font-size:16px;color:var(--tx3);position:relative;
+  transition:.16s;display:flex;align-items:center;gap:7px;border:none;background:none}
+.pz-tab:hover{color:var(--tx1)}
+.pz-tab.on{color:var(--tx1);font-weight:600}
+.pz-tab.on::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:2px;
+  background:var(--tx1)}
+.pz-tab em{font-style:normal;font-size:12px;padding:1px 7px;border-radius:9px;
+  background:var(--bd2);color:var(--tx3);font-family:var(--fm)}
+.pz-tab.on em{background:color-mix(in srgb,var(--tx1) 15%,transparent);color:var(--tx1)}
+
+/* 面板 */
+.pz-pane{display:none;animation:pzIn .3s cubic-bezier(.16,1,.3,1)}
+.pz-pane.on{display:block}
+@keyframes pzIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* lead 说明 */
+.pz-lead{margin-bottom:32px;max-width:620px}
+.pz-lead-t{font-size:19px;font-weight:600;color:var(--tx1);margin-bottom:9px;
+  letter-spacing:-.01em}
+.pz-lead-b{font-size:15px;color:var(--tx2);line-height:1.7}
+.pz-lead-b b{color:var(--tx1);font-weight:600}
+.pz-link{margin-top:12px;font-size:15px;color:var(--pri);padding:0;
+  border:none;background:none;transition:.16s}
+.pz-link:hover{opacity:.75}
+
+/* 方案卡 */
+.pz-plans{display:flex;flex-direction:column;gap:1px;background:var(--bd2);
+  border:1px solid var(--bd2);border-radius:10px;overflow:hidden}
+.pz-plan{background:var(--bgCard);padding:26px 28px;cursor:pointer;
+  transition:.18s;border-left:3px solid transparent}
+.pz-plan:hover{background:var(--bgHover)}
+.pz-plan.on{border-left-color:var(--photo);
+  background:color-mix(in srgb,var(--photo) 5%,var(--bgCard))}
+.pz-plan-off{cursor:default;opacity:.55}
+.pz-plan-off:hover{background:var(--bgCard)}
+.pz-plan-hd{display:flex;align-items:flex-start;gap:16px;margin-bottom:12px}
+.pz-plan-name{font-size:20px;font-weight:600;color:var(--tx1);letter-spacing:-.01em;
+  margin-bottom:5px}
+.pz-plan-time{font-size:15px;color:var(--photo);font-family:var(--fm);font-weight:600}
+.pz-plan-off .pz-plan-time{color:var(--tx3)}
+.pz-plan-tag{margin-left:auto;font-size:12px;letter-spacing:.05em;text-transform:uppercase;
+  padding:4px 11px;border-radius:999px;background:color-mix(in srgb,var(--ok) 14%,transparent);
+  color:var(--ok);font-family:var(--fm);flex-shrink:0}
+.pz-plan-tag.off{background:var(--bd2);color:var(--tx3)}
+.pz-plan-where{font-size:16px;color:var(--tx1);margin-bottom:9px;line-height:1.6}
+.pz-plan-where b{color:var(--photo);font-weight:600}
+.pz-plan-why{font-size:15px;color:var(--tx2);line-height:1.7;margin-bottom:11px}
+.pz-plan-why b{color:var(--tx1)}
+.pz-plan-risk{font-size:14px;color:var(--warn);line-height:1.6}
+.pz-plan-off .pz-plan-risk{color:var(--tx3)}
+
+/* 选中后的操作条 */
+.pz-pickbar{display:flex;align-items:center;gap:16px;margin-top:24px;padding:18px 22px;
+  border-radius:8px;background:color-mix(in srgb,var(--photo) 8%,transparent);
+  border:1px solid color-mix(in srgb,var(--photo) 24%,transparent)}
+.pz-pickbar-t{flex:1;font-size:15px;color:var(--tx2)}
+.pz-pickbar-t b{color:var(--photo);font-weight:600}
+
+/* 元素网格 */
+.pz-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+.pz-card{background:var(--bgCard);border:1px solid var(--bd2);border-radius:10px;
+  padding:22px 24px;transition:.18s}
+.pz-card:hover{border-color:var(--bd3)}
+.pz-card-h{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.pz-card-n{font-size:16px;font-weight:600;color:var(--tx1);letter-spacing:-.01em}
+.pz-info{margin-left:auto;width:22px;height:22px;border-radius:50%;
+  border:1px solid var(--bd2);color:var(--tx3);font-size:12px;font-family:var(--fm);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:.16s}
+.pz-info:hover{border-color:var(--pri);color:var(--pri)}
+.pz-info.on{background:var(--pri);border-color:var(--pri);color:var(--bgPage)}
+.pz-card-b{display:flex;gap:7px;flex-wrap:wrap;min-height:28px;align-items:flex-start}
+.pz-chip{font-size:14px;padding:6px 13px;border-radius:7px;background:var(--bgInput);
+  color:var(--tx2);border:1px solid transparent;line-height:1.35}
+.pz-chip.on{background:color-mix(in srgb,var(--photo) 13%,transparent);
+  border-color:color-mix(in srgb,var(--photo) 32%,transparent);color:var(--photo)}
+.pz-chip.no{color:var(--err);text-decoration:line-through;opacity:.75}
+.pz-chip.none{color:var(--tx3);font-style:italic;background:transparent;
+  border:1px dashed var(--bd2)}
+.pz-note{display:none;margin-top:16px;padding-top:15px;border-top:1px solid var(--bd);
+  font-size:14px;color:var(--tx2);line-height:1.7}
+.pz-note b{color:var(--photo)}
+.pz-note.on{display:block;animation:pzIn .22s ease}
+
+/* 分镜 */
+.pz-shots{display:flex;flex-direction:column;gap:1px;background:var(--bd2);
+  border:1px solid var(--bd2);border-radius:10px;overflow:hidden}
+.pz-empty{padding:64px 24px;text-align:center;color:var(--tx3);font-size:15px;
+  background:var(--bgCard)}
+.pz-shot{background:var(--bgCard);padding:26px 28px}
+.pz-shot-h{display:flex;align-items:center;gap:14px;margin-bottom:16px}
+.pz-shot-n{font-size:13px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--photo);font-family:var(--fm);font-weight:600}
+.pz-shot-frame{font-size:14px;padding:4px 11px;border-radius:6px;
+  background:color-mix(in srgb,var(--pri) 12%,transparent);color:var(--pri)}
+.pz-shot-combo{margin-left:auto;font-size:13px;color:var(--tx3);font-family:var(--fm)}
+.pz-shot-row{display:flex;gap:16px;padding:9px 0;font-size:15px;align-items:flex-start}
+.pz-shot-k{color:var(--tx3);font-size:13px;flex-shrink:0;min-width:78px;padding-top:2px}
+.pz-shot-v{flex:1;color:var(--tx2);line-height:1.65}
+.pz-shot-v b{color:var(--tx1)}
+.pz-shot-v.warn{color:var(--warn)}
+.pz-shot-cue{margin-top:14px;padding:16px 20px;border-radius:8px;
+  background:color-mix(in srgb,var(--photo) 9%,transparent);
+  border:1px solid color-mix(in srgb,var(--photo) 26%,transparent)}
+.pz-shot-cue-l{font-size:12px;color:var(--photo);font-family:var(--fm);
+  letter-spacing:.06em;text-transform:uppercase;margin-bottom:7px}
+.pz-shot-cue-t{font-size:22px;font-weight:600;color:var(--tx1);letter-spacing:-.01em}
+.pz-shot-cue-h{font-size:13px;color:var(--tx3);margin-top:6px;font-family:var(--fm)}
+
+/* 必带 */
+.pz-kit{display:flex;flex-direction:column;gap:32px;max-width:560px}
+.pz-kg-h{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--tx3);
+  font-family:var(--fm);margin-bottom:12px}
+.pz-kg-h.must{color:var(--err)}
+.pz-ki{display:flex;align-items:center;gap:13px;padding:14px 0;
+  border-bottom:1px solid var(--bd);font-size:16px;color:var(--tx1);cursor:pointer}
+.pz-ki:last-child{border-bottom:none}
+.pz-ki input{width:19px;height:19px;accent-color:var(--photo);flex-shrink:0}
+.pz-ki span{flex:1}
+.pz-ki em{font-style:normal;font-size:13px;color:var(--tx3);font-family:var(--fm)}
+.pz-ki.must em{color:var(--err)}
+.pz-ki input:checked + span{color:var(--tx3);text-decoration:line-through}
+
 /* ===== 口令卡 ===== */
 .pf-hint{font-size:var(--fs-xs);color:var(--tx3);text-transform:none;letter-spacing:0;
   font-family:var(--ff)}
@@ -1530,294 +1678,154 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 
 </div><!-- /pageRef -->
 
-<!-- ===== 脚本策划页面 ===== -->
+﻿<!-- ===== 脚本策划页面（极简重做） ===== -->
 <div id="pagePlan" style="display:none">
-  <div class="plan-wrap">
+  <div class="pz">
 
-    <!-- 左：项目 + 一句话 → 方向 -->
-    <div class="plan-left">
-      <div class="pl-hd"><span class="pl-t">项目</span><div class="spacer"></div>
-        <button class="pl-add" onclick="window.open('onsite.html','_blank')"
-          style="font-size:var(--fs-sm);padding:4px 10px;border-radius:5px;
-          background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)">在现场 ↗</button>
-        <button class="pl-add" onclick="fake('新建项目')">＋</button></div>
-      <div class="pl-proj on">
-        <div class="pl-pname">11月 · 秋天颐和园 · 小林</div>
-        <div class="pl-pmeta">待定 · 颐和园</div>
-      </div>
-
-      <!-- ⭐ 这次拍谁 -->
-      <div class="pl-hd" style="margin-top:16px"><span class="pl-t">这次拍谁</span>
-        <div class="spacer"></div>
-        <button class="pl-add" onclick="window.open('model-profile.html','_blank')">档案 ↗</button>
-      </div>
-      <div class="who">
-        <button class="who-btn on" onclick="pickWho(this,'xiaolin')">
-          <span class="wh-av">林</span>
-          <span class="wh-n">小林</span>
-          <span class="wh-c">8次</span>
-        </button>
-        <button class="who-btn" onclick="pickWho(this,'a-yun')">
-          <span class="wh-av">芸</span>
-          <span class="wh-n">阿芸</span>
-          <span class="wh-c">3次</span>
-        </button>
-        <button class="who-btn" onclick="pickWho(this,'new')">
-          <span class="wh-av">＋</span>
-          <span class="wh-n">新客户</span>
-        </button>
-      </div>
-
-      <!-- 选人后带出的信息 -->
-      <div class="who-card" id="whoCard">
-        <div class="wc-h">
-          <span class="wc-t">怎么拍她</span>
-          <span class="wc-badge">本色出演</span>
-        </div>
-        <div class="wc-b">
-          <b>别让她笑。</b>给她事情做，让她自己进入状态——
-          她发呆、走路、整理头发的时候最好看。
-        </div>
-        <div class="wc-cues">
-          <div class="wc-cue ok">「你就当我不在，做你自己的事」<span>5/6次</span></div>
-          <div class="wc-cue bad">❌「笑一个」「放松一点」<span>已失败4次</span></div>
-        </div>
-        <div class="wc-warn">
-          <b>两个雷区：</b>一次只给一个指令；第 40 分钟她会累，安排坐下。
+    <header class="pz-hd">
+      <div class="pz-hd-l">
+        <div class="pz-eyebrow">拍摄计划</div>
+        <h1 class="pz-title">秋天颐和园<span class="pz-title-sub">小林</span></h1>
+        <div class="pz-meta">
+          <span>11月待定</span><i>·</i><span>颐和园</span><i>·</i>
+          <span class="pz-light" id="pzLight">待定</span>
         </div>
       </div>
+      <div class="pz-hd-r">
+        <button class="pz-ghost" onclick="window.open('model-profile.html','_blank')">模特档案</button>
+        <button class="pz-ghost" onclick="window.open('light-api.html','_blank')">光线</button>
+        <button class="pz-primary" onclick="window.open('onsite.html','_blank')">在现场</button>
+      </div>
+    </header>
 
-      <div class="pl-hd" style="margin-top:16px"><span class="pl-t">你只记得这些</span></div>
-      <div class="vague-box">
-        <div class="vb-q">「秋天去颐和园和朋友拍照」</div>
-        <button class="vb-btn" onclick="openVague()">AI 帮我拆方向</button>
+    <nav class="pz-tabs">
+      <button class="pz-tab on" onclick="pzTab(this,'plan')">方案</button>
+      <button class="pz-tab" onclick="pzTab(this,'els')">元素<em>8</em></button>
+      <button class="pz-tab" onclick="pzTab(this,'shots')">分镜<em id="pzShotN">0</em></button>
+      <button class="pz-tab" onclick="pzTab(this,'kit')">必带<em>8</em></button>
+    </nav>
+
+    <section class="pz-pane on" id="pz-plan">
+      <div class="pz-lead">
+        <p class="pz-lead-t">这次怎么拍</p>
+        <p class="pz-lead-b">你只说了「秋天去颐和园和朋友拍照」。基于<b>太阳方位</b>和<b>地形实测</b>，下面三个方案能成立——每个都标了具体时间和站位。</p>
+        <button class="pz-link" onclick="openVague()">看是怎么算出来的 →</button>
       </div>
 
-      <div class="pl-hd" style="margin-top:16px"><span class="pl-t">已有的方向</span></div>
-      <div class="dirs">
-        <div class="dir on" onclick="pickDir(this,'秋日暖调')">
-          <div class="d-name">秋日暖调</div>
-          <div class="d-meta">银杏 + 侧逆光 + 浅色大衣</div>
-        </div>
-        <div class="dir" onclick="pickDir(this,'清冷疏离')">
-          <div class="d-name">清冷疏离</div>
-          <div class="d-meta">阴天 + 稀疏人群 + 深色</div>
-        </div>
-        <div class="dir" onclick="pickDir(this,'朋友感')">
-          <div class="d-name">朋友感 / 松弛</div>
-          <div class="d-meta">抓拍 + 互动 + 少看镜头</div>
-        </div>
-        <button class="dir-add" onclick="openVague()">＋ 再来一个方向</button>
-      </div>
-    </div>
+      <div class="pz-plans">
+        <article class="pz-plan" data-plan="A" onclick="pickPlan2('A',this)">
+          <div class="pz-plan-hd">
+            <div>
+              <div class="pz-plan-name">十七孔桥逆光</div>
+              <div class="pz-plan-time" id="pzPlanATime">—</div>
+            </div>
+            <span class="pz-plan-tag">推荐</span>
+          </div>
+          <p class="pz-plan-where">站桥的<b>东南侧</b>，朝西北拍</p>
+          <p class="pz-plan-why">太阳 16:40 在 245° 西南，你站东南朝西北，光从湖面逆着过来。</p>
+          <div class="pz-plan-risk">光比极大，脸容易全黑 · 桥上人多要占位</div>
+        </article>
 
-    <!-- 中：元素清单（主体） -->
-    <div class="plan-mid">
-      <div class="plan-mid-hd">
-        <span class="pm-title">元素清单</span>
-        <span class="pm-sub">这组片子由这些东西组成</span>
-        <div class="spacer"></div>
-        <button class="btn" onclick="fake('从主题再拆一轮元素')">AI 补元素</button>
-      </div>
+        <article class="pz-plan" data-plan="B" onclick="pickPlan2('B',this)">
+          <div class="pz-plan-hd">
+            <div>
+              <div class="pz-plan-name">长廊侧逆光</div>
+              <div class="pz-plan-time" id="pzPlanBTime">—</div>
+            </div>
+          </div>
+          <p class="pz-plan-where">长廊<b>南侧</b>，人站柱子之间</p>
+          <p class="pz-plan-why">长廊朝南，下午光斜射进柱间，柱子在地上拉出长影子。</p>
+          <div class="pz-plan-risk">光比大，脸容易全黑 · 必须带反光板</div>
+        </article>
 
-      <div class="els">
-        <div class="el el-scenes">
-          <div class="el-hd">
-            <span class="el-n">场景</span><span class="el-d">在哪拍</span>
-            <div class="spacer"></div>
-            <button class="el-add" onclick="fake('从场景词表选')">＋</button>
+        <article class="pz-plan pz-plan-off">
+          <div class="pz-plan-hd">
+            <div>
+              <div class="pz-plan-name">后山树林透光</div>
+              <div class="pz-plan-time">不成立</div>
+            </div>
+            <span class="pz-plan-tag off">排除</span>
           </div>
-          <div class="el-b">
-            <span class="el-c on">颐和园 · 十七孔桥</span>
-            <span class="el-c">长廊</span>
-            <span class="el-c">后山（人少）</span>
-            <span class="el-c">昆明湖边</span>
-          </div>
-        </div>
-
-        <div class="el el-clothes">
-          <div class="el-hd">
-            <span class="el-n">服装穿搭</span><span class="el-d">由场景和主题决定</span>
-            <div class="spacer"></div>
-            <button class="el-add" onclick="fake('加服装元素')">＋</button>
-          </div>
-          <div class="el-b">
-            <span class="el-c on">浅色毛呢大衣</span>
-            <span class="el-c on">米色围巾</span>
-            <span class="el-c">驼色靴子</span>
-            <span class="el-c bad">避开黄/绿（和银杏撞）</span>
-          </div>
-          <div class="el-note">
-            <b>元素要自洽。</b>银杏是金黄，服装再穿黄或绿，人就陷进背景里分不出来了。
-            浅色能在金黄背景上跳出来。
-          </div>
-        </div>
-
-        <div class="el el-times">
-          <div class="el-hd">
-            <span class="el-n">时段</span><span class="el-d">几点去（由太阳算出）</span>
-            <div class="spacer"></div>
-            <button class="el-add" onclick="fake('改时段')">＋</button>
-          </div>
-          <div class="el-b">
-            <span class="el-c on">等选定方案</span>
-          </div>
-          <div class="el-note" id="timeNote">
-            <b>时段是算出来的，不是拍的脑袋。</b>
-            改日期会跟着变。选定方案后这里会填上具体的可拍窗口。
-          </div>
-        </div>
-
-        <div class="el el-lights">
-          <div class="el-hd">
-            <span class="el-n">光线</span><span class="el-d">什么方向的光</span>
-            <div class="spacer"></div>
-            <button class="el-add" onclick="fake('加光线元素')">＋</button>
-          </div>
-          <div class="el-b">
-            <span class="el-c on">侧逆光（下午 4 点）</span>
-            <span class="el-c">逆光勾轮廓</span>
-            <span class="el-c bad">正午顶光（别去）</span>
-          </div>
-          <div class="el-note">
-            <b>秋天的光很短。</b>下午 4 点后开始金黄，5 点基本就没了，实际能拍就一小时。
-          </div>
-        </div>
-
-        <div class="el el-env">
-          <div class="el-hd">
-            <span class="el-n">环境元素</span><span class="el-d">画面里会出现的</span>
-            <div class="spacer"></div>
-            <button class="el-add" onclick="fake('加环境元素')">＋</button>
-          </div>
-          <div class="el-b">
-            <span class="el-c on">银杏叶（地面）</span>
-            <span class="el-c on">落叶堆</span>
-            <span class="el-c">树枝缝隙的光斑</span>
-            <span class="el-c">远处的塔</span>
-          </div>
-          <div class="el-note">
-            <b>光斑也算环境元素。</b>不是只有「大面积的光」才叫光，
-            衣服上、脸上那些小光斑同样是元素。
-          </div>
-        </div>
-
-        <div class="el el-dynamics">
-          <div class="el-hd">
-            <span class="el-n">动态元素</span><span class="el-d">什么在动</span>
-            <div class="spacer"></div>
-            <button class="el-add" onclick="fake('加动态元素')">＋</button>
-          </div>
-          <div class="el-b">
-            <span class="el-c on">风吹头发</span>
-            <span class="el-c on">抛落叶</span>
-            <span class="el-c">走过来</span>
-            <span class="el-c">湖面波纹</span>
-          </div>
-        </div>
-
-        <div class="el el-props">
-          <div class="el-hd">
-            <span class="el-n">道具</span><span class="el-d">带什么</span>
-            <div class="spacer"></div>
-            <button class="el-add" onclick="fake('加道具')">＋</button>
-          </div>
-          <div class="el-b">
-            <span class="el-c on">热奶茶（便利店）</span>
-            <span class="el-c">一本书</span>
-            <span class="el-c">她自己的相机</span>
-          </div>
-        </div>
-
-        <div class="el el-poses">
-          <div class="el-hd">
-            <span class="el-n">姿势 / 口令</span><span class="el-d">怎么让她动起来</span>
-            <div class="spacer"></div>
-            <button class="el-add" onclick="fake('从口令库选')">＋</button>
-          </div>
-          <div class="el-b">
-            <span class="el-c on">走两步回头</span>
-            <span class="el-c on">摸围巾</span>
-            <span class="el-c">看远处不看镜头</span>
-            <span class="el-c">抛落叶笑出来</span>
-          </div>
-        </div>
-
-        <div class="el el-colors">
-          <div class="el-hd">
-            <span class="el-n">色彩元素</span><span class="el-d">整组的调子</span>
-            <div class="spacer"></div>
-            <button class="el-add" onclick="fake('加色彩元素')">＋</button>
-          </div>
-          <div class="el-b">
-            <span class="el-c on">金黄 + 浅米</span>
-            <span class="el-c">暖，但脸不偏黄</span>
-            <span class="el-c bad">高饱和红（不搭秋景）</span>
-          </div>
-        </div>
+          <p class="pz-plan-where">万寿山北侧</p>
+          <p class="pz-plan-why">太阳在西南，你朝北拍，<b>光根本不在那个方向</b>。人少是真的，但没光。</p>
+        </article>
       </div>
 
-      <div class="shot-from-el">
-        <div class="sfe-hd">
-          <span>分镜（从上面的元素组合出来）</span>
-          <div class="spacer"></div>
-          <button class="btn" onclick="regenShots()">重新排镜头</button>
-        </div>
-        <div class="sfe-list" id="sfeList">
-          <div class="sfe-empty" id="sfeEmpty">
-            还没选方案 —— 元素定下来，这里会自动排出分镜
-          </div>
-        </div>
-        <div class="sfe-note" id="sfeNote" style="display:none">
-          <b>分镜不是凭空写的。</b>每一镜都从上面的元素里取：
-          一个光位 + 一个动态元素 + 一句口令 + 一个构图。
-          <b>改元素，分镜跟着变。</b>
-        </div>
+      <div class="pz-pickbar" id="pzPickbar" style="display:none">
+        <div class="pz-pickbar-t" id="pzPickbarT">—</div>
+        <button class="pz-primary" onclick="pzTabClicks('els')">看元素 →</button>
       </div>
-    </div>
+    </section>
 
-    <!-- 右：参考 + 必带 -->
-    <div class="plan-right">
-      <div class="pr-hd"><span class="pr-t">AI 找到的参考</span><span class="pr-n">12 张</span></div>
-      <div class="ref-src">
-        <span class="rs-tag lib">库内 5</span>
-        <span class="rs-tag plat">小红书 7</span>
+    <section class="pz-pane" id="pz-els">
+      <div class="pz-lead">
+        <p class="pz-lead-t">这组片子由这些东西组成</p>
+        <p class="pz-lead-b">元素定了，分镜和必带清单都跟着变。点每张卡右上角的 <b>i</b> 看「为什么」。</p>
       </div>
-      <div class="refs2">
-        <div class="rf2"><div class="rf2-i"></div><span class="rf2-s plat">小红书</span>
-          <span class="rf2-t">银杏下的逆光人像</span></div>
-        <div class="rf2"><div class="rf2-i g2"></div><span class="rf2-s plat">小红书</span>
-          <span class="rf2-t">颐和园长廊 秋装</span></div>
-        <div class="rf2"><div class="rf2-i g3"></div><span class="rf2-s lib">审美库</span>
-          <span class="rf2-t">侧逆光勾轮廓</span></div>
-        <div class="rf2"><div class="rf2-i g4"></div><span class="rf2-s plat">小红书</span>
-          <span class="rf2-t">抛落叶抓拍</span></div>
-      </div>
-      <button class="btn" style="width:100%;margin-top:10px"
-        onclick="fake('把这几张参考的「偷师点」提取出来，变成元素建议')">从参考里提元素</button>
+      <div class="pz-grid">
+        <div class="pz-card"><div class="pz-card-h"><span class="pz-card-n">场景</span><button class="pz-info" onclick="toggleNote(this)">i</button></div>
+          <div class="pz-card-b" id="elScenes"><span class="pz-chip none">等选定方案</span></div>
+          <div class="pz-note">在哪拍。决定了几点去、带什么。</div></div>
 
-      <div class="pr-hd" style="margin-top:20px"><span class="pr-t">必带清单</span><span class="pr-n">8 项</span></div>
-      <div class="pr-grp">
-        <div class="pr-g-h"><span class="pr-dot self"></span>自带</div>
-        <div class="pr-item"><span class="pr-cb on">✓</span>相机 · 85mm</div>
-        <div class="pr-item"><span class="pr-cb">○</span>反光板</div>
-        <div class="pr-item"><span class="pr-cb">○</span>浅色大衣（提醒她穿）</div>
-      </div>
-      <div class="pr-grp">
-        <div class="pr-g-h"><span class="pr-dot buy"></span>现场买</div>
-        <div class="pr-item"><span class="pr-cb">○</span>热奶茶 <span class="pr-tag">便利店</span></div>
-      </div>
-      <div class="pr-grp">
-        <div class="pr-g-h hot"><span class="pr-dot must"></span>别忘（标红）</div>
-        <div class="pr-item must"><span class="pr-cb">○</span>提前查日落时间 <span class="pr-note">秋光只有1小时</span></div>
-        <div class="pr-item must"><span class="pr-cb">○</span>避开正午 <span class="pr-note">顶光毁片</span></div>
-      </div>
+        <div class="pz-card"><div class="pz-card-h"><span class="pz-card-n">服装穿搭</span><button class="pz-info" onclick="toggleNote(this)">i</button></div>
+          <div class="pz-card-b"><span class="pz-chip on">浅色毛呢大衣</span><span class="pz-chip on">米色围巾</span><span class="pz-chip">驼色靴子</span><span class="pz-chip no">避开黄绿</span></div>
+          <div class="pz-note">元素要自洽。银杏是金黄，服装再穿黄或绿，人就陷进背景里分不出来。</div></div>
 
-      <div class="pr-hint">
-        <b>元素清单是主体，分镜是它组合出来的结果。</b>
-        元素变了分镜跟着变；分镜改了必带清单跟着变。
+        <div class="pz-card"><div class="pz-card-h"><span class="pz-card-n">时段</span><button class="pz-info" onclick="toggleNote(this)">i</button></div>
+          <div class="pz-card-b" id="elTimes"><span class="pz-chip none">等选定方案</span></div>
+          <div class="pz-note">算出来的，不是拍脑袋。改日期会跟着变。</div></div>
+
+        <div class="pz-card"><div class="pz-card-h"><span class="pz-card-n">光线</span><button class="pz-info" onclick="toggleNote(this)">i</button></div>
+          <div class="pz-card-b" id="elLights"><span class="pz-chip on">侧逆光</span><span class="pz-chip">逆光勾轮廓</span><span class="pz-chip no">正午顶光</span></div>
+          <div class="pz-note">秋天的光很短。4 点后开始金黄，5 点基本没了，实际能拍就一小时。</div></div>
+
+        <div class="pz-card"><div class="pz-card-h"><span class="pz-card-n">环境元素</span><button class="pz-info" onclick="toggleNote(this)">i</button></div>
+          <div class="pz-card-b"><span class="pz-chip on">银杏叶</span><span class="pz-chip on">落叶堆</span><span class="pz-chip">树枝光斑</span><span class="pz-chip">远处的塔</span></div>
+          <div class="pz-note">光斑也算环境元素。不是只有大面积的才叫光。</div></div>
+
+        <div class="pz-card"><div class="pz-card-h"><span class="pz-card-n">动态元素</span><button class="pz-info" onclick="toggleNote(this)">i</button></div>
+          <div class="pz-card-b" id="elDyn"><span class="pz-chip on">风吹头发</span><span class="pz-chip on">抛落叶</span><span class="pz-chip">走过来</span></div>
+          <div class="pz-note">什么在动。动态让画面活起来，也最容易抓。</div></div>
+
+        <div class="pz-card"><div class="pz-card-h"><span class="pz-card-n">道具</span><button class="pz-info" onclick="toggleNote(this)">i</button></div>
+          <div class="pz-card-b" id="elProps"><span class="pz-chip on">热奶茶</span><span class="pz-chip">一本书</span></div>
+          <div class="pz-note">带什么。道具是给她手找事做的最快办法。</div></div>
+
+        <div class="pz-card"><div class="pz-card-h"><span class="pz-card-n">姿势 / 口令</span><button class="pz-info" onclick="toggleNote(this)">i</button></div>
+          <div class="pz-card-b" id="elPoses"><span class="pz-chip on">走两步回头</span><span class="pz-chip on">摸围巾</span><span class="pz-chip">看远处</span></div>
+          <div class="pz-note">怎么让她动起来。口令比姿势图有用得多。</div></div>
+
+        <div class="pz-card"><div class="pz-card-h"><span class="pz-card-n">色彩元素</span><button class="pz-info" onclick="toggleNote(this)">i</button></div>
+          <div class="pz-card-b" id="elColors"><span class="pz-chip on">金黄 + 浅米</span><span class="pz-chip">暖但脸不偏黄</span></div>
+          <div class="pz-note">整组的调子。色彩不搭，后期也救不回来。</div></div>
       </div>
-    </div>
+    </section>
+
+    <section class="pz-pane" id="pz-shots">
+      <div class="pz-lead">
+        <p class="pz-lead-t">分镜</p>
+        <p class="pz-lead-b">每一镜都从元素里取：一个光位 + 一个动态 + 一句口令 + 一个构图。改元素，这里跟着变。</p>
+      </div>
+      <div class="pz-shots" id="pzShotList"><div class="pz-empty">还没选方案 —— 元素定下来，这里会自动排出分镜</div></div>
+    </section>
+
+    <section class="pz-pane" id="pz-kit">
+      <div class="pz-lead">
+        <p class="pz-lead-t">必带清单</p>
+        <p class="pz-lead-b">从脚本自动提取。分镜改了这里跟着变——不用手维护两份。</p>
+      </div>
+      <div class="pz-kit">
+        <div class="pz-kg"><div class="pz-kg-h">自带</div>
+          <label class="pz-ki"><input type="checkbox" checked><span>相机 · 85mm</span></label>
+          <label class="pz-ki"><input type="checkbox"><span>反光板</span></label>
+          <label class="pz-ki"><input type="checkbox"><span>浅色大衣（提醒她穿）</span></label></div>
+        <div class="pz-kg"><div class="pz-kg-h">现场买</div>
+          <label class="pz-ki"><input type="checkbox"><span>热奶茶</span><em>便利店</em></label></div>
+        <div class="pz-kg"><div class="pz-kg-h must">别忘</div>
+          <label class="pz-ki must"><input type="checkbox"><span>提前查日落时间</span><em>17:05</em></label>
+          <label class="pz-ki must"><input type="checkbox"><span>避开正午</span><em>顶光毁片</em></label></div>
+      </div>
+    </section>
 
   </div>
 </div><!-- /pagePlan -->
@@ -3117,6 +3125,7 @@ function renderSun(){
 
   // 方案 A 的可行性判断
   if (typeof renderPlanTimes === 'function') renderPlanTimes();
+  if (typeof renderPzTimes === 'function') renderPzTimes();
   const warnEl = document.getElementById('planAWarn');
   if (warnEl){
     if (p.altitude < 0){
@@ -3338,6 +3347,121 @@ function pickWho(el, key){
 
   fake('已选「'+w.name+'」—— 怎么拍她、管用的口令、雷区都带出来了');
 }
+﻿/* ===== 策划页 · Tab 与交互 ===== */
+function pzTab(el, key){
+  document.querySelectorAll('.pz-tab').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+  document.querySelectorAll('.pz-pane').forEach(x=>x.classList.remove('on'));
+  document.getElementById('pz-'+key).classList.add('on');
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function pzTabClicks(key){
+  const tabs = document.querySelectorAll('.pz-tab');
+  const map = {plan:0, els:1, shots:2, kit:3};
+  pzTab(tabs[map[key]], key);
+}
+function toggleNote(btn){
+  const note = btn.closest('.pz-card').querySelector('.pz-note');
+  const on = note.classList.toggle('on');
+  btn.classList.toggle('on', on);
+}
+
+// 方案选择（极简版）
+const PZ_PLAN = {
+  A:{name:'十七孔桥逆光', time:'16:26 — 17:05',
+     scenes:['颐和园 · 十七孔桥（东南侧）'],
+     times:['16:26 — 17:00（黄金后半）'],
+     lights:['逆光','太阳在正前方','脸留暗部'],
+     dyn:['风（水面/头发）','逆光穿过桥洞'],
+     props:['反光板（补脸）','热饮（拍完暖手）'],
+     poses:['站定背影','侧脸轮廓','回头'],
+     colors:['金黄 + 暖调剪影','天空渐层']},
+  B:{name:'长廊侧逆光', time:'15:30 — 16:26',
+     scenes:['颐和园 · 长廊（南侧）'],
+     times:['15:30 — 16:26（黄金前半）'],
+     lights:['侧逆光 45°','光斜射进柱间','柱子投长影'],
+     dyn:['走动','袖子摆动'],
+     props:['反光板（必带）'],
+     poses:['走两步回头','靠柱子','手扶栏杆'],
+     colors:['暖调 + 柱影层次','木色 / 朱红']}
+};
+
+function pickPlan2(which, card){
+  document.querySelectorAll('.pz-plan').forEach(x=>x.classList.remove('on'));
+  if(card) card.classList.add('on');
+  const p = PZ_PLAN[which];
+  currentPlan = which;
+
+  const set = (id, items) => {
+    const el = document.getElementById(id);
+    if(el) el.innerHTML = items.map(t=>'<span class="pz-chip on">'+t+'</span>').join('');
+  };
+  set('elScenes', p.scenes);
+  set('elTimes', p.times);
+  set('elLights', p.lights);
+  set('elDyn', p.dyn);
+  set('elProps', p.props);
+  set('elPoses', p.poses);
+  set('elColors', p.colors);
+
+  // 分镜 tab 数量 + 生成
+  genShots2(which);
+  const n = document.getElementById('pzShotN');
+  if(n) n.textContent = (SHOT_RECIPES[which]||[]).length;
+
+  // 操作条
+  const bar = document.getElementById('pzPickbar');
+  const t = document.getElementById('pzPickbarT');
+  if(bar && t){
+    bar.style.display='flex';
+    t.innerHTML = '已选 <b>'+p.name+'</b> · 元素和分镜已按它填好';
+  }
+}
+
+function genShots2(which){
+  const list = document.getElementById('pzShotList');
+  const recipes = SHOT_RECIPES[which];
+  if(!list || !recipes) return;
+  list.innerHTML = recipes.map((r,i)=>{
+    const cue = (currentWho && WHO[currentWho]) ? WHO[currentWho].cues[0] : null;
+    return '<div class="pz-shot">'
+      + '<div class="pz-shot-h">'
+      +   '<span class="pz-shot-n">镜 '+(i+1)+'</span>'
+      +   '<span class="pz-shot-frame">'+r.frame+'</span>'
+      +   '<span class="pz-shot-combo">'+r.light+' · '+r.elem+'</span>'
+      + '</div>'
+      + '<div class="pz-shot-row"><span class="pz-shot-k">画面</span>'
+      +   '<span class="pz-shot-v">'+r.elem+' · '+r.pose+'</span></div>'
+      + '<div class="pz-shot-row"><span class="pz-shot-k">为什么</span>'
+      +   '<span class="pz-shot-v">'+r.why+'</span></div>'
+      + '<div class="pz-shot-row"><span class="pz-shot-k">怎么按</span>'
+      +   '<span class="pz-shot-v">'+r.take+'</span></div>'
+      + '<div class="pz-shot-row"><span class="pz-shot-k">风险</span>'
+      +   '<span class="pz-shot-v warn">'+r.risk+'</span></div>'
+      + (cue ? '<div class="pz-shot-cue">'
+          + '<div class="pz-shot-cue-l">对'+(WHO[currentWho].name)+'说</div>'
+          + '<div class="pz-shot-cue-t">'+cue.t+'</div>'
+          + '<div class="pz-shot-cue-h">'+cue.n+'</div>'
+          + '</div>' : '')
+      + '</div>';
+  }).join('');
+}
+
+// 方案时段用太阳算
+function renderPzTimes(){
+  const el = document.getElementById('sunDate');
+  const dateStr = el ? el.value : '2026-11-08';
+  const lat=39.9901, lon=116.2647, tz=8;
+  const sunset = SunCalcLite.findAltitudeCrossing(lat,lon,dateStr,tz,-0.833,14,19);
+  const gold = SunCalcLite.findAltitudeCrossing(lat,lon,dateStr,tz,6,13,sunset||19);
+  const a = document.getElementById('pzPlanATime');
+  const b = document.getElementById('pzPlanBTime');
+  const light = document.getElementById('pzLight');
+  if(a && gold && sunset) a.textContent = SunCalcLite.fmtTime(gold)+' — '+SunCalcLite.fmtTime(sunset);
+  if(b && gold) b.textContent = '15:30 — '+SunCalcLite.fmtTime(gold);
+  if(light && gold && sunset) light.textContent = '黄金 '+SunCalcLite.fmtTime(gold)+'–'+SunCalcLite.fmtTime(sunset);
+}
+
 function openVague(){ document.getElementById('vagueSheet').classList.add('on'); }
 function closeVague(){ document.getElementById('vagueSheet').classList.remove('on'); }
 function pickDir(el,name){
