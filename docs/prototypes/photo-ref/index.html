@@ -58,6 +58,30 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 .chip.on{background:rgba(34,211,238,.16);border-color:var(--ac);color:var(--ac)}
 .fgroup{display:flex;align-items:center;gap:5px;margin-right:14px}
 .fgroup>span{font-size:9.5px;color:var(--tx3);font-family:var(--fm);text-transform:uppercase;letter-spacing:.06em}
+.locin{padding:4px 9px;border-radius:7px;border:1px solid var(--ln2);background:var(--pnl);
+  color:var(--tx);font-size:10.5px;outline:none;width:150px}
+.locin:focus{border-color:var(--ac)}
+
+/* 场景选择器 */
+.scenes{max-width:1500px;margin:2px auto 0;padding:0 16px}
+.sc-hd{display:inline-flex;align-items:center;gap:8px;padding:5px 12px;border-radius:8px;
+  border:1px solid var(--ln2);background:var(--pnl);font-size:11px;color:var(--tx2);cursor:pointer}
+.sc-hd:hover{border-color:var(--ac)}
+.sc-hd .sc-pick{color:var(--ac);font-size:10.5px}
+.sc-hd .sc-arrow{color:var(--tx3);font-size:9px}
+.sc-body{margin-top:8px;padding:12px 14px;border-radius:10px;border:1px solid var(--ln);
+  background:var(--pnl);display:flex;flex-wrap:wrap;gap:8px 18px}
+.sc-grp{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.sc-gt{font-size:9px;color:var(--tx3);font-family:var(--fm);min-width:58px}
+.sc-tip{width:100%;margin-top:6px;padding-top:9px;border-top:1px solid var(--ln);
+  font-size:9.5px;color:var(--tx3);line-height:1.65}
+.sc-tip b{color:var(--tx2)}
+.scene-cur{max-width:1500px;margin:8px auto 0;padding:0 16px;display:flex;align-items:center;gap:8px}
+.sc-lab{font-size:9.5px;color:var(--tx3);font-family:var(--fm);text-transform:uppercase}
+.sc-val{font-size:11px;padding:3px 10px;border-radius:6px;background:rgba(34,211,238,.16);
+  border:1px solid var(--ac);color:var(--ac)}
+.sc-x{font-size:11px;color:var(--tx3);padding:2px 6px;border-radius:5px}
+.sc-x:hover{background:rgba(255,255,255,.08);color:var(--tx)}
 
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;
   padding:14px 16px 40px;max-width:1500px;margin:0 auto}
@@ -251,17 +275,68 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
     <button class="chip" onclick="tog(this)">半身</button>
     <button class="chip" onclick="tog(this)">全身</button>
   </div>
-  <div class="fgroup"><span>场景</span>
-    <button class="chip on" onclick="tog(this)">室外</button>
-    <button class="chip" onclick="tog(this)">影棚</button>
-    <button class="chip" onclick="tog(this)">街景</button>
-    <button class="chip" onclick="tog(this)">室内</button>
-  </div>
   <div class="fgroup"><span>题材</span>
     <button class="chip" onclick="tog(this)">领证</button>
     <button class="chip" onclick="tog(this)">coser</button>
     <button class="chip" onclick="tog(this)">老年</button>
   </div>
+  <div class="fgroup"><span>地点</span>
+    <input class="locin" placeholder="自由文本：亚龙湾 / 民政局" value="">
+  </div>
+</div>
+
+<!-- 场景分组：2 层 / 15 个叶子 -->
+<div class="scenes" id="scenes">
+  <div class="sc-hd" onclick="toggleScenes()">
+    <span>场景</span>
+    <span class="sc-pick" id="scPick">未选</span>
+    <span class="sc-arrow" id="scArrow">▾</span>
+  </div>
+  <div class="sc-body" id="scBody" style="display:none">
+    <div class="sc-grp">
+      <div class="sc-gt">室内棚拍</div>
+      <button class="chip" onclick="pickScene(this)">影棚 / 纯色背景</button>
+      <button class="chip" onclick="pickScene(this)">实景基地 / 主题棚</button>
+    </div>
+    <div class="sc-grp">
+      <div class="sc-gt">室内生活</div>
+      <button class="chip" onclick="pickScene(this)">居家 / 室内</button>
+      <button class="chip" onclick="pickScene(this)">店铺 / 民宿 / 咖啡店</button>
+    </div>
+    <div class="sc-grp">
+      <div class="sc-gt">城市人文</div>
+      <button class="chip" onclick="pickScene(this)">城市街拍 / 建筑</button>
+      <button class="chip" onclick="pickScene(this)">交通 / 车内</button>
+      <button class="chip" onclick="pickScene(this)">展馆 / 活动现场</button>
+    </div>
+    <div class="sc-grp">
+      <div class="sc-gt">自然户外</div>
+      <button class="chip" onclick="pickScene(this)">公园 / 校园 / 绿地</button>
+      <button class="chip" onclick="pickScene(this)">海边 / 水边</button>
+      <button class="chip" onclick="pickScene(this)">山林 / 草地 / 花海</button>
+      <button class="chip" onclick="pickScene(this)">古镇 / 园林 / 古建</button>
+      <button class="chip" onclick="pickScene(this)">废墟 / 工业 / 天台</button>
+    </div>
+    <div class="sc-grp">
+      <div class="sc-gt">仪式政务</div>
+      <button class="chip" onclick="pickScene(this)">民政局 / 政务大厅</button>
+      <button class="chip" onclick="pickScene(this)">教堂 / 礼堂 / 宴会厅</button>
+    </div>
+    <div class="sc-grp">
+      <div class="sc-gt">其他</div>
+      <button class="chip" onclick="pickScene(this)">无法判断</button>
+    </div>
+    <div class="sc-tip">
+      15 个叶子 / 2 层。每张图 <b>1 个主场景</b> + 0–2 个自由附加标签。<br>
+      <b>地点不进这个词表</b> —— 地点是容器（亚龙湾 / 某民政局），场景是容器里的环境类型。
+    </div>
+  </div>
+</div>
+
+<div class="scene-cur" id="scCur" style="display:none">
+  <span class="sc-lab">场景</span>
+  <span class="sc-val" id="scVal"></span>
+  <button class="sc-x" onclick="clearScene()">✕</button>
 </div>
 
 <div class="grid">
@@ -383,8 +458,29 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
         <div class="sec">
           <div class="sec-t">标签</div>
           <div class="tags" style="margin-top:0">
-            <span class="tg">逆光</span><span class="tg">特写</span><span class="tg">室外</span>
-            <span class="tg">单人</span><span class="tg">暖调</span>
+            <span class="tg">逆光</span><span class="tg">特写</span><span class="tg">单人</span><span class="tg">暖调</span>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-t">场景 <span class="src manual">受控词表 · 选 1 个</span></div>
+          <div class="kv">
+            <span class="k">主场景</span><span class="v hl">店铺 / 民宿 / 咖啡店</span>
+            <span class="k">附加</span><span class="v">室内</span>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-t">地点 <span class="src manual">自由文本，不进词表</span></div>
+          <div class="kv">
+            <span class="k">城市</span><span class="v">杭州</span>
+            <span class="k">具体地点</span><span class="v">西湖区 · 某民宿</span>
+          </div>
+          <div class="rawbox" style="margin-top:8px;background:rgba(34,211,238,.07);border-color:rgba(34,211,238,.22)">
+            <b style="color:var(--ac)">为什么地点单独做：</b>
+            地点是<b>容器</b>，场景是容器里的<b>环境类型</b>。
+            一个「亚龙湾」里就有沙滩 / 雨林 / 草坪 / 礁石 / 花园——
+            把地点塞进场景词表，词表会无限膨胀。
           </div>
         </div>
 
@@ -574,6 +670,30 @@ function pickLib(el,name){
   fake('切到「'+name+'」');
 }
 function tog(el){ el.classList.toggle('on'); }
+
+/* ---- 场景选择器 ---- */
+function toggleScenes(){
+  const b=document.getElementById('scBody');
+  const open = b.style.display!=='none';
+  b.style.display = open?'none':'flex';
+  document.getElementById('scArrow').textContent = open?'▾':'▴';
+}
+function pickScene(el){
+  document.querySelectorAll('#scBody .chip').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById('scPick').textContent = el.textContent;
+  const cur=document.getElementById('scCur');
+  document.getElementById('scVal').textContent = el.textContent;
+  cur.style.display='flex';
+  document.getElementById('scBody').style.display='none';
+  document.getElementById('scArrow').textContent='▾';
+  fake('场景：'+el.textContent+'（每张图只选 1 个主场景）');
+}
+function clearScene(){
+  document.querySelectorAll('#scBody .chip').forEach(x=>x.classList.remove('on'));
+  document.getElementById('scPick').textContent='未选';
+  document.getElementById('scCur').style.display='none';
+}
 
 const STEAL={
   ref1:'逆光把发丝和背景分开，脸留暗部',
