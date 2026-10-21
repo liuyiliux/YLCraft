@@ -268,6 +268,55 @@ input{font:inherit}
 .ci.diff .d{color:var(--warn)}
 .ci.same .d{color:var(--ok)}
 
+/* 对比/分析 tab */
+.cmp-tabs{display:flex;gap:4px;padding:4px;border-radius:var(--radiusSM);
+  background:var(--bgInput);border:1px solid var(--bd2);margin-left:8px}
+.ctab{padding:6px 14px;border-radius:6px;font-size:var(--fs-sm);color:var(--tx2);transition:.18s}
+.ctab:hover{color:var(--tx1)}
+.ctab.on{background:var(--bgCard);color:var(--tx1);box-shadow:var(--shadow)}
+
+/* 参考图来源 */
+.refsrc{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.rs-lab{font-size:var(--fs-xs);color:var(--tx3);font-family:var(--fm)}
+.rs{padding:6px 13px;border-radius:var(--radiusSM);border:1px solid var(--bd2);
+  background:var(--bgCard);font-size:var(--fs-sm);color:var(--tx2);transition:.18s}
+.rs:hover{border-color:var(--pri)}
+.rs.on{background:color-mix(in srgb,var(--pri) 15%,transparent);border-color:var(--pri);color:var(--pri)}
+.uploadzone{margin-bottom:14px;border:2px dashed var(--bd2);border-radius:var(--radiusMD);
+  padding:28px 20px;text-align:center;transition:.2s;cursor:pointer}
+.uploadzone:hover{border-color:var(--pri);background:color-mix(in srgb,var(--pri) 5%,transparent)}
+.uz-ico{font-size:28px;color:var(--pri);margin-bottom:8px}
+.uz-t{font-size:var(--fs-cap);color:var(--tx1);margin-bottom:5px}
+.uz-s{font-size:var(--fs-sm);color:var(--tx3)}
+
+/* 分析视图 */
+.ana-img{position:relative;border-radius:var(--radiusMD);overflow:hidden;
+  border:1px solid var(--bd2);aspect-ratio:16/10;background:linear-gradient(150deg,#2a2340,#141020);
+  display:flex;align-items:center;justify-content:center;margin-bottom:14px}
+.ana-img .ph{width:22%;height:64%;border-radius:40% 40% 18% 18%/14% 14% 7% 7%;
+  background:linear-gradient(175deg,#e8d5bd,#a8825c)}
+.ana-img .ex{position:absolute;bottom:10px;left:10px;right:10px;font-size:var(--fs-xs);
+  font-family:var(--fm);color:rgba(255,255,255,.85);background:rgba(0,0,0,.6);
+  padding:6px 10px;border-radius:5px}
+.ana-note{padding:12px 15px;border-radius:var(--radiusSM);
+  background:color-mix(in srgb,var(--photo) 8%,transparent);
+  border:1px solid color-mix(in srgb,var(--photo) 28%,transparent);
+  font-size:var(--fs-cap);color:var(--tx2);line-height:1.6;margin-bottom:14px}
+.ana-note b{color:var(--photo)}
+.ana-ask{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.aa-lab{font-size:var(--fs-xs);color:var(--tx3);font-family:var(--fm)}
+.ana-cards{display:flex;flex-direction:column;gap:11px}
+.ac{padding:13px 15px;border-radius:var(--radiusSM);background:var(--bgCard);
+  border:1px solid var(--bd2)}
+.ac.ok{border-color:color-mix(in srgb,var(--ok) 34%,transparent)}
+.ac.warn{border-color:color-mix(in srgb,var(--warn) 34%,transparent)}
+.ac-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}
+.ac-t{font-size:var(--fs-cap);font-weight:600;color:var(--tx1)}
+.ac-h em{font-style:normal;font-size:var(--fs-xs);padding:2px 8px;border-radius:4px}
+.ac-h em.a{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
+.ac-h em.m{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+.ac-b{font-size:var(--fs-sm);color:var(--tx2);line-height:1.7}
+
 /* 智能体侧栏 */
 .ag-hd{padding:15px 18px;border-bottom:1px solid var(--bd2);display:flex;align-items:center;gap:10px}
 .ag-hd .av{width:30px;height:30px;border-radius:var(--radiusSM);background:var(--grad);
@@ -319,7 +368,8 @@ input{font:inherit}
   </div>
   <button class="btn" onclick="fake('批量上传：100–500 张，先勾一批标签整批套用')">批量上传</button>
   <button class="btn" onclick="fake('截帧入库：取前后各 1–2 秒的 3–5 张候选帧，自动带时间码')">截帧入库</button>
-  <button class="btn pri" onclick="showCompare()">参考 vs 作品</button>
+  <button class="btn" onclick="openCmp('analyze')">分析作品</button>
+  <button class="btn pri" onclick="openCmp('compare')">参考对照</button>
 </div>
 
 <div class="libs">
@@ -561,11 +611,31 @@ input{font:inherit}
 <div class="compare" id="cmp">
   <div class="cmp-box">
     <div class="cmp-hd">
-      <h2>参考 vs 作品</h2><span class="sub">拍完拿当初的参考对一遍</span>
+      <h2 id="cmpTitle">参考 vs 作品</h2>
+      <span class="sub" id="cmpSub">拍完拿当初的参考对一遍</span>
+      <div class="cmp-tabs">
+        <button class="ctab" id="tabCmp" onclick="switchTab('compare')">参考对照</button>
+        <button class="ctab" id="tabAna" onclick="switchTab('analyze')">分析作品</button>
+      </div>
       <div class="spacer"></div><button class="btn" onclick="hideCompare()">✕</button>
     </div>
     <div class="cmp-main">
       <div class="cmp-left">
+        <!-- ===== 参考对照视图 ===== -->
+        <div id="viewCompare">
+        <div class="refsrc">
+          <span class="rs-lab">参考图从哪来</span>
+          <button class="rs on" onclick="refSrc(this,'lib')">从审美库选</button>
+          <button class="rs" onclick="refSrc(this,'upload')">临时上传 / 拖入</button>
+          <button class="rs" onclick="refSrc(this,'paste')">粘贴图片</button>
+        </div>
+        <div class="uploadzone" id="uplZone" style="display:none">
+          <div class="uz-in">
+            <div class="uz-ico">⬆</div>
+            <div class="uz-t">把参考图拖进来，或点这里选文件</div>
+            <div class="uz-s">临时参考图不用先入库 —— 对比完再决定要不要存进审美库</div>
+          </div>
+        </div>
         <div class="cmp-modes">
           <button class="chip on" onclick="cmpMode(this,1)">并排</button>
           <button class="chip" onclick="cmpMode(this,0)">叠加</button>
@@ -605,11 +675,53 @@ input{font:inherit}
           要么右边的智能体问你，你答完它记下来。<br>
           <span style="color:var(--tx3)">原型里这些值是我手写的示例，不是真读出来的。</span>
         </div>
+        </div><!-- /viewCompare -->
+
+        <!-- ===== 分析作品视图（没有参考图时） ===== -->
+        <div id="viewAnalyze" style="display:none">
+          <div class="ana-img">
+            <div class="ph"></div>
+            <div class="ex">50mm · f/4 · 1/500s · ISO400 · 6100K · 8192×5464</div>
+          </div>
+          <div class="ana-note">
+            <b>没有参考图也能看。</b>这类作品是直接拍的，不需要「像不像谁」，
+            要的是<b>看出来这张好在哪、差在哪</b>。
+          </div>
+          <div class="ana-ask">
+            <span class="aa-lab">想从哪个角度看？</span>
+            <button class="chip on" onclick="tog(this)">整体</button>
+            <button class="chip" onclick="tog(this)">光线</button>
+            <button class="chip" onclick="tog(this)">构图</button>
+            <button class="chip" onclick="tog(this)">肤色 / 后期</button>
+            <button class="chip" onclick="tog(this)">情绪 / 引导</button>
+            <button class="chip" onclick="tog(this)">客户反馈</button>
+          </div>
+          <div class="ana-cards">
+            <div class="ac ok">
+              <div class="ac-h"><span class="ac-t">成立的地方</span><em class="a">可观察事实</em></div>
+              <div class="ac-b">逆光勾出了肩线，头发边缘有一圈亮；眼神光保住了，脸没全黑。</div>
+            </div>
+            <div class="ac warn">
+              <div class="ac-h"><span class="ac-t">可疑的地方</span><em class="m">要你判断</em></div>
+              <div class="ac-b">f/4 让背景还看得见轮廓，虚化比常见的弱。是故意保留环境，还是当时光线不够？</div>
+            </div>
+            <div class="ac">
+              <div class="ac-h"><span class="ac-t">看不到的地方</span><em class="m">参数里没有</em></div>
+              <div class="ac-b">你当时想表达什么？这张在这组片子里是开头还是结尾？
+                这些 EXIF 读不出来，需要你说。</div>
+            </div>
+          </div>
+          <div class="why" style="margin-top:14px">
+            <span class="t">⚠ 为什么这里没有分数</span>
+            连人类标注者对「构图好不好」的一致性都只有 <b>0.53</b>（AADB 数据集），
+            AI 给的 8 分是假精确。<b>这里只列「可观察事实」+「要你判断的点」</b>，不打分。
+          </div>
+        </div>
       </div>
       <div class="cmp-right">
         <div class="ag-hd"><div class="av">✦</div>
-          <div><div class="nm">对比助手</div><div class="st">已经读过两张图的 EXIF</div></div></div>
-        <div class="ag-body">
+          <div><div class="nm">对比助手</div><div class="st" id="agSt">已经读过两张图的 EXIF</div></div></div>
+        <div class="ag-body" id="agCmp">
           <div class="msg ai">
             我看完两张图的参数了。硬数据上差在这几处：<br>
             · 光圈 <b>f/1.2 → f/4</b>（背景虚化不够）<br>
@@ -624,14 +736,29 @@ input{font:inherit}
             <span class="q" onclick="fake('下次会先绕到侧后方吗？')">③ 下次会先绕到侧后方吗？</span>
           </div>
         </div>
+        <div class="ag-body" id="agAna" style="display:none">
+          <div class="msg ai">
+            这张我只看得到参数和画面，看不到你的意图。先说我确定的：<br>
+            · 逆光，肩线和头发有轮廓<br>
+            · 眼神光保住了，脸没全黑<br>
+            · f/4 —— 背景还留着轮廓<br><br>
+            我不打分。打分是假的，连人对「构图好不好」都没共识。
+          </div>
+          <div class="msg ai">
+            我想问你三件事，答完这张就有了「当时的判断」：
+            <span class="q" onclick="fake('这张是你要的样子吗？')">① 这张是你要的样子吗？</span>
+            <span class="q" onclick="fake('背景留轮廓是故意的吗？')">② 背景留着是故意的吗？</span>
+            <span class="q" onclick="fake('这组里它排第几？')">③ 这组里它排第几？</span>
+          </div>
+        </div>
         <div class="ag-ft"><input placeholder="或者直接说：我当时光太硬了…"><button class="btn">发送</button></div>
       </div>
     </div>
     <div class="cmp-ft">
       <button class="btn" onclick="hideCompare()">关闭</button>
       <div class="spacer"></div>
-      <button class="btn" onclick="fake('导出对比图（带结论），发给客户或存进作品库')">导出对比图</button>
-      <button class="btn pri" onclick="fake('把这次的差异存成一条反思，下次别再犯')">存成一条反思</button>
+      <button class="btn" onclick="fake('导出对比图 / 分析结论，发给客户或存进作品库')">导出</button>
+      <button class="btn pri" onclick="fake('把这次的结论存成一条记录')">存成一条记录</button>
     </div>
   </div>
 </div>
@@ -693,8 +820,36 @@ function showDetail(id){
   document.getElementById('dt').classList.add('on');
 }
 function hideDetail(){ document.getElementById('dt').classList.remove('on'); }
-function showCompare(){ document.getElementById('cmp').classList.add('on'); }
+function showCompare(){ openCmp('compare'); }
 function hideCompare(){ document.getElementById('cmp').classList.remove('on'); }
+function openCmp(mode){
+  document.getElementById('cmp').classList.add('on');
+  switchTab(mode);
+}
+function switchTab(mode){
+  const isCmp = mode==='compare';
+  document.getElementById('tabCmp').classList.toggle('on', isCmp);
+  document.getElementById('tabAna').classList.toggle('on', !isCmp);
+  document.getElementById('viewCompare').style.display = isCmp?'block':'none';
+  document.getElementById('viewAnalyze').style.display = isCmp?'none':'block';
+  document.getElementById('agCmp').style.display = isCmp?'flex':'none';
+  document.getElementById('agAna').style.display = isCmp?'none':'flex';
+  document.getElementById('cmpTitle').textContent = isCmp?'参考 vs 作品':'分析作品';
+  document.getElementById('cmpSub').textContent = isCmp
+    ? '有参考图，比「像不像」'
+    : '没参考图也能看，看「好在哪、差在哪」';
+  document.getElementById('agSt').textContent = isCmp
+    ? '已经读过两张图的 EXIF'
+    : '已经读过这张的 EXIF';
+}
+function refSrc(el,type){
+  el.parentElement.querySelectorAll('.rs').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById('uplZone').style.display = type==='lib'?'none':'block';
+  if(type==='lib') fake('从审美库里选一张参考');
+  else if(type==='upload') fake('拖入或选择本地图片 —— 不用先入库');
+  else fake('Ctrl+V 直接粘贴图片');
+}
 function cmpMode(el,ok){
   if(!ok){ fake('这个模式要先手动对齐两张图才能用 —— 现在两张构图不同，硬叠没意义'); return; }
   el.parentElement.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));
