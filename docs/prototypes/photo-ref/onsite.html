@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>现场 · 脚本手机版</title>
+<style>
+:root{
+  --bg:#09090b; --card:#16161a; --elev:#1f1f27; --input:#111116;
+  --tx1:#e4e4e7; --tx2:#a1a1aa; --tx3:#71717a;
+  --bd:rgba(255,255,255,.08); --bd2:rgba(255,255,255,.16);
+  --pri:#22d3ee; --ok:#4ade80; --warn:#fbbf24; --err:#f87171;
+  --photo:#fbbf24; --coser:#f472b6; --drama:#a78bfa;
+  --fm:'SF Mono',Consolas,monospace;
+  --ff:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:var(--bg);color:var(--tx1);font-family:var(--ff);
+  font-size:17px;line-height:1.55;-webkit-font-smoothing:antialiased;
+  padding-bottom:env(safe-area-inset-bottom)}
+button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+
+/* 顶部 */
+.hd{position:sticky;top:0;z-index:20;background:rgba(9,9,11,.95);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--bd);
+  padding:12px 16px calc(10px + env(safe-area-inset-top)) 16px;
+  padding-top:calc(12px + env(safe-area-inset-top))}
+.hd-r1{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.hd-date{font-size:15px;color:var(--tx3);font-family:var(--fm)}
+.spacer{flex:1}
+.hd-btn{font-size:15px;padding:7px 14px;border-radius:9px;background:var(--elev);
+  border:1px solid var(--bd2);color:var(--tx2)}
+.hd-btn.on{background:color-mix(in srgb,var(--warn) 22%,transparent);
+  border-color:var(--warn);color:var(--warn)}
+.hd-r2{display:flex;align-items:center;gap:8px}
+.hd-title{font-size:19px;font-weight:700}
+.hd-light{font-size:14px;color:var(--photo);font-family:var(--fm)}
+
+/* 进度条：哪些镜拍了 */
+.prog{display:flex;gap:6px;padding:0 16px 10px}
+.pg{flex:1;height:5px;border-radius:3px;background:var(--bd2);transition:.2s}
+.pg.done{background:var(--ok)}
+.pg.now{background:var(--photo);box-shadow:0 0 10px color-mix(in srgb,var(--photo) 60%,transparent)}
+.pg.skip{background:var(--err);opacity:.6}
+
+/* 左滑提示 / 镜号导航 */
+.nav{display:flex;align-items:center;gap:10px;padding:10px 16px}
+.nav-btn{width:44px;height:44px;border-radius:50%;background:var(--elev);
+  border:1px solid var(--bd2);display:flex;align-items:center;justify-content:center;
+  font-size:20px;color:var(--tx2);flex-shrink:0}
+.nav-btn:active{background:var(--bd)}
+.nav-idx{flex:1;text-align:center;font-size:16px;font-family:var(--fm);color:var(--tx2)}
+
+/* 主卡片 */
+.main{padding:0 16px 140px}
+.shot{background:var(--card);border:1px solid var(--bd2);border-radius:18px;
+  overflow:hidden;margin-bottom:16px}
+
+/* 图 */
+.shot-img{aspect-ratio:4/3;background:linear-gradient(150deg,#2a2340,#141020);
+  position:relative;display:flex;align-items:center;justify-content:center}
+.shot-img .ph{width:34%;height:58%;border-radius:40% 40% 18% 18%/14% 14% 7% 7%;
+  background:linear-gradient(175deg,#e8d5bd,#a8825c)}
+.shot-tags{position:absolute;top:12px;left:12px;display:flex;gap:7px;flex-wrap:wrap}
+.shot-tag{font-size:13px;padding:4px 11px;border-radius:7px;background:rgba(0,0,0,.65);
+  color:#fff;backdrop-filter:blur(4px)}
+.shot-tag.hl{background:var(--photo);color:#231a02;font-weight:600}
+
+/* ⭐ 口令：最大字 */
+.cue{padding:22px 20px;background:color-mix(in srgb,var(--photo) 12%,var(--card));
+  border-top:1px solid color-mix(in srgb,var(--photo) 30%,transparent);
+  border-bottom:1px solid color-mix(in srgb,var(--photo) 30%,transparent)}
+.cue-label{font-size:13px;color:var(--photo);font-family:var(--fm);
+  text-transform:uppercase;letter-spacing:.08em;margin-bottom:9px}
+.cue-text{font-size:32px;font-weight:700;line-height:1.35;color:#fff;letter-spacing:.01em}
+.cue-hit{font-size:14px;color:var(--tx3);margin-top:9px;font-family:var(--fm)}
+
+/* 参数条 */
+.params{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
+  background:var(--bd2);border-bottom:1px solid var(--bd2)}
+.pm{background:var(--card);padding:14px 8px;text-align:center}
+.pm-k{font-size:12px;color:var(--tx3);margin-bottom:4px}
+.pm-v{font-size:19px;font-family:var(--fm);color:var(--pri);font-weight:600}
+
+/* 信息行 */
+.rows{padding:4px 0}
+.row{display:flex;gap:12px;padding:13px 18px;border-bottom:1px solid var(--bd);
+  align-items:flex-start}
+.row:last-child{border-bottom:none}
+.rk{font-size:14px;color:var(--tx3);flex-shrink:0;min-width:76px;padding-top:2px}
+.rv{flex:1;font-size:16px;color:var(--tx1);line-height:1.6}
+.rv.warn{color:var(--warn)}
+.rv b{color:var(--photo)}
+
+/* 模特提醒 */
+.who{display:flex;gap:12px;padding:14px 18px;
+  background:color-mix(in srgb,var(--coser) 9%,var(--card));
+  border-top:1px solid color-mix(in srgb,var(--coser) 26%,transparent)}
+.who-av{width:40px;height:40px;border-radius:50%;flex-shrink:0;
+  background:color-mix(in srgb,var(--coser) 28%,transparent);color:var(--coser);
+  display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600}
+.who-b{flex:1;min-width:0}
+.who-n{font-size:15px;color:var(--coser);font-weight:600;margin-bottom:4px}
+.who-t{font-size:15px;color:var(--tx2);line-height:1.6}
+.who-t b{color:var(--coser)}
+
+/* 底部操作 */
+.acts{position:fixed;left:0;right:0;bottom:0;z-index:30;
+  display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;
+  padding:12px 16px calc(12px + env(safe-area-inset-bottom)) 16px;
+  background:rgba(9,9,11,.96);backdrop-filter:blur(12px);
+  border-top:1px solid var(--bd2)}
+.ab{padding:16px 8px;border-radius:13px;background:var(--elev);
+  border:1px solid var(--bd2);font-size:17px;color:var(--tx2);
+  display:flex;flex-direction:column;align-items:center;gap:4px}
+.ab b{font-size:16px;color:var(--tx1);font-weight:600}
+.ab span{font-size:12px;color:var(--tx3)}
+.ab.ok{background:color-mix(in srgb,var(--ok) 22%,transparent);
+  border-color:color-mix(in srgb,var(--ok) 45%,transparent)}
+.ab.ok b{color:var(--ok)}
+.ab:active{transform:scale(.97)}
+
+/* 抽屉：必带 / 参考 / 档案 */
+.sheet{position:fixed;inset:0;z-index:50;display:none}
+.sheet.on{display:block}
+.sheet-bg{position:absolute;inset:0;background:rgba(0,0,0,.7)}
+.sheet-box{position:absolute;left:0;right:0;bottom:0;max-height:82vh;
+  background:var(--elev);border-radius:20px 20px 0 0;overflow:hidden;
+  display:flex;flex-direction:column;
+  padding-bottom:env(safe-area-inset-bottom)}
+.sheet-hd{display:flex;align-items:center;gap:10px;padding:16px 20px;
+  border-bottom:1px solid var(--bd2)}
+.sheet-t{font-size:19px;font-weight:700}
+.sheet-x{font-size:17px;color:var(--tx3);padding:4px 10px}
+.sheet-bd{overflow:auto;padding:16px 20px 24px}
+
+/* 必带清单 */
+.pk-grp{margin-bottom:18px}
+.pk-h{font-size:13px;color:var(--tx3);font-family:var(--fm);margin-bottom:8px;
+  display:flex;align-items:center;gap:8px}
+.pk-dot{width:8px;height:8px;border-radius:50%}
+.pk-item{display:flex;align-items:center;gap:12px;padding:14px 16px;
+  background:var(--card);border-radius:12px;margin-bottom:8px;
+  border:1px solid var(--bd2)}
+.pk-item.must{border-color:color-mix(in srgb,var(--err) 34%,transparent);
+  background:color-mix(in srgb,var(--err) 7%,var(--card))}
+.pk-cb{width:24px;height:24px;border-radius:7px;border:2px solid var(--bd2);
+  flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  font-size:15px;color:transparent;transition:.18s}
+.pk-cb.on{background:var(--ok);border-color:var(--ok);color:#04120a}
+.pk-t{flex:1;font-size:17px}
+.pk-n{font-size:13px;color:var(--tx3)}
+
+/* 参考图 */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+.ref{border-radius:12px;overflow:hidden;background:var(--card);border:1px solid var(--bd2)}
+.ref-i{aspect-ratio:4/3;background:linear-gradient(150deg,#2a2340,#141020)}
+.ref-i.g2{background:linear-gradient(150deg,#3a2a1a,#1a1208)}
+.ref-i.g3{background:linear-gradient(150deg,#1a2a3a,#081018)}
+.ref-i.g4{background:linear-gradient(150deg,#2a3a2a,#101a10)}
+.ref-t{padding:9px 11px;font-size:14px;color:var(--tx2);line-height:1.4}
+
+/* 场地信息 */
+.info-row{display:flex;gap:12px;padding:14px 16px;background:var(--card);
+  border-radius:12px;margin-bottom:9px;border:1px solid var(--bd2)}
+.info-k{font-size:14px;color:var(--tx3);min-width:70px;flex-shrink:0}
+.info-v{flex:1;font-size:16px;color:var(--tx1);line-height:1.55}
+.info-v b{color:var(--photo)}
+
+#_t{position:fixed;left:50%;bottom:110px;transform:translateX(-50%);z-index:99;
+  padding:14px 22px;border-radius:11px;background:#1f1f27;
+  border:1px solid rgba(255,255,255,.22);color:#e4e4e7;font-size:16px;
+  box-shadow:0 12px 32px rgba(0,0,0,.6);display:none;max-width:88vw;text-align:center}
+</style>
+</head>
+<body>
+
+<div class="hd">
+  <div class="hd-r1">
+    <span class="hd-date">11-08 · 17:05 日落</span>
+    <div class="spacer"></div>
+    <button class="hd-btn" onclick="openSheet('info')">场地</button>
+    <button class="hd-btn" id="blackBtn" onclick="toggleBlack()">暗屏</button>
+  </div>
+  <div class="hd-r2">
+    <span class="hd-title">十七孔桥逆光</span>
+    <div class="spacer"></div>
+    <span class="hd-light" id="hdLight">16:26 – 17:05</span>
+  </div>
+</div>
+
+<div class="prog" id="prog"></div>
+
+<div class="nav">
+  <button class="nav-btn" onclick="prevShot()">‹</button>
+  <span class="nav-idx" id="navIdx">镜 1 / 3</span>
+  <button class="nav-btn" onclick="nextShot()">›</button>
+</div>
+
+<div class="main" id="main"></div>
+
+<div class="acts">
+  <button class="ab" onclick="openSheet('kit')">
+    <b>必带</b><span id="kitLeft">8 项</span>
+  </button>
+  <button class="ab" onclick="openSheet('refs')">
+    <b>参考</b><span>图 12 张</span>
+  </button>
+  <button class="ab ok" onclick="markDone(this)">
+    <b>✓ 拍了</b><span>下一镜</span>
+  </button>
+</div>
+
+<!-- 抽屉：必带 -->
+<div class="sheet" id="sheet-kit">
+  <div class="sheet-bg" onclick="closeSheet('kit')"></div>
+  <div class="sheet-box">
+    <div class="sheet-hd"><span class="sheet-t">必带清单</span>
+      <div class="spacer"></div><button class="sheet-x" onclick="closeSheet('kit')">✕</button></div>
+    <div class="sheet-bd">
+      <div class="pk-grp">
+        <div class="pk-h"><span class="pk-dot" style="background:var(--pri)"></span>自带</div>
+        <div class="pk-item"><span class="pk-cb on" onclick="this.classList.toggle('on')">✓</span>
+          <span class="pk-t">相机 · 85mm</span></div>
+        <div class="pk-item"><span class="pk-cb" onclick="this.classList.toggle('on')">✓</span>
+          <span class="pk-t">反光板</span></div>
+        <div class="pk-item"><span class="pk-cb" onclick="this.classList.toggle('on')">✓</span>
+          <span class="pk-t">浅色大衣（提醒她穿）</span></div>
+      </div>
+      <div class="pk-grp">
+        <div class="pk-h"><span class="pk-dot" style="background:var(--warn)"></span>现场买</div>
+        <div class="pk-item"><span class="pk-cb" onclick="this.classList.toggle('on')">✓</span>
+          <span class="pk-t">热奶茶</span><span class="pk-n">便利店</span></div>
+      </div>
+      <div class="pk-grp">
+        <div class="pk-h"><span class="pk-dot" style="background:var(--err)"></span>别忘</div>
+        <div class="pk-item must"><span class="pk-cb" onclick="this.classList.toggle('on')">✓</span>
+          <span class="pk-t">提前查日落时间</span><span class="pk-n">17:05</span></div>
+        <div class="pk-item must"><span class="pk-cb" onclick="this.classList.toggle('on')">✓</span>
+          <span class="pk-t">避开正午</span><span class="pk-n">顶光毁片</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 抽屉：参考图 -->
+<div class="sheet" id="sheet-refs">
+  <div class="sheet-bg" onclick="closeSheet('refs')"></div>
+  <div class="sheet-box">
+    <div class="sheet-hd"><span class="sheet-t">参考图</span>
+      <div class="spacer"></div><button class="sheet-x" onclick="closeSheet('refs')">✕</button></div>
+    <div class="sheet-bd">
+      <div class="refs">
+        <div class="ref"><div class="ref-i"></div><div class="ref-t">逆光勾轮廓，脸留暗部</div></div>
+        <div class="ref"><div class="ref-i g2"></div><div class="ref-t">金光过桥</div></div>
+        <div class="ref"><div class="ref-i g3"></div><div class="ref-t">桥上剪影</div></div>
+        <div class="ref"><div class="ref-i g4"></div><div class="ref-t">金色倒影</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 抽屉：场地信息 -->
+<div class="sheet" id="sheet-info">
+  <div class="sheet-bg" onclick="closeSheet('info')"></div>
+  <div class="sheet-box">
+    <div class="sheet-hd"><span class="sheet-t">场地信息</span>
+      <div class="spacer"></div><button class="sheet-x" onclick="closeSheet('info')">✕</button></div>
+    <div class="sheet-bd">
+      <div class="info-row"><span class="info-k">地点</span>
+        <span class="info-v">颐和园 · 十七孔桥<b>东南侧</b><br>
+          <span style="font-size:14px;color:var(--tx3)">导航到「十七孔桥」，从东南边上桥</span></span></div>
+      <div class="info-row"><span class="info-k">最佳时段</span>
+        <span class="info-v"><b>16:26 – 17:05</b>（黄金时段 39 分钟）<br>
+          <span style="font-size:14px;color:var(--tx3)">蓝调到 17:34</span></span></div>
+      <div class="info-row"><span class="info-k">太阳</span>
+        <span class="info-v">16:40 在 <b>245° 西南</b>，高度 <b>3.6°</b></span></div>
+      <div class="info-row"><span class="info-k">园子</span>
+        <span class="info-v">06:30–18:00 营业，联票 60 元<br>
+          <span style="font-size:14px;color:var(--warn)">18:00 闭园，拍完蓝调要往外走</span></span></div>
+      <div class="info-row"><span class="info-k">天气</span>
+        <span class="info-v">晴，云量 <b>12%</b>，气温 9/18℃<br>
+          <span style="font-size:14px;color:var(--tx3)">云少，黄金时刻颜色最浓但光比大</span></span></div>
+      <div class="info-row"><span class="info-k">提醒</span>
+        <span class="info-v">桥上下午人多，<b>提前占位</b><br>
+          <span style="font-size:14px;color:var(--tx3)">桥面反光强，注意曝光</span></span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== 分镜数据（来自脚本策划）=====
+const SHOTS = [
+  {
+    n:1, frame:'全身 / 桥在中轴',
+    tags:['逆光','全身','侧脸'],
+    cue:'站定别动，我数三下',
+    cueHit:'对小林 · 5/6 次有效',
+    cam:{ shutter:'1/2000', aperture:'f/1.8', iso:'100' },
+    what:'桥洞做前景框 · 站定 · 侧脸',
+    why:'逆光时最有层次的是轮廓，站定不动才能等到光穿过来',
+    take:'连拍 8–10 张，等风',
+    risk:'脸会黑，先保轮廓'
+  },
+  {
+    n:2, frame:'近景 / 特写脸侧',
+    tags:['逆光','特写','不看镜头'],
+    cue:'你就当我不在，做你自己的事',
+    cueHit:'对小林 · 5/6 次有效',
+    cam:{ shutter:'1/1500', aperture:'f/1.4', iso:'200' },
+    what:'风吹动头发 · 不看镜头 · 微侧',
+    why:'风吹动头发，逆光会把发丝点亮——这是这组最出彩的一镜',
+    take:'连拍抓，头发落下的一瞬',
+    risk:'风太大头发全盖脸，等一阵'
+  },
+  {
+    n:3, frame:'半身 / 人物靠右',
+    tags:['蓝调','半身','回头'],
+    cue:'往前走两步，我叫你时回头',
+    cueHit:'通用口令',
+    cam:{ shutter:'1/60', aperture:'f/2.8', iso:'800' },
+    what:'远处塔 + 天空渐层 · 回头',
+    why:'日落后 10 分钟天空渐变，塔做背景，人物轮廓变剪影',
+    take:'单张精拍，手要稳',
+    risk:'光掉得很快，先测好曝光'
+  }
+];
+
+let cur = 0;
+const state = { done:[], skip:[] };
+let black = false;
+
+function render(){
+  const s = SHOTS[cur];
+  document.getElementById('navIdx').textContent = '镜 ' + s.n + ' / ' + SHOTS.length;
+  document.getElementById('hdLight').textContent = '黄金 16:26 – 17:05';
+
+  document.getElementById('main').innerHTML = `
+    <div class="shot">
+      <div class="shot-img">
+        <div class="ph"></div>
+        <div class="shot-tags">
+          ${s.tags.map((t,i)=>'<span class="shot-tag'+(i===0?' hl':'')+'">'+t+'</span>').join('')}
+        </div>
+      </div>
+
+      <div class="cue">
+        <div class="cue-label">对她说</div>
+        <div class="cue-text">「${s.cue}」</div>
+        <div class="cue-hit">${s.cueHit}</div>
+      </div>
+
+      <div class="params">
+        <div class="pm"><div class="pm-k">快门</div><div class="pm-v">${s.cam.shutter}</div></div>
+        <div class="pm"><div class="pm-k">光圈</div><div class="pm-v">${s.cam.aperture}</div></div>
+        <div class="pm"><div class="pm-k">ISO</div><div class="pm-v">${s.cam.iso}</div></div>
+      </div>
+
+      <div class="rows">
+        <div class="row"><span class="rk">景别</span><span class="rv">${s.frame}</span></div>
+        <div class="row"><span class="rk">画面</span><span class="rv">${s.what}</span></div>
+        <div class="row"><span class="rk">为什么</span><span class="rv">${s.why}</span></div>
+        <div class="row"><span class="rk">怎么按</span><span class="rv">${s.take}</span></div>
+        <div class="row"><span class="rk">风险</span><span class="rv warn">${s.risk}</span></div>
+      </div>
+
+      <div class="who">
+        <div class="who-av">林</div>
+        <div class="who-b">
+          <div class="who-n">小林 · 本色出演</div>
+          <div class="who-t"><b>别让她笑。</b>给她事情做，让她自己进入状态。
+            雷区：一次只给一个指令；第 40 分钟她会累，安排坐下。</div>
+        </div>
+      </div>
+    </div>`;
+
+  renderProg();
+}
+
+function renderProg(){
+  document.getElementById('prog').innerHTML = SHOTS.map((s,i)=>{
+    let cls = 'pg';
+    if(state.done.includes(i)) cls += ' done';
+    else if(state.skip.includes(i)) cls += ' skip';
+    else if(i===cur) cls += ' now';
+    return '<div class="'+cls+'"></div>';
+  }).join('');
+}
+
+function prevShot(){ if(cur>0){cur--;render();} else fake('已经是第一镜'); }
+function nextShot(){ if(cur<SHOTS.length-1){cur++;render();} else fake('已经是最后一镜'); }
+function markDone(btn){
+  if(!state.done.includes(cur)) state.done.push(cur);
+  render();
+  if(cur < SHOTS.length-1){ cur++; render(); fake('✓ 记录 —— 下一镜'); }
+  else fake('✓ 全部拍完了');
+}
+
+function openSheet(k){ document.getElementById('sheet-'+k).classList.add('on'); }
+function closeSheet(k){ document.getElementById('sheet-'+k).classList.remove('on'); }
+
+function toggleBlack(){
+  black = !black;
+  const b = document.getElementById('blackBtn');
+  b.classList.toggle('on', black);
+  document.body.style.filter = black ? 'brightness(.35)' : '';
+  if(black) fake('暗屏 —— 客户凑过来看时用');
+}
+
+function fake(msg){
+  let d=document.getElementById('_t');
+  if(!d){d=document.createElement('div');d.id='_t';document.body.appendChild(d);}
+  d.textContent=msg;d.style.display='block';
+  clearTimeout(window._tt);
+  window._tt=setTimeout(()=>d.style.display='none',2200);
+}
+
+// 左右滑动切镜
+let tx=0;
+document.addEventListener('touchstart',e=>{ tx=e.touches[0].clientX; },{passive:true});
+document.addEventListener('touchend',e=>{
+  const dx = e.changedTouches[0].clientX - tx;
+  if(Math.abs(dx) > 60){
+    if(dx < 0) nextShot(); else prevShot();
+  }
+},{passive:true});
+
+render();
+</script>
+</body>
+</html>
