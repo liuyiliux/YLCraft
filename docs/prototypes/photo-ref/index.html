@@ -1842,12 +1842,35 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
             </div>
             <div class="pc-where">万寿山北侧树林</div>
             <div class="pc-why">
-              <span class="pcw-t">为什么不推荐</span>
-              后山在<b>北侧</b>，下午太阳在西南——
-              <b>光被山体挡住</b>，进去基本是阴天散射光，拍不出黄金时刻。
-              人少是真的，但光没了。
+              <span class="pcw-t">为什么不推荐 —— 原因是「方位不对」，不是「被挡住」</span>
+              后山在<b>北侧</b>，下午 16:40 太阳在<b>西南 245°</b>——
+              太阳<b>根本不在你面对的那个方向</b>。
+              <br><br>
+              实测地形：朝北方向的地形仰角只有 <b>3.32°</b>，
+              而当时太阳高度 3.6°。<b>光其实能越过山脊</b>，
+              但它从你背后偏西打过来，你朝北就拍不到逆光。
+              <br><br>
+              <b>这两件事处理方式完全不同：</b><br>
+              · 「被地形挡住」→ 站高一点、往前挪，可能解决<br>
+              · 「<b>太阳不在那个方位</b>」→ 换到哪里都没用，<b>必须换时间</b>
             </div>
             <button class="pc-pick nogood" onclick="fake('知道原因就好，可以留着备用')">知道原因了</button>
+          </div>
+
+          <div class="kf" style="border-left-color:var(--ok)">
+            <div class="kf-h">🗻 地形遮挡（实测数据）</div>
+            <div class="kf-rows">
+              <div class="kfr"><span class="kfr-k">昆明湖畔 海拔</span><span class="kfr-v">49.0 m</span></div>
+              <div class="kfr"><span class="kfr-k">万寿山 海拔</span><span class="kfr-v">59.8 m（高约 11 m）</span></div>
+              <div class="kfr"><span class="kfr-k">朝北地形仰角</span><span class="kfr-v hl">3.32°</span></div>
+              <div class="kfr"><span class="kfr-k">朝西南（湖面）</span><span class="kfr-v hl">0.30°（基本无遮挡）</span></div>
+              <div class="kfr"><span class="kfr-k">16:40 太阳高度</span><span class="kfr-v hl">3.6°</span></div>
+            </div>
+            <div class="kf-note">
+              ✓ <b>这部分是真算的</b>：用 Open-Elevation 公开高程数据，
+              从昆明湖畔每 200 米采一个高程点，算出各方向的地形仰角。
+              <span class="kf-real-note">万寿山只有 11 米高，挡不住 3.6° 的太阳</span>
+            </div>
           </div>
         </div>
       </div>
