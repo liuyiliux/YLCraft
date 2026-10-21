@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>摄影参考库 · 原型 v1</title>
+<style>
+:root{
+  --bg:#0b0b10; --bg2:#111117; --pnl:#15151d; --ln:#242430; --ln2:#32323f;
+  --tx:#e8e8ee; --tx2:#a8a8b8; --tx3:#6c6c80;
+  --ac:#22d3ee; --ac-d:#0e7490;
+  --ok:#34d399; --warn:#fbbf24; --bad:#f87171;
+  --fm:'SF Mono',Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--tx);font:13px/1.6 -apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  -webkit-font-smoothing:antialiased;min-height:100vh}
+button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+
+/* ---------- 顶栏 ---------- */
+.top{display:flex;align-items:center;gap:10px;padding:10px 16px;
+  border-bottom:1px solid var(--ln);background:var(--bg2);position:sticky;top:0;z-index:20}
+.logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px}
+.logo i{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,var(--ac),#7c3aed);
+  display:inline-block}
+.searchbox{flex:1;max-width:520px;margin-left:20px;position:relative}
+.searchbox input{width:100%;padding:7px 12px 7px 32px;border-radius:8px;border:1px solid var(--ln2);
+  background:var(--pnl);color:var(--tx);font-size:12px;outline:none}
+.searchbox input:focus{border-color:var(--ac)}
+.searchbox svg{position:absolute;left:10px;top:8px;width:14px;height:14px;fill:var(--tx3)}
+.spacer{flex:1}
+.btn{padding:6px 13px;border-radius:7px;border:1px solid var(--ln2);background:var(--pnl);
+  font-size:12px;color:var(--tx2);transition:.15s}
+.btn:hover{border-color:var(--ac);color:var(--tx)}
+.btn.pri{background:var(--ac);border-color:var(--ac);color:#04222b;font-weight:600}
+.btn.pri:hover{filter:brightness(1.1)}
+
+/* ---------- 三库切换 ---------- */
+.libs{display:flex;gap:8px;padding:14px 16px 0;max-width:1500px;margin:0 auto}
+.lib{flex:1;padding:12px 14px;border-radius:10px;border:1px solid var(--ln);
+  background:var(--pnl);cursor:pointer;transition:.18s}
+.lib:hover{border-color:var(--ln2);transform:translateY(-1px)}
+.lib.on{border-color:var(--ac);background:rgba(34,211,238,.07)}
+.lib h3{font-size:13px;display:flex;align-items:center;gap:7px}
+.lib .dot{width:7px;height:7px;border-radius:50%}
+.lib.d1 .dot{background:var(--ok)}
+.lib.d2 .dot{background:var(--bad)}
+.lib.d3 .dot{background:var(--ac)}
+.lib p{font-size:10.5px;color:var(--tx3);margin-top:4px;line-height:1.5}
+.lib .cnt{font-family:var(--fm);font-size:11px;color:var(--tx2);margin-top:6px}
+
+/* ---------- 筛选条 ---------- */
+.filters{display:flex;gap:6px;flex-wrap:wrap;padding:14px 16px 6px;max-width:1500px;margin:0 auto}
+.chip{font-size:10.5px;padding:4px 10px;border-radius:20px;border:1px solid var(--ln2);
+  background:var(--pnl);color:var(--tx2);cursor:pointer;transition:.15s}
+.chip:hover{border-color:var(--ac)}
+.chip.on{background:rgba(34,211,238,.16);border-color:var(--ac);color:var(--ac)}
+.fgroup{display:flex;align-items:center;gap:5px;margin-right:14px}
+.fgroup>span{font-size:9.5px;color:var(--tx3);font-family:var(--fm);text-transform:uppercase;
+  letter-spacing:.06em;margin-right:2px}
+
+/* ---------- 网格 ---------- */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;
+  padding:14px 16px 40px;max-width:1500px;margin:0 auto}
+.card{background:var(--pnl);border:1px solid var(--ln);border-radius:10px;overflow:hidden;
+  transition:.18s;cursor:pointer;position:relative}
+.card:hover{border-color:var(--ac);transform:translateY(-2px)}
+.thumb{aspect-ratio:4/3;background:linear-gradient(150deg,#2a2340,#141020);position:relative;
+  display:flex;align-items:center;justify-content:center;overflow:hidden}
+.thumb .ph{width:38%;height:62%;border-radius:40% 40% 18% 18%/14% 14% 7% 7%;
+  background:linear-gradient(175deg,#e8d5bd,#a8825c)}
+.card.c2 .thumb{background:linear-gradient(150deg,#3a1f1f,#1a0e0e)}
+.card.c3 .thumb{background:linear-gradient(150deg,#1f3a2a,#0e1a14)}
+.card.c4 .thumb{background:linear-gradient(150deg,#1f2a3a,#0e1420)}
+.badge{position:absolute;top:7px;left:7px;font-size:9px;padding:2px 7px;border-radius:5px;
+  background:rgba(0,0,0,.6);backdrop-filter:blur(4px);font-family:var(--fm)}
+.badge.steal{background:rgba(34,211,238,.85);color:#04222b;font-weight:600;left:auto;right:7px}
+.hoverbar{position:absolute;inset:auto 0 0 0;padding:7px 9px;
+  background:linear-gradient(0deg,rgba(0,0,0,.85),transparent);
+  display:flex;gap:5px;opacity:0;transition:.15s}
+.card:hover .hoverbar{opacity:1}
+.mini{font-size:9.5px;padding:3px 8px;border-radius:5px;background:rgba(255,255,255,.13);
+  border:1px solid rgba(255,255,255,.12)}
+.mini:hover{background:rgba(34,211,238,.25);border-color:var(--ac)}
+.card-bd{padding:9px 10px}
+.steal-txt{font-size:10.5px;color:var(--ac);line-height:1.45;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
+.tg{font-size:8.5px;padding:1.5px 6px;border-radius:4px;background:rgba(255,255,255,.06);
+  color:var(--tx3);font-family:var(--fm)}
+
+/* ---------- 对比面板（重点） ---------- */
+.compare{position:fixed;inset:0;background:rgba(5,5,10,.93);z-index:50;
+  display:none;align-items:center;justify-content:center;backdrop-filter:blur(8px)}
+.compare.on{display:flex}
+.cmp-box{width:min(1180px,95vw);max-height:92vh;background:var(--bg2);border:1px solid var(--ln2);
+  border-radius:14px;display:flex;flex-direction:column;overflow:hidden}
+.cmp-hd{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--ln)}
+.cmp-hd h2{font-size:14px}
+.cmp-hd .sub{font-size:10.5px;color:var(--tx3);margin-left:4px}
+.cmp-body{padding:16px 18px;overflow:auto}
+.cmp-modes{display:flex;gap:6px;margin-bottom:14px}
+.cmp-stage{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.cmp-side{position:relative;border-radius:10px;overflow:hidden;border:1px solid var(--ln2);
+  aspect-ratio:4/3;background:linear-gradient(150deg,#2a2340,#141020)}
+.cmp-side .ph{position:absolute;left:34%;top:20%;width:32%;height:58%;
+  border-radius:40% 40% 18% 18%/14% 14% 7% 7%;background:linear-gradient(175deg,#e8d5bd,#a8825c)}
+.cmp-side.real .ph{left:38%;top:24%;width:26%;height:52%;background:linear-gradient(175deg,#d8c5ad,#987852)}
+.cmp-side .lbl{position:absolute;top:8px;left:8px;font-size:9.5px;padding:3px 8px;
+  border-radius:5px;background:rgba(0,0,0,.7);font-family:var(--fm)}
+.cmp-side.real .lbl{background:rgba(34,211,238,.85);color:#04222b;font-weight:600}
+.cmp-del{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.45);font-family:var(--fm);font-size:10px;text-align:center;padding:14px;line-height:1.7}
+.cmp-slider{margin-top:16px;padding:12px 14px;border-radius:10px;background:var(--pnl);
+  border:1px solid var(--ln)}
+.cmp-slider .row{display:flex;align-items:center;gap:10px;font-size:10px;color:var(--tx3)}
+.cmp-slider input[type=range]{flex:1;accent-color:var(--ac)}
+.cmp-verdict{margin-top:14px;padding:12px 14px;border-radius:10px;
+  background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.28);font-size:11.5px;line-height:1.7}
+.cmp-verdict b{color:var(--warn)}
+.cmp-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
+.cmp-item{padding:10px;border-radius:8px;background:var(--pnl);border:1px solid var(--ln);font-size:10.5px}
+.cmp-item .k{font-size:9px;color:var(--tx3);font-family:var(--fm);text-transform:uppercase;letter-spacing:.05em}
+.cmp-item .v{margin-top:4px;color:var(--tx)}
+.cmp-item .d{margin-top:3px;font-size:9.5px}
+.cmp-item.diff{border-color:rgba(251,191,36,.4)}
+.cmp-item.diff .d{color:var(--warn)}
+.cmp-item.same .d{color:var(--tx3)}
+.cmp-ft{display:flex;gap:8px;padding:14px 18px;border-top:1px solid var(--ln)}
+
+/* ---------- 提示条 ---------- */
+.note{max-width:1500px;margin:8px auto 0;padding:0 16px}
+.note-in{padding:9px 13px;border-radius:8px;background:rgba(34,211,238,.06);
+  border:1px solid rgba(34,211,238,.22);font-size:10.5px;color:var(--tx2);line-height:1.6}
+.note-in b{color:var(--ac)}
+.wip{font-size:8.5px;padding:1px 6px;border-radius:4px;background:rgba(251,191,36,.16);
+  color:var(--warn);margin-left:6px;font-family:var(--fm);vertical-align:middle}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="logo"><i></i>摄影参考库</div>
+  <div class="searchbox">
+    <svg viewBox="0 0 24 24"><path d="M10 2a8 8 0 105.3 14l5.4 5.4 1.4-1.4-5.4-5.4A8 8 0 0010 2zm0 2a6 6 0 110 12 6 6 0 010-12z"/></svg>
+    <input placeholder="搜「民政局门口 逆光 暖调」这种自然语句">
+  </div>
+  <div class="spacer"></div>
+  <button class="btn" onclick="fake('批量上传：一次 100–500 张，先勾一批标签整批套用')">批量上传</button>
+  <button class="btn" onclick="fake('截帧入库：播放器里按快捷键，取前后各 1–2 秒的 3–5 张候选帧')">截帧入库</button>
+  <button class="btn pri" onclick="showCompare()">参考 vs 实拍</button>
+</div>
+
+<!-- 三个库 -->
+<div class="libs">
+  <div class="lib d1 on" onclick="pickLib(this,'好库')">
+    <h3><span class="dot"></span>好库 <span class="wip">学别人的</span></h3>
+    <p>电影截帧、大师作品、别人拍得好的——用来学、找参考</p>
+    <div class="cnt">1,284 张 · 本季新增 216</div>
+  </div>
+  <div class="lib d2" onclick="pickLib(this,'不好库')">
+    <h3><span class="dot"></span>不好库 <span class="wip">别再犯</span></h3>
+    <p>客户/老师给的审核意见截图、自己拍坏的——哪里错、正确做法</p>
+    <div class="cnt">37 条 · 待复盘 5</div>
+  </div>
+  <div class="lib d3" onclick="pickLib(this,'我的库')">
+    <h3><span class="dot"></span>我的库 <span class="wip">复盘进步</span></h3>
+    <p>自己的成片，带参数、地点、当时的判断</p>
+    <div class="cnt">412 张 · 本月 28</div>
+  </div>
+</div>
+
+<div class="note">
+  <div class="note-in">
+    <b>核心字段是「一句话偷师点」，不是标签。</b>
+    标签解决检索，句子解决学习。存图时写一句「我要从它身上拿走哪一项」（≤40 字），
+    否则图存了还是一个更漂亮的收藏夹。
+  </div>
+</div>
+
+<!-- 筛选 -->
+<div class="filters">
+  <div class="fgroup"><span>光</span>
+    <button class="chip on" onclick="tog(this)">逆光</button>
+    <button class="chip" onclick="tog(this)">侧逆光</button>
+    <button class="chip" onclick="tog(this)">顺光</button>
+    <button class="chip" onclick="tog(this)">顶光</button>
+    <button class="chip" onclick="tog(this)">柔光</button>
+    <button class="chip" onclick="tog(this)">硬光</button>
+  </div>
+  <div class="fgroup"><span>景别</span>
+    <button class="chip" onclick="tog(this)">特写</button>
+    <button class="chip" onclick="tog(this)">半身</button>
+    <button class="chip" onclick="tog(this)">全身</button>
+  </div>
+  <div class="fgroup"><span>关系</span>
+    <button class="chip" onclick="tog(this)">单人</button>
+    <button class="chip on" onclick="tog(this)">双人</button>
+  </div>
+  <div class="fgroup"><span>题材</span>
+    <button class="chip" onclick="tog(this)">领证</button>
+    <button class="chip" onclick="tog(this)">coser</button>
+    <button class="chip" onclick="tog(this)">老年</button>
+  </div>
+</div>
+
+<!-- 网格 -->
+<div class="grid">
+  <div class="card c1">
+    <div class="thumb"><div class="ph"></div>
+      <span class="badge">电影 · 2.39</span>
+      <span class="badge steal">已写偷师点</span>
+      <div class="hoverbar">
+        <button class="mini" onclick="event.stopPropagation();fake('找相似：按这张找库内相近的')">找相似</button>
+        <button class="mini" onclick="event.stopPropagation();showCompare()">对成片</button>
+      </div>
+    </div>
+    <div class="card-bd">
+      <div class="steal-txt">逆光把发丝和背景分开，脸留暗部</div>
+      <div class="tags"><span class="tg">逆光</span><span class="tg">特写</span><span class="tg">暖调</span></div>
+    </div>
+  </div>
+
+  <div class="card c2">
+    <div class="thumb"><div class="ph"></div>
+      <span class="badge">小红书</span>
+      <span class="badge steal">已写偷师点</span>
+      <div class="hoverbar">
+        <button class="mini" onclick="event.stopPropagation();fake('找相似')">找相似</button>
+        <button class="mini" onclick="event.stopPropagation();showCompare()">对成片</button>
+      </div>
+    </div>
+    <div class="card-bd">
+      <div class="steal-txt">把证举到胸口，互相看，不要看镜头</div>
+      <div class="tags"><span class="tg">领证</span><span class="tg">双人</span><span class="tg">顺光</span></div>
+    </div>
+  </div>
+
+  <div class="card c3">
+    <div class="thumb"><div class="ph"></div>
+      <span class="badge">B站截帧</span>
+      <span class="badge steal">已写偷师点</span>
+      <div class="hoverbar">
+        <button class="mini" onclick="event.stopPropagation();fake('找相似')">找相似</button>
+        <button class="mini" onclick="event.stopPropagation();showCompare()">对成片</button>
+      </div>
+    </div>
+    <div class="card-bd">
+      <div class="steal-txt">阴影加青、高光加蓝、整体降饱和</div>
+      <div class="tags"><span class="tg">调色</span><span class="tg">侧逆光</span><span class="tg">半身</span></div>
+    </div>
+  </div>
+
+  <div class="card c4">
+    <div class="thumb"><div class="ph"></div>
+      <span class="badge">大师</span>
+      <div class="hoverbar">
+        <button class="mini" onclick="event.stopPropagation();fake('待确认：还没写偷师点')">写偷师点</button>
+        <button class="mini" onclick="event.stopPropagation();showCompare()">对成片</button>
+      </div>
+    </div>
+    <div class="card-bd">
+      <div class="steal-txt" style="color:var(--warn)">⚠ 还没写偷师点</div>
+      <div class="tags"><span class="tg">顶光</span><span class="tg">单人</span></div>
+    </div>
+  </div>
+
+  <div class="card c1">
+    <div class="thumb"><div class="ph"></div>
+      <span class="badge">电影</span>
+      <span class="badge steal">已写偷师点</span>
+      <div class="hoverbar">
+        <button class="mini" onclick="event.stopPropagation();fake('找相似')">找相似</button>
+        <button class="mini" onclick="event.stopPropagation();showCompare()">对成片</button>
+      </div>
+    </div>
+    <div class="card-bd">
+      <div class="steal-txt">前景用纱做一层雾，人物只占三分之一</div>
+      <div class="tags"><span class="tg">前景遮挡</span><span class="tg">全身</span><span class="tg">柔光</span></div>
+    </div>
+  </div>
+
+  <div class="card c2">
+    <div class="thumb"><div class="ph"></div>
+      <span class="badge">小红书</span>
+      <span class="badge steal">已写偷师点</span>
+      <div class="hoverbar">
+        <button class="mini" onclick="event.stopPropagation();fake('找相似')">找相似</button>
+        <button class="mini" onclick="event.stopPropagation();showCompare()">对成片</button>
+      </div>
+    </div>
+    <div class="card-bd">
+      <div class="steal-txt">一次只提醒一个动作，别同时说三件事</div>
+      <div class="tags"><span class="tg">老年</span><span class="tg">单人</span><span class="tg">柔光</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 参考 vs 实拍 对比（核心占位） ================= -->
+<div class="compare" id="cmp">
+  <div class="cmp-box">
+    <div class="cmp-hd">
+      <h2>参考 vs 实拍</h2>
+      <span class="sub">拍完拿当初的参考图对一遍，一眼看出差在哪</span>
+      <div class="spacer"></div>
+      <button class="btn" onclick="hideCompare()">✕</button>
+    </div>
+
+    <div class="cmp-body">
+      <div class="cmp-modes">
+        <button class="chip on" onclick="cmpMode(this,'并排')">并排</button>
+        <button class="chip" onclick="cmpMode(this,'叠加')">叠加（挖空看）</button>
+        <button class="chip" onclick="cmpMode(this,'滑块')">滑块分割</button>
+        <button class="chip" onclick="cmpMode(this,'差异')">像素差异</button>
+        <span style="font-size:9.5px;color:var(--tx3);margin-left:auto;align-self:center">
+          ⚠ 叠加/差异要求同尺寸已对齐，否则要先手动对齐
+        </span>
+      </div>
+
+      <div class="cmp-stage">
+        <div class="cmp-side">
+          <span class="lbl">参考图</span>
+          <div class="ph"></div>
+          <div class="cmp-del" style="display:none"></div>
+        </div>
+        <div class="cmp-side real">
+          <span class="lbl">实拍</span>
+          <div class="ph"></div>
+          <div class="cmp-del" style="display:none"></div>
+        </div>
+      </div>
+
+      <div class="cmp-slider">
+        <div class="row">
+          <span>透明度</span>
+          <input type="range" min="0" max="100" value="50" oninput="fake('拖到 50% 看两张的重合度')">
+          <span>50%</span>
+          <button class="mini" onclick="fake('锁定缩放平移：拖动时两张同步')">锁定缩放</button>
+        </div>
+      </div>
+
+      <div class="cmp-verdict">
+        <b>差异诊断（占位文案，具体实现后接真比较）</b><br>
+        光位：参考是<b>侧逆光</b>（轮廓+鼻头有光），实拍偏<b>顺光</b>（脸很匀但平）<br>
+        色温：参考偏冷 ≈5200K，实拍偏暖 ≈6100K<br>
+        构图：参考人物占 1/3 且前景有遮挡，实拍人物占 1/2 无前景
+      </div>
+
+      <div class="cmp-grid">
+        <div class="cmp-item diff">
+          <div class="k">光位</div><div class="v">参考 侧逆光 / 实拍 顺光</div>
+          <div class="d">← 差在这，下次提前 45° 站</div>
+        </div>
+        <div class="cmp-item diff">
+          <div class="k">色温</div><div class="v">参考 5200K / 实拍 6100K</div>
+          <div class="d">← 差在这，白平衡往冷推</div>
+        </div>
+        <div class="cmp-item same">
+          <div class="k">景别</div><div class="v">特写 / 特写</div>
+          <div class="d">对上了</div>
+        </div>
+        <div class="cmp-item diff">
+          <div class="k">构图</div><div class="v">参考 留白+前景 / 实拍 居中</div>
+          <div class="d">← 差在这</div>
+        </div>
+        <div class="cmp-item same">
+          <div class="k">情绪</div><div class="v">松弛 / 松弛</div>
+          <div class="d">对上了</div>
+        </div>
+        <div class="cmp-item same">
+          <div class="k">背景</div><div class="v">虚化 / 虚化</div>
+          <div class="d">对上了</div>
+        </div>
+      </div>
+
+      <div class="note-in" style="margin-top:14px">
+        <b>这个功能是调研里确认的空白位：</b>参考图库类产品（ShotDeck / FilmGrab / Savee / Cosmos）
+        <b>全都没有</b>「参考 vs 自己的成片」对照；只有 Lightroom 在修图软件里做了 Reference View。
+        <span class="wip">原型占位</span> 具体实现后做：真实差异诊断、单应性对齐、导出对比图。
+      </div>
+    </div>
+
+    <div class="cmp-ft">
+      <button class="btn" onclick="hideCompare()">关闭</button>
+      <div class="spacer"></div>
+      <button class="btn" onclick="fake('导出对比图（带诊断结论），发给客户或存进作品库')">导出对比图</button>
+      <button class="btn pri" onclick="fake('把这次差异写成一条新偷师点，存进好库')">存成一条偷师点</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function fake(msg){
+  const d=document.createElement('div');
+  d.style.cssText='position:fixed;left:50%;bottom:32px;transform:translateX(-50%);z-index:99;'
+    +'padding:10px 18px;border-radius:9px;background:rgba(20,20,28,.97);border:1px solid #32323f;'
+    +'color:#e8e8ee;font-size:11.5px;box-shadow:0 8px 30px rgba(0,0,0,.6);max-width:80vw';
+  d.textContent=msg;
+  document.body.appendChild(d);
+  setTimeout(()=>d.remove(),2600);
+}
+function pickLib(el,name){
+  document.querySelectorAll('.lib').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+  fake('切到「'+name+'」');
+}
+function tog(el){ el.classList.toggle('on'); }
+function showCompare(){ document.getElementById('cmp').classList.add('on'); }
+function hideCompare(){ document.getElementById('cmp').classList.remove('on'); }
+function cmpMode(el,name){
+  el.parentElement.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+  fake('对比模式：'+name+'（具体实现后做）');
+}
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape') hideCompare();
+});
+</script>
+</body>
+</html>
