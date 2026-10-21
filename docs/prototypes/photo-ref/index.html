@@ -726,6 +726,15 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
   font-size:var(--fs-sm);color:var(--tx2);line-height:1.7}
 .pr-hint b{color:var(--photo)}
 
+.kf-h .kf-real{font-size:var(--fs-xs);padding:1px 8px;border-radius:4px;margin-left:7px;
+  background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok);
+  font-family:var(--fm);font-weight:400}
+.kf-real-note{display:block;margin-top:6px;color:var(--ok);font-family:var(--fm);
+  font-size:var(--fs-xs)}
+.kf-date{padding:3px 9px;border-radius:5px;border:1px solid var(--bd2);
+  background:var(--bgInput);color:var(--pri);font-family:var(--fm);
+  font-size:var(--fs-sm);outline:none}
+.kf-date:focus{border-color:var(--pri)}
 /* ===== 规划弹层 v2：先知识后方案 ===== */
 .vg-steps{display:flex;align-items:center;gap:0;margin:0 0 22px;
   padding:14px 16px;border-radius:var(--radiusSM);background:var(--bgCard);
@@ -1730,18 +1739,26 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 
         <div class="kfacts">
           <div class="kf">
-            <div class="kf-h">📐 太阳怎么走（算出来的）</div>
+            <div class="kf-h">📐 太阳怎么走 <span class="kf-real">实际计算</span></div>
             <div class="kf-rows">
-              <div class="kfr"><span class="kfr-k">日期</span><span class="kfr-v">11月上旬（待定具体日期）</span></div>
-              <div class="kfr"><span class="kfr-k">颐和园坐标</span><span class="kfr-v">39.9999°N, 116.2755°E</span></div>
-              <div class="kfr"><span class="kfr-k">日落</span><span class="kfr-v hl">约 17:05</span></div>
-              <div class="kfr"><span class="kfr-k">黄金时刻</span><span class="kfr-v hl">16:20 – 17:05（约 45 分钟）</span></div>
-              <div class="kfr"><span class="kfr-k">16:40 太阳方位</span><span class="kfr-v hl">约 232° 西南偏西</span></div>
-              <div class="kfr"><span class="kfr-k">16:40 高度角</span><span class="kfr-v">约 12°（很低，侧逆光好）</span></div>
+              <div class="kfr"><span class="kfr-k">日期</span>
+                <span class="kfr-v"><input class="kf-date" id="sunDate" type="date" value="2026-11-08"
+                  onchange="renderSun()"></span></div>
+              <div class="kfr"><span class="kfr-k">地点</span>
+                <span class="kfr-v">颐和园 39.9999°N, 116.2755°E（UTC+8）</span></div>
+              <div class="kfr"><span class="kfr-k">日落</span>
+                <span class="kfr-v hl" id="sunSet">—</span></div>
+              <div class="kfr"><span class="kfr-k">黄金时刻</span>
+                <span class="kfr-v hl" id="sunGolden">—</span></div>
+              <div class="kfr"><span class="kfr-k">16:40 太阳方位</span>
+                <span class="kfr-v hl" id="sunAz">—</span></div>
+              <div class="kfr"><span class="kfr-k">16:40 高度角</span>
+                <span class="kfr-v" id="sunAlt">—</span></div>
             </div>
             <div class="kf-note">
-              这部分是<b>算出来的，不是猜的</b>。给经纬度和日期，太阳方位角可以精确到度。
-              <span class="kf-wip">原型占位 · 实际接入天文算法</span>
+              这部分是<b>算出来的，不是猜的</b>——用的是 NOAA 太阳位置算法，
+              给经纬度和日期，方位角能精确到 0.1°。
+              <span class="kf-real-note">✓ 本页数据由算法实时计算，改日期会跟着变</span>
             </div>
           </div>
 
@@ -1791,9 +1808,10 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
             <div class="pc-where">站在桥的<b>东南侧</b>，朝西北拍</div>
             <div class="pc-why">
               <span class="pcw-t">为什么成立</span>
-              太阳 16:40 在 232°（西南偏西），你站东南侧朝西北，
+              太阳 16:40 在 <span id="planAAz">—</span>，你站东南侧朝西北，
               <b>光就从湖面方向逆着过来</b> —— 这是逆光，也是剪影。
             </div>
+            <div class="pc-risk" id="planAWarn" style="display:none"></div>
             <div class="pc-risk">
               <span class="pcr-t">风险</span>下午桥上人多，要提前占位；桥面反光强
             </div>
@@ -2574,6 +2592,122 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 </div>
 
 <script>
+// ============ 太阳位置计算（NOAA 算法）============
+// 纯计算，不需要任何外部服务。精度：方位/高度角 ±0.1°，时刻 ±1 分钟。
+// 依据：NOAA Solar Calculator 标准算法
+//   - 儒略日 → 儒略世纪 T
+//   - 太阳几何平均经度 L0、平近点角 M、轨道偏心率 e
+//   - 中心差 C → 真黄经 → 视黄经（含章动修正）
+//   - 黄赤交角 → 赤纬
+//   - 时差 (equation of time)
+//   - 真太阳时 → 时角 → 天顶角 → 高度角
+//   - 方位角（按时角正负修正象限）
+const SunCalcLite = (function(){
+  const RAD = Math.PI/180, DEG = 180/Math.PI;
+
+  function toJulian(y, m, d, utcHours){
+    if (m <= 2){ y -= 1; m += 12; }
+    const A = Math.floor(y/100);
+    const B = 2 - A + Math.floor(A/4);
+    return Math.floor(365.25*(y+4716)) + Math.floor(30.6001*(m+1)) + d + B - 1524.5
+           + utcHours/24;
+  }
+
+  function position(lat, lon, dateLocal, tzOffsetHours, hour, minute){
+    const utcHours = hour + minute/60 - tzOffsetHours;
+    const parts = dateLocal.split('-').map(Number);
+    const jd = toJulian(parts[0], parts[1], parts[2], utcHours);
+    const T = (jd - 2451545.0)/36525.0;
+
+    // 太阳几何平均经度、平近点角、偏心率
+    const L0 = (280.46646 + T*(36000.76983 + T*0.0003032)) % 360;
+    const M  = 357.52911 + T*(35999.05029 - 0.0001537*T);
+    const e  = 0.016708634 - T*(0.000042037 + 0.0000001267*T);
+
+    // 中心差
+    const C = Math.sin(M*RAD)*(1.914602 - T*(0.004817 + 0.000014*T))
+            + Math.sin(2*M*RAD)*(0.019993 - 0.000101*T)
+            + Math.sin(3*M*RAD)*0.000289;
+    const trueLong = L0 + C;
+    const omega = 125.04 - 1934.136*T;
+    const appLong = trueLong - 0.00569 - 0.00478*Math.sin(omega*RAD);
+
+    // 黄赤交角 + 赤纬
+    const obliq0 = 23 + (26 + (21.448 - T*(46.815 + T*(0.00059 - T*0.001813)))/60)/60;
+    const obliq = obliq0 + 0.00256*Math.cos(omega*RAD);
+    const decl = Math.asin(Math.sin(obliq*RAD)*Math.sin(appLong*RAD))*DEG;
+
+    // 时差（分钟）
+    const yv = Math.tan(obliq/2*RAD)**2;
+    const eqtime = 4*DEG*( yv*Math.sin(2*L0*RAD)
+                 - 2*e*Math.sin(M*RAD)
+                 + 4*e*yv*Math.sin(M*RAD)*Math.cos(2*L0*RAD)
+                 - 0.5*yv*yv*Math.sin(4*L0*RAD)
+                 - 1.25*e*e*Math.sin(2*M*RAD) );
+
+    // 真太阳时 → 时角
+    // ★ 用「当地钟表时间 + 时差 + 4*(经度 - 时区中心经度)」
+    //   不能直接用 UTC 小时，否则时角会错（教训：算出来正午高度角是负的）
+    const tzCenterLon = tzOffsetHours * 15.0;   // UTC+8 → 120°E
+    const tst = (hour*60 + minute + eqtime + 4*(lon - tzCenterLon)) % 1440;
+    const ha = tst/4 - 180;
+
+    // 天顶角 → 高度角
+    const cosZen = Math.sin(lat*RAD)*Math.sin(decl*RAD)
+                 + Math.cos(lat*RAD)*Math.cos(decl*RAD)*Math.cos(ha*RAD);
+    const zenith = Math.acos(Math.max(-1, Math.min(1, cosZen)))*DEG;
+    const altitude = 90 - zenith;
+
+    // 方位角
+    let azimuth;
+    const sinZen = Math.sin(zenith*RAD);
+    if (Math.abs(sinZen) < 1e-6){ azimuth = 180; }
+    else {
+      let cosAz = (Math.sin(lat*RAD)*Math.cos(zenith*RAD) - Math.sin(decl*RAD))
+                / (Math.cos(lat*RAD)*sinZen);
+      cosAz = Math.max(-1, Math.min(1, cosAz));
+      azimuth = Math.acos(cosAz)*DEG;
+      azimuth = ha > 0 ? (180 + azimuth) % 360 : (540 - azimuth) % 360;
+    }
+    return { azimuth, altitude };
+  }
+
+  // 找太阳高度角穿过某个值的时刻（用于算黄金时刻/日落）
+  function findAltitudeCrossing(lat, lon, dateLocal, tz, targetAlt, startH, endH){
+    const altAt = h => position(lat, lon, dateLocal, tz, Math.floor(h), (h%1)*60).altitude;
+    let prevH = startH, prevAlt = altAt(startH);
+    for (let i = 1; i <= 120; i++){
+      const h = startH + (endH-startH)*i/120;
+      const alt = altAt(h);
+      if ((prevAlt - targetAlt) * (alt - targetAlt) <= 0){
+        let a = prevH, b = h;
+        for (let k = 0; k < 40; k++){
+          const mid = (a+b)/2;
+          if ((altAt(a) - targetAlt) * (altAt(mid) - targetAlt) <= 0) b = mid; else a = mid;
+        }
+        return (a+b)/2;
+      }
+      prevH = h; prevAlt = alt;
+    }
+    return null;
+  }
+
+  function fmtTime(h){
+    if (h == null) return '—';
+    const hh = Math.floor(h);
+    const mm = Math.round((h-hh)*60);
+    return String(hh).padStart(2,'0') + ':' + String(mm).padStart(2,'0');
+  }
+
+  function compass(az){
+    const dirs = ['北','东北','东','东南','南','西南','西','西北'];
+    return dirs[Math.round(az/45) % 8];
+  }
+
+  return { position, findAltitudeCrossing, fmtTime, compass };
+})();
+
+
 let toastTimer=null;
 function fake(msg){
   let d=document.getElementById('_toast');
@@ -2806,6 +2940,55 @@ function pickPref(el,name){
     `<div class="pk-item"><div class="pk-h">${h}</div><div class="pk-b">${b}</div></div>`).join('');
   fake('已切到「'+name+'」的偏好');
 }
+/* ===== 太阳位置渲染 ===== */
+const YIHEYUAN = { lat: 39.9999, lon: 116.2755, tz: 8 };
+
+function renderSun(){
+  const dateStr = document.getElementById('sunDate').value || '2026-11-08';
+  const {lat, lon, tz} = YIHEYUAN;
+
+  // 日落：找高度角穿过 -0.833°（含大气折射和日面半径）
+  const sunset = SunCalcLite.findAltitudeCrossing(lat, lon, dateStr, tz, -0.833, 14, 19);
+  // 黄金时刻起点：高度角 6°
+  const goldenStart = SunCalcLite.findAltitudeCrossing(lat, lon, dateStr, tz, 6, 14, sunset || 19);
+
+  document.getElementById('sunSet').textContent = '约 ' + SunCalcLite.fmtTime(sunset);
+  if (sunset && goldenStart){
+    const mins = Math.round((sunset - goldenStart)*60);
+    document.getElementById('sunGolden').textContent =
+      SunCalcLite.fmtTime(goldenStart) + ' – ' + SunCalcLite.fmtTime(sunset)
+      + '（约 ' + mins + ' 分钟）';
+  }
+
+  // 16:40 的位置
+  const p = SunCalcLite.position(lat, lon, dateStr, tz, 16, 40);
+  document.getElementById('sunAz').textContent =
+    Math.round(p.azimuth) + '° ' + SunCalcLite.compass(p.azimuth);
+  document.getElementById('sunAlt').textContent =
+    p.altitude.toFixed(1) + '°' + (p.altitude < 8 ? '（很低，侧逆光好）' : '');
+
+  // 方案 A 的文字跟着日期变
+  const azEl = document.getElementById('planAAz');
+  if (azEl) azEl.textContent = Math.round(p.azimuth) + '°（' + SunCalcLite.compass(p.azimuth) + '）';
+
+  // 方案 A 的可行性判断
+  const warnEl = document.getElementById('planAWarn');
+  if (warnEl){
+    if (p.altitude < 0){
+      warnEl.style.display = 'block';
+      warnEl.innerHTML = '<span class="pcr-t">⚠ 这个日期不成立</span>'
+        + '16:40 太阳已经落下（高度 ' + p.altitude.toFixed(1) + '°），拍不到逆光。换早一点的日期或提前时段。';
+    } else if (p.altitude < 2){
+      warnEl.style.display = 'block';
+      warnEl.innerHTML = '<span class="pcr-t">⚠ 光快没了</span>'
+        + '16:40 太阳高度只有 ' + p.altitude.toFixed(1) + '°，只能拍剪影，拍不了有细节的脸。';
+    } else {
+      warnEl.style.display = 'none';
+    }
+  }
+}
+
+document.addEventListener('DOMContentLoaded', renderSun);
 function openVague(){ document.getElementById('vagueSheet').classList.add('on'); }
 function closeVague(){ document.getElementById('vagueSheet').classList.remove('on'); }
 function pickDir(el,name){
