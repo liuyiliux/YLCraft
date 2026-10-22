@@ -1352,3 +1352,11 @@
 /* 全屏的 flex 方向：竖着排，弹窗吃掉剩余高度 */
 .le{flex-direction:column !important;align-items:stretch !important;
   justify-content:flex-start !important}
+
+/* ===== 区域限定：叠加层 + 提示 ===== */
+.le-fx{position:absolute;inset:0;pointer-events:none;z-index:2}
+.le-img{position:relative}
+.lh-ly-r.local{background:rgba(251,191,36,.14);color:var(--wn)}
+.le-fxwarn{margin-top:12px;padding:9px 11px;border-radius:6px;font-size:10px;
+  line-height:1.55;color:var(--wn);
+  background:rgba(251,191,36,.09);border:1px solid rgba(251,191,36,.26)}

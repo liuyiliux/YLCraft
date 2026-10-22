@@ -65,6 +65,8 @@ function leComposeScalars(){
   };
   LE_LAYERS.forEach(function(L){
     if (!L.on) return;
+    /* ⭐ 区域图层走自己的叠加层，不参与全局合成 */
+    if (L.region && L.region !== '全图') return;
     const p = L.p || {};
     if (p.exposure   != null) out.exposure   += p.exposure;
     if (p.contrast   != null) out.contrast   *= p.contrast;
@@ -84,6 +86,8 @@ function leComposeTone(){
   };
   LE_LAYERS.forEach(function(L){
     if (!L.on) return;
+    /* ⭐ 区域图层不参与全局影调 */
+    if (L.region && L.region !== '全图') return;
     const p = L.p || {};
     if (p.highlights != null) out.highlights += p.highlights;
     if (p.shadows    != null) out.shadows    += p.shadows;
@@ -146,7 +150,8 @@ function leRenderLayers(){
         + '<button class="lh-eye' + (L.on ? ' on' : '') + '" onclick="leToggleLayer(' + i + ')">'
         +   (L.on ? '◉' : '○') + '</button>'
         + '<span class="lh-ly-n">' + L.name + '</span>'
-        + '<span class="lh-ly-r">' + L.region + '</span>'
+        + '<span class="lh-ly-r' + (L.region === '全图' ? '' : ' local') + '">'
+        +   (L.region === '全图' ? '全图' : '仅' + L.region) + '</span>'
         + '<button class="lh-x" onclick="leDelLayer(' + i + ')">✕</button>'
         + '</div>';
     }).join('');
@@ -194,6 +199,145 @@ function leClearLayers(){
   leRenderSugg(); leRenderLayers(); leApplyPreview();
 }
 
+
+/* ==========================================================================
+   ⭐ 区域限定（2026-10-22）
+   之前图层上写着「只影响椭圆」，但参数是全图生效 —— 这是假承诺。
+   现在：每个区域图层叠一份「带自己滤镜 + 遮罩」的图，遮罩外一点不动。
+   ========================================================================== */
+
+/* 把一份参数里的「影调」作用到 0~1 的亮度上 */
+function leToneOf(v, p){
+  p = p || {};
+  if (p.highlights) v += p.highlights * 0.28 * v * v;
+  if (p.shadows)    v += p.shadows * 0.28 * (1 - v) * (1 - v);
+  if (p.clarity)    v += p.clarity * 0.16 * Math.sin((v - 0.5) * Math.PI)
+                          * (1 - Math.abs(v * 2 - 1));
+  return Math.max(0, Math.min(1, v));
+}
+
+/* 一个图层的 LUT（只含影调，颜色参数走 CSS filter）*/
+function leLayerLut(p, n){
+  n = n || 64;
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(leToneOf(i / (n - 1), p));
+  return out;
+}
+
+/* 为每个区域图层建一个 SVG filter */
+function leEnsureLayerFilters(){
+  let svg = document.getElementById('leLayerSvg');
+  if (!svg){
+    svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.id = 'leLayerSvg';
+    svg.setAttribute('width', '0'); svg.setAttribute('height', '0');
+    svg.style.position = 'absolute'; svg.style.pointerEvents = 'none';
+    document.body.appendChild(svg);
+  }
+  let html = '<defs>';
+  LE_LAYERS.forEach(function(L){
+    const p = L.p || {};
+    const needsTone = (p.highlights || p.shadows || p.clarity);
+    if (!needsTone) return;
+    const tbl = leLayerLut(p).map(function(v){ return v.toFixed(4); }).join(' ');
+    html += '<filter id="lf_' + L.id + '" color-interpolation-filters="sRGB">'
+      + '<feComponentTransfer>'
+      + '<feFuncR type="table" tableValues="' + tbl + '"/>'
+      + '<feFuncG type="table" tableValues="' + tbl + '"/>'
+      + '<feFuncB type="table" tableValues="' + tbl + '"/>'
+      + '</feComponentTransfer></filter>';
+  });
+  html += '</defs>';
+  svg.innerHTML = html;
+}
+
+/* 图层的颜色类滤镜（曝光/对比/饱和/色温/色调）*/
+function leLayerColorFilter(L){
+  const p = L.p || {};
+  const parts = [];
+  if (p.exposure)   parts.push('brightness(' + (1 + p.exposure * 0.35).toFixed(3) + ')');
+  if (p.contrast)   parts.push('contrast(' + p.contrast.toFixed(3) + ')');
+  if (p.saturation) parts.push('saturate(' + p.saturation.toFixed(3) + ')');
+  if (p.temp){
+    const t = (p.temp - 6100) / 2000;
+    if (Math.abs(t) > 0.02){
+      parts.push('sepia(' + Math.max(0, t * 0.28).toFixed(3) + ')');
+      parts.push('hue-rotate(' + (-t * 14).toFixed(1) + 'deg)');
+    }
+  }
+  if (p.tint){
+    const g = p.tint < 0;
+    parts.push('hue-rotate(' + (p.tint * (g ? -12 : 12)).toFixed(1) + 'deg)');
+  }
+  return parts.join(' ');
+}
+
+/* 区域 → CSS 遮罩（椭圆/渐变带羽化，矩形硬边）*/
+function leMaskCSS(region){
+  if (region === '椭圆')
+    return { mask: 'radial-gradient(ellipse 46% 34% at 50% 33%, #000 52%, transparent 78%)' };
+  if (region === '线性渐变')
+    return { mask: 'linear-gradient(180deg, #000 0%, #000 32%, transparent 72%)' };
+  if (region === '矩形')
+    return { clip: 'inset(14% 22% 34% 22% round 10px)' };
+  return {};   // 全图 或 画笔（暂不支持）
+}
+
+/* 重画所有区域叠加层 */
+function leRenderFx(){
+  const img = document.getElementById('leImg');
+  if (!img) return;
+  img.querySelectorAll('.le-fx').forEach(function(e){ e.remove(); });
+  if (LE_CMP) return;            // 对比原图时不加
+  leEnsureLayerFilters();
+
+  const cs = getComputedStyle(img);
+  let skipped = 0;
+
+  LE_LAYERS.forEach(function(L){
+    if (!L.on) return;
+    if (!L.region || L.region === '全图') return;
+    if (L.region === '画笔'){ skipped++; return; }   // 画笔还没做
+
+    const m = leMaskCSS(L.region);
+    if (!m.mask && !m.clip){ skipped++; return; }
+
+    const fx = document.createElement('div');
+    fx.className = 'le-fx';
+    // 复制底图（背景图 / 渐变 / 演示小人）
+    fx.style.backgroundImage = cs.backgroundImage;
+    fx.style.backgroundSize = cs.backgroundSize;
+    fx.style.backgroundPosition = cs.backgroundPosition;
+    fx.style.backgroundRepeat = cs.backgroundRepeat;
+    fx.style.backgroundColor = cs.backgroundColor;
+    if (img.querySelector('.le-fig')) fx.innerHTML = '<div class="le-fig"></div>';
+
+    // 这一层自己的滤镜：影调 LUT + 颜色
+    const parts = [];
+    const p = L.p || {};
+    if (p.highlights || p.shadows || p.clarity) parts.push('url(#lf_' + L.id + ')');
+    const col = leLayerColorFilter(L);
+    if (col) parts.push(col);
+    fx.style.filter = parts.join(' ') || 'none';
+
+    if (m.mask){ fx.style.webkitMaskImage = m.mask; fx.style.maskImage = m.mask; }
+    if (m.clip) fx.style.clipPath = m.clip;
+
+    img.appendChild(fx);
+  });
+
+  // 有没生效的，老实说出来
+  const warn = document.getElementById('leFxWarn');
+  if (warn){
+    if (skipped){
+      warn.style.display = '';
+      warn.textContent = '⚠️ 有 ' + skipped + ' 个图层选的区域还做不了（画笔），这条参数暂时按全图算';
+    } else {
+      warn.style.display = 'none';
+    }
+  }
+}
+
 /* ---- 对比原图 ---- */
 let LE_CMP = false;
 function leSetCompare(on){
@@ -202,6 +346,7 @@ function leSetCompare(on){
   if (img) img.style.filter = LE_CMP ? 'none' : leFilterCSS();
   const bar = document.getElementById('leCmpBar');
   if (bar) bar.classList.toggle('on', LE_CMP);
+  if (typeof leRenderFx === 'function') leRenderFx();
 }
 document.addEventListener('keydown', function(e){
   if (e.key === '\\' && !e.repeat){ e.preventDefault(); leSetCompare(true); }
@@ -440,6 +585,7 @@ openLocalEdit = function(id){
             <div class="le-sec">图层 <em id="leLyN">0</em>
               <button class="le-reset" onclick="leClearLayers()">清空</button></div>
             <div id="leLayers"></div>
+            <div class="le-fxwarn" id="leFxWarn" style="display:none"></div>
             <div class="le-cmp">
               <button class="lh-b le-cmpb" onmousedown="leSetCompare(true)"
                 onmouseup="leSetCompare(false)" onmouseleave="leSetCompare(false)">

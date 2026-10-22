@@ -559,6 +559,8 @@ function leApplyPreview(){
      它的重绘函数要在这里触发，否则拖滑块直方图不动。 */
   if (typeof leRenderHist === 'function') leRenderHist();
   if (typeof leRenderCurve === 'function') leRenderCurve();
+  /* 区域图层的叠加层 */
+  if (typeof leRenderFx === 'function') leRenderFx();
 }
 
 function closeLocalEdit(){
