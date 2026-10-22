@@ -1958,6 +1958,85 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 .comp-bar{position:fixed;top:0;left:0;right:0;z-index:90;padding:11px 24px;
   background:color-mix(in srgb,var(--photo) 92%,transparent);color:#1a1205;
   font-size:15px;font-weight:600;text-align:center}
+
+/* ===== 景别五级说明 ===== */
+.chip-hint{opacity:.65;font-family:var(--fm);min-width:26px}
+.ss-help{margin-top:10px;padding:16px 18px;border-radius:var(--radiusMD);
+  background:var(--bgCard);border:1px solid var(--bd2)}
+.ss-h{font-size:16px;color:var(--tx1);font-weight:600;margin-bottom:4px}
+.ss-sub{font-size:13px;color:var(--tx3);margin-bottom:12px}
+.ss-sub b{color:var(--photo)}
+.ss-row{display:flex;gap:14px;padding:10px 0;border-top:1px solid var(--bd)}
+.ss-k{font-size:14px;color:var(--photo);font-weight:600;min-width:44px;flex-shrink:0}
+.ss-b{flex:1;font-size:14px;color:var(--tx2);line-height:1.6}
+.ss-b b{color:var(--tx1)}
+.ss-b em{display:block;font-style:normal;font-size:13px;color:var(--tx3);margin-top:2px}
+.ss-foot{margin-top:11px;font-size:13px;color:var(--tx3)}
+
+/* ===== 三种专题模板 ===== */
+.tp{margin-bottom:22px}
+.tp-hd{display:flex;align-items:baseline;gap:10px;margin-bottom:11px}
+.tp-t{font-size:18px;color:var(--tx1);font-weight:600}
+.tp-s{font-size:13px;color:var(--tx3)}
+.tp-list{display:grid;grid-template-columns:repeat(3,1fr);gap:11px;margin-bottom:13px}
+.tp-card{display:flex;flex-direction:column;align-items:flex-start;gap:5px;
+  padding:15px 17px;border-radius:var(--radiusMD);background:var(--bgCard);
+  border:1px solid var(--bd2);cursor:pointer;transition:.16s;text-align:left;
+  font-family:inherit}
+.tp-card:hover{border-color:var(--bd3)}
+.tp-card.on{border-color:var(--photo);background:color-mix(in srgb,var(--photo) 7%,var(--bgCard))}
+.tp-ic{font-size:18px;color:var(--photo)}
+.tp-n{font-size:15px;color:var(--tx1);font-weight:600}
+.tp-d{font-size:13px;color:var(--tx3);line-height:1.5}
+.tp-detail{padding:16px 18px;border-radius:var(--radiusMD);background:var(--bgCard);
+  border:1px solid var(--bd2)}
+.tp-cols{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:13px}
+.tp-col-h{font-size:13px;color:var(--photo);font-weight:600;margin-bottom:7px}
+.tp-li{font-size:13.5px;color:var(--tx2);line-height:1.75}
+.tp-risk{font-size:13.5px;color:var(--tx2);line-height:1.7;padding:11px 14px;
+  border-radius:var(--radiusXS);background:color-mix(in srgb,var(--warn) 9%,transparent);
+  border:1px solid color-mix(in srgb,var(--warn) 24%,transparent)}
+.tp-risk b{color:var(--warn);display:block;margin-bottom:3px}
+
+/* ===== 情绪曲线 ===== */
+.em{margin-bottom:22px}
+.em-hd{display:flex;align-items:baseline;gap:10px;margin-bottom:11px}
+.em-t{font-size:18px;color:var(--tx1);font-weight:600}
+.em-s{font-size:13px;color:var(--tx3)}
+.em-chart{padding:14px 16px 6px;border-radius:var(--radiusMD);background:var(--bgCard);
+  border:1px solid var(--bd2);margin-bottom:9px}
+.em-legend{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+.em-li{text-align:center}
+.em-ln{display:block;font-size:13px;color:var(--photo);font-weight:600}
+.em-lt{display:block;font-size:12px;color:var(--tx3);margin-top:2px}
+
+/* ===== 客人视角 ===== */
+.cl{margin-bottom:22px}
+.cl-hd{display:flex;align-items:baseline;gap:10px;margin-bottom:11px}
+.cl-t{font-size:18px;color:var(--tx1);font-weight:600}
+.cl-s{font-size:13px;color:var(--tx3)}
+.cl-list{padding:6px 18px;border-radius:var(--radiusMD);background:var(--bgCard);
+  border:1px solid var(--bd2)}
+.cl-row{display:flex;align-items:center;gap:14px;padding:12px 0;
+  border-bottom:1px solid var(--bd)}
+.cl-row:last-child{border-bottom:0}
+.cl-q{flex:1;font-size:14.5px;color:var(--tx2);line-height:1.5}
+.cl-q em{display:block;font-style:normal;font-size:12.5px;color:var(--tx3);margin-top:2px}
+.cl-opts{display:flex;gap:6px;flex-shrink:0}
+.cl-b{font-size:13px;padding:5px 14px;border-radius:var(--radiusXS);
+  border:1px solid var(--bd2);color:var(--tx3);background:transparent;
+  cursor:pointer;transition:.16s;font-family:inherit}
+.cl-b:hover{border-color:var(--bd3);color:var(--tx2)}
+.cl-b.on{border-color:var(--photo);color:var(--photo);
+  background:color-mix(in srgb,var(--photo) 12%,transparent)}
+.cl-sum{margin-top:10px;padding:11px 15px;border-radius:var(--radiusXS);
+  font-size:13.5px;color:var(--tx3);background:var(--bgCard);border:1px solid var(--bd2)}
+.cl-sum.warn{border-color:color-mix(in srgb,var(--warn) 30%,transparent);
+  background:color-mix(in srgb,var(--warn) 8%,transparent);color:var(--tx2)}
+.cl-sum.warn b{color:var(--warn)}
+.cl-sum.ok{border-color:color-mix(in srgb,var(--ok) 30%,transparent);
+  background:color-mix(in srgb,var(--ok) 8%,transparent);color:var(--tx2)}
+.cl-sum.ok b{color:var(--ok)}
 </style>
 </head>
 <body data-t="deep">
@@ -2025,10 +2104,13 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
     <button class="chip" onclick="tog(this)">柔光</button>
     <button class="chip" onclick="tog(this)">硬光</button>
   </div>
-  <div class="fgroup"><span>景别</span>
+  <div class="fgroup"><span>景别（五级）</span>
+    <button class="chip" onclick="tog(this)">远景</button>
+    <button class="chip" onclick="tog(this)">全景</button>
+    <button class="chip" onclick="tog(this)">中景</button>
+    <button class="chip" onclick="tog(this)">近景</button>
     <button class="chip" onclick="tog(this)">特写</button>
-    <button class="chip" onclick="tog(this)">半身</button>
-    <button class="chip" onclick="tog(this)">全身</button>
+    <button class="chip chip-hint" onclick="showShotSizeHelp()" title="五级怎么分">?</button>
   </div>
   <div class="fgroup"><span>题材</span>
     <button class="chip" onclick="tog(this)">领证</button>
@@ -2617,7 +2699,7 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
       <button class="pz-tab" onclick="pzTab(this,'plan')">方案</button>
       <button class="pz-tab" onclick="pzTab(this,'els')">元素<em>10</em></button>
       <button class="pz-tab" onclick="pzTab(this,'shots')">分镜<em id="pzShotN">0</em></button>
-      <button class="pz-tab" onclick="pzTab(this,'kit')">必带<em>8</em></button>
+      <button class="pz-tab" onclick="pzTab(this,'kit')">必带<em>10</em></button>
       <button class="pz-tab" onclick="pzTab(this,'cam')">拍摄</button>
       <button class="pz-tab" onclick="pzTab(this,'handoff')">交接</button>
       <button class="pz-tab" style="margin-left:auto;color:var(--tx3)" onclick="openCue()">＋ 录口令</button>
@@ -2661,8 +2743,39 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
       <div class="express">
         <label class="ex-l">这次要表达什么</label>
         <textarea class="ex-ta" placeholder="一句话就够。例如：秋天的松弛感，像朋友随手拍的，但每张都好看">秋天的松弛感，像朋友随手拍的，但每张都好看</textarea>
-        <div class="ex-tip">课程里每组片子他都会先说这个 —— 元素和分镜都该为它服务</div>
+        <div class="ex-tip">每组片子都该先说这个 —— 元素和分镜都该为它服务</div>
       </div>
+
+      <!-- ===== 这次拍哪种（三种专题模板） ===== -->
+      <div class="tp">
+        <div class="tp-hd">
+          <span class="tp-t">这次拍哪种</span>
+          <span class="tp-s">选一个方向，下面的元素和分镜会跟着偏</span>
+        </div>
+        <div class="tp-list" id="tpList"></div>
+        <div class="tp-detail" id="tpDetail"></div>
+      </div>
+
+      <!-- ===== 情绪曲线（整组叙事） ===== -->
+      <div class="em">
+        <div class="em-hd">
+          <span class="em-t">情绪曲线</span>
+          <span class="em-s">一组片子不是一张一张看，是连着看</span>
+        </div>
+        <div class="em-chart" id="emChart"></div>
+        <div class="em-legend" id="emLegend"></div>
+      </div>
+
+      <!-- ===== 客人视角判断 ===== -->
+      <div class="cl">
+        <div class="cl-hd">
+          <span class="cl-t">客人视角</span>
+          <span class="cl-s">你自己觉得好，不代表客人买单</span>
+        </div>
+        <div class="cl-list" id="clList"></div>
+        <div class="cl-sum" id="clSum"></div>
+      </div>
+
 
       <div class="pz-lead">
         <p class="pz-lead-t">这次怎么拍</p>
@@ -2785,6 +2898,8 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
       <div class="pz-kit">
         <div class="pz-kg"><div class="pz-kg-h">自带</div>
           <label class="pz-ki"><input type="checkbox" checked><span>相机 · 85mm</span></label>
+          <label class="pz-ki must"><input type="checkbox" checked><span>电池</span><em>至少 2 块</em></label>
+          <label class="pz-ki must"><input type="checkbox" checked><span>存储卡</span><em>64G 起 · 卡里留空</em></label>
           <label class="pz-ki"><input type="checkbox"><span>反光板</span></label>
           <label class="pz-ki"><input type="checkbox"><span>浅色大衣（提醒她穿）</span></label></div>
         <div class="pz-kg"><div class="pz-kg-h">现场买</div>
@@ -4979,6 +5094,42 @@ function pzTab(el, key){
   if (key === 'handoff' && typeof restoreHandoffTag === 'function') restoreHandoffTag();
 }
 
+
+/* ==========================================================================
+   景别五级（系统化）
+   行业通用五级：远景 / 全景 / 中景 / 近景 / 特写
+   判断标准是「画面里人占多少」，不是「拍得多近」。
+   ========================================================================== */
+const SHOT_SIZES = [
+  { k:'远景', pct:'人 10% 以下', use:'交代环境，说明「在哪」',  tip:'人和环境的关系最重要，别指望看清表情' },
+  { k:'全景', pct:'人 60-80%',   use:'全身带环境，最像「一张完整的照片」', tip:'头顶和脚下都要留缝，别切关节' },
+  { k:'中景', pct:'腰以上',      use:'日常最常用，能看清动作和表情', tip:'切在腰线略上一点，别正好切在腰带' },
+  { k:'近景', pct:'胸以上',      use:'表情为主，环境只当背景', tip:'眼睛放在上三分线附近最稳' },
+  { k:'特写', pct:'脸 / 局部',   use:'只讲情绪，不讲环境', tip:'特写里眨眼的瞬间全废，连拍里挑' }
+];
+
+function showShotSizeHelp(){
+  let box = document.getElementById('shotSizeHelp');
+  if (box){ box.remove(); return; }
+
+  box = document.createElement('div');
+  box.id = 'shotSizeHelp';
+  box.className = 'ss-help';
+  box.innerHTML = '<div class="ss-h">景别怎么分</div>'
+    + '<div class="ss-sub">判断标准是<b>画面里人占多少</b>，不是「拍得多近」</div>'
+    + SHOT_SIZES.map(function(s){
+        return '<div class="ss-row"><span class="ss-k">' + s.k + '</span>'
+          + '<span class="ss-b"><b>' + s.pct + '</b> · ' + s.use
+          + '<em>' + s.tip + '</em></span></div>';
+      }).join('')
+    + '<div class="ss-foot">一组片子里五级都用到，不会显得全是半身。</div>';
+
+  const fg = document.querySelector('.fgroup');
+  if (fg) fg.parentElement.parentElement.appendChild(box);
+  else document.body.appendChild(box);
+  fake('景别五级说明已展开');
+}
+
 /* ==========================================================================
    AI 建议 Tab
    设计原则（对齐 PhotoMaster 那套）：
@@ -4986,6 +5137,179 @@ function pzTab(el, key){
    2. 每条都标明「怎么来的」，不让用户以为是铁律
    3. 采纳后可撤回
    ========================================================================== */
+
+/* ==========================================================================
+   三种创作专题（模板）
+   不是「风格滤镜」，是「这次要往哪个方向使劲」。
+   选完之后：该准备什么、该怎么拍、后期往哪调，都不一样。
+   ========================================================================== */
+const SPECIALTIES = [
+  { k:'fresh', n:'小清新', ic:'○',
+    d:'轻、亮、透，人和环境都很自然',
+    pre:['浅色衣服（白/米/浅蓝）','晴天或薄云，避开正午硬光','道具要轻：书、花、编织包'],
+    shoot:['多用柔光和侧逆光','景别偏中景和近景','表情要松，别摆拍'],
+    post:['整体提亮，暗部留细节','饱和度略收，别油','保存肤色的暖，别调成青绿'],
+    risk:'容易拍成「网红照」—— 缺一个属于这次的主题' },
+
+  { k:'lighting', n:'个性灯光人像', ic:'◆',
+    d:'用灯造对比，画面有明确的明暗结构',
+    pre:['需要灯：闪光灯或常亮灯都行','场地能压住环境光（室内/夜里）','准备柔光箱或蜂巢控制光质'],
+    shoot:['主光决定结构，别开着环境光拍','一张只讲一种光位','景别偏近景和特写'],
+    post:['对比可以重，但高光别死','肤色别偏青','压暗环境突出主体'],
+    risk:'光位没想清楚就开灯 —— 拍出来是「亮」不是「有光」' },
+
+  { k:'emotion', n:'情绪人像', ic:'◐',
+    d:'不讲好看，讲这一组说了一件什么事',
+    pre:['定一个情绪词：疏离/松弛/舍不得','衣服和场景都为这个词服务','跟模特讲清楚今天要什么感觉'],
+    shoot:['允许不完美：闭眼、侧脸、背影','整组要有起伏，不是张张高潮','留白和空镜很重要'],
+    post:['统一色调，别一张一个色','暗调可以重，但要留细节','别把人修得太完美 —— 情绪来自真实'],
+    risk:'全程只拍正脸笑 —— 那就不是情绪人像' }
+];
+
+let curSpec = 'fresh';
+
+function tpRender(){
+  const host = document.getElementById('tpList');
+  if (!host) return;
+  host.innerHTML = SPECIALTIES.map(function(s){
+    const on = s.k === curSpec;
+    return '<button class="tp-card' + (on ? ' on' : '') + '" onclick="tpPick(\'' + s.k + '\')">'
+      + '<span class="tp-ic">' + s.ic + '</span>'
+      + '<span class="tp-n">' + s.n + '</span>'
+      + '<span class="tp-d">' + s.d + '</span>'
+      + '</button>';
+  }).join('');
+
+  const d = SPECIALTIES.find(function(s){ return s.k === curSpec; });
+  const det = document.getElementById('tpDetail');
+  if (det && d){
+    const col = function(title, arr, cls){
+      return '<div class="tp-col ' + cls + '"><div class="tp-col-h">' + title + '</div>'
+        + arr.map(function(x){ return '<div class="tp-li">· ' + x + '</div>'; }).join('') + '</div>';
+    };
+    det.innerHTML = '<div class="tp-cols">'
+      + col('拍之前要准备', d.pre, 'pre')
+      + col('现场怎么拍', d.shoot, 'shoot')
+      + col('后期往哪调', d.post, 'post')
+      + '</div>'
+      + '<div class="tp-risk"><b>这套最容易翻车的地方</b>' + d.risk + '</div>';
+  }
+}
+function tpPick(k){
+  curSpec = k;
+  tpRender();
+  const d = SPECIALTIES.find(function(s){ return s.k === k; });
+  fake('方向定成「' + d.n + '」· 元素和分镜会按这个偏');
+}
+
+/* ==========================================================================
+   情绪曲线：一组片子连着看，要有起伏
+   ========================================================================== */
+const EMOTION_CURVE = [
+  { n:'开场',   v:0.30, t:'平静 · 环境交代' },
+  { n:'第 2 镜', v:0.45, t:'进入 · 人物出现' },
+  { n:'第 3 镜', v:0.62, t:'升温 · 有互动' },
+  { n:'第 4 镜', v:0.88, t:'高点 · 情绪最满' },
+  { n:'第 5 镜', v:0.55, t:'落 · 收一下' },
+  { n:'收尾',   v:0.25, t:'余味 · 空镜或背影' }
+];
+
+function emRender(){
+  const host = document.getElementById('emChart');
+  if (!host) return;
+  const W = 100, H = 46;
+  const pts = EMOTION_CURVE.map(function(p, i){
+    const x = (i / (EMOTION_CURVE.length - 1)) * W;
+    const y = H - p.v * H;
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  });
+  const area = '0,' + H + ' ' + pts.join(' ') + ' ' + W + ',' + H;
+
+  host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" '
+    + 'style="width:100%;height:120px;display:block">'
+    + '<defs><linearGradient id="emG" x1="0" y1="0" x2="0" y2="1">'
+    + '<stop offset="0%" stop-color="var(--photo)" stop-opacity=".35"/>'
+    + '<stop offset="100%" stop-color="var(--photo)" stop-opacity="0"/>'
+    + '</linearGradient></defs>'
+    + '<polygon points="' + area + '" fill="url(#emG)"/>'
+    + '<polyline points="' + pts.join(' ') + '" fill="none" stroke="var(--photo)" '
+    + 'stroke-width="0.7" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>'
+    + EMOTION_CURVE.map(function(p, i){
+        const x = (i / (EMOTION_CURVE.length - 1)) * W;
+        const y = H - p.v * H;
+        return '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1)
+          + '" r="1.1" fill="var(--photo)" vector-effect="non-scaling-stroke"/>';
+      }).join('')
+    + '</svg>';
+
+  const leg = document.getElementById('emLegend');
+  if (leg){
+    leg.innerHTML = EMOTION_CURVE.map(function(p){
+      return '<div class="em-li"><span class="em-ln">' + p.n + '</span>'
+        + '<span class="em-lt">' + p.t + '</span></div>';
+    }).join('');
+  }
+}
+
+/* ==========================================================================
+   客人视角：你自己觉得好 ≠ 客人买单
+   ========================================================================== */
+const CLIENT_CHECKS = [
+  { k:'face',   q:'她本人的脸好不好看',      why:'客人第一眼看的是自己，不是构图' },
+  { k:'skin',   q:'皮肤状态好不好',          why:'修过头她一眼能看出假' },
+  { k:'use',    q:'能发朋友圈 / 当头像吗',   why:'客人要的是「能用的图」' },
+  { k:'family', q:'给家里人看合适吗',        why:'有些尺度客人能接受，家里人不能' },
+  { k:'first',  q:'第一张就够吸引人吗',      why:'封面定生死，后面再好没人翻' }
+];
+let clState = {};
+
+function clInit(){
+  CLIENT_CHECKS.forEach(function(c){ if (!clState[c.k]) clState[c.k] = 0; });   // 0 未评 1 悬 2 稳
+}
+function clRender(){
+  clInit();
+  const host = document.getElementById('clList');
+  if (!host) return;
+  host.innerHTML = CLIENT_CHECKS.map(function(c){
+    const v = clState[c.k];
+    return '<div class="cl-row">'
+      + '<div class="cl-q">' + c.q + '<em>' + c.why + '</em></div>'
+      + '<div class="cl-opts">'
+      + [['悬', 1], ['稳', 2]].map(function(o){
+          return '<button class="cl-b' + (v === o[1] ? ' on' : '') + '"'
+            + ' onclick="clSet(\'' + c.k + '\',' + o[1] + ')">' + o[0] + '</button>';
+        }).join('')
+      + '</div></div>';
+  }).join('');
+
+  const ok = CLIENT_CHECKS.filter(function(c){ return clState[c.k] === 2; }).length;
+  const bad = CLIENT_CHECKS.filter(function(c){ return clState[c.k] === 1; }).length;
+  const sum = document.getElementById('clSum');
+  if (sum){
+    if (!ok && !bad){
+      sum.className = 'cl-sum';
+      sum.textContent = '还没评 —— 拍之前先过一遍，比拍完被退强';
+    } else if (bad){
+      sum.className = 'cl-sum warn';
+      sum.innerHTML = '<b>' + bad + ' 项悬着</b> · 这些是客人可能不满意的地方，'
+        + '拍之前补拍几张保险的';
+    } else {
+      sum.className = 'cl-sum ok';
+      sum.innerHTML = '<b>' + ok + ' 项都稳</b> · 这组发出去基本不会被退';
+    }
+  }
+}
+function clSet(k, v){
+  clState[k] = clState[k] === v ? 0 : v;
+  clRender();
+}
+
+/* 进页面渲染 */
+document.addEventListener('DOMContentLoaded', function(){
+  tpRender(); emRender(); clRender();
+});
+if (document.readyState !== 'loading'){ tpRender(); emRender(); clRender(); }
+
 const SG_SUGG = [
   { id:'sg1', cat:'画面元素', t:'加一条暖色织物（围巾或披肩）',
     why:'现在全身都是冷色，<b>逆光下会发灰</b>，视线没有落点。暖色织物能把眼睛拉回脸上，也能当道具。',
@@ -5379,6 +5703,8 @@ function openProjects(){
   window.scrollTo(0,0);
 }
 function openProject(name){
+  /* ⭐ 也要隐藏参考库，否则深链直接进来时两页会叠在一起 */
+  document.getElementById('pageRef').style.display='none';
   document.getElementById('pageProjects').style.display='none';
   document.getElementById('pagePlan').style.display='block';
   const t = document.querySelector('.pz-title');
