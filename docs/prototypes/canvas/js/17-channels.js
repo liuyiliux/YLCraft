@@ -119,7 +119,8 @@ function leComposeScalars(){
     highlights: LOCAL_ADJ.highlights, shadows: LOCAL_ADJ.shadows, clarity: LOCAL_ADJ.clarity,
     /* ⭐ 2026-10-22：细节也要带上，否则 leFilterCSS 里判断 undefined 永远 false */
     sharpen: LOCAL_ADJ.sharpen || 0, denoise: LOCAL_ADJ.denoise || 0,
-    vignette: LOCAL_ADJ.vignette || 0, grain: LOCAL_ADJ.grain || 0
+    vignette: LOCAL_ADJ.vignette || 0, grain: LOCAL_ADJ.grain || 0,
+    hsl: LOCAL_ADJ.hsl || null, crop: LOCAL_ADJ.crop || '原图'
   };
   LE_LAYERS.forEach(function(L){
     if (!L.on) return;
@@ -131,6 +132,9 @@ function leComposeScalars(){
     if (p.saturation != null) out.saturation *= p.saturation;
     if (p.temp       != null) out.temp        = p.temp;
     if (p.tint       != null) out.tint       += p.tint;
+    /* 暗角/颗粒：全图层可以叠加 */
+    if (p.vignette   != null) out.vignette    = Math.min(1, (out.vignette || 0) + p.vignette);
+    if (p.grain      != null) out.grain       = Math.min(1, (out.grain || 0) + p.grain);
   });
   return out;
 }
@@ -211,6 +215,8 @@ function leRenderLayers(){
         + '<span class="lh-ly-n">' + L.name + '</span>'
         + '<span class="lh-ly-r' + (L.region === '全图' ? '' : ' local') + '">'
         +   (L.region === '全图' ? '全图' : '仅' + L.region) + '</span>'
+        + '<button class="lh-mv" onclick="event.stopPropagation();leMoveLayer(' + i + ',-1)" title="上移">↑</button>'
+        + '<button class="lh-mv" onclick="event.stopPropagation();leMoveLayer(' + i + ',1)" title="下移">↓</button>'
         + '<button class="lh-x" onclick="event.stopPropagation();leDelLayer(' + i + ')">✕</button>'
         + '</div>';
     }).join('');
@@ -384,7 +390,17 @@ function leRenderFx(){
     const col = leLayerColorFilter(L);
     if (col) parts.push(col);
     if (L.fx) parts.push(L.fx);      /* 重绘层的视觉差异 */
+    /* ⭐ 图层自己的颗粒（暗角走内阴影，见下）*/
+    if (p.grain > 0.01 && typeof leEnsureGrain === 'function'){
+      leEnsureGrain();
+      parts.push('url(#leGrainF)');
+    }
     fx.style.filter = parts.join(' ') || 'none';
+    /* ⭐ 图层自己的暗角 */
+    if (p.vignette > 0.01){
+      fx.style.boxShadow = 'inset 0 0 ' + (p.vignette * 140).toFixed(0) + 'px '
+        + (p.vignette * 55).toFixed(0) + 'px rgba(0,0,0,' + (p.vignette * 0.85).toFixed(2) + ')';
+    }
 
     if (L.region === '画笔' && LE_BRUSH_MASK){
       fx.style.webkitMaskImage = 'url(' + LE_BRUSH_MASK + ')';
@@ -634,8 +650,16 @@ function leBrushClear(){
    把当前所有参数（基础 + 全图图层 + 区域图层）合成到 canvas，再下载。
    ========================================================================== */
 function leBuildPixels(){
-  /* 取「底图」像素：优先真实图片，否则用演示图 */
-  const W = 720, H = 960;
+  /* 取「底图」像素：优先真实图片，否则用演示图
+     ⭐ 2026-10-22：原来写死 720x960，现在按原图分辨率（上限 4000 防卡死）*/
+  const img0 = document.getElementById('leImg');
+  const s0 = img0 && window.__leItem ? window.__leItem : null;
+  let W = 720, H = 960;
+  if (typeof LE_ITEM_DIMS !== 'undefined' && LE_ITEM_DIMS){
+    const r = Math.min(4000 / Math.max(LE_ITEM_DIMS.w, LE_ITEM_DIMS.h), 1);
+    W = Math.round(LE_ITEM_DIMS.w * r);
+    H = Math.round(LE_ITEM_DIMS.h * r);
+  }
   const cv = document.createElement('canvas');
   cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d', { willReadFrequently: true });
@@ -1015,6 +1039,21 @@ function leRenderPresets(){
     return '<button class="le-ps" onclick="leApplyPreset(' + i + ')">'
       + p.n + '</button>';
   }).join('');
+}
+
+
+/* ---------- 9. 图层排序（PhotoMaster 有，我们补上）---------- */
+function leMoveLayer(i, dir){
+  const j = i + dir;
+  if (j < 0 || j >= LE_LAYERS.length) return;
+  const tmp = LE_LAYERS[i];
+  LE_LAYERS[i] = LE_LAYERS[j];
+  LE_LAYERS[j] = tmp;
+  if (LE_SEL_LAYER === i) LE_SEL_LAYER = j;
+  else if (LE_SEL_LAYER === j) LE_SEL_LAYER = i;
+  leRenderLayers(); leApplyPreview();
+  if (typeof leSnap === 'function') leSnap();
+  toast(dir < 0 ? '上移一层' : '下移一层');
 }
 
 /* ---------- 2. 白平衡吸管 ---------- */
@@ -1596,6 +1635,15 @@ openLocalEdit = function(id){
   hideFloatBar();
   const pic = s.thumbUrl || '';
   const dims = s.canvas ? (s.canvas.width + '×' + s.canvas.height) : (s.w + '×' + s.h);
+  /* 记下原图尺寸，导出时按它走 */
+  if (typeof LE_ITEM_DIMS === 'undefined' || !LE_ITEM_DIMS) {
+    window.LE_ITEM_DIMS = s.canvas
+      ? { w: s.canvas.width, h: s.canvas.height }
+      : { w: s.w || 720, h: s.h || 960 };
+  }
+  window.LE_ITEM_DIMS = s.canvas
+    ? { w: s.canvas.width, h: s.canvas.height }
+    : { w: s.w || 720, h: s.h || 960 };
 
   document.getElementById('overlayHost').innerHTML = `
     <div class="le" onclick="if(event.target.classList.contains('lew'))closeLocalEdit()">

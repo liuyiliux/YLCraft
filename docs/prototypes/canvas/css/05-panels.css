@@ -1534,3 +1534,8 @@
   line-height:1.6;color:var(--tx2);background:rgba(251,191,36,.08);
   border:1px solid rgba(251,191,36,.26)}
 .le-harsh b{color:var(--wn);display:block;margin-bottom:3px}
+
+/* 图层上下移 */
+.lh-mv{font-size:10px;color:var(--tx3);cursor:pointer;padding:0 2px;background:none;
+  border:none;font-family:inherit;transition:.16s;flex-shrink:0;line-height:1}
+.lh-mv:hover{color:var(--ac)}
