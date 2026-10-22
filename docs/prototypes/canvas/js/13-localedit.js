@@ -19,6 +19,10 @@ const LOCAL_ADJ = {
   shadows: 0,       // -1 ~ +1   正=提阴影，负=压阴影
   clarity: 0,       // -1 ~ +1   中间调对比（让画面「透」或「柔」）
   tint: 0,          // -1 ~ +1   色调：负=偏绿，正=偏品红
+  /* ⭐ 2026-10-22 加：细节（锐化 / 降噪）和裁剪 */
+  sharpen: 0,       // 0 ~ 1   锐化（USM 的反卷积近似）
+  denoise: 0,       // 0 ~ 1   降噪（高斯，小半径）
+  crop: '原图',     // 原图 | 1:1 | 4:3 | 3:4 | 16:9
   curve: [[0,0],[1,1]],   // 直线（PS 只有两个端点，中间的点是用户点出来的）
   curveMode: 'rgb'  // rgb | r | g | b
 };
@@ -274,6 +278,12 @@ function leFilterCSS(){
     const g = a.tint < 0;
     parts.push(`hue-rotate(${(a.tint * (g ? -12 : 12)).toFixed(1)}deg)`);
   }
+  /* ⭐ 细节：降噪先做（去噪点），锐化后做（找回边缘）—— 顺序不能反 */
+  if (typeof leEnsureDetailFilters === 'function'){
+    leEnsureDetailFilters(a.denoise, a.sharpen);
+    if (a.denoise > 0.01) parts.push('url(#leDenoise)');
+    if (a.sharpen > 0.01) parts.push('url(#leSharpen)');
+  }
   return parts.join(' ');
 }
 
@@ -381,6 +391,7 @@ function leFmt(key, v){
   // 高光/阴影/清晰度/色调是双向的，带符号更清楚
   if (['highlights','shadows','clarity','tint'].includes(key))
     return (v >= 0 ? '+' : '') + v.toFixed(2);
+  if (key === 'sharpen' || key === 'denoise') return (v * 100).toFixed(0) + '%';
   return v.toFixed(2);
 }
 
@@ -389,6 +400,7 @@ function leSet(key, v){
   const el = document.getElementById('leVal_' + key);
   if (el) el.textContent = leFmt(key, Number(v)) + (key==='temp'?'K':'') + (key==='exposure'?'EV':'');
   leApplyPreview();
+  if (typeof leSnap === 'function') leSnap();
 }
 
 /* ---- 曲线交互 ---- */
