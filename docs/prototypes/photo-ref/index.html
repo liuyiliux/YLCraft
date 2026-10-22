@@ -4701,6 +4701,19 @@ function hoSync(){
   if(el) el.textContent = lens + ' · ' + ap + ' · ' + sh + ' · ISO 100';
 }
 
+/* ⭐ 支持 ?page=plan 直接进脚本策划（平台壳里用）*/
+(function(){
+  try {
+    const p = new URLSearchParams(location.search).get('page');
+    if (p === 'plan'){
+      document.addEventListener('DOMContentLoaded', function(){
+        const btn = [...document.querySelectorAll('.pt')].find(b=>b.textContent.trim()==='脚本策划');
+        if (btn) switchPage('plan', btn);
+      });
+    }
+  } catch (e){}
+})();
+
 /* ⭐ 学习手册入口：记住上次读的章节，回来能接着读 */
 function openBooklet(){
   window.open('booklet.html', '_blank');
