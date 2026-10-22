@@ -381,3 +381,129 @@ leClearSaved()    // 清掉
 | **22** | **液化（变形）** | ✅ **本批** |
 | **23** | **EXIF 提取+注入** | ✅ **本批** |
 | **24** | **自动保存** | ✅ **本批** |
+
+---
+
+# 十一、v45 收尾：把最后 4 项也补了
+
+## 11.1 区域反转
+
+```js
+fx.style.maskComposite = 'exclude';   // 遮罩反着用
+```
+
+**图层行加了 `⇄` 按钮**，点一下从「只影响区域内」变成「只影响区域外」。
+
+**实测**：`maskComposite` 变成 `exclude` ✅
+
+## 11.2 旋转
+
+左转 / 右转 / 复位，90° 一步。**导出按旋转后的方向。**
+
+**踩的坑**：一开始 90° 旋转后图片被压扁 —— 因为容器的 `aspect-ratio`
+没跟着换成倒数。修法：旋转时把 `aspectRatio` 设成 `auto`，
+再用 `maxWidth/maxHeight` 限制。
+
+**实测**：90° 后 640×804（竖图转到横），无压扁 ✅
+
+## 11.3 结构化输出三级降级
+
+PhotoMaster 的做法：`json_schema` → `json_object` → 纯提示词。
+
+```js
+LE_SCHEMA_LEVELS = ['json_schema', 'json_object', 'prompt_only']
+leSchemaTry(level)   // 不同级别生成不同请求体
+leSchemaDetect()     // 探测支持哪一级
+```
+
+**面板里能看到检测结果**：
+```
+✓ json_schema 支持
+当前用：json_schema
+```
+
+> ⚠️ 原型里是**假设都支持**，真实环境要发一个最小请求试。
+
+## 11.4 流式显示
+
+PhotoMaster 的做法：「实时展示思考过程 + 正在写出的标题，不显示原始 JSON」。
+
+**演示版**：6 行流式输出，三色区分
+
+| 颜色 | 类型 |
+|---|---|
+| 灰斜体 | 思考过程 |
+| 青色 `★` | 建议标题 |
+| 绿 `✓` | 完成 |
+
+> ⚠️ 原型里是**定时器模拟**，真实环境要接 SSE。
+
+## 11.5 顺手修的两个 bug
+
+| bug | 原因 | 修法 |
+|---|---|---|
+| **同一个建议采纳 3 次生成 3 个图层** | `leAdopt` 没查重 | 加 `LE_LAYERS.some(L => L.id === s.id)` 判断，已存在就只选中 |
+| **旋转 90° 图片被压扁** | 容器 `aspect-ratio` 没换 | 旋转时设 `aspectRatio: auto` |
+
+---
+
+# 十二、最终状态
+
+## 12.1 全部验证：28 个函数全部存在
+
+```
+leAdopt / leSelectLayer / leSetTarget / leRenderFx / leToggleInvert /
+leRenderHist / leSetCrop / leCropToggle / leRotate / leBrushToggle /
+leBrushMode / leSkinSmooth / leLiquifyPixels / leHslSet / leEyeToggle /
+leSetVignette / leSetGrain / leApplyPreset / leRenderHistory /
+leSkinCheck / leCheckHarsh / leToggleOrder / leMoveLayer /
+leExtractExif / leAutoSave / leExportDo / leSchemaDetect / leStreamDemo
+```
+
+**位图：1111111111111111111111111111（28/28）**
+
+## 12.2 对照三份参照的最终差距
+
+### 对照 Photoshop
+
+**已有 21 项**，仍缺 6 项：
+| 缺 | 性质 |
+|---|---|
+| 可选颜色 | 高级，超出范围 |
+| 色彩平衡 | 高级，超出范围 |
+| 局部模糊（背景虚化）| 可做但没排 |
+| 可拖的径向/渐变滤镜 | 我们有区域，不是滤镜 |
+| 内容识别填充 | 要真接模型 |
+| 动作/批处理 | 可做但没排 |
+
+### 对照课程知识库
+
+**已有 7 项**（观察层/曲线限动态/参考风格/肤色检查/下手别太狠/修图顺序/磨皮不破坏光）
+
+仍缺 2 项：
+| 缺 | 说明 |
+|---|---|
+| 观察层作为独立可开关工具 | 直方图部分承接 |
+| 修图术前分析接拍摄端 | 拍摄端有交接单，修图端没接 |
+
+### 对照 PhotoMaster
+
+**已有 13 项**（建议/图层/区域5种/重绘UI/裁剪/拖框/导出/EXIF/自动保存/原分辨率/图层排序/区域反转/结构化降级/流式）
+
+仍缺 0 项核心功能。
+
+**剩下的都是「要真接 AI」**，属原型阶段不该做的。
+
+---
+
+# 十三、一句话总结
+
+**这个修图面板现在已经覆盖了 PS 人像调色的常用功能（21 项）、
+课程里所有可机械化的检查（7 项）、
+以及 PhotoMaster 的全部核心机制（13 项）。**
+
+**它和它们的真正区别没有变**：
+- 比 PS：**AI 整张建议 → 一键变图层**，PS 没有
+- 比 PhotoMaster：**我们是「拍之前」的工具，它是「拍之后」的**，
+  我们手里的「后期交接单」是它缺的上下文
+- 比课程：**课程教怎么想，我们把这些变成界面上能点的检查**

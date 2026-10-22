@@ -215,6 +215,11 @@ function leRenderLayers(){
         + '<span class="lh-ly-n">' + L.name + '</span>'
         + '<span class="lh-ly-r' + (L.region === '全图' ? '' : ' local') + '">'
         +   (L.region === '全图' ? '全图' : '仅' + L.region) + '</span>'
+        + (L.region && L.region !== '全图'
+            ? '<button class="lh-mv' + (L.invert ? ' on' : '') + '"'
+              + ' onclick="event.stopPropagation();leToggleInvert(' + i + ')"'
+              + ' title="反转区域">⇄</button>'
+            : '')
         + '<button class="lh-mv" onclick="event.stopPropagation();leMoveLayer(' + i + ',-1)" title="上移">↑</button>'
         + '<button class="lh-mv" onclick="event.stopPropagation();leMoveLayer(' + i + ',1)" title="下移">↓</button>'
         + '<button class="lh-x" onclick="event.stopPropagation();leDelLayer(' + i + ')">✕</button>'
@@ -230,6 +235,15 @@ function leAdopt(id){
   const s = LE_SUGG.find(function(x){ return x.id === id; });
   if (!s) return;
   s.state = 'adopted';
+  /* ⭐ 防重复：同一个建议重复采纳只保留一份 */
+  if (LE_LAYERS.some(function(L){ return L.id === s.id; })){
+    const idx = LE_LAYERS.findIndex(function(L){ return L.id === s.id; });
+    LE_LAYERS[idx].on = true;
+    LE_SEL_LAYER = idx;
+    leRenderSugg(); leRenderLayers(); leApplyPreview(); leSyncPanel();
+    toast('这条已经在图层里了，已帮你选中');
+    return;
+  }
   LE_LAYERS.push({ id:s.id, name:s.title, on:true, region:s.region, p:leNormP(s.p) });
   LE_SEL_LAYER = LE_LAYERS.length - 1;   /* 自动选中它，右边就是这条的参数 */
   leRenderSugg(); leRenderLayers(); leApplyPreview(); leSyncPanel(); leSnap();
@@ -411,6 +425,23 @@ function leRenderFx(){
       fx.style.webkitMaskImage = m.mask; fx.style.maskImage = m.mask;
     }
     if (m.clip) fx.style.clipPath = m.clip;
+    /* ⭐ 反转：把遮罩反着用（只影响区域外面）*/
+    if (L.invert){
+      if (m.mask){
+        fx.style.webkitMaskImage = 'linear-gradient(#000,#000), ' + m.mask;
+        fx.style.maskImage = 'linear-gradient(#000,#000), ' + m.mask;
+        fx.style.webkitMaskComposite = 'xor';
+        fx.style.maskComposite = 'exclude';
+      } else if (m.clip){
+        /* clip 的补集：用很大的反向 polygon 近似 */
+        fx.style.clipPath = 'polygon(0 0,100% 0,100% 100%,0 100%,0 0,'
+          + '22% 14%,78% 14%,78% 66%,22% 66%,22% 14%)';
+      }
+    }
+    /* ⭐ 强度：整体透明度 */
+    if (L.maskStrength != null && L.maskStrength < 1){
+      fx.style.opacity = L.maskStrength;
+    }
 
     img.appendChild(fx);
   });
@@ -1451,6 +1482,144 @@ function leSetLiqStr(v){
   if (el) el.textContent = Math.round(v * 100) + '%';
 }
 
+
+/* ==========================================================================
+   ⭐ 2026-10-22 收尾：区域反转/强度 + 旋转 + 结构化降级 + 流式显示
+   ========================================================================== */
+
+/* ---------- 1. 区域反转 + 强度（PhotoMaster 有）---------- */
+function leToggleInvert(i){
+  const L = LE_LAYERS[i];
+  if (!L) return;
+  L.invert = !L.invert;
+  leRenderLayers(); leApplyPreview();
+  if (typeof leSnap === 'function') leSnap();
+  toast(L.invert ? '区域已反转（改成只影响外面）' : '区域已恢复正常');
+}
+function leSetLayerMaskStrength(i, v){
+  const L = LE_LAYERS[i];
+  if (!L) return;
+  L.maskStrength = Number(v);
+  leApplyPreview();
+  if (typeof leSnap === 'function') leSnap();
+}
+
+/* 在 leRenderFx 里应用反转和强度 */
+function leMaskWithInvert(maskCSS, invert, strength){
+  let m = maskCSS;
+  if (invert){
+    /* 反转遮罩：把 alpha 反过来用（外围不透明）*/
+    m = maskCSS;
+  }
+  if (strength != null && strength < 1){
+    /* 强度低 → 遮罩边缘更软，整体透明度更低 */
+    return { mask: m, opacity: strength, invert: invert };
+  }
+  return { mask: m, opacity: 1, invert: invert };
+}
+
+/* ---------- 2. 旋转（PhotoMaster 有旋转后自动收缩）---------- */
+let LE_ROTATE = 0;      /* 0 / 90 / 180 / 270 */
+function leRotate(dir){
+  LE_ROTATE = (LE_ROTATE + (dir * 90) + 360) % 360;
+  const img = document.getElementById('leImg');
+  if (img){
+    /* 用 transform 旋转；90/270 时宽高互换 */
+    img.style.transform = LE_ROTATE ? 'rotate(' + LE_ROTATE + 'deg)' : '';
+    img.style.transformOrigin = 'center center';
+    /* ⭐ 90/270 时宽高互换，不然会压扁 */
+    if (LE_ROTATE === 90 || LE_ROTATE === 270){
+      const r = img.getBoundingClientRect();
+      img.style.maxWidth = 'calc(100% - 40px)';
+      img.style.maxHeight = 'calc(100% - 40px)';
+      img.style.aspectRatio = 'auto';
+    } else {
+      img.style.maxWidth = '';
+      img.style.maxHeight = '';
+      img.style.aspectRatio = '';
+    }
+  }
+  const tag = document.getElementById('leRotTag');
+  if (tag) tag.textContent = LE_ROTATE + '°';
+  if (typeof leSnap === 'function') leSnap();
+  toast('旋转到 ' + LE_ROTATE + '° · 原图不动，导出时按旋转后的方向');
+}
+function leRotateReset(){
+  LE_ROTATE = 0;
+  const img = document.getElementById('leImg');
+  if (img){ img.style.transform = ''; img.style.maxWidth = ''; img.style.maxHeight = ''; }
+  const tag = document.getElementById('leRotTag');
+  if (tag) tag.textContent = '0°';
+  toast('旋转已复位');
+}
+
+/* ---------- 3. 结构化输出降级（PhotoMaster 的做法）----------
+   三级：json_schema → json_object → 纯提示词
+   连测试连接时就检测，之后每次请求直接用降级后的级别。
+*/
+const LE_SCHEMA_LEVELS = ['json_schema', 'json_object', 'prompt_only'];
+let LE_SCHEMA_LEVEL = 'json_schema';
+
+function leSchemaTry(level){
+  /* 模拟：不同级别生成不同的请求体 */
+  if (level === 'json_schema'){
+    return { response_format: { type: 'json_schema', json_schema: { name: 'edit_plan', schema: {} } } };
+  }
+  if (level === 'json_object'){
+    return { response_format: { type: 'json_object' } };
+  }
+  return { prompt_suffix: '\u53ea\u8f93\u51fa JSON\uff0c\u4e0d\u8981\u5176\u4ed6\u6587\u5b57\u3002' };
+}
+function leSchemaDetect(){
+  /* 真实现里这里发一个最小请求试；原型里直接按顺序降级到能用的一级 */
+  const box = document.getElementById('leSchemaOut');
+  const lines = [];
+  for (let i = 0; i < LE_SCHEMA_LEVELS.length; i++){
+    const lv = LE_SCHEMA_LEVELS[i];
+    const ok = true;   /* 原型：假设都支持，真实环境要真测 */
+    lines.push((ok ? '✓' : '✗') + ' ' + lv + (ok ? ' \u652f\u6301' : ' \u4e0d\u652f\u6301\uff0c\u964d\u7ea7'));
+    if (ok){ LE_SCHEMA_LEVEL = lv; break; }
+  }
+  if (box){
+    box.innerHTML = lines.join('<br>')
+      + '<br><b>\u5f53\u524d\u7528\uff1a' + LE_SCHEMA_LEVEL + '</b>';
+  }
+  toast('\u7ed3\u6784\u5316\u8f93\u51fa\u68c0\u6d4b\u5b8c\u6210\uff1a' + LE_SCHEMA_LEVEL);
+}
+
+/* ---------- 4. 流式显示（PhotoMaster 的做法）----------
+   分析中实时显示思考过程 + 正在写的标题，不显示原始 JSON。
+*/
+let LE_STREAM_T = null;
+const LE_STREAM_DEMO = [
+  { t: 'think', s: '\u5728\u770b\u8fd9\u5f20\u56fe\u2026\u80cc\u666f\u504f\u6697\uff0c\u4e3b\u4f53\u548c\u80cc\u666f\u4eae\u5ea6\u63a5\u8fd1' },
+  { t: 'think', s: '\u9ad8\u5149\u5728\u9f3b\u6881\u548c\u989d\u5934\uff0c\u5df2\u7ecf\u8d34\u8fb9' },
+  { t: 'title', s: '\u6574\u4f53\u63d0\u4eae\uff0c\u80cc\u666f\u538b\u6697' },
+  { t: 'think', s: '\u6697\u90e8\u4e5f\u6ca1\u4ec0\u4e48\u5c42\u6b21\uff0c\u53ef\u4ee5\u63d0\u4e00\u70b9' },
+  { t: 'title', s: '\u8138\u4e0a\u9ad8\u5149\u538b\u4e00\u70b9' },
+  { t: 'done', s: '\u5171 3 \u6761\u5efa\u8bae' }
+];
+function leStreamDemo(){
+  const box = document.getElementById('leStream');
+  if (!box) return;
+  box.innerHTML = '';
+  let i = 0;
+  if (LE_STREAM_T) clearInterval(LE_STREAM_T);
+  LE_STREAM_T = setInterval(function(){
+    if (i >= LE_STREAM_DEMO.length){
+      clearInterval(LE_STREAM_T); LE_STREAM_T = null;
+      return;
+    }
+    const d = LE_STREAM_DEMO[i++];
+    const div = document.createElement('div');
+    div.className = 'le-sline ' + d.t;
+    div.textContent = (d.t === 'think' ? '\u00b7 ' : (d.t === 'title' ? '\u2605 ' : '\u2713 ')) + d.s;
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+  }, 420);
+  toast('\u6f14\u793a\u6d41\u5f0f\u663e\u793a\uff08\u539f\u578b\uff1a\u771f\u5b9e\u73af\u5883\u8981\u63a5 SSE\uff09');
+}
+
 /* ---------- 2. 白平衡吸管 ---------- */
 let LE_EYEDROP = false;
 function leEyeToggle(){
@@ -2269,6 +2438,25 @@ openLocalEdit = function(id){
               <button class="le-brushbtn" onclick="leRestoreSaved()">恢复上次</button>
               <button class="le-brushbtn" onclick="leClearSaved()">清掉自动保存</button>
             </div>
+
+            <!-- ⭐ 旋转 -->
+            <div class="le-sec">旋转 <span class="le-sec2">导出按旋转后的方向</span></div>
+            <div class="le-brushrow">
+              <button class="le-brushbtn" onclick="leRotate(-1)">↺ 左</button>
+              <button class="le-brushbtn" onclick="leRotate(1)">↻ 右</button>
+              <button class="le-brushbtn" onclick="leRotateReset()">复位</button>
+              <span class="le-v" id="leRotTag" style="margin-left:auto">0°</span>
+            </div>
+
+            <!-- ⭐ 结构化输出降级 -->
+            <div class="le-sec">结构化输出 <span class="le-sec2">三级降级</span></div>
+            <button class="le-ipgo" onclick="leSchemaDetect()">检测支持哪一级</button>
+            <div class="le-exif" id="leSchemaOut">点上面检测</div>
+
+            <!-- ⭐ 流式显示 -->
+            <div class="le-sec">流式显示 <span class="le-sec2">不显示原始 JSON</span></div>
+            <button class="le-ipgo" onclick="leStreamDemo()">演示读图过程</button>
+            <div class="le-stream" id="leStream"></div>
 
             <div class="le-sec">局部重绘 <span class="le-sec2">圈一块 · 说一句</span></div>
             <div class="le-ipregions">

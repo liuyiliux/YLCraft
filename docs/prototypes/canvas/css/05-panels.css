@@ -1549,3 +1549,17 @@
 .le-savedtag{font-size:9px;color:#34d399;font-family:var(--fm);opacity:0;
   transition:opacity .3s;text-align:center;padding:2px 0}
 .le-savedtag.on{opacity:1}
+
+/* 旋转 / 结构化 / 流式 */
+.lh-mv.on{color:var(--wn)}
+.le-stream{margin-top:8px;padding:9px 11px;border-radius:6px;background:var(--s2);
+  border:1px solid var(--ln2);max-height:130px;overflow-y:auto}
+.le-sline{font-size:9.5px;line-height:1.6;color:var(--tx3);font-family:var(--fm);
+  animation:fade .25s var(--ez)}
+.le-sline.think{color:var(--tx3);font-style:italic}
+.le-sline.title{color:var(--ac)}
+.le-sline.done{color:#34d399}
+.le-img{transition:transform .25s var(--ez),filter .06s linear}
+
+/* 旋转时保持比例，别压扁 */
+.le-body3 .le-img{transform-origin:center center}
