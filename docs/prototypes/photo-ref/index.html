@@ -2355,6 +2355,70 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 .cam-chip.custom-add{color:var(--tx3);border-style:dashed}
 .cam-chip.custom{border-color:var(--photo);
   background:color-mix(in srgb,var(--photo) 12%,transparent);color:var(--photo)}
+
+/* ===== 批量上传 / 截帧入库 ===== */
+.ups,.frs{position:fixed;inset:0;z-index:98;display:none;align-items:center;
+  justify-content:center;background:rgba(0,0,0,.66);backdrop-filter:blur(5px);padding:24px}
+.ups.on,.frs.on{display:flex}
+.ups-box,.frs-box{width:min(700px,96vw);max-height:88vh;display:flex;flex-direction:column;
+  background:var(--bgElev);border:1px solid var(--bd2);border-radius:var(--radiusLG);
+  box-shadow:var(--shadowModal);overflow:hidden}
+.ups-hd,.frs-hd{display:flex;align-items:flex-start;gap:12px;padding:20px 24px;
+  border-bottom:1px solid var(--bd)}
+.ups-title,.frs-title{font-size:19px;color:var(--tx1);font-weight:600;margin-bottom:3px}
+.ups-sub,.frs-sub{font-size:12.5px;color:var(--tx3)}
+.ups-x,.frs-x{margin-left:auto;font-size:16px;color:var(--tx3);background:none;border:none;
+  cursor:pointer;padding:2px 6px;font-family:inherit}
+.ups-x:hover,.frs-x:hover{color:var(--tx1)}
+.ups-body,.frs-body{padding:18px 24px;overflow-y:auto;flex:1}
+.ups-drop,.frs-drop{border:2px dashed var(--bd3);border-radius:10px;padding:26px 20px;
+  text-align:center;transition:.18s;margin-bottom:14px}
+.ups-drop.over,.frs-drop.over{border-color:var(--photo);
+  background:color-mix(in srgb,var(--photo) 7%,transparent)}
+.ups-di,.frs-di{font-size:26px;margin-bottom:7px;opacity:.7}
+.ups-dt,.frs-dt{font-size:14.5px;color:var(--tx1);margin-bottom:3px}
+.ups-ds,.frs-ds{font-size:12px;color:var(--tx3);margin-bottom:12px}
+.ups-pick,.frs-pick{font-size:13px;padding:7px 18px;border-radius:6px;border:1px solid var(--bd2);
+  background:var(--bgCard);color:var(--tx2);cursor:pointer;font-family:inherit;transition:.16s}
+.ups-pick:hover,.frs-pick:hover{border-color:var(--photo);color:var(--photo)}
+.ups-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+  gap:10px;margin-bottom:16px}
+.ups-item{position:relative;border:1px solid var(--bd2);border-radius:7px;overflow:hidden;
+  background:var(--bgInput)}
+.ups-thumb{width:100%;height:94px;object-fit:cover;display:block}
+.ups-info{padding:6px 8px}
+.ups-name{font-size:11.5px;color:var(--tx2);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.ups-size{font-size:10.5px;color:var(--tx3);font-family:var(--fm)}
+.ups-rm{position:absolute;top:4px;right:4px;width:18px;height:18px;border-radius:50%;
+  border:none;background:rgba(0,0,0,.6);color:#fff;font-size:12px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;font-family:inherit}
+.ups-rm:hover{background:var(--err)}
+.ups-tags{border-top:1px solid var(--bd);padding-top:14px}
+.ups-th{font-size:12.5px;color:var(--tx3);margin-bottom:9px}
+.ups-trow{display:flex;align-items:center;gap:7px;margin-bottom:7px;flex-wrap:wrap}
+.ups-tk{font-size:11.5px;color:var(--tx3);min-width:30px;font-family:var(--fm)}
+.ups-t{font-size:12px;padding:4px 11px;border-radius:20px;border:1px solid var(--bd2);
+  background:transparent;color:var(--tx3);cursor:pointer;transition:.16s;font-family:inherit}
+.ups-t:hover{border-color:var(--bd3);color:var(--tx2)}
+.ups-t.on{border-color:var(--photo);color:var(--photo);
+  background:color-mix(in srgb,var(--photo) 12%,transparent)}
+.ups-ft,.frs-ft{display:flex;align-items:center;gap:10px;padding:14px 24px;
+  border-top:1px solid var(--bd);font-size:12.5px;color:var(--tx3)}
+.frs-time{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.frs-tl{font-size:12px;color:var(--tx3);flex-shrink:0}
+.frs-time input[type=range]{flex:1;accent-color:var(--photo)}
+.frs-tv{font-size:12px;color:var(--photo);font-family:var(--fm);min-width:38px}
+.frs-frames{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:9px}
+.frs-f{position:relative;border:1px solid var(--bd2);border-radius:6px;overflow:hidden}
+.frs-f img{width:100%;height:84px;object-fit:cover;display:block}
+.frs-tc{position:absolute;left:5px;bottom:5px;font-size:10.5px;color:#fff;
+  background:rgba(0,0,0,.68);padding:1px 5px;border-radius:3px;font-family:var(--fm)}
+.frs-rm{position:absolute;top:4px;right:4px;width:17px;height:17px;border-radius:50%;
+  border:none;background:rgba(0,0,0,.6);color:#fff;font-size:11px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;font-family:inherit}
+.frs-rm:hover{background:var(--err)}
+.card.uploaded .thumb img{width:100%;height:100%;object-fit:cover}
 </style>
 </head>
 <body data-t="deep">
@@ -2375,8 +2439,8 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
     <button class="th" onclick="setTheme('moonlight',this)"><i style="background:#a78bfa"></i>月光</button>
     <button class="th" onclick="setTheme('dawn',this)"><i style="background:#0d9488"></i>晨曦</button>
   </div>
-  <button class="btn" onclick="fake('批量上传：100–500 张，先勾一批标签整批套用')">批量上传</button>
-  <button class="btn" onclick="fake('截帧入库：取前后各 1–2 秒的 3–5 张候选帧，自动带时间码')">截帧入库</button>
+  <button class="btn" onclick="openUploadSheet()">批量上传</button>
+  <button class="btn" onclick="openFrameSheet()">截帧入库</button>
   <button class="btn" onclick="openCueLib()">口令库</button>
   <button class="btn" onclick="openBooklet()">学习手册</button>
   <button class="btn" onclick="window.open('model-profile.html','_blank')">模特档案</button>
@@ -3017,7 +3081,7 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
       <button class="pz-tab" onclick="pzTab(this,'plan')">方案</button>
       <button class="pz-tab" onclick="pzTab(this,'els')">元素<em>10</em></button>
       <button class="pz-tab" onclick="pzTab(this,'shots')">分镜<em id="pzShotN">0</em></button>
-      <button class="pz-tab" onclick="pzTab(this,'kit')">必带<em>10</em></button>
+      <button class="pz-tab" onclick="pzTab(this,'kit')">必带<em id="kitN">10</em></button>
       <button class="pz-tab" onclick="pzTab(this,'cam')">拍摄</button>
       <button class="pz-tab" onclick="pzTab(this,'handoff')">交接</button>
       <button class="pz-tab" onclick="pzTab(this,'print')">打印<em>新</em></button>
@@ -3249,7 +3313,7 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
     <section class="pz-pane" id="pz-kit">
       <div class="pz-lead">
         <p class="pz-lead-t">必带清单</p>
-        <p class="pz-lead-b">从脚本自动提取。分镜改了这里跟着变——不用手维护两份。</p>
+        <p class="pz-lead-b">分镜定了之后这里会跟着变——<b>现在还不会</b>，先手动加删。</p>
       </div>
       <div class="pz-kit">
         <div class="pz-kg"><div class="pz-kg-h">自带</div>
@@ -3529,6 +3593,75 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
       <div class="spacer"></div>
       <button class="btn" onclick="closeRefPicker()">取消</button>
       <button class="btn pri" onclick="rpConfirm()">挂上去</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===== 批量上传 ===== -->
+<div class="ups" id="uploadSheet">
+  <div class="ups-box">
+    <div class="ups-hd">
+      <div>
+        <div class="ups-title">批量上传</div>
+        <div class="ups-sub">拖进来或选文件 · 选中后统一打标签，整批入库</div>
+      </div>
+      <button class="ups-x" onclick="closeUploadSheet()">✕</button>
+    </div>
+    <div class="ups-body">
+      <div class="ups-drop" id="upsDrop">
+        <div class="ups-di">⬆</div>
+        <div class="ups-dt">把图片拖到这里</div>
+        <div class="ups-ds">或点下面按钮选文件 · 支持 JPG / PNG / WebP</div>
+        <input type="file" id="upsFile" accept="image/*" multiple style="display:none">
+        <button class="ups-pick" onclick="document.getElementById('upsFile').click()">选文件</button>
+      </div>
+      <div class="ups-list" id="upsList"></div>
+      <div class="ups-tags">
+        <div class="ups-th">给这批打标签（可都不选）</div>
+        <div class="ups-tg" id="upsTags"></div>
+      </div>
+    </div>
+    <div class="ups-ft">
+      <span id="upsCount">还没选文件</span>
+      <div class="spacer"></div>
+      <button class="btn" onclick="closeUploadSheet()">取消</button>
+      <button class="btn pri" onclick="upsDoImport()">入库</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 截帧入库 ===== -->
+<div class="frs" id="frameSheet">
+  <div class="frs-box">
+    <div class="frs-hd">
+      <div>
+        <div class="frs-title">截帧入库</div>
+        <div class="frs-sub">选一个视频，取几个时间点的画面存成参考图</div>
+      </div>
+      <button class="frs-x" onclick="closeFrameSheet()">✕</button>
+    </div>
+    <div class="frs-body">
+      <div class="frs-drop" id="frsDrop">
+        <div class="frs-di">🎞</div>
+        <div class="frs-dt">选一个视频文件</div>
+        <div class="frs-ds">在本地解码，不上传 · 支持 mp4 / webm / mov</div>
+        <input type="file" id="frsFile" accept="video/*" style="display:none">
+        <button class="frs-pick" onclick="document.getElementById('frsFile').click()">选视频</button>
+      </div>
+      <video id="frsVideo" style="display:none" muted playsinline></video>
+      <div class="frs-time" id="frsTime" style="display:none">
+        <span class="frs-tl">取帧时间</span>
+        <input type="range" id="frsRange" min="0" max="100" value="50" oninput="frsSeek(this.value)">
+        <span class="frs-tv" id="frsTv">0:00</span>
+      </div>
+      <div class="frs-frames" id="frsFrames"></div>
+    </div>
+    <div class="frs-ft">
+      <span id="frsCount">还没选视频</span>
+      <div class="spacer"></div>
+      <button class="btn" onclick="closeFrameSheet()">取消</button>
+      <button class="btn pri" onclick="frsDoImport()">入库</button>
     </div>
   </div>
 </div>
@@ -6703,6 +6836,361 @@ document.addEventListener('DOMContentLoaded', function(){
   setTimeout(editAllEnhance, 600);
 });
 
+
+/* ⭐ 2026-10-22 徽章数字改成实际数量，别再写死 */
+function kitSyncCount(){
+  const n = document.querySelectorAll('#pz-kit .pz-ki').length;
+  const el = document.getElementById('kitN');
+  if (el) el.textContent = n;
+  return n;
+}
+var __kitEnhanceOrig = kitEnhance;
+kitEnhance = function(){
+  __kitEnhanceOrig();
+  kitSyncCount();
+};
+
+
+/* ==========================================================================
+   ⭐ 2026-10-22 批量上传 / 截帧入库 —— 这次是真的
+   浏览器原生能力：File API 读本地文件、URL.createObjectURL 真预览、
+   <video> + <canvas> 真截帧。不上传服务器，全部本地处理。
+   入库结果存 localStorage（图片本身存 dataURL，所以刷新还在）。
+   ========================================================================== */
+
+const UPLOAD_KEY = 'ylcraft_photo_uploads_v1';
+let UPS_FILES = [];       /* 待入库的文件 */
+let UPS_TAGS = {};        /* 选中的标签 */
+let FRS_SHOTS = [];       /* 截出来的帧 */
+
+const UPS_TAGSET = {
+  '光':   ['逆光', '侧逆光', '顺光', '阴天柔光', '硬光', '蓝调'],
+  '景别': ['特写', '近景', '中景', '全景', '远景'],
+  '题材': ['人像', '情侣', '老年', '私房', '古风', '街拍', '风光'],
+  '氛围': ['暖调', '冷调', '高饱和', '低饱和', '胶片感']
+};
+
+/* ---------- 打开 / 关闭 ---------- */
+function openUploadSheet(){
+  UPS_FILES = []; UPS_TAGS = {};
+  renderUpsTags();
+  renderUpsList();
+  document.getElementById('uploadSheet').classList.add('on');
+  const inp = document.getElementById('upsFile');
+  if (inp && !inp.dataset.bound){
+    inp.dataset.bound = '1';
+    inp.onchange = function(){ upsAddFiles(this.files); };
+  }
+  const drop = document.getElementById('upsDrop');
+  if (drop && !drop.dataset.bound){
+    drop.dataset.bound = '1';
+    ['dragenter','dragover'].forEach(function(ev){
+      drop.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.add('over'); });
+    });
+    ['dragleave','drop'].forEach(function(ev){
+      drop.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.remove('over'); });
+    });
+    drop.addEventListener('drop', function(e){
+      if (e.dataTransfer && e.dataTransfer.files) upsAddFiles(e.dataTransfer.files);
+    });
+  }
+}
+function closeUploadSheet(){
+  /* 释放 objectURL，避免内存泄漏 */
+  UPS_FILES.forEach(function(f){ if (f.url) URL.revokeObjectURL(f.url); });
+  UPS_FILES = [];
+  document.getElementById('uploadSheet').classList.remove('on');
+}
+
+function upsAddFiles(fileList){
+  Array.from(fileList || []).forEach(function(f){
+    if (!f.type || f.type.indexOf('image/') !== 0) return;
+    UPS_FILES.push({
+      name: f.name,
+      size: f.size,
+      url: URL.createObjectURL(f),
+      file: f
+    });
+  });
+  renderUpsList();
+}
+
+function renderUpsList(){
+  const host = document.getElementById('upsList');
+  const cnt = document.getElementById('upsCount');
+  if (!host) return;
+  if (!UPS_FILES.length){
+    host.innerHTML = '';
+    if (cnt) cnt.textContent = '还没选文件';
+    return;
+  }
+  host.innerHTML = UPS_FILES.map(function(f, i){
+    return '<div class="ups-item">'
+      + '<img class="ups-thumb" src="' + f.url + '" alt="">'
+      + '<div class="ups-info"><div class="ups-name">' + f.name + '</div>'
+      + '<div class="ups-size">' + (f.size / 1024).toFixed(0) + ' KB</div></div>'
+      + '<button class="ups-rm" onclick="upsRemove(' + i + ')">×</button>'
+      + '</div>';
+  }).join('');
+  if (cnt) cnt.textContent = '已选 ' + UPS_FILES.length + ' 张';
+}
+
+function upsRemove(i){
+  if (UPS_FILES[i] && UPS_FILES[i].url) URL.revokeObjectURL(UPS_FILES[i].url);
+  UPS_FILES.splice(i, 1);
+  renderUpsList();
+}
+
+function renderUpsTags(){
+  const host = document.getElementById('upsTags');
+  if (!host) return;
+  host.innerHTML = Object.keys(UPS_TAGSET).map(function(group){
+    return '<div class="ups-trow"><span class="ups-tk">' + group + '</span>'
+      + UPS_TAGSET[group].map(function(t){
+          return '<button class="ups-t' + (UPS_TAGS[t] ? ' on' : '') + '"'
+            + ' onclick="upsToggleTag(\'' + t + '\')">' + t + '</button>';
+        }).join('')
+      + '</div>';
+  }).join('');
+}
+function upsToggleTag(t){
+  UPS_TAGS[t] = !UPS_TAGS[t];
+  renderUpsTags();
+}
+
+function upsDoImport(){
+  if (!UPS_FILES.length){ fake('先选几张图'); return; }
+  const tags = Object.keys(UPS_TAGS).filter(function(k){ return UPS_TAGS[k]; });
+
+  /* 读成 dataURL 存起来（这样刷新还在）*/
+  let done = 0;
+  const total = UPS_FILES.length;
+  const saved = [];
+  UPS_FILES.forEach(function(f, i){
+    const reader = new FileReader();
+    reader.onload = function(){
+      saved.push({ name: f.name, data: reader.result, tags: tags, at: Date.now() });
+      done++;
+      if (done === total) upsFinish(saved, tags);
+    };
+    reader.onerror = function(){ done++; if (done === total) upsFinish(saved, tags); };
+    reader.readAsDataURL(f.file);
+  });
+}
+
+function upsFinish(saved, tags){
+  let all = [];
+  try { all = JSON.parse(localStorage.getItem(UPLOAD_KEY) || '[]'); } catch(e){}
+  all = all.concat(saved);
+  try {
+    localStorage.setItem(UPLOAD_KEY, JSON.stringify(all.slice(-60)));  /* 最多存 60 张，别撑爆 */
+  } catch(e){
+    fake('本地存不下了 —— 浏览器存储有上限，先少传几张');
+    return;
+  }
+  closeUploadSheet();
+  renderUploads();
+  hideEmpty();
+  fake('入库 ' + saved.length + ' 张' + (tags.length ? ' · 标签：' + tags.join('、') : ''));
+}
+
+/* 渲染已入库的图到作品库 */
+function renderUploads(){
+  let all = [];
+  try { all = JSON.parse(localStorage.getItem(UPLOAD_KEY) || '[]'); } catch(e){}
+  if (!all.length) return;
+
+  const grid = document.querySelector('#viewGrid .grid');
+  if (!grid) return;
+
+  /* 先清掉旧的已上传卡 */
+  grid.querySelectorAll('.card.uploaded').forEach(function(x){ x.remove(); });
+
+  all.slice().reverse().forEach(function(item){
+    const card = document.createElement('div');
+    card.className = 'card uploaded';
+    card.innerHTML = '<div class="thumb"><img src="' + item.data + '" alt="">'
+      + '<span class="badge">上传</span>'
+      + (item.tags && item.tags.length
+          ? '<span class="badge steal">' + item.tags[0] + '</span>' : '')
+      + '</div>'
+      + '<div class="card-bd"><div class="steal-txt">'
+      + (item.tags && item.tags.length ? '标签：' + item.tags.join(' / ') : '还没打标签')
+      + '</div><div class="tags">'
+      + (item.tags || []).map(function(t){ return '<span class="tg">' + t + '</span>'; }).join('')
+      + '</div></div>';
+    grid.insertBefore(card, grid.firstChild);
+  });
+}
+
+/* ==========================================================================
+   截帧入库
+   ========================================================================== */
+function openFrameSheet(){
+  FRS_SHOTS = [];
+  document.getElementById('frameSheet').classList.add('on');
+  const inp = document.getElementById('frsFile');
+  if (inp && !inp.dataset.bound){
+    inp.dataset.bound = '1';
+    inp.onchange = function(){ if (this.files && this.files[0]) frsLoadVideo(this.files[0]); };
+  }
+  const drop = document.getElementById('frsDrop');
+  if (drop && !drop.dataset.bound){
+    drop.dataset.bound = '1';
+    ['dragenter','dragover'].forEach(function(ev){
+      drop.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.add('over'); });
+    });
+    ['dragleave','drop'].forEach(function(ev){
+      drop.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.remove('over'); });
+    });
+    drop.addEventListener('drop', function(e){
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]){
+        frsLoadVideo(e.dataTransfer.files[0]);
+      }
+    });
+  }
+}
+function closeFrameSheet(){
+  const v = document.getElementById('frsVideo');
+  if (v){ v.pause(); v.removeAttribute('src'); v.load(); }
+  FRS_SHOTS = [];
+  renderFrsFrames();
+  document.getElementById('frameSheet').classList.remove('on');
+}
+
+function frsLoadVideo(file){
+  const v = document.getElementById('frsVideo');
+  v.src = URL.createObjectURL(file);
+  v.style.display = 'none';
+  v.onloadedmetadata = function(){
+    const dur = v.duration || 0;
+    const r = document.getElementById('frsRange');
+    r.max = 100; r.value = 50;
+    document.getElementById('frsTime').style.display = 'flex';
+    frsSeek(50);
+    document.getElementById('frsCount').textContent =
+      '视频 ' + Math.floor(dur/60) + ':' + String(Math.floor(dur%60)).padStart(2,'0') + ' · 拖滑块取帧';
+  };
+}
+
+let FRS_SEEKING = false;
+function frsSeek(pct){
+  const v = document.getElementById('frsVideo');
+  if (!v || !v.duration) return;
+  const t = (pct / 100) * v.duration;
+  const tv = document.getElementById('frsTv');
+  if (tv) tv.textContent = Math.floor(t/60) + ':' + String(Math.floor(t%60)).padStart(2,'0');
+  if (FRS_SEEKING) return;
+  FRS_SEEKING = true;
+  v.currentTime = t;
+  v.onseeked = function(){
+    FRS_SEEKING = false;
+    frsGrab(t);
+  };
+}
+
+/* 真截帧：<video> → <canvas> → dataURL */
+function frsGrab(t){
+  const v = document.getElementById('frsVideo');
+  if (!v || !v.videoWidth) return;
+  const cv = document.createElement('canvas');
+  cv.width = v.videoWidth;
+  cv.height = v.videoHeight;
+  cv.getContext('2d').drawImage(v, 0, 0);
+  let data;
+  try { data = cv.toDataURL('image/jpeg', 0.82); } catch(e){ return; }
+  /* 同一个时间点附近别重复加 */
+  if (FRS_SHOTS.some(function(s){ return Math.abs(s.t - t) < 0.5; })) return;
+  if (FRS_SHOTS.length >= 5) FRS_SHOTS.shift();
+  FRS_SHOTS.push({ t: t, data: data });
+  renderFrsFrames();
+}
+
+function renderFrsFrames(){
+  const host = document.getElementById('frsFrames');
+  if (!host) return;
+  if (!FRS_SHOTS.length){
+    host.innerHTML = '';
+    return;
+  }
+  host.innerHTML = FRS_SHOTS.map(function(s, i){
+    return '<div class="frs-f"><img src="' + s.data + '" alt="">'
+      + '<span class="frs-tc">' + Math.floor(s.t/60) + ':'
+      + String(Math.floor(s.t%60)).padStart(2,'0') + '</span>'
+      + '<button class="frs-rm" onclick="frsRemove(' + i + ')">×</button></div>';
+  }).join('');
+  const c = document.getElementById('frsCount');
+  if (c) c.textContent = '取了 ' + FRS_SHOTS.length + ' 帧（最多 5）';
+}
+
+function frsRemove(i){ FRS_SHOTS.splice(i, 1); renderFrsFrames(); }
+
+function frsDoImport(){
+  if (!FRS_SHOTS.length){ fake('还没取到帧 —— 拖一下滑块'); return; }
+  let all = [];
+  try { all = JSON.parse(localStorage.getItem(UPLOAD_KEY) || '[]'); } catch(e){}
+  FRS_SHOTS.forEach(function(s){
+    all.push({
+      name: '截帧 ' + Math.floor(s.t/60) + ':' + String(Math.floor(s.t%60)).padStart(2,'0'),
+      data: s.data, tags: ['截帧'], at: Date.now()
+    });
+  });
+  try {
+    localStorage.setItem(UPLOAD_KEY, JSON.stringify(all.slice(-60)));
+  } catch(e){ fake('本地存不下了'); return; }
+  closeFrameSheet();
+  renderUploads();
+  hideEmpty();
+  fake('入库 ' + FRS_SHOTS.length + ' 帧');
+}
+
+/* ==========================================================================
+   搜索过滤 + 空状态（让 showEmpty 真的能触发）
+   ========================================================================== */
+function hideEmpty(){
+  const e = document.getElementById('emptyState');
+  if (e) e.style.display = 'none';
+}
+
+function refFilter(q){
+  const grid = document.querySelector('#viewGrid .grid');
+  if (!grid) return;
+  const cards = Array.from(grid.querySelectorAll('.card'));
+  const kw = (q || '').trim().toLowerCase();
+  let shown = 0;
+  cards.forEach(function(card){
+    if (!kw){ card.style.display = ''; shown++; return; }
+    const txt = card.textContent.toLowerCase();
+    const hit = txt.indexOf(kw) >= 0;
+    card.style.display = hit ? '' : 'none';
+    if (hit) shown++;
+  });
+  if (kw && shown === 0){
+    showEmpty('审美');
+  } else {
+    hideEmpty();
+  }
+  const cnt = document.getElementById('refCount');
+  if (cnt) cnt.textContent = shown + ' 张';
+}
+
+var __switchPageOrig = switchPage;
+switchPage = function(p, el){
+  __switchPageOrig(p, el);
+  if (p === 'ref') setTimeout(function(){
+    renderUploads();
+    const inp = document.querySelector('.search-in, input[placeholder*="逆光"]');
+    if (inp && !inp.dataset.bound){
+      inp.dataset.bound = '1';
+      inp.oninput = function(){ refFilter(this.value); };
+    }
+  }, 80);
+};
+
+document.addEventListener('DOMContentLoaded', function(){
+  setTimeout(function(){ try { renderUploads(); } catch(e){} }, 500);
+});
+
 function pickWho(el, key){
   document.querySelectorAll('.who-btn').forEach(x=>x.classList.remove('on'));
   el.classList.add('on');
@@ -7602,13 +8090,13 @@ function pickShot2(el, n){
 const EMPTY = {
   '审美': {ico:'◫', t:'审美库还是空的',
     b:'把别人的好片子存进来——电影截帧、大师作品、网上刷到的。每张写一句「我要偷什么」。',
-    acts:[['粘贴或上传图片','pri','fake(\'批量上传\')'],['先不动，去逛一圈','','fake(\'之后再说\')']]},
+    acts:[['粘贴或上传图片','pri','openUploadSheet()'],['先不动，去逛一圈','','hideEmpty()']]},
   '反思': {ico:'◯', t:'还没有反思',
     b:'拍完一组，回来记一条：哪里不对、什么情况下会重犯。它会在这类情况再出现时提醒你。',
     acts:[['写第一条反思','pri','newReflect()'],['先去拍','','fake(\'之后再说\')']]},
   '作品': {ico:'◧', t:'作品库是空的',
     b:'自己的成片放这里。参数自动从照片里读，你只需要写一句「当时为什么这么拍」。',
-    acts:[['批量导入作品','pri','fake(\'批量上传\')'],['先看看别人的片子','','switchPage(\'ref\',document.querySelectorAll(\'.pt\')[0])']]}
+    acts:[['批量导入作品','pri','openUploadSheet()'],['先看看别人的片子','','switchPage(\'ref\',document.querySelectorAll(\'.pt\')[0])']]}
 };
 function showEmpty(lib){
   const e = document.getElementById('emptyState');
