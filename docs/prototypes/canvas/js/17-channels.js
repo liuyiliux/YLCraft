@@ -42,7 +42,10 @@ function applyLevels(x){
 
 /* 某个通道的最终采样函数 */
 function channelSample(ch, x){
-  let v = applyLevels(x);
+  /* ⭐ 2026-10-22：高光/阴影/清晰度先过一遍，再进色阶和曲线。
+     顺序有讲究 —— 影调是「哪一段亮」的问题，曲线是「怎么改」的问题。 */
+  let v = (typeof leToneMap === 'function') ? leToneMap(x) : x;
+  v = applyLevels(v);
   // rgb 合成曲线先作用，再叠该通道曲线
   v = curveSample(LOCAL_ADJ.curves.rgb, v);
   if (ch !== 'rgb') v = curveSample(LOCAL_ADJ.curves[ch], v);
@@ -87,22 +90,18 @@ leRenderCurve = function(){
     d += (i===0?'M':'L') + (x*200).toFixed(1) + ',' + ((1-y)*200).toFixed(1) + ' ';
   }
 
-  /* 🔴 2026-10-20 按 Camera Raw 加：直方图当曲线图背景。
-     用和 leRenderHist 同一套模拟分布，映射到 200×200 的坐标里画一条填充路径。 */
+  /* 直方图当曲线图背景（Camera Raw 的做法）。
+     ⭐ 2026-10-22：原来是模拟高斯分布，现在和上面那块用同一个真像素函数。 */
   const histEl = document.getElementById('leHistBg');
   if (histEl){
     const N = 48;
-    const bins = [];
-    for (let i = 0; i < N; i++){
-      const x = i / (N - 1);
-      bins.push(Math.exp(-Math.pow((x - 0.42) / 0.22, 2)) * 0.85
-              + Math.exp(-Math.pow((x - 0.75) / 0.14, 2)) * 0.35);
-    }
-    const mx = Math.max.apply(null, bins.concat([0.01]));
+    const R2 = leRealHistBins(N);
+    const bins = R2 ? R2.hist.slice() : new Array(N).fill(0);
+    const mx = Math.sqrt(Math.max.apply(null, bins.concat([1])));
     let hd = 'M0,200';
     bins.forEach((v, i)=>{
       const x = i / (N - 1) * 200;
-      const y = 200 - (v / mx) * 190;   // 最高柱到顶留 10
+      const y = 200 - (Math.sqrt(v) / mx) * 190;   // 最高柱到顶留 10（平方根归一化）
       hd += ' L' + x.toFixed(1) + ',' + y.toFixed(1);
     });
     hd += ' L200,200 Z';
@@ -158,39 +157,63 @@ function leSetChannel(ch){
   leRenderCurve();
 }
 
-/* ---- 直方图（按当前参数模拟）---- */
+/* ============ ⭐ 真直方图分箱（从像素算）============
+   2026-10-22：之前「直方图块」和「曲线背景」各写了一套高斯模拟，
+   两处都是假的。现在统一走这一个函数，都是真像素。
+*/
+function leRealHistBins(N){
+  const pix = (typeof leBuildSourcePixels === 'function') ? leBuildSourcePixels() : null;
+  if (!pix) return null;
+  const ch = LOCAL_ADJ.channel;
+  const expMul = 1 + LOCAL_ADJ.exposure * 0.35;
+  const hist = new Array(N).fill(0);
+  let over = 0, under = 0;
+  for (let i = 0; i < pix.length; i++){
+    let v = Math.max(0, Math.min(1, pix[i] * expMul));
+    v = channelSample(ch, v);
+    hist[Math.min(N - 1, Math.floor(v * (N - 1)))]++;
+    if (v > 0.995) over++;
+    if (v < 0.005) under++;
+  }
+  return { hist, over, under, total: pix.length };
+}
+
+/* ---- 直方图块 ---- */
 function leRenderHist(){
   const host = document.getElementById('leHist');
   if (!host) return;
   const W = 200, H = 52;
-  // 模拟：一个中间偏暗的分布，套上当前 LUT 后形变
-  const bars = [];
-  const N = 40;
-  for (let i = 0; i < N; i++){
-    const x = i / (N - 1);
-    // 基础分布（模拟一张中间调偏暗的图）
-    let base = Math.exp(-Math.pow((x - 0.42) / 0.22, 2)) * 0.85
-             + Math.exp(-Math.pow((x - 0.75) / 0.14, 2)) * 0.35;
-    bars.push(base);
-  }
-  // 应用 LUT：把 base 分布按最终映射搬位置（色阶 + 合成曲线 + 该通道曲线）
-  const mapped = new Array(N).fill(0);
-  for (let i = 0; i < N; i++){
-    const out = channelSample(LOCAL_ADJ.channel, i/(N-1));
-    const idx = Math.round(out * (N-1));
-    mapped[Math.max(0, Math.min(N-1, idx))] += bars[i];
-  }
-  const mx = Math.max(...mapped, 0.01);
+
+  const BINS = 48;
+  const R = leRealHistBins(BINS);
+  if (!R){ host.innerHTML = ''; return; }
+  const hist = R.hist, over = R.over, under = R.under, pix = { length: R.total };
   const ch = LOCAL_ADJ.channel;
-  const color = { rgb:'var(--ac)', r:'#f87171', g:'#34d399', b:'#60a5fa' }[ch];
-  host.innerHTML = mapped.map((v,i)=>{
-    const h = (v/mx) * H;
-    const w = W/N;
-    return `<rect x="${(i*w).toFixed(1)}" y="${(H-h).toFixed(1)}" width="${(w*0.82).toFixed(1)}"
-      height="${h.toFixed(1)}" fill="${color}" opacity="0.55"/>`;
-  }).join('') + (ch === 'rgb'
-    ? `<rect x="0" y="0" width="${W}" height="${H}" fill="none"/>` : '');
+
+  /* 用平方根归一化 —— 线性归一化时暗部一大簇会把亮部小簇压没，
+     照片软件里也都是这么画的（不然深色衣服的图看不到别的东西）。 */
+  const mx = Math.sqrt(Math.max(...hist) || 1);
+  const bw = W / BINS;
+  const color = { rgb:'#22d3ee', r:'#f87171', g:'#34d399', b:'#60a5fa' }[ch] || '#22d3ee';
+
+  host.innerHTML = hist.map((v, i) => {
+    const h = (Math.sqrt(v) / mx) * H;
+    return '<rect x="' + (i*bw).toFixed(1) + '" y="' + (H-h).toFixed(1) + '"'
+      + ' width="' + (bw*0.84).toFixed(1) + '" height="' + h.toFixed(1) + '"'
+      + ' fill="' + color + '" opacity="0.62"/>';
+  }).join('');
+
+  // 溢出数字：课程里说「看直方图判断过曝欠曝」
+  const info = document.getElementById('leHistInfo');
+  if (info){
+    const op = (over / pix.length * 100).toFixed(1);
+    const up = (under / pix.length * 100).toFixed(1);
+    info.textContent = '过曝 ' + op + '% · 欠曝 ' + up + '%';
+    info.style.color = (over/pix.length > 0.02 || under/pix.length > 0.05)
+      ? 'var(--wn)' : 'var(--tx3)';
+  }
 }
+
 
 /* ---- 色阶滑块 ---- */
 function leLevel(key, val){
@@ -243,10 +266,17 @@ openLocalEdit = function(id){
             ${leSlider('contrast','对比度','',0.5,1.5,0.01)}
             ${leSlider('saturation','饱和度','',0,2,0.01)}
             ${leSlider('temp','色温','K',4000,8000,50)}
+            ${leSlider('tint','色调','',-1,1,0.02)}
 
-            <div class="le-sec">直方图 <span class="le-sec2">按当前参数模拟</span></div>
+            <div class="le-sec">影调 <span class="le-sec2">只动亮部 · 只动暗部</span></div>
+            ${leSlider('highlights','高光','',-1,1,0.02)}
+            ${leSlider('shadows','阴影','',-1,1,0.02)}
+            ${leSlider('clarity','清晰度','',-1,1,0.02)}
+
+            <div class="le-sec">直方图 <span class="le-sec2">从像素算的 · 参数一变就跟着变</span></div>
             <div class="le-hwrap"><svg class="le-hist" id="leHist" viewBox="0 0 200 52"
               preserveAspectRatio="none"></svg></div>
+            <div class="le-histinfo" id="leHistInfo">—</div>
 
             <div class="le-sec">色阶
               <button class="le-reset" onclick="leResetLevels()">复位</button>

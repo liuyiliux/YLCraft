@@ -13,6 +13,12 @@ const LOCAL_ADJ = {
   saturation: 1,    // 0 ~ 2
   temp: 6100,       // 色温 K（目标值）
   gamma: 1,
+  /* ⭐ 2026-10-22 加：课程里讲「直方图看高光溢出和欠曝」，
+     所以高光/阴影必须能单独压和提 —— 只靠曝光是把整张一起动。 */
+  highlights: 0,    // -1 ~ +1   负=压高光，正=提高光
+  shadows: 0,       // -1 ~ +1   正=提阴影，负=压阴影
+  clarity: 0,       // -1 ~ +1   中间调对比（让画面「透」或「柔」）
+  tint: 0,          // -1 ~ +1   色调：负=偏绿，正=偏品红
   curve: [[0,0],[1,1]],   // 直线（PS 只有两个端点，中间的点是用户点出来的）
   curveMode: 'rgb'  // rgb | r | g | b
 };
@@ -100,7 +106,7 @@ function ensureCurveFilter(){
     svg.style.position = 'absolute'; svg.style.pointerEvents = 'none';
     document.body.appendChild(svg);
   }
-  const tbl = curveToTable(LOCAL_ADJ.curve).map(v=>v.toFixed(4)).join(' ');
+  const tbl = leLut(64).map(v=>v.toFixed(4)).join(' ');
   svg.innerHTML = `<defs>
     <filter id="leCurve" color-interpolation-filters="sRGB">
       <feComponentTransfer>
@@ -110,6 +116,138 @@ function ensureCurveFilter(){
       </feComponentTransfer>
     </filter>
   </defs>`;
+}
+
+/* ============ ⭐ 影调映射：高光 / 阴影 / 清晰度 ============
+   为什么要在「曲线」之前单独做一层：
+   高光和阴影不是同一个东西 —— 曝光拉整张，高光只动亮部，阴影只动暗部。
+   课程里讲直方图看「高光溢出」，就是靠这一层单独压。
+*/
+function clamp01(v){ return v < 0 ? 0 : v > 1 ? 1 : v; }
+
+function leToneMap(v){
+  const a = LOCAL_ADJ;
+  // 高光：权重随亮度平方增长（只动亮部）
+  if (a.highlights !== 0){
+    const w = v * v;
+    v = clamp01(v + a.highlights * 0.28 * w);
+  }
+  // 阴影：权重随暗度平方增长（只动暗部）
+  if (a.shadows !== 0){
+    const w = (1 - v) * (1 - v);
+    v = clamp01(v + a.shadows * 0.28 * w);
+  }
+  // 清晰度：中间调加 S 形（不碰两端，所以不会吃掉高光阴影细节）
+  if (a.clarity !== 0){
+    const mid = 1 - Math.abs(v * 2 - 1);       // 中间调权重
+    const s = Math.sin((v - 0.5) * Math.PI);   // -1~1 的 S 推动
+    v = clamp01(v + a.clarity * 0.16 * s * mid);
+  }
+  return v;
+}
+
+/* 完整 LUT：影调 → 用户曲线 */
+function leLut(n = 64){
+  const out = [];
+  for (let i = 0; i < n; i++){
+    let v = i / (n - 1);
+    v = leToneMap(v);
+    v = curveSample(LOCAL_ADJ.curve, v);
+    out.push(clamp01(v));
+  }
+  return out;
+}
+
+/* ============ ⭐ 直方图 ============
+   从真实像素算，不是画个假图形。
+   参数一变它就跟着变 —— 压高光看到右边那块降下来，就是真的。
+*/
+let LE_SRC_PIX = null;   // 缓存的源像素亮度数组（0~1）
+
+function leBuildSourcePixels(){
+  if (LE_SRC_PIX) return LE_SRC_PIX;
+  const W = 180, H = 240;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+
+  // 背景（和演示图一样的渐变）
+  const g = ctx.createLinearGradient(0, 0, W, H);
+  g.addColorStop(0, '#2b2440'); g.addColorStop(1, '#141020');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  // 人物（暖肤渐变）
+  const fg = ctx.createLinearGradient(0, H * 0.18, 0, H * 0.82);
+  fg.addColorStop(0, '#e8d5bd'); fg.addColorStop(1, '#a8825c');
+  ctx.fillStyle = fg;
+  ctx.beginPath();
+  ctx.ellipse(W * 0.5, H * 0.5, W * 0.10, H * 0.34, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const d = ctx.getImageData(0, 0, W, H).data;
+  const out = new Float32Array(W * H);
+  for (let i = 0, j = 0; i < d.length; i += 4, j++){
+    // 感知亮度
+    out[j] = (d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114) / 255;
+  }
+  LE_SRC_PIX = out;
+  return out;
+}
+
+function leDrawHistogram(){
+  const cv = document.getElementById('leHistCv');
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const pix = leBuildSourcePixels();
+  const lut = leLut(64);
+  const BINS = 64;
+  const hist = new Array(BINS).fill(0);
+
+  let over = 0, under = 0;
+  for (let i = 0; i < pix.length; i++){
+    let v = pix[i];
+    // 曝光（和 CSS brightness 一致）
+    v = clamp01(v * (1 + LOCAL_ADJ.exposure * 0.35));
+    // LUT（影调 + 曲线）
+    const fi = v * (BINS - 1);
+    const lo = Math.floor(fi), hi = Math.min(BINS - 1, lo + 1);
+    v = lut[lo] + (lut[hi] - lut[lo]) * (fi - lo);
+    v = clamp01(v);
+    hist[Math.min(BINS - 1, Math.floor(v * (BINS - 1)))]++;
+    if (v > 0.995) over++;
+    if (v < 0.005) under++;
+  }
+
+  const max = Math.max(...hist) || 1;
+  const bw = W / BINS;
+  for (let b = 0; b < BINS; b++){
+    const h = (hist[b] / max) * (H - 6);
+    // 颜色：暗部偏蓝、中间灰、亮部偏暖
+    const t = b / (BINS - 1);
+    const r = Math.round(110 + t * 130);
+    const gg = Math.round(120 + t * 90);
+    const bb = Math.round(190 - t * 110);
+    ctx.fillStyle = 'rgba(' + r + ',' + gg + ',' + bb + ',0.85)';
+    ctx.fillRect(b * bw, H - h, Math.max(1, bw - 0.6), h);
+  }
+
+  // 底部基线
+  ctx.fillStyle = 'rgba(255,255,255,.12)';
+  ctx.fillRect(0, H - 1, W, 1);
+
+  // 溢出提示
+  const total = pix.length;
+  const op = (over / total * 100).toFixed(1);
+  const up = (under / total * 100).toFixed(1);
+  const info = document.getElementById('leHistInfo');
+  if (info){
+    info.textContent = '过曝 ' + op + '% · 欠曝 ' + up + '%';
+    info.style.color = (over / total > 0.02 || under / total > 0.05)
+      ? 'var(--wn)' : 'var(--tx3)';
+  }
 }
 
 /* ---- 汇总成 CSS filter 串 ---- */
@@ -127,6 +265,11 @@ function leFilterCSS(){
   if (Math.abs(t) > 0.02){
     parts.push(`sepia(${Math.max(0,t*0.28).toFixed(3)})`);
     parts.push(`hue-rotate(${(-t*14).toFixed(1)}deg)`);
+  }
+  // 色调：负=偏绿，正=偏品红
+  if (Math.abs(a.tint) > 0.02){
+    const g = a.tint < 0;
+    parts.push(`hue-rotate(${(a.tint * (g ? -12 : 12)).toFixed(1)}deg)`);
   }
   return parts.join(' ');
 }
@@ -159,11 +302,24 @@ function openLocalEdit(id){
           </div>
 
           <div class="le-panel">
+            <div class="le-sec">直方图 <span class="le-sec2">参数一变它就跟着变</span></div>
+            <div class="le-histo">
+              <canvas id="leHistCv" width="256" height="64"></canvas>
+              <div class="le-histo-l"><span>暗</span>
+                <span id="leHistInfo">—</span><span>亮</span></div>
+            </div>
+
             <div class="le-sec">基础</div>
             ${leSlider('exposure','曝光','EV',-2,2,0.05)}
             ${leSlider('contrast','对比度','',0.5,1.5,0.01)}
             ${leSlider('saturation','饱和度','',0,2,0.01)}
             ${leSlider('temp','色温','K',4000,8000,50)}
+            ${leSlider('tint','色调','',-1,1,0.02)}
+
+            <div class="le-sec">影调 <span class="le-sec2">只动亮部 / 只动暗部</span></div>
+            ${leSlider('highlights','高光','',-1,1,0.02)}
+            ${leSlider('shadows','阴影','',-1,1,0.02)}
+            ${leSlider('clarity','清晰度','',-1,1,0.02)}
 
             <div class="le-sec">曲线 <span class="le-sec2">RGB 合成</span>
               <button class="le-reset" onclick="leResetCurve()">拉直</button><span class="le-curvecnt" id="leCurveCount"></span>
@@ -219,6 +375,9 @@ function leFmt(key, v){
   v = Number(v);
   if (key === 'exposure') return (v >= 0 ? '+' : '') + v.toFixed(2);
   if (key === 'temp') return String(Math.round(v));
+  // 高光/阴影/清晰度/色调是双向的，带符号更清楚
+  if (['highlights','shadows','clarity','tint'].includes(key))
+    return (v >= 0 ? '+' : '') + v.toFixed(2);
   return v.toFixed(2);
 }
 
@@ -370,6 +529,7 @@ function leResetCurve(){
 function leResetAll(){
   Object.assign(LOCAL_ADJ, {
     exposure:0, contrast:1, saturation:1, temp:6100, gamma:1,
+    highlights:0, shadows:0, clarity:0, tint:0,
     curve:[[0,0],[1,1]]
   });
   leRenderAll();
@@ -378,7 +538,7 @@ function leResetAll(){
 
 function leRenderAll(){
   // 滑块值
-  ['exposure','contrast','saturation','temp'].forEach(k=>{
+  ['exposure','contrast','saturation','temp','tint','highlights','shadows','clarity'].forEach(k=>{
     const input = document.querySelector(`.le-r[oninput*="${k}"]`);
     if (input) input.value = LOCAL_ADJ[k];
     const el = document.getElementById('leVal_' + k);
@@ -391,6 +551,11 @@ function leRenderAll(){
 function leApplyPreview(){
   const img = document.getElementById('leImg');
   if (img) img.style.filter = leFilterCSS();
+  if (typeof leDrawHistogram === 'function') leDrawHistogram();
+  /* ⭐ 2026-10-22：17-channels.js 覆盖了面板（带色阶/通道/真直方图），
+     它的重绘函数要在这里触发，否则拖滑块直方图不动。 */
+  if (typeof leRenderHist === 'function') leRenderHist();
+  if (typeof leRenderCurve === 'function') leRenderCurve();
 }
 
 function closeLocalEdit(){
@@ -405,6 +570,10 @@ function leApply(){
   if (Math.abs(a.contrast-1) > 0.01) changes.push(`对比度 ${a.contrast.toFixed(2)}`);
   if (Math.abs(a.saturation-1) > 0.01) changes.push(`饱和度 ${a.saturation.toFixed(2)}`);
   if (Math.abs(a.temp-6100) > 30) changes.push(`色温 ${Math.round(a.temp)}K`);
+  if (Math.abs(a.tint) > 0.02) changes.push(`色调 ${a.tint.toFixed(2)}`);
+  if (Math.abs(a.highlights) > 0.02) changes.push(`高光 ${a.highlights.toFixed(2)}`);
+  if (Math.abs(a.shadows) > 0.02) changes.push(`阴影 ${a.shadows.toFixed(2)}`);
+  if (Math.abs(a.clarity) > 0.02) changes.push(`清晰度 ${a.clarity.toFixed(2)}`);
   const curveChanged = a.curve.some(p=>Math.abs(p[1]-p[0]) > 0.02);
   if (curveChanged) changes.push('曲线');
 
