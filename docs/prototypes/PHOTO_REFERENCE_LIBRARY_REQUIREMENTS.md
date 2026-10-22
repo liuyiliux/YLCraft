@@ -3364,3 +3364,116 @@ GET /api/v1/photo/lights?lat=&lon=&date=&tz=
 
 **知识库放在 `.local/course-notes/`（gitignored），不进仓库。**
 课程是付费内容，整理成果仅供内部产品设计参考。
+---
+
+# 四十一、v34：⚠️ 转写方式纠正 —— 项目里早就有硅基流动 ASR
+
+> 用户：「12课你用什么转写的 是音频转文字吗 不应该这么久吧」
+> 用户：「我们有个skill 转换的好像是调用的硅基流动的api」
+> 用户：给出路径 `D:\qclaw\workspace\skills\yby6-video-parser-skill`
+
+## 41.1 我错在哪
+
+**我用本地 faster-whisper 转写，跑得慢，还被我误判成「卡住」。**
+
+**实际上项目里早就有更快的路径**，两处：
+
+| 位置 | 内容 |
+|---|---|
+| `backend/app/services/breaker/service.py::transcribe_audio()` | 硅基流动 `FunAudioLLM/SenseVoiceSmall` |
+| `D:\qclaw\workspace\skills\yby6-video-parser-skill\scripts\transcribe.py` | 同一个 API 的完整实现（含抽音频流程） |
+
+**但我查 `.env` 里没有 `SILICONFLOW_API_KEY`，就以为用不了。**
+—— 其实 key 存在**数据库的 `ai_connectors` 表**里，有 7 个硅基流动连接器。
+
+## 41.2 ⚠️ 我还误报了速度
+
+我一开始说「12 课不该这么久」，然后又自己算成「13.5x 实时」。
+
+**真实数据**：
+
+| 课 | 音频 | whisper 耗时 | 速度 |
+|---|---|---|---|
+| 05 | 2h46m | 743s | 13.5x |
+| 12 | 4h09m | **被杀掉**（跑 16% 后进程消失） | — |
+
+**进程被杀是因为 4 小时音频整段读入内存，峰值过高。**
+我改成 20 分钟分段后能跑，但速度仍然只有约 8x。
+
+## 41.3 硅基流动实测：110x 实时
+
+| 项 | 数据 |
+|---|---|
+| 模型 | `FunAudioLLM/SenseVoiceSmall` |
+| 端点 | `https://api.siliconflow.cn/v1/audio/transcriptions` |
+| **5 分钟音频** | **2.7 秒** |
+| 折合速度 | **110x 实时** |
+| 4 小时全片 | **约 8 分钟**（含抽音频） |
+
+**比本地快 8-13 倍。**
+
+## 41.4 没有 ffmpeg 的解决办法：PyAV
+
+项目里**没有装 ffmpeg**（`where ffmpeg` 找不到，也没有 imageio-ffmpeg）。
+
+**但 faster-whisper 依赖的 PyAV 自带 ffmpeg 库，含 libmp3lame 编码器。**
+
+所以可以纯 Python 抽音频：
+
+```python
+import av
+inp = av.open(video)
+a = inp.streams.audio[0]
+out = av.open('out.mp3', 'w', format='mp3')
+ost = out.add_stream('libmp3lame', rate=16000, layout='mono')
+ost.bit_rate = 32000
+inp.seek(int(start / a.time_base), stream=a)
+for frame in inp.decode(a):
+    ft = float(frame.pts * a.time_base)
+    if ft < start: continue
+    if ft > end: break
+    for pkt in ost.encode(frame): out.mux(pkt)
+for pkt in ost.encode(None): out.mux(pkt)
+```
+
+**不需要装 ffmpeg。**
+
+## 41.5 分块策略
+
+**10 分钟一块**（32kbps mono 16kHz → 约 2.3MB）。
+- 太大的块可能超 API 上传限制
+- 太小则请求次数多
+
+## 41.6 最终成果：5 课全部转完
+
+| 课 | 时长 | 字数 | 方式 |
+|---|---|---|---|
+| 05 | 2h46m | 48,852 | 硅基流动 |
+| 10 | 1h55m | 23,226 | 硅基流动 |
+| 12 | 4h09m | 62,354 | 硅基流动 |
+| 14 | 1h55m | 39,469 | 硅基流动 |
+| 24 | 2h47m | 47,112 | 硅基流动 |
+
+**加上 20 课官方 AI 字幕，25 个视频全部有文字了。**
+
+whisper 旧版备份在 `.local/course-notes/transcripts-whisper/`（对比：字数略多，
+因为 whisper 保留了更多语气词，语义质量相当）。
+
+## 41.7 知识库补充了第 10.5 章
+
+**第 12、24 课是直播答疑，比正课更实用** —— 他逐张点评学生作业，说出了大量「标准」和「反例」。
+
+新增的关键内容：
+
+| 知识点 | 原话要点 |
+|---|---|
+| **「观察层」方法** | 「你们观察得不够仔细，就很容易出错」 |
+| **「过分柔会显得假」** | 「过分的亮过分的柔了……纱只有边缘模糊、中间还清晰」 |
+| **「油腻」的定义** | 「皮肤显得特别光溜，磨得太光滑了，缺少原本皮肤该有的真实」 |
+| **后期顺序** | 「啥都没做，皮肤也没调，啥都没做，你就调色了」 |
+| **小清新 = 元素组合** | 「废弃工厂拍小清新……给自己找了非常大的麻烦」 |
+| **服装灵感来源** | 「我的很多穿搭灵感其实都来源于淘宝」 |
+| **35mm 当两个镜头** | 「按一个钮切成 APSC，就相当于一个镜头当两个镜头用」 |
+| **直方图是拍完就看的** | 「拍完了以后看照片直方图」 |
+| **磨皮前先清干净** | 「否则你一磨就磨成一团浆糊」 |
+| **客人视角** | 「像这样的视角，客人就不一定会买单」 |
