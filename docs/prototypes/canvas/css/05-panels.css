@@ -1502,3 +1502,35 @@
 
 /* 颗粒/暗角都别溢出图片范围 */
 .le-body3 .le-img{overflow:hidden !important}
+
+/* ===== 课程三件：肤色检查 / 下手狠提醒 / 修图顺序 ===== */
+.le-skin{margin-top:8px;padding:10px 12px;border-radius:6px;font-size:10px;
+  line-height:1.65;font-family:var(--fm)}
+.le-skin.ok{background:rgba(52,211,153,.09);border:1px solid rgba(52,211,153,.28);
+  color:var(--tx2)}
+.le-skin.ok b{color:#34d399}
+.le-skin.bad{background:rgba(248,113,113,.09);border:1px solid rgba(248,113,113,.30);
+  color:var(--tx2)}
+.le-skin.bad b{color:#f87171}
+.le-skin-h{color:var(--tx3);font-size:9px}
+
+.le-order{display:flex;flex-direction:column;gap:3px;margin-bottom:12px}
+.le-ord{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;
+  background:var(--s2);border:1px solid var(--ln2);cursor:pointer;transition:.16s}
+.le-ord:hover{border-color:var(--ln3)}
+.le-ord.done{background:rgba(52,211,153,.07);border-color:rgba(52,211,153,.28)}
+.le-ord.skip{border-color:rgba(251,191,36,.34);background:rgba(251,191,36,.06)}
+.le-ord-n{width:17px;height:17px;border-radius:50%;background:var(--s3);
+  color:var(--tx3);font-size:8.5px;font-family:var(--fm);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.le-ord.done .le-ord-n{background:#34d399;color:#04222a}
+.le-ord-t{flex:1;font-size:10px;color:var(--tx2);line-height:1.4}
+.le-ord-d{display:block;font-size:8.5px;color:var(--tx3);margin-top:1px}
+.le-ord-t em{color:var(--wn);font-style:normal;font-size:8.5px}
+.le-ord-c{font-size:10px;color:var(--tx3);flex-shrink:0}
+.le-ord.done .le-ord-c{color:#34d399}
+
+.le-harsh{margin-bottom:12px;padding:9px 11px;border-radius:6px;font-size:9.5px;
+  line-height:1.6;color:var(--tx2);background:rgba(251,191,36,.08);
+  border:1px solid rgba(251,191,36,.26)}
+.le-harsh b{color:var(--wn);display:block;margin-bottom:3px}
