@@ -2309,6 +2309,52 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
   border-left:2px solid var(--photo)}
 .pf-q b{display:block;font-size:14px;color:var(--tx1);margin-bottom:2px}
 .pf-q span{font-size:12px;color:var(--tx3)}
+
+/* ===== 分镜编辑 ===== */
+.sh-tools{display:flex;gap:6px;justify-content:flex-end;margin-bottom:8px}
+.sh-tb{font-size:11.5px;padding:3px 10px;border-radius:5px;border:1px solid var(--bd2);
+  background:transparent;color:var(--tx3);cursor:pointer;transition:.16s;font-family:inherit}
+.sh-tb:hover{border-color:var(--photo);color:var(--photo)}
+.sh-tb.del:hover{border-color:var(--err);color:var(--err)}
+.sh-add{width:100%;margin-top:10px;padding:11px;border-radius:8px;
+  border:1px dashed var(--bd3);background:transparent;color:var(--tx3);font-size:13px;
+  cursor:pointer;transition:.16s;font-family:inherit}
+.sh-add:hover{border-color:var(--photo);color:var(--photo);
+  background:color-mix(in srgb,var(--photo) 5%,transparent)}
+.sh-form{display:flex;flex-direction:column;gap:9px}
+.sh-fh{font-size:14px;color:var(--photo);font-weight:600}
+.sh-fl{display:flex;flex-direction:column;gap:3px}
+.sh-fk{font-size:11.5px;color:var(--tx3)}
+.sh-fi{font-size:13.5px;padding:8px 11px;border-radius:6px;border:1px solid var(--bd2);
+  background:var(--bgInput);color:var(--tx1);font-family:inherit;width:100%}
+.sh-fi:focus{outline:none;border-color:var(--photo)}
+.sh-fa{display:flex;gap:8px;justify-content:flex-end;margin-top:3px}
+.sh-btn{font-size:12.5px;padding:6px 15px;border-radius:6px;border:1px solid var(--bd2);
+  background:transparent;color:var(--tx2);cursor:pointer;font-family:inherit;transition:.16s}
+.sh-btn:hover{border-color:var(--bd3)}
+.sh-btn.pri{background:var(--photo);border-color:var(--photo);color:#1a1205;font-weight:600}
+
+/* ===== 必带编辑 ===== */
+.pz-kg-h{display:flex;align-items:center;gap:6px}
+.kit-add{width:17px;height:17px;border-radius:50%;border:1px solid var(--bd3);
+  background:transparent;color:var(--tx3);font-size:12px;line-height:1;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:.16s;
+  font-family:inherit;flex-shrink:0;margin-left:auto;padding:0}
+.kit-add:hover{border-color:var(--photo);color:var(--photo);
+  background:color-mix(in srgb,var(--photo) 12%,transparent)}
+.pz-ki{position:relative;padding-right:20px}
+.kit-del{position:absolute;right:4px;top:50%;transform:translateY(-50%);font-size:12px;
+  color:var(--tx3);opacity:0;transition:.16s;cursor:pointer;line-height:1;
+  width:13px;height:13px;display:flex;align-items:center;justify-content:center}
+.pz-ki:hover .kit-del{opacity:1}
+.pz-ki:hover .kit-del:hover{color:var(--err);font-weight:700}
+
+/* ===== 拍摄参数自定义 ===== */
+.lens-custom,.cam-chip.custom-add{font-style:italic;opacity:.8}
+.lens-custom{color:var(--tx3);border-style:dashed}
+.cam-chip.custom-add{color:var(--tx3);border-style:dashed}
+.cam-chip.custom{border-color:var(--photo);
+  background:color-mix(in srgb,var(--photo) 12%,transparent);color:var(--photo)}
 </style>
 </head>
 <body data-t="deep">
@@ -6298,6 +6344,364 @@ openPreflight = function(){
   __openPreflightOrig();
   setTimeout(pfRefreshReadOnly, 60);
 };
+
+
+/* ==========================================================================
+   ⭐ 2026-10-22 分镜 / 必带 / 拍摄参数 三处可编辑
+   占位规则：交互和数据结构先立起来，真实现（AI 生成、云端同步）以后再做。
+   现在存在内存 + localStorage。
+   ========================================================================== */
+
+/* ---------- 通用：存/读 ---------- */
+const EDIT_STORE_KEY = 'ylcraft_photo_edits_v1';
+let EDIT_STORE = { shots:{}, kit:{}, cam:{} };
+
+function edLoad(){
+  try {
+    const raw = localStorage.getItem(EDIT_STORE_KEY);
+    if (raw){ const d = JSON.parse(raw); EDIT_STORE = d || EDIT_STORE; }
+  } catch(e){}
+  EDIT_STORE.shots = EDIT_STORE.shots || {};
+  EDIT_STORE.kit   = EDIT_STORE.kit   || {};
+  EDIT_STORE.cam   = EDIT_STORE.cam   || {};
+}
+function edSave(){
+  try { localStorage.setItem(EDIT_STORE_KEY, JSON.stringify(EDIT_STORE)); } catch(e){}
+}
+
+/* ==========================================================================
+   ① 分镜：加 / 删 / 改
+   ========================================================================== */
+
+/* 取当前方案的镜头数组（优先用改过的） */
+function shGet(which){
+  which = which || (typeof currentPlan !== 'undefined' && currentPlan ? currentPlan : 'A');
+  if (EDIT_STORE.shots[which]) return EDIT_STORE.shots[which];
+  const base = (typeof SHOT_RECIPES !== 'undefined' && SHOT_RECIPES[which]) ? SHOT_RECIPES[which] : [];
+  /* 拷一份，避免改到原始常量 */
+  return base.map(function(r){
+    return { light:r.light, elem:r.elem, pose:r.pose, frame:r.frame,
+             why:r.why, take:r.take, risk:r.risk, needs:r.needs };
+  });
+}
+function shSet(which, arr){
+  EDIT_STORE.shots[which] = arr;
+  edSave();
+}
+
+/* 给渲染出来的分镜卡片加「编辑 / 删除」，底部加「＋ 加一镜」 */
+function shEnhance(){
+  const list = document.getElementById('pzShotList');
+  if (!list) return;
+  const which = (typeof currentPlan !== 'undefined' && currentPlan) ? currentPlan : 'A';
+
+  list.querySelectorAll('.pz-shot').forEach(function(card, i){
+    if (card.querySelector('.sh-tools')) return;
+    const tools = document.createElement('div');
+    tools.className = 'sh-tools';
+    tools.innerHTML = '<button class="sh-tb" onclick="shEdit(' + i + ')">编辑</button>'
+      + '<button class="sh-tb del" onclick="shDel(' + i + ')">删除</button>';
+    card.insertBefore(tools, card.firstChild);
+  });
+
+  if (!list.querySelector('.sh-add')){
+    const add = document.createElement('button');
+    add.className = 'sh-add';
+    add.textContent = '＋ 加一镜';
+    add.onclick = function(){ shAdd(); };
+    list.appendChild(add);
+  }
+}
+
+function shAdd(){
+  const which = (typeof currentPlan !== 'undefined' && currentPlan) ? currentPlan : 'A';
+  const arr = shGet(which);
+  arr.push({ light:'（待填）', elem:'（待填）', pose:'（待填）',
+             frame:'新加的一镜', why:'（为什么这么拍）',
+             take:'（怎么按快门）', risk:'（风险）' });
+  shSet(which, arr);
+  shRedraw(which);
+  fake('加了一镜 · 点「编辑」填内容');
+}
+
+function shDel(i){
+  const which = (typeof currentPlan !== 'undefined' && currentPlan) ? currentPlan : 'A';
+  const arr = shGet(which);
+  if (!arr[i]) return;
+  if (!confirm('删掉「镜 ' + (i+1) + '」？')) return;
+  arr.splice(i, 1);
+  shSet(which, arr);
+  shRedraw(which);
+  fake('删了镜 ' + (i+1));
+}
+
+function shEdit(i){
+  const which = (typeof currentPlan !== 'undefined' && currentPlan) ? currentPlan : 'A';
+  const arr = shGet(which);
+  const r = arr[i];
+  if (!r) return;
+  const list = document.getElementById('pzShotList');
+  const card = list.querySelectorAll('.pz-shot')[i];
+  if (!card || card.querySelector('.sh-form')) return;
+
+  card.innerHTML = '<div class="sh-form">'
+    + '<div class="sh-fh">编辑镜 ' + (i+1) + '</div>'
+    + shField('景别 / 构图', 'frame', r.frame)
+    + shField('画面（元素 + 姿态）', 'elem', r.elem + ' · ' + (r.pose || ''))
+    + shField('光位', 'light', r.light)
+    + shField('为什么这么拍', 'why', r.why)
+    + shField('怎么按快门', 'take', r.take)
+    + shField('风险', 'risk', r.risk)
+    + '<div class="sh-fa">'
+    +   '<button class="sh-btn" onclick="shCancel(\'' + which + '\')">取消</button>'
+    +   '<button class="sh-btn pri" onclick="shSave(' + i + ')">保存</button>'
+    + '</div></div>';
+}
+
+function shField(label, key, val){
+  return '<label class="sh-fl"><span class="sh-fk">' + label + '</span>'
+    + '<input class="sh-fi" data-k="' + key + '" value="'
+    + String(val || '').replace(/"/g, '&quot;') + '"></label>';
+}
+
+function shSave(i){
+  const which = (typeof currentPlan !== 'undefined' && currentPlan) ? currentPlan : 'A';
+  const list = document.getElementById('pzShotList');
+  const card = list.querySelectorAll('.pz-shot')[i];
+  const form = card ? card.querySelector('.sh-form') : null;
+  if (!form) return;
+  const arr = shGet(which);
+  form.querySelectorAll('.sh-fi').forEach(function(inp){
+    const k = inp.dataset.k;
+    const v = inp.value.trim();
+    if (k === 'elem'){
+      /* 「元素 · 姿态」拆回两段 */
+      const parts = v.split(' · ');
+      arr[i].elem = parts[0] || '';
+      arr[i].pose = parts.slice(1).join(' · ') || '';
+    } else {
+      arr[i][k] = v;
+    }
+  });
+  shSet(which, arr);
+  shRedraw(which);
+  fake('镜 ' + (i+1) + ' 改好了');
+}
+
+function shCancel(which){ shRedraw(which); }
+
+/* 重画分镜 */
+function shRedraw(which){
+  which = which || (typeof currentPlan !== 'undefined' && currentPlan ? currentPlan : 'A');
+  const list = document.getElementById('pzShotList');
+  if (!list) return;
+  const arr = shGet(which);
+  const who = (typeof currentWho !== 'undefined' && typeof WHO !== 'undefined' && WHO[currentWho])
+    ? WHO[currentWho] : null;
+
+  list.innerHTML = arr.map(function(r, i){
+    const n = i + 1;
+    return '<div class="pz-shot">'
+      + '<div class="pz-shot-h">'
+      +   '<span class="pz-shot-n">镜 ' + n + '</span>'
+      +   '<span class="pz-shot-frame">' + (r.frame || '') + '</span>'
+      +   '<span class="pz-shot-combo">' + (r.light || '') + ' · ' + (r.elem || '') + '</span>'
+      + '</div>'
+      + '<div class="pz-shot-row"><span class="pz-shot-k">画面</span>'
+      +   '<span class="pz-shot-v">' + (r.elem || '') + ' · ' + (r.pose || '') + '</span></div>'
+      + '<div class="pz-shot-row"><span class="pz-shot-k">为什么</span>'
+      +   '<span class="pz-shot-v">' + (r.why || '') + '</span></div>'
+      + '<div class="pz-shot-row"><span class="pz-shot-k">怎么按</span>'
+      +   '<span class="pz-shot-v">' + (r.take || '') + '</span></div>'
+      + '<div class="pz-shot-row"><span class="pz-shot-k">风险</span>'
+      +   '<span class="pz-shot-v warn">' + (r.risk || '') + '</span></div>'
+      + (who ? '<div class="pz-shot-cue">'
+          + '<div class="pz-shot-cue-l">对' + who.name + '说</div>'
+          + '<div class="pz-shot-cue-t">' + who.cues[0].t + '</div>'
+          + '<div class="pz-shot-cue-h">' + who.cues[0].n + '</div>'
+          + '</div>' : '')
+      + '</div>';
+  }).join('');
+  shEnhance();
+  const cnt = document.getElementById('pzShotN');
+  if (cnt) cnt.textContent = arr.length;
+}
+
+/* 拦截 genShots2：渲染完自动加编辑控件 */
+var __shOrig = genShots2;
+genShots2 = function(which){
+  /* 如果这个方案被改过，用改过的数据渲染 */
+  if (EDIT_STORE.shots[which]){
+    shRedraw(which);
+    return;
+  }
+  __shOrig(which);
+  shEnhance();
+};
+
+/* ==========================================================================
+   ② 必带清单：加 / 删
+   ========================================================================== */
+function kitEnhance(){
+  document.querySelectorAll('#pz-kit .pz-kg').forEach(function(g){
+    const h = g.querySelector('.pz-kg-h');
+    if (!h) return;
+    const gname = h.textContent.trim();
+
+    if (!h.querySelector('.kit-add')){
+      const btn = document.createElement('button');
+      btn.className = 'kit-add';
+      btn.textContent = '＋';
+      btn.title = '加一项';
+      btn.onclick = function(){ kitAdd(gname); };
+      h.appendChild(btn);
+    }
+
+    /* 塞自定义项 */
+    (EDIT_STORE.kit[gname] || []).forEach(function(t){
+      if (Array.from(g.querySelectorAll('.pz-ki span')).some(function(s){ return s.textContent.trim() === t; })) return;
+      const lb = document.createElement('label');
+      lb.className = 'pz-ki';
+      lb.innerHTML = '<input type="checkbox"><span>' + t + '</span>';
+      g.appendChild(lb);
+    });
+
+    /* 每项加 × */
+    g.querySelectorAll('.pz-ki').forEach(function(ki){
+      if (ki.querySelector('.kit-del')) return;
+      const sp = ki.querySelector('span');
+      const t = sp ? sp.textContent.trim() : '';
+      const x = document.createElement('span');
+      x.className = 'kit-del';
+      x.textContent = '×';
+      x.title = '删掉这项';
+      x.onclick = function(ev){ ev.preventDefault(); ev.stopPropagation(); kitDel(gname, t); };
+      ki.appendChild(x);
+    });
+  });
+}
+
+function kitAdd(gname){
+  const v = prompt('给「' + gname + '」加一项：');
+  if (!v) return;
+  const t = v.trim();
+  if (!t) return;
+  if (!EDIT_STORE.kit[gname]) EDIT_STORE.kit[gname] = [];
+  EDIT_STORE.kit[gname].push(t);
+  edSave();
+  kitEnhance();
+  fake('加了「' + t + '」');
+}
+function kitDel(gname, t){
+  if (!confirm('删掉「' + t + '」？')) return;
+  /* 从自定义里删，或记成「移除」 */
+  if (EDIT_STORE.kit[gname]){
+    EDIT_STORE.kit[gname] = EDIT_STORE.kit[gname].filter(function(x){ return x !== t; });
+  }
+  if (!EDIT_STORE.kit['__removed']) EDIT_STORE.kit['__removed'] = [];
+  EDIT_STORE.kit['__removed'].push({ g:gname, t:t });
+  edSave();
+  /* 直接移除 DOM */
+  document.querySelectorAll('#pz-kit .pz-ki').forEach(function(ki){
+    const sp = ki.querySelector('span');
+    if (sp && sp.textContent.trim() === t){
+      const h = ki.closest('.pz-kg');
+      if (h && h.querySelector('.pz-kg-h').textContent.trim().indexOf(gname) === 0) ki.remove();
+    }
+  });
+  fake('删了「' + t + '」');
+}
+
+/* ==========================================================================
+   ③ 拍摄参数：允许自定义
+   ========================================================================== */
+function camEnhance(){
+  /* 焦段 */
+  const lens = document.querySelector('.cam-lens');
+  if (lens && !lens.querySelector('.lens-custom')){
+    const b = document.createElement('button');
+    b.className = 'lens lens-custom';
+    b.textContent = '自定义';
+    b.onclick = function(){
+      const v = prompt('焦段（比如 70-200mm）：', '70-200mm');
+      if (!v) return;
+      pickLens(b, v.trim(), '自定义值 —— 真实现会按这个算透视和景深');
+      b.textContent = v.trim();
+      if (!EDIT_STORE.cam.lens) EDIT_STORE.cam.lens = v.trim();
+      edSave();
+    };
+    lens.appendChild(b);
+  }
+
+  /* 光圈 / 快门 / ISO / 白平衡 等所有 .cam-chips */
+  document.querySelectorAll('#pz-cam .cam-chips').forEach(function(box){
+    if (box.querySelector('.cam-chip.custom-add')) return;
+    const sec = box.closest('.cam-sec');
+    const title = sec ? (sec.querySelector('.cam-t') || {}).textContent || '' : '';
+    const b = document.createElement('button');
+    b.className = 'cam-chip custom-add';
+    b.textContent = '自定义';
+    b.onclick = function(){
+      const v = prompt('「' + title + '」自定义值：');
+      if (!v) return;
+      const t = v.trim();
+      if (!t) return;
+      const chip = document.createElement('button');
+      chip.className = 'cam-chip custom';
+      chip.textContent = t;
+      box.insertBefore(chip, b);
+      /* 记下来 */
+      if (!EDIT_STORE.cam.custom) EDIT_STORE.cam.custom = [];
+      EDIT_STORE.cam.custom.push({ sec:title, val:t });
+      edSave();
+      chip.click();
+      fake('「' + title + '」用了自定义值 ' + t);
+    };
+    box.appendChild(b);
+  });
+
+  /* 显示已存的自定义值 */
+  if (EDIT_STORE.cam.lens){
+    const lens2 = document.querySelector('.cam-lens .lens-custom');
+    if (lens2 && lens2.textContent === '自定义') lens2.textContent = EDIT_STORE.cam.lens;
+  }
+  if (EDIT_STORE.cam.custom){
+    EDIT_STORE.cam.custom.forEach(function(x){
+      const secs = Array.from(document.querySelectorAll('#pz-cam .cam-sec'));
+      const sec = secs.find(function(s){
+        const t = s.querySelector('.cam-t');
+        return t && t.textContent.trim() === x.sec;
+      });
+      if (!sec) return;
+      const box = sec.querySelector('.cam-chips');
+      if (!box) return;
+      if (Array.from(box.querySelectorAll('.cam-chip')).some(function(c){ return c.textContent.trim() === x.val; })) return;
+      const b2 = box.querySelector('.custom-add');
+      const chip = document.createElement('button');
+      chip.className = 'cam-chip custom';
+      chip.textContent = x.val;
+      box.insertBefore(chip, b2);
+    });
+  }
+}
+
+/* ---------- 统一挂载 ---------- */
+function editAllEnhance(){
+  try { shEnhance(); } catch(e){}
+  try { kitEnhance(); } catch(e){}
+  try { camEnhance(); } catch(e){}
+}
+
+var __pzTabOrig2 = pzTab;
+pzTab = function(el, key){
+  __pzTabOrig2(el, key);
+  setTimeout(editAllEnhance, 50);
+};
+
+document.addEventListener('DOMContentLoaded', function(){
+  edLoad();
+  setTimeout(editAllEnhance, 600);
+});
 
 function pickWho(el, key){
   document.querySelectorAll('.who-btn').forEach(x=>x.classList.remove('on'));
