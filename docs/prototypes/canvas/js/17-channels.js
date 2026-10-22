@@ -31,6 +31,185 @@ Object.defineProperty(LOCAL_ADJ, 'curve', {
 });
 
 /* ---- 色阶 + 曲线 → 最终 LUT ---- */
+
+/* ==========================================================================
+   ⭐ AI 建议 → 图层（2026-10-22 按 AI修图大师 的做法搬进画布编辑面板）
+   原则：建议是起点不是结果。采纳了能关、能删、能恢复。
+   ========================================================================== */
+const LE_SUGG_DEF = [
+  { id:'s1', kind:'调色', state:'pending',
+    title:'整体提亮，背景压暗，拉开层次',
+    why:'画面偏暗，人和背景亮度接近，看着闷',
+    src:'v', srcText:'读图推的', region:'全图',
+    p:{ exposure:0.20, contrast:1.06, highlights:-0.12, shadows:0.18 } },
+  { id:'s2', kind:'调色', state:'pending',
+    title:'脸上高光压一点，别过曝',
+    why:'额头和鼻梁的高光已经贴边，再亮点就没细节了',
+    src:'v', srcText:'读图推的', region:'椭圆',
+    p:{ highlights:-0.30, clarity:0.10 } },
+  { id:'s3', kind:'影调', state:'pending',
+    title:'暗部提一点，让阴影里有东西',
+    why:'头发和衣服已经压成一片黑，看不出层次',
+    src:'v', srcText:'读图推的', region:'线性渐变',
+    p:{ shadows:0.42, clarity:-0.08 } }
+];
+let LE_SUGG = JSON.parse(JSON.stringify(LE_SUGG_DEF));
+let LE_LAYERS = [];   // {id, name, on, region, p}
+
+/* ---- 叠加：标量（曝光/对比/饱和/色温/色调）---- */
+function leComposeScalars(){
+  const out = {
+    exposure: LOCAL_ADJ.exposure, contrast: LOCAL_ADJ.contrast,
+    saturation: LOCAL_ADJ.saturation, temp: LOCAL_ADJ.temp, tint: LOCAL_ADJ.tint,
+    highlights: LOCAL_ADJ.highlights, shadows: LOCAL_ADJ.shadows, clarity: LOCAL_ADJ.clarity
+  };
+  LE_LAYERS.forEach(function(L){
+    if (!L.on) return;
+    const p = L.p || {};
+    if (p.exposure   != null) out.exposure   += p.exposure;
+    if (p.contrast   != null) out.contrast   *= p.contrast;
+    if (p.saturation != null) out.saturation *= p.saturation;
+    if (p.temp       != null) out.temp        = p.temp;
+    if (p.tint       != null) out.tint       += p.tint;
+  });
+  return out;
+}
+
+/* ---- 叠加：影调（高光/阴影/清晰度）---- */
+function leComposeTone(){
+  const out = {
+    highlights: LOCAL_ADJ.highlights,
+    shadows: LOCAL_ADJ.shadows,
+    clarity: LOCAL_ADJ.clarity
+  };
+  LE_LAYERS.forEach(function(L){
+    if (!L.on) return;
+    const p = L.p || {};
+    if (p.highlights != null) out.highlights += p.highlights;
+    if (p.shadows    != null) out.shadows    += p.shadows;
+    if (p.clarity    != null) out.clarity    += p.clarity;
+  });
+  // 夹住，别越界
+  out.highlights = Math.max(-1, Math.min(1, out.highlights));
+  out.shadows    = Math.max(-1, Math.min(1, out.shadows));
+  out.clarity    = Math.max(-1, Math.min(1, out.clarity));
+  return out;
+}
+
+/* ---- 建议 / 图层 渲染 ---- */
+function leRenderSugg(){
+  const host = document.getElementById('leSugg');
+  if (!host) return;
+  const act = LE_SUGG.filter(function(s){ return s.state === 'pending'; });
+  const ign = LE_SUGG.filter(function(s){ return s.state === 'ignored'; });
+
+  let h = act.map(function(s){
+    return '<div class="lh-sg">'
+      + '<div class="lh-sg-h"><span class="lh-sg-dot"></span>'
+      +   '<span class="lh-sg-t">' + s.title + '</span>'
+      +   '<span class="lh-sg-k">' + s.kind + '</span></div>'
+      + '<div class="lh-sg-w">' + s.why + '</div>'
+      + '<div class="lh-sg-s ' + s.src + '">' + s.srcText
+      +   (s.region !== '全图' ? ' · 只影响' + s.region : ' · 影响全图') + '</div>'
+      + '<div class="lh-sg-a">'
+      +   '<button class="lh-b y" onclick="leAdopt(\'' + s.id + '\')">采纳</button>'
+      +   '<button class="lh-b" onclick="leIgnore(\'' + s.id + '\')">忽略</button>'
+      + '</div></div>';
+  }).join('');
+
+  if (ign.length){
+    h += '<div class="lh-ign-h">已忽略</div>';
+    h += ign.map(function(s){
+      return '<div class="lh-sg off">'
+        + '<div class="lh-sg-h"><span class="lh-sg-dot"></span>'
+        + '<span class="lh-sg-t">' + s.title + '</span></div>'
+        + '<div class="lh-sg-a"><button class="lh-b" onclick="leRestore(\'' + s.id + '\')">恢复</button></div>'
+        + '</div>';
+    }).join('');
+  }
+  if (!act.length && !ign.length){
+    h = '<div class="lh-empty">建议都处理完了。<br>采纳的都变成了下面的图层，随时能关。</div>';
+  }
+  host.innerHTML = h;
+  const n = document.getElementById('leSuggN');
+  if (n) n.textContent = act.length + ' 条待确认';
+}
+
+function leRenderLayers(){
+  const host = document.getElementById('leLayers');
+  if (!host) return;
+  if (!LE_LAYERS.length){
+    host.innerHTML = '<div class="lh-empty">还没有图层。<br>采纳一条建议，它就变成图层 ——<br>能关掉、能删掉，原图不动。</div>';
+  } else {
+    host.innerHTML = LE_LAYERS.map(function(L, i){
+      return '<div class="lh-ly' + (L.on ? '' : ' off') + '">'
+        + '<button class="lh-eye' + (L.on ? ' on' : '') + '" onclick="leToggleLayer(' + i + ')">'
+        +   (L.on ? '◉' : '○') + '</button>'
+        + '<span class="lh-ly-n">' + L.name + '</span>'
+        + '<span class="lh-ly-r">' + L.region + '</span>'
+        + '<button class="lh-x" onclick="leDelLayer(' + i + ')">✕</button>'
+        + '</div>';
+    }).join('');
+  }
+  const n = document.getElementById('leLyN');
+  if (n) n.textContent = LE_LAYERS.length;
+}
+
+/* ---- 采纳 / 忽略 / 恢复 / 开关 / 删除 ---- */
+function leAdopt(id){
+  const s = LE_SUGG.find(function(x){ return x.id === id; });
+  if (!s) return;
+  s.state = 'adopted';
+  LE_LAYERS.push({ id:s.id, name:s.title, on:true, region:s.region, p:s.p });
+  leRenderSugg(); leRenderLayers(); leApplyPreview();
+  toast('已采纳 · 变成图层了，随时能关');
+}
+function leIgnore(id){
+  const s = LE_SUGG.find(function(x){ return x.id === id; });
+  if (!s) return;
+  s.state = 'ignored';
+  LE_LAYERS = LE_LAYERS.filter(function(L){ return L.id !== id; });
+  leRenderSugg(); leRenderLayers(); leApplyPreview();
+}
+function leRestore(id){
+  const s = LE_SUGG.find(function(x){ return x.id === id; });
+  if (!s) return;
+  s.state = 'pending';
+  leRenderSugg();
+}
+function leToggleLayer(i){
+  LE_LAYERS[i].on = !LE_LAYERS[i].on;
+  leRenderLayers(); leApplyPreview();
+}
+function leDelLayer(i){
+  const L = LE_LAYERS[i];
+  const s = LE_SUGG.find(function(x){ return x.id === L.id; });
+  if (s) s.state = 'ignored';
+  LE_LAYERS.splice(i, 1);
+  leRenderSugg(); leRenderLayers(); leApplyPreview();
+}
+function leClearLayers(){
+  LE_LAYERS = [];
+  LE_SUGG.forEach(function(s){ if (s.state === 'adopted') s.state = 'pending'; });
+  leRenderSugg(); leRenderLayers(); leApplyPreview();
+}
+
+/* ---- 对比原图 ---- */
+let LE_CMP = false;
+function leSetCompare(on){
+  LE_CMP = !!on;
+  const img = document.getElementById('leImg');
+  if (img) img.style.filter = LE_CMP ? 'none' : leFilterCSS();
+  const bar = document.getElementById('leCmpBar');
+  if (bar) bar.classList.toggle('on', LE_CMP);
+}
+document.addEventListener('keydown', function(e){
+  if (e.key === '\\' && !e.repeat){ e.preventDefault(); leSetCompare(true); }
+});
+document.addEventListener('keyup', function(e){
+  if (e.key === '\\'){ e.preventDefault(); leSetCompare(false); }
+});
+
 function applyLevels(x){
   const L = LOCAL_ADJ.levels;
   const span = Math.max(1e-6, L.white - L.black);
@@ -94,7 +273,7 @@ leRenderCurve = function(){
      ⭐ 2026-10-22：原来是模拟高斯分布，现在和上面那块用同一个真像素函数。 */
   const histEl = document.getElementById('leHistBg');
   if (histEl){
-    const N = 48;
+    const N = 128;   /* 从 48 提到 128，剪影更顺 */
     const R2 = leRealHistBins(N);
     const bins = R2 ? R2.hist.slice() : new Array(N).fill(0);
     const mx = Math.sqrt(Math.max.apply(null, bins.concat([1])));
@@ -184,7 +363,7 @@ function leRenderHist(){
   if (!host) return;
   const W = 200, H = 52;
 
-  const BINS = 48;
+  const BINS = 256;   /* ⭐ PS 是 256 级（每个色阶一根），之前 48 太粗 */
   const R = leRealHistBins(BINS);
   if (!R){ host.innerHTML = ''; return; }
   const hist = R.hist, over = R.over, under = R.under, pix = { length: R.total };
@@ -199,7 +378,7 @@ function leRenderHist(){
   host.innerHTML = hist.map((v, i) => {
     const h = (Math.sqrt(v) / mx) * H;
     return '<rect x="' + (i*bw).toFixed(1) + '" y="' + (H-h).toFixed(1) + '"'
-      + ' width="' + (bw*0.84).toFixed(1) + '" height="' + h.toFixed(1) + '"'
+      + ' width="' + (bw*1.02).toFixed(2) + '" height="' + h.toFixed(1) + '"'
       + ' fill="' + color + '" opacity="0.62"/>';
   }).join('');
 
@@ -252,7 +431,23 @@ openLocalEdit = function(id){
           <button class="inp-x" onclick="closeLocalEdit()">✕</button>
         </div>
 
-        <div class="le-body">
+        <div class="le-body le-body3">
+
+          <!-- ⭐ 左栏：AI 建议 + 图层（照 AI修图大师 的三栏） -->
+          <div class="le-left">
+            <div class="le-sec">AI 读完这张图的建议 <em id="leSuggN">3 条待确认</em></div>
+            <div id="leSugg"></div>
+            <div class="le-sec">图层 <em id="leLyN">0</em>
+              <button class="le-reset" onclick="leClearLayers()">清空</button></div>
+            <div id="leLayers"></div>
+            <div class="le-cmp">
+              <button class="lh-b le-cmpb" onmousedown="leSetCompare(true)"
+                onmouseup="leSetCompare(false)" onmouseleave="leSetCompare(false)">
+                按住对比原图</button>
+              <div class="le-cmp-t">松开回到你改过的版本 · 或按 \ 键</div>
+            </div>
+          </div>
+
           <div class="le-stage">
             <div class="le-img${pic?' has-pic':''}" id="leImg"${pic?` style="width:100%;height:min(58vh,440px);aspect-ratio:auto;background-image:url('${pic}');background-size:contain;background-position:center;background-repeat:no-repeat;background-color:#0b0b0f"`:''}>
               ${pic?'':'<div class="le-fig"></div>'}
@@ -351,6 +546,8 @@ openLocalEdit = function(id){
     </div>`;
 
   leRenderAll();
+  /* ⭐ 2026-10-22：三栏里的左栏要初始化 */
+  if (typeof leRenderSugg === 'function'){ leRenderSugg(); leRenderLayers(); }
 };
 
 /* ---- 重置色阶 ---- */

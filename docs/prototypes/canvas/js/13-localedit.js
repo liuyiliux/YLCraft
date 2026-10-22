@@ -126,7 +126,9 @@ function ensureCurveFilter(){
 function clamp01(v){ return v < 0 ? 0 : v > 1 ? 1 : v; }
 
 function leToneMap(v){
-  const a = LOCAL_ADJ;
+  /* 图层采纳后，影调是「手动 + 各图层」叠加的。
+     leComposeTone 由 17-channels.js 提供（那里管图层）。 */
+  const a = (typeof leComposeTone === 'function') ? leComposeTone() : LOCAL_ADJ;
   // 高光：权重随亮度平方增长（只动亮部）
   if (a.highlights !== 0){
     const w = v * v;
@@ -253,7 +255,8 @@ function leDrawHistogram(){
 /* ---- 汇总成 CSS filter 串 ---- */
 function leFilterCSS(){
   ensureCurveFilter();
-  const a = LOCAL_ADJ;
+  /* 同上：标量参数也走叠加版 */
+  const a = (typeof leComposeScalars === 'function') ? leComposeScalars() : LOCAL_ADJ;
   const parts = [
     'url(#leCurve)',
     `brightness(${(1 + a.exposure * 0.35).toFixed(3)})`,

@@ -1232,3 +1232,73 @@
 .le-histo-l span:nth-child(2){font-family:var(--fm);font-size:9px}
 .le-histinfo{font-size:9px;font-family:var(--fm);color:var(--tx3);
   text-align:center;margin:-6px 0 10px;letter-spacing:.02em}
+
+/* ===== 三栏编辑面板（2026-10-22 照 AI修图大师 改）===== */
+.le-body3{display:grid !important;grid-template-columns:300px 1fr 320px;
+  gap:0;align-items:stretch}
+.le-left{border-right:1px solid var(--ln);background:var(--s1);
+  padding:13px 12px;overflow-y:auto;max-height:none}
+.le-left::-webkit-scrollbar{width:6px}
+.le-left::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:3px}
+.le-left .le-sec{margin-top:2px}
+.le-left .le-sec em{font-style:normal;font-family:var(--fm);font-size:9px;
+  padding:1px 6px;border-radius:9px;background:var(--s2);color:var(--tx3)}
+
+/* 建议卡 */
+.lh-sg{padding:11px 12px;border-radius:8px;background:var(--bg2, #16161a);
+  border:1px dashed var(--ln2);margin-bottom:7px;transition:.16s;overflow:hidden}
+.lh-sg:hover{border-color:var(--ln3)}
+.lh-sg.off{opacity:.42;border-style:dotted}
+.lh-sg-h{display:flex;align-items:flex-start;gap:8px;margin-bottom:6px}
+.lh-sg-dot{width:13px;height:13px;border-radius:50%;border:2px solid var(--ln3);
+  flex-shrink:0;margin-top:2px}
+.lh-sg-t{flex:1;font-size:12.5px;color:var(--tx);line-height:1.5;font-weight:500}
+.lh-sg-k{font-size:9px;padding:1px 6px;border-radius:3px;font-family:var(--fm);
+  background:var(--s2);color:var(--tx3);flex-shrink:0}
+.lh-sg-w{font-size:11px;color:var(--tx3);line-height:1.6;padding-left:21px;
+  margin-bottom:5px}
+.lh-sg-s{font-size:9px;font-family:var(--fm);padding-left:21px;margin-bottom:8px;
+  color:var(--tx3)}
+.lh-sg-s.v{color:var(--ok)}
+.lh-sg-s.g{color:var(--wn)}
+.lh-sg-a{display:flex;gap:6px;padding-left:21px}
+.lh-b{font-size:10.5px;padding:5px 12px;border-radius:5px;border:1px solid var(--ln2);
+  color:var(--tx2);background:transparent;font-family:inherit;cursor:pointer;
+  transition:.16s;white-space:nowrap;flex-shrink:0}
+.lh-b:hover{border-color:var(--tx3);color:var(--tx)}
+.lh-b.y{border-color:rgba(52,211,153,.4);color:var(--ok);background:rgba(52,211,153,.1)}
+.lh-b.y:hover{background:rgba(52,211,153,.18)}
+.lh-ign-h{font-size:9.5px;color:var(--tx3);margin:10px 0 6px}
+
+/* 图层 */
+.lh-ly{display:flex;align-items:center;gap:8px;padding:9px 11px;border-radius:7px;
+  background:var(--bg2, #16161a);border:1px solid var(--ln);margin-bottom:6px;transition:.16s}
+.lh-ly.off{opacity:.4}
+.lh-eye{width:18px;height:18px;border-radius:4px;border:1px solid var(--ln2);
+  background:transparent;cursor:pointer;flex-shrink:0;font-size:10px;color:var(--tx3);
+  display:flex;align-items:center;justify-content:center;font-family:inherit}
+.lh-eye.on{background:var(--acs);border-color:var(--acl);color:var(--ac)}
+.lh-ly-n{flex:1;font-size:11.5px;color:var(--tx);line-height:1.35}
+.lh-ly-r{font-size:9px;font-family:var(--fm);color:var(--tx3);
+  padding:1px 6px;border-radius:3px;background:var(--s2);flex-shrink:0}
+.lh-x{font-size:12px;color:var(--tx3);cursor:pointer;padding:0 3px;background:none;
+  border:none;font-family:inherit;transition:.16s;flex-shrink:0}
+.lh-x:hover{color:#f87171}
+.lh-empty{font-size:11px;color:var(--tx3);line-height:1.7;padding:13px 4px;text-align:center}
+
+.le-cmp{margin-top:16px;padding-top:14px;border-top:1px solid var(--ln2);
+  display:flex;align-items:center;gap:9px}
+.le-cmp-t{font-size:9px;color:var(--tx3);font-family:var(--fm)}
+
+/* 三栏时：整块铺满，左右各自滚，不影响中间图 */
+.le-body3{align-items:start}
+.le-body3 .le-stage{padding:18px 14px;min-width:0}
+.le-body3 .le-panel{max-height:none;overflow-y:auto}
+
+/* 对比按钮：竖排，别被裁 */
+.le-cmp{flex-direction:column !important;align-items:stretch !important;gap:6px !important}
+.le-cmpb{width:100%;text-align:center;padding:8px 12px !important}
+.le-cmp-t{font-size:9px;color:var(--tx3);font-family:var(--fm);line-height:1.5}
+/* 三栏时图片放大一点，别在中间缩着 */
+.le-body3 .le-img{height:min(62vh,520px) !important}
+.le-body3 .le-stage{justify-content:flex-start}
