@@ -1058,6 +1058,99 @@ function leHslApply(r, g, b, hsl){
 
 
 /* ---------- 7. HSL 面板渲染 ---------- */
+
+/* ---------- 10. 可选颜色 / 色彩平衡 面板渲染 ---------- */
+
+/* ---------- 11. 可选颜色/色彩平衡的预览近似 ----------
+   精准版在导出时按像素算（leSelColorApply / leColorBalApply），
+   预览用 feColorMatrix 近似，够看效果。
+*/
+function leEnsureColorFilters(){
+  let svg = document.getElementById('leColorSvg');
+  if (!svg){
+    svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.id = 'leColorSvg';
+    svg.setAttribute('width','0'); svg.setAttribute('height','0');
+    svg.style.position = 'absolute'; svg.style.pointerEvents = 'none';
+    document.body.appendChild(svg);
+  }
+  const t = (typeof leSetTarget === 'function') ? leSetTarget() : LOCAL_ADJ;
+  /* 色彩平衡：三段合成一个矩阵（取平均权重近似）*/
+  let r = 0, g = 0, b = 0;
+  if (t.cbal){
+    ['shadow','mid','high'].forEach(function(seg){
+      const s = t.cbal[seg];
+      if (!s) return;
+      r += (s.r || 0) * 0.33;
+      g += (s.g || 0) * 0.33;
+      b += (s.b || 0) * 0.33;
+    });
+  }
+  /* 可选颜色：所有色相加一起（近似）*/
+  if (t.selcolor){
+    Object.keys(t.selcolor).forEach(function(k){
+      const v = t.selcolor[k];
+      if (!v) return;
+      r += ((v.m || 0) + (v.y || 0) - (v.c || 0) * 2) * 0.05;
+      g += ((v.c || 0) + (v.y || 0) - (v.m || 0) * 2) * 0.05;
+      b += ((v.c || 0) + (v.m || 0) - (v.y || 0) * 2) * 0.05;
+    });
+  }
+  /* feColorMatrix：对角 = 1 + 偏移，偏移加到常数项 */
+  const sat = 1;
+  const m = [
+    (1 + r * 0.4).toFixed(3), 0, 0, 0, (r * 18).toFixed(1),
+    0, (1 + g * 0.4).toFixed(3), 0, 0, (g * 18).toFixed(1),
+    0, 0, (1 + b * 0.4).toFixed(3), 0, (b * 18).toFixed(1),
+    0, 0, 0, 1, 0
+  ].join(' ');
+  svg.innerHTML = '<defs><filter id="leColorF">'
+    + '<feColorMatrix type="matrix" values="' + m + '"/>'
+    + '</filter></defs>';
+}
+
+function leRenderSelColor(){
+  const host = document.getElementById('leSelColorBox');
+  if (!host) return;
+  leSelColorInit();
+  const t = (typeof leSetTarget === 'function') ? leSetTarget() : LOCAL_ADJ;
+  if (!t.selcolor) t.selcolor = LOCAL_ADJ.selcolor;
+  const cur = window.__leSelHue || 'red';
+  host.innerHTML = '<div class="le-schues">'
+    + LE_SELCOLOR_HUES.map(function(x){
+        return '<button class="le-schue' + (x.k === cur ? ' on' : '') + '"'
+          + ' onclick="window.__leSelHue=\'' + x.k + '\';leRenderSelColor()">'
+          + x.n + '</button>';
+      }).join('') + '</div>'
+    + ['c','m','y','k'].map(function(ch){
+        const v = (t.selcolor && t.selcolor[cur]) ? t.selcolor[cur][ch] : 0;
+        const nm = { c:'青', m:'品红', y:'黄', k:'黑' }[ch];
+        return '<div class="le-row"><span class="le-l">' + nm + '</span>'
+          + '<input type="range" class="le-r" min="-1" max="1" step="0.02" value="' + v + '"'
+          + ' oninput="leSelColorSet(\'' + cur + '\',\'' + ch + '\',this.value)">'
+          + '<span class="le-v">' + v.toFixed(2) + '</span></div>';
+      }).join('');
+}
+function leRenderCbal(){
+  const host = document.getElementById('leCbalBox');
+  if (!host) return;
+  leColorBalInit();
+  const t = (typeof leSetTarget === 'function') ? leSetTarget() : LOCAL_ADJ;
+  if (!t.cbal) t.cbal = LOCAL_ADJ.cbal;
+  const segs = [['shadow','阴影'],['mid','中间'],['high','高光']];
+  const chs = [['r','青→红'],['g','品红→绿'],['b','黄→蓝']];
+  host.innerHTML = segs.map(function(sg){
+    return '<div class="le-cbseg"><div class="le-cbt">' + sg[1] + '</div>'
+      + chs.map(function(ch){
+          const v = (t.cbal && t.cbal[sg[0]]) ? t.cbal[sg[0]][ch[0]] : 0;
+          return '<div class="le-row"><span class="le-l">' + ch[1] + '</span>'
+            + '<input type="range" class="le-r" min="-1" max="1" step="0.02" value="' + v + '"'
+            + ' oninput="leColorBalSet(\'' + sg[0] + '\',\'' + ch[0] + '\',this.value)">'
+            + '<span class="le-v">' + v.toFixed(2) + '</span></div>';
+        }).join('') + '</div>';
+  }).join('');
+}
+
 function leRenderHsl(){
   const host = document.getElementById('leHslBox');
   if (!host) return;
@@ -1618,6 +1711,335 @@ function leStreamDemo(){
     box.scrollTop = box.scrollHeight;
   }, 420);
   toast('\u6f14\u793a\u6d41\u5f0f\u663e\u793a\uff08\u539f\u578b\uff1a\u771f\u5b9e\u73af\u5883\u8981\u63a5 SSE\uff09');
+}
+
+
+/* ==========================================================================
+   ⭐ 2026-10-22 收尾第二批：可选颜色 / 色彩平衡 / 局部模糊 / 径向滤镜 / 批处理
+   ========================================================================== */
+
+/* ---------- 1. 可选颜色（PS 的做法）----------
+   在某个颜色范围内增减青/品红/黄/黑。
+   原理：算出像素落在哪个色相范围，然后按比例移动 CMYK。
+*/
+const LE_SELCOLOR_HUES = [
+  { k:'red',    n:'红',   h:0   },
+  { k:'yellow', n:'黄',   h:60  },
+  { k:'green',  n:'绿',   h:120 },
+  { k:'cyan',   n:'青',   h:180 },
+  { k:'blue',   n:'蓝',   h:240 },
+  { k:'magenta',n:'洋红', h:300 },
+  { k:'white',  n:'白',   h:-1  },   /* 高亮区 */
+  { k:'neutral',n:'中性', h:-2  },   /* 中间调 */
+  { k:'black',  n:'黑',   h:-3  }    /* 阴影区 */
+];
+function leSelColorInit(){
+  if (!LOCAL_ADJ.selcolor){
+    LOCAL_ADJ.selcolor = {};
+    LE_SELCOLOR_HUES.forEach(function(x){
+      LOCAL_ADJ.selcolor[x.k] = { c:0, m:0, y:0, k:0 };
+    });
+  }
+}
+function leSelColorSet(hue, ch, v){
+  leSelColorInit();
+  const t = (typeof leSetTarget === 'function') ? leSetTarget() : LOCAL_ADJ;
+  if (!t.selcolor){
+    t.selcolor = {};
+    LE_SELCOLOR_HUES.forEach(function(x){ t.selcolor[x.k] = { c:0, m:0, y:0, k:0 }; });
+  }
+  if (!t.selcolor[hue]) t.selcolor[hue] = { c:0, m:0, y:0, k:0 };
+  t.selcolor[hue][ch] = Number(v);
+  leApplyPreview();
+  if (typeof leSnap === 'function') leSnap();
+}
+/* 像素级：可选颜色 */
+function leSelColorApply(r, g, b, sc){
+  if (!sc) return [r, g, b];
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+  const lum = (mx + mn) / 2;
+  let h = 0, s = 0;
+  if (mx !== mn){
+    const d = mx - mn;
+    s = lum > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+    if (mx === r) h = ((g - b) / d + (g < b ? 6 : 0)) * 60;
+    else if (mx === g) h = ((b - r) / d + 2) * 60;
+    else h = ((r - g) / d + 4) * 60;
+  }
+  /* 找命中的范围：先看亮度类（白/中性/黑），再看色相类 */
+  let hit = null;
+  if (lum > 0.78) hit = sc.white;
+  else if (lum < 0.22) hit = sc.black;
+  else if (s < 0.12) hit = sc.neutral;
+  if (!hit){
+    let best = 999;
+    LE_SELCOLOR_HUES.forEach(function(x){
+      if (x.h < 0) return;
+      let d = Math.abs(h - x.h);
+      if (d > 180) d = 360 - d;
+      if (d < best && d < 40){ best = d; hit = sc[x.k]; }
+    });
+  }
+  if (!hit) return [r, g, b];
+
+  /* CMYK 调整：青/品红/黄是三原色的补 */
+  const dc = hit.c || 0, dm = hit.m || 0, dy = hit.y || 0, dk = hit.k || 0;
+  /* 简化：青=减红，品红=减绿，黄=减蓝，黑=整体压暗 */
+  let nr = r - dc * 0.45 + dm * 0.22 + dy * 0.22;
+  let ng = g + dc * 0.22 - dm * 0.45 + dy * 0.22;
+  let nb = b + dc * 0.22 + dm * 0.22 - dy * 0.45;
+  /* 黑：整体向 0 靠 */
+  if (dk){ nr *= (1 - dk * 0.6); ng *= (1 - dk * 0.6); nb *= (1 - dk * 0.6); }
+  return [
+    Math.max(0, Math.min(1, nr)),
+    Math.max(0, Math.min(1, ng)),
+    Math.max(0, Math.min(1, nb))
+  ];
+}
+
+/* ---------- 2. 色彩平衡（PS 的做法）----------
+   阴影 / 中间调 / 高光 三段分别调：青-红 / 品红-绿 / 黄-蓝
+*/
+function leColorBalInit(){
+  if (!LOCAL_ADJ.cbal){
+    LOCAL_ADJ.cbal = {
+      shadow:   { r:0, g:0, b:0 },
+      mid:      { r:0, g:0, b:0 },
+      high:     { r:0, g:0, b:0 }
+    };
+  }
+}
+function leColorBalSet(seg, ch, v){
+  leColorBalInit();
+  const t = (typeof leSetTarget === 'function') ? leSetTarget() : LOCAL_ADJ;
+  if (!t.cbal){
+    t.cbal = {
+      shadow: { r:0, g:0, b:0 }, mid: { r:0, g:0, b:0 }, high: { r:0, g:0, b:0 }
+    };
+  }
+  t.cbal[seg][ch] = Number(v);
+  leApplyPreview();
+  if (typeof leSnap === 'function') leSnap();
+}
+/* 像素级：色彩平衡 */
+function leColorBalApply(r, g, b, cb){
+  if (!cb) return [r, g, b];
+  const lum = r * 0.299 + g * 0.587 + b * 0.114;
+  /* 三个权重：阴影 w1、中间调 w2、高光 w3 */
+  let w1 = Math.max(0, 1 - lum * 2.2);
+  let w3 = Math.max(0, (lum - 0.55) * 2.2);
+  let w2 = Math.max(0, 1 - w1 - w3);
+  const apply = function(seg, w){
+    if (!w || !seg) return;
+    r += (seg.r || 0) * w * 0.18;
+    g += (seg.g || 0) * w * 0.18;
+    b += (seg.b || 0) * w * 0.18;
+  };
+  apply(cb.shadow, w1);
+  apply(cb.mid, w2);
+  apply(cb.high, w3);
+  return [Math.max(0, Math.min(1, r)), Math.max(0, Math.min(1, g)), Math.max(0, Math.min(1, b))];
+}
+
+/* ---------- 3. 局部模糊（背景虚化）---------- */
+function leSetBlur(v){
+  const t = (typeof leSetTarget === 'function') ? leSetTarget() : LOCAL_ADJ;
+  t.blur = Number(v);
+  leApplyPreview();
+  if (typeof leSnap === 'function') leSnap();
+}
+/* 用 backdrop-filter 做模糊层，只在非主体区域 */
+let LE_BLUR_ON = false;
+function leBlurToggle(){
+  LE_BLUR_ON = !LE_BLUR_ON;
+  const img = document.getElementById('leImg');
+  const btn = document.getElementById('leBlurBtn');
+  if (btn) btn.classList.toggle('on', LE_BLUR_ON);
+  if (!img) return;
+  img.querySelectorAll('.le-blurlayer').forEach(function(e){ e.remove(); });
+  if (LE_BLUR_ON){
+    const layer = document.createElement('div');
+    layer.className = 'le-blurlayer';
+    const amt = LOCAL_ADJ.blur || 4;
+    layer.style.backdropFilter = 'blur(' + amt + 'px)';
+    layer.style.webkitBackdropFilter = 'blur(' + amt + 'px)';
+    /* 中心留个洞（主体清晰）*/
+    layer.style.maskImage = 'radial-gradient(ellipse 42% 32% at 50% 34%, transparent 55%, #000 82%)';
+    layer.style.webkitMaskImage = 'radial-gradient(ellipse 42% 32% at 50% 34%, transparent 55%, #000 82%)';
+    img.appendChild(layer);
+    toast('背景虚化：中心留清晰');
+  }
+}
+
+/* ---------- 4. 径向滤镜（可拖的圆形局部）---------- */
+let LE_RADIAL = null;   /* {x, y, r, amount} */
+let LE_RADIAL_ON = false;
+
+function leRadialToggle(){
+  LE_RADIAL_ON = !LE_RADIAL_ON;
+  const btn = document.getElementById('leRadialBtn');
+  const img = document.getElementById('leImg');
+  if (btn) btn.classList.toggle('on', LE_RADIAL_ON);
+  if (!LE_RADIAL) LE_RADIAL = { x:0.5, y:0.35, r:0.34, amount:0 };
+  if (LE_RADIAL_ON && img){
+    img.style.cursor = 'crosshair';
+    leRadialPaint();
+    toast('径向滤镜：在图上点一个中心，再调半径和强度');
+  } else if (img){
+    img.style.cursor = '';
+    leRadialPaint();
+  }
+}
+function leRadialPaint(){
+  const img = document.getElementById('leImg');
+  if (!img) return;
+  img.querySelectorAll('.le-radiallayer').forEach(function(e){ e.remove(); });
+  if (!LE_RADIAL || Math.abs(LE_RADIAL.amount) < 0.01) return;
+  const L = LE_RADIAL;
+  const layer = document.createElement('div');
+  layer.className = 'le-radiallayer';
+  const amt = L.amount;
+  layer.style.background = amt > 0
+    ? 'rgba(255,240,200,' + (amt * 0.35).toFixed(2) + ')'
+    : 'rgba(0,0,0,' + (Math.abs(amt) * 0.45).toFixed(2) + ')';
+  layer.style.maskImage = 'radial-gradient(circle at '
+    + (L.x * 100).toFixed(1) + '% ' + (L.y * 100).toFixed(1) + '%, '
+    + '#000 0%, #000 ' + (L.r * 100 * 0.6).toFixed(1) + '%, transparent '
+    + (L.r * 100).toFixed(1) + '%)';
+  layer.style.webkitMaskImage = layer.style.maskImage;
+  img.appendChild(layer);
+}
+function leRadialPick(e){
+  if (!LE_RADIAL_ON) return;
+  const img = document.getElementById('leImg');
+  const r = img.getBoundingClientRect();
+  LE_RADIAL.x = (e.clientX - r.left) / r.width;
+  LE_RADIAL.y = (e.clientY - r.top) / r.height;
+  leRadialPaint();
+  toast('径向中心已设 (' + LE_RADIAL.x.toFixed(2) + ', ' + LE_RADIAL.y.toFixed(2) + ')');
+}
+function leRadialSet(key, v){
+  if (!LE_RADIAL) LE_RADIAL = { x:0.5, y:0.35, r:0.34, amount:0 };
+  LE_RADIAL[key] = Number(v);
+  const el = document.getElementById('leVal_radial_' + key);
+  if (el) el.textContent = key === 'r' ? Math.round(Number(v) * 100) + '%' : Number(v).toFixed(2);
+  leRadialPaint();
+  if (typeof leSnap === 'function') leSnap();
+}
+
+/* ---------- 5. 批处理（动作）----------
+   PhotoMaster 没有，PS 有「动作 / 批处理」。
+   我们做简化版：把当前全套参数存成一个「动作」，套到其它图上。
+*/
+let LE_ACTIONS = [];
+
+function leActionSave(){
+  leHslInit(); leSelColorInit(); leColorBalInit();
+  const snap = {
+    n: '动作 ' + (LE_ACTIONS.length + 1),
+    t: Date.now(),
+    adj: JSON.parse(JSON.stringify(LOCAL_ADJ)),
+    layers: JSON.parse(JSON.stringify(LE_LAYERS.filter(function(L){
+      return L.id !== '__inpaint__';
+    })))
+  };
+  LE_ACTIONS.push(snap);
+  try {
+    localStorage.setItem('ylcraft_le_actions', JSON.stringify(LE_ACTIONS));
+  } catch (e){}
+  leRenderActions();
+  toast('已存为「' + snap.n + '」');
+}
+function leActionLoad(i){
+  const a = LE_ACTIONS[i];
+  if (!a) return;
+  Object.assign(LOCAL_ADJ, JSON.parse(JSON.stringify(a.adj)));
+  LE_LAYERS = JSON.parse(JSON.stringify(a.layers));
+  LE_SEL_LAYER = -1;
+  if (typeof leRenderAll === 'function') leRenderAll();
+  else if (typeof renderManual === 'function') renderManual();
+  leRenderLayers(); leSyncPanel(); leApplyPreview(); leRenderHsl
+    && leRenderHsl();
+  if (typeof leSnap === 'function') leSnap();
+  toast('已套用「' + a.n + '」');
+}
+function leActionDel(i){
+  LE_ACTIONS.splice(i, 1);
+  try { localStorage.setItem('ylcraft_le_actions', JSON.stringify(LE_ACTIONS)); } catch (e){}
+  leRenderActions();
+}
+function leActionBatch(){
+  /* 批量：把当前参数存成动作，提示可以对别的图套 */
+  leActionSave();
+  const n = (typeof DOC !== 'undefined' && DOC.items) ? DOC.items.length : 0;
+  toast('已存为动作 · 图库里有 ' + n + ' 张图，可以对它们套同一套');
+}
+function leRenderActions(){
+  const host = document.getElementById('leActions');
+  if (!host) return;
+  if (!LE_ACTIONS.length){
+    host.innerHTML = '<div class="lh-empty">还没有动作。<br>点「存成套」把当前参数存起来</div>';
+    return;
+  }
+  host.innerHTML = LE_ACTIONS.map(function(a, i){
+    return '<div class="le-act" onclick="leActionLoad(' + i + ')">'
+      + '<span class="le-act-n">' + a.n + '</span>'
+      + '<span class="le-act-t">' + (a.layers.length ? a.layers.length + ' 层' : '纯参数') + '</span>'
+      + '<button class="le-act-x" onclick="event.stopPropagation();leActionDel(' + i + ')">✕</button>'
+      + '</div>';
+  }).join('');
+}
+/* 启动时读回已存的动作 */
+try {
+  const raw = localStorage.getItem('ylcraft_le_actions');
+  if (raw) LE_ACTIONS = JSON.parse(raw) || [];
+} catch (e){ LE_ACTIONS = []; }
+
+/* ---------- 6. 修图术前分析（接拍摄端交接单）---------- */
+const LE_PRE_ANALYSIS = [
+  { k:'hair',  n:'头发',   d:'有没有碎发、出戏的刘海、边缘没收好' },
+  { k:'skin',  n:'皮肤',   d:'痘、斑、油光、防晒霜反光' },
+  { k:'cloth', n:'衣服',   d:'褶皱、走形、露出的内衣/肩带' },
+  { k:'env',   n:'环境',   d:'路人、垃圾桶、电线、背景杂物' },
+  { k:'light', n:'光',     d:'哪里过曝、哪里死黑、光斑要不要留' },
+  { k:'color', n:'色彩',   d:'有没有不协调的杂色（红绿撞色之类）' }
+];
+let LE_PRE_DONE = {};
+function leRenderPre(){
+  const host = document.getElementById('lePre');
+  if (!host) return;
+  host.innerHTML = LE_PRE_ANALYSIS.map(function(x){
+    const done = !!LE_PRE_DONE[x.k];
+    return '<div class="le-pre' + (done ? ' done' : '') + '"'
+      + ' onclick="lePreToggle(\'' + x.k + '\')">'
+      + '<span class="le-pre-c">' + (done ? '✓' : '○') + '</span>'
+      + '<span class="le-pre-t">' + x.n + '<span class="le-pre-d">' + x.d + '</span></span>'
+      + '</div>';
+  }).join('');
+}
+function lePreToggle(k){
+  LE_PRE_DONE[k] = !LE_PRE_DONE[k];
+  leRenderPre();
+}
+/* 读拍摄端交接单（localStorage 里如果有就显示）*/
+function leLoadHandoff(){
+  const host = document.getElementById('leHandoff');
+  if (!host) return;
+  let h = null;
+  try {
+    const raw = localStorage.getItem('ylcraft_project_handoff');
+    if (raw) h = JSON.parse(raw);
+  } catch (e){}
+  if (!h){
+    host.innerHTML = '<div class="lh-empty">还没从拍摄端带过来交接单。<br>'
+      + '在「脚本策划 → 交接」里填了就会自动出现在这</div>';
+    return;
+  }
+  host.innerHTML = '<div class="le-ho-t">' + (h.what || '—') + '</div>'
+    + (h.cond ? '<div class="le-ho-l">拍摄条件：' + h.cond + '</div>' : '')
+    + (h.fixes && h.fixes.length
+        ? '<div class="le-ho-l">已知要修：<br>· ' + h.fixes.join('<br>· ') + '</div>' : '')
+    + (h.ask ? '<div class="le-ho-l">客户要求：' + h.ask + '</div>' : '');
 }
 
 /* ---------- 2. 白平衡吸管 ---------- */
@@ -2238,7 +2660,7 @@ openLocalEdit = function(id){
           </div>
 
           <div class="le-stage">
-            <div class="le-img${pic?' has-pic':' le-demo'}" id="leImg"${pic?` style="width:100%;height:min(58vh,440px);aspect-ratio:auto;background-image:url('${pic}');background-size:contain;background-position:center;background-repeat:no-repeat;background-color:#0b0b0f"`:''}>
+            <div class="le-img${pic?' has-pic':' le-demo'}" id="leImg" onclick="if(LE_RADIAL_ON)leRadialPick(event)"${pic?` style="width:100%;height:min(58vh,440px);aspect-ratio:auto;background-image:url('${pic}');background-size:contain;background-position:center;background-repeat:no-repeat;background-color:#0b0b0f"`:''}>
               ${pic?'':'<div class="le-fig"></div>'}
             </div>
             <div class="le-cropov" id="leCropOv" onmousemove="leCropMove(event)" onmouseup="leCropUp()"><div class="le-cropbox" onmousedown="leCropDown(event,'move')"><i class="le-ch nw" onmousedown="leCropDown(event,'nw')"></i><i class="le-ch ne" onmousedown="leCropDown(event,'ne')"></i><i class="le-ch sw" onmousedown="leCropDown(event,'sw')"></i><i class="le-ch se" onmousedown="leCropDown(event,'se')"></i></div></div>
@@ -2458,6 +2880,54 @@ openLocalEdit = function(id){
             <button class="le-ipgo" onclick="leStreamDemo()">演示读图过程</button>
             <div class="le-stream" id="leStream"></div>
 
+            <!-- ⭐ 可选颜色 -->
+            <div class="le-sec">可选颜色 <span class="le-sec2">某个色里加减 青品黄黑</span></div>
+            <div class="le-selc" id="leSelColorBox"></div>
+
+            <!-- ⭐ 色彩平衡 -->
+            <div class="le-sec">色彩平衡 <span class="le-sec2">阴影/中间调/高光 分开调</span></div>
+            <div class="le-cbal" id="leCbalBox"></div>
+
+            <!-- ⭐ 背景虚化 -->
+            <div class="le-sec">背景虚化 <span class="le-sec2">中心留清晰</span></div>
+            <div class="le-brushrow">
+              <button class="le-brushbtn" id="leBlurBtn" onclick="leBlurToggle()">开虚化</button>
+              <span class="le-blab">量</span>
+              <input type="range" class="le-r" min="1" max="20" step="0.5" value="4"
+                oninput="leSetBlur(this.value);if(LE_BLUR_ON){leBlurToggle();leBlurToggle();}">
+            </div>
+
+            <!-- ⭐ 径向滤镜 -->
+            <div class="le-sec">径向滤镜 <span class="le-sec2">圆形局部</span></div>
+            <div class="le-brushrow">
+              <button class="le-brushbtn" id="leRadialBtn" onclick="leRadialToggle()">开径向</button>
+              <span class="le-blab">半径</span>
+              <input type="range" class="le-r" min="0.1" max="0.9" step="0.02" value="0.34"
+                oninput="leRadialSet('r',this.value)">
+              <span class="le-v" id="leVal_radial_r" style="width:34px">34%</span>
+            </div>
+            <div class="le-row"><span class="le-l">强度</span>
+              <input type="range" class="le-r" min="-1" max="1" step="0.02" value="0"
+                oninput="leRadialSet('amount',this.value)">
+              <span class="le-v" id="leVal_radial_amount">0.00</span></div>
+            <div class="le-hint">开了在图上点中心 · 正值加亮 负值压暗</div>
+
+            <!-- ⭐ 动作 / 批处理 -->
+            <div class="le-sec">动作 <span class="le-sec2">存一套参数 套到别的图</span></div>
+            <div class="le-brushrow" style="margin-bottom:6px">
+              <button class="le-brushbtn" onclick="leActionSave()">存成套</button>
+              <button class="le-brushbtn" onclick="leActionBatch()">批量</button>
+            </div>
+            <div class="le-acts-list" id="leActions"></div>
+
+            <!-- ⭐ 修图术前分析 -->
+            <div class="le-sec">术前分析 <span class="le-sec2">先看一遍再动手</span></div>
+            <div class="le-prelist" id="lePre"></div>
+
+            <!-- ⭐ 拍摄端交接单 -->
+            <div class="le-sec">拍摄端交接单 <span class="le-sec2">当时怎么想的</span></div>
+            <div class="le-ho" id="leHandoff"></div>
+
             <div class="le-sec">局部重绘 <span class="le-sec2">圈一块 · 说一句</span></div>
             <div class="le-ipregions">
               <button class="le-ip-r on" onclick="leIpRegion(this,'矩形')">矩形</button>
@@ -2493,6 +2963,11 @@ openLocalEdit = function(id){
   if (typeof leRenderPresets === 'function') leRenderPresets();
   if (typeof leRenderHistory === 'function') leRenderHistory();
   if (typeof leRenderOrder === 'function') leRenderOrder();
+  if (typeof leRenderSelColor === 'function') leRenderSelColor();
+  if (typeof leRenderCbal === 'function') leRenderCbal();
+  if (typeof leRenderActions === 'function') leRenderActions();
+  if (typeof leRenderPre === 'function') leRenderPre();
+  if (typeof leLoadHandoff === 'function') leLoadHandoff();
   if (typeof leApplyCrop === 'function') leApplyCrop();
   if (typeof leSyncPanel === 'function') leSyncPanel();
   if (typeof leSnapNow === 'function'){ LE_HIST = []; LE_HIST_I = -1; leSnapNow(); }
