@@ -2037,6 +2037,74 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 .cl-sum.ok{border-color:color-mix(in srgb,var(--ok) 30%,transparent);
   background:color-mix(in srgb,var(--ok) 8%,transparent);color:var(--tx2)}
 .cl-sum.ok b{color:var(--ok)}
+
+/* ===== 这次拍谁 ===== */
+.who{margin-bottom:20px}
+.who-hd{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}
+.who-t{font-size:18px;color:var(--tx1);font-weight:600}
+.who-s{font-size:13px;color:var(--tx3)}
+.who-list{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.who-btn{display:flex;align-items:center;gap:9px;padding:9px 13px;border-radius:8px;
+  background:var(--bgCard);border:1px solid var(--bd2);cursor:pointer;
+  transition:.16s;font-family:inherit}
+.who-btn:hover{border-color:var(--bd3)}
+.who-btn.on{border-color:var(--photo);background:color-mix(in srgb,var(--photo) 7%,var(--bgCard))}
+.wh-av{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:13px;color:var(--photo);
+  background:color-mix(in srgb,var(--photo) 14%,transparent)}
+.who-btn.on .wh-av{background:color-mix(in srgb,var(--photo) 26%,transparent)}
+.wh-n{font-size:14px;color:var(--tx1);font-weight:500}
+.wh-tag{font-size:11.5px;color:var(--tx3);font-family:var(--fm)}
+.who-card{padding:14px 16px;border-radius:var(--radiusMD);background:var(--bgCard);
+  border:1px solid var(--bd2)}
+.who-card:empty{display:none}
+.wc-h{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+.wc-t{font-size:15px;color:var(--tx1);font-weight:600}
+.wc-badge{font-size:11.5px;padding:2px 9px;border-radius:20px;font-family:var(--fm);
+  background:color-mix(in srgb,var(--photo) 14%,transparent);color:var(--photo)}
+.wc-b{font-size:14px;color:var(--tx2);line-height:1.7;margin-bottom:10px}
+.wc-cues{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.wc-cue{font-size:13.5px;padding:7px 12px;border-radius:6px;line-height:1.5;
+  display:flex;justify-content:space-between;gap:10px}
+.wc-cue.ok{background:color-mix(in srgb,var(--ok) 9%,transparent);color:var(--tx2);
+  border:1px solid color-mix(in srgb,var(--ok) 22%,transparent)}
+.wc-cue.bad{background:color-mix(in srgb,var(--err) 8%,transparent);color:var(--tx3);
+  border:1px solid color-mix(in srgb,var(--err) 20%,transparent)}
+.wc-cue span{font-size:11.5px;font-family:var(--fm);color:var(--tx3);flex-shrink:0}
+.wc-warn{font-size:13px;color:var(--tx2);line-height:1.6;padding:9px 12px;
+  border-radius:6px;background:color-mix(in srgb,var(--warn) 8%,transparent);
+  border:1px solid color-mix(in srgb,var(--warn) 22%,transparent)}
+.wc-warn b{color:var(--warn)}
+
+/* ===== 分镜重排操作条 ===== */
+.sh-bar{display:flex;align-items:center;gap:10px;padding:11px 15px;border-radius:8px;
+  background:var(--bgCard);border:1px solid var(--bd2);margin-bottom:12px}
+.sh-bar-t{font-size:13.5px;color:var(--tx3)}
+.sh-bar-t.dirty{color:var(--warn);font-weight:500}
+.sh-btn{font-size:13.5px;padding:6px 15px;border-radius:6px;border:1px solid var(--bd2);
+  color:var(--tx2);background:transparent;cursor:pointer;transition:.16s;font-family:inherit}
+.sh-btn:hover{border-color:var(--photo);color:var(--photo)}
+.sh-warn{padding:10px 14px;border-radius:8px;font-size:13px;line-height:1.6;
+  margin-bottom:12px;color:var(--tx2);
+  background:color-mix(in srgb,var(--warn) 9%,transparent);
+  border:1px solid color-mix(in srgb,var(--warn) 26%,transparent)}
+.sh-warn b{color:var(--warn)}
+.sh-hit{font-size:12.5px;line-height:1.55;padding:8px 12px;border-radius:6px;
+  margin-bottom:10px;color:var(--tx2);
+  background:color-mix(in srgb,var(--warn) 11%,transparent);
+  border:1px dashed color-mix(in srgb,var(--warn) 34%,transparent)}
+.sh-hit b{color:var(--warn)}
+.pz-shot.has-hit{border-color:color-mix(in srgb,var(--warn) 30%,transparent)}
+
+/* ===== 元素 chip 可点 ===== */
+.el-c{cursor:pointer;transition:.16s;user-select:none}
+.el-c:hover{filter:brightness(1.18)}
+.pz-chip{cursor:pointer;transition:.16s;user-select:none}
+.pz-chip:hover{filter:brightness(1.18)}
+.el-c.off{opacity:.38;text-decoration:line-through}
+.pz-chip.off{opacity:.38;text-decoration:line-through}
+.pz-ki.el-off{opacity:.45}
+.pz-ki.el-off span{text-decoration:line-through}
 </style>
 </head>
 <body data-t="deep">
@@ -2746,6 +2814,26 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
         <div class="ex-tip">每组片子都该先说这个 —— 元素和分镜都该为它服务</div>
       </div>
 
+      <!-- ===== 这次拍谁 ===== -->
+      <div class="who">
+        <div class="who-hd">
+          <span class="who-t">这次拍谁</span>
+          <span class="who-s">选人，带出怎么拍她</span>
+        </div>
+        <div class="who-list">
+          <button class="who-btn on" onclick="pickWho(this,'xiaolin')">
+            <span class="wh-av">林</span><span class="wh-n">小林</span><span class="wh-tag">老客户</span>
+          </button>
+          <button class="who-btn" onclick="pickWho(this,'a-yun')">
+            <span class="wh-av">芸</span><span class="wh-n">阿芸</span><span class="wh-tag">会演</span>
+          </button>
+          <button class="who-btn" onclick="pickWho(this,'new')">
+            <span class="wh-av">新</span><span class="wh-n">新客户</span><span class="wh-tag">还不熟</span>
+          </button>
+        </div>
+        <div class="who-card" id="whoCard"></div>
+      </div>
+
       <!-- ===== 这次拍哪种（三种专题模板） ===== -->
       <div class="tp">
         <div class="tp-hd">
@@ -2887,6 +2975,12 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
         <p class="pz-lead-t">分镜</p>
         <p class="pz-lead-b">每一镜都从元素里取：一个光位 + 一个动态 + 一句口令 + 一个构图。改元素，这里跟着变。</p>
       </div>
+      <div class="sh-bar">
+        <span class="sh-bar-t" id="shBarT">分镜按元素排</span>
+        <div class="spacer"></div>
+        <button class="sh-btn" onclick="regenShots()">按元素重排</button>
+      </div>
+      <div class="sh-warn" id="shWarn" style="display:none"></div>
       <div class="pz-shots" id="pzShotList"><div class="pz-empty">还没选方案 —— 元素定下来，这里会自动排出分镜</div></div>
     </section>
 
@@ -4703,44 +4797,10 @@ const PLAN_ELEMENTS = {
 let currentPlan = null;
 let currentWho = 'xiaolin';
 
-function pickPlan(which){
-  const el = PLAN_ELEMENTS[which];
-  if(!el) return;
-  currentPlan = which;
-
-  // 1. 按钮变选中态
-  document.querySelectorAll('.pc-pick').forEach(b=>b.classList.remove('picked'));
-  const btn = event && event.target ? event.target : document.querySelectorAll('.pc-pick')[which==='A'?0:1];
-  if (btn && btn.classList) btn.classList.add('picked');
-
-  // 2. 填元素清单
-  const fill = (rootSelector, items) => {
-    const box = document.querySelector(rootSelector + ' .el-b');
-    if(!box) return;
-    box.innerHTML = items.map(t=>'<span class="el-c on">'+t+'</span>').join('');
-  };
-  fill('.el-scenes', el.scenes);
-  fill('.el-lights', el.lights);
-  fill('.el-times', el.times);
-  fill('.el-colors', el.colors);
-  fill('.el-dynamics', el.dynamics);
-  fill('.el-props', el.props);
-  fill('.el-poses', el.poses);
-
-  // 3. 填风险（必带清单里的标红项）
-  const riskBox = document.querySelector('.pr-grp .pr-g-h.hot');
-  if(riskBox){
-    const parent = riskBox.parentElement;
-    const items = el.risks.map(r=>'<div class="pr-item must"><span class="pr-cb">○</span>'
-      + r + '</div>').join('');
-    parent.innerHTML = '<div class="pr-g-h hot"><span class="pr-dot must"></span>别忘（标红）</div>' + items;
-  }
-
-  // 4. 排分镜
-  genShots(which);
-
-  // 5. 提示
-  fake('已选「方案 ' + which + '」—— 元素清单和分镜都按它排好了');
+function pickPlan(which, card){
+  /* ⭐ 这是老版本（找 .el-scenes .el-b，HTML 里没有这些 class），
+     已委托给新的 pickPlan2，避免调用到坏代码。 */
+  if (typeof pickPlan2 === 'function') return pickPlan2(which, card);
 }
 
 function renderPlanTimes(){
@@ -4763,24 +4823,24 @@ function renderPlanTimes(){
 // 每个方案的「镜头配方」：一镜 = 光位 + 元素 + 口令 + 构图
 const SHOT_RECIPES = {
   A: [
-    { light:'逆光（太阳正前方）', elem:'桥洞做前景框', pose:'站定 · 侧脸',
+    { light:'逆光（太阳正前方）', elem:'桥洞做前景框', pose:'站定 · 侧脸', needs:['桥洞'],
       frame:'全身 / 桥在中轴', why:'逆光时最有层次的是轮廓，站定不动才能等到光穿过来',
       take:'连拍 8–10 张，等风', risk:'脸会黑，先保轮廓' },
-    { light:'逆光', elem:'风中头发', pose:'不看镜头 · 微侧',
+    { light:'逆光', elem:'风中头发', pose:'不看镜头 · 微侧', needs:['风','头发'],
       frame:'近景 / 特写脸侧', why:'风吹动头发，逆光会把发丝点亮——这是这组最出彩的一镜',
       take:'连拍抓，头发落下的一瞬', risk:'风太大头发全盖脸，等一阵' },
-    { light:'逆光转蓝调', elem:'远处塔 + 天空渐层', pose:'回头',
+    { light:'逆光转蓝调', elem:'远处塔 + 天空渐层', pose:'回头', needs:['塔','天空'],
       frame:'半身 / 人物靠右', why:'日落后 10 分钟天空渐变，塔做背景，人物轮廓变成剪影',
       take:'单张精拍，手要稳', risk:'光掉得很快，先测好曝光' }
   ],
   B: [
-    { light:'侧逆光 45°', elem:'柱子投长影', pose:'靠柱子',
+    { light:'侧逆光 45°', elem:'柱子投长影', pose:'靠柱子', needs:['柱','反光板'],
       frame:'半身 / 柱子当分割线', why:'侧逆光让人物一半亮一半暗，柱子影子增加纵深',
       take:'连拍 5 张，调整角度', risk:'光比大，必须上反光板' },
-    { light:'侧逆光', elem:'柱间漏光', pose:'走两步回头',
+    { light:'侧逆光', elem:'柱间漏光', pose:'走两步回头', needs:['柱'],
       frame:'全身 / 长廊消失点', why:'长廊的消失点本身就是最好的构图线，人走进去画面就活了',
       take:'连拍，人走到 1/3 处按', risk:'游客会入镜，要等空档' },
-    { light:'侧顺光（转身后）', elem:'柱子特写', pose:'手扶栏杆 · 看远处',
+    { light:'侧顺光（转身后）', elem:'柱子特写', pose:'手扶栏杆 · 看远处', needs:['柱'],
       frame:'特写 / 柱子做前景', why:'转身后光变顺，脸亮起来，可以拍表情',
       take:'单张，抓表情', risk:'这时脸会偏暖，注意白平衡' }
   ]
@@ -4854,6 +4914,190 @@ const WHO = {
     warn:'<b>拍完记得回来更新档案</b>——这次就是她档案的第 1 条。'
   }
 };
+
+
+/* ==========================================================================
+   ⭐ 2026-10-22 元素 → 分镜 真联动
+   之前：元素 chip 是死的，点不动；分镜是静态 SHOT_RECIPES；
+        regenShots 调的是坏函数 genShots（引用不存在的 sfeList）→ 点了报错。
+   现在：
+     1. 元素 chip 可点，关掉的元素进 EL_OFF
+     2. 「按元素重排」→ 重排分镜 + 把用到被关元素的镜头标出来
+     3. 必带清单跟着元素变（元素关了 → 对应道具划掉）
+     4. 「这次拍谁」→ 分镜里带上对她的口令，并提示哪些镜不适合她
+   ========================================================================== */
+
+let EL_OFF = new Set();          // 被关掉的元素名
+let EL_DIRTY = false;            // 元素改过但还没重排
+
+/* 点元素 chip 开关 */
+function elToggle(el){
+  if (!el.classList.contains('el-c') && !el.classList.contains('pz-chip')) return;
+  // 「风险提示」类的 chip 不参与（.no 是「避开xx」，不是可选元素）
+  if (el.classList.contains('no')){ fake('这条是提醒，不是元素 —— 「' + el.textContent.trim() + '」'); return; }
+  if (el.classList.contains('none')) return;
+
+  const name = el.textContent.trim();
+  el.classList.toggle('off');
+  if (el.classList.contains('off')) EL_OFF.add(name);
+  else EL_OFF.delete(name);
+  elMarkDirty();
+}
+
+function elMarkDirty(){
+  EL_DIRTY = true;
+  const bar = document.getElementById('shBarT');
+  if (bar){
+    bar.textContent = EL_OFF.size
+      ? '元素改了（关了 ' + EL_OFF.size + ' 个）—— 点右边重排'
+      : '元素改了 —— 点右边重排';
+    bar.className = 'sh-bar-t dirty';
+  }
+  elSyncKit();
+}
+
+/* 分镜里的文字有没有用到被关掉的元素 */
+/* 用 recipe.needs 里的关键词去比对「被关掉的元素」 */
+function elHitOffNeeds(needs){
+  if (!needs || !needs.length) return null;
+  for (const offEl of EL_OFF){
+    for (const kw of needs){
+      if (offEl.indexOf(kw) >= 0) return offEl;
+    }
+  }
+  return null;
+}
+/* 老接口保留（按文本找）*/
+function elHitOff(text){
+  if (!text) return null;
+  for (const k of EL_OFF){
+    if (text.indexOf(k) >= 0) return k;
+  }
+  return null;
+}
+
+/* 必带清单跟着元素变 */
+const KIT_MAP = {
+  '反光板': ['反光板'],
+  '热奶茶': ['热饮', '热奶茶'],
+  '浅色大衣': ['浅色大衣', '浅色毛呢大衣'],
+  '一本书': ['书'],
+  '银杏叶': ['银杏', '落叶'],
+  '米色围巾': ['围巾'],
+  '驼色靴子': ['靴子']
+};
+function elSyncKit(){
+  const offArr = Array.from(EL_OFF);
+  document.querySelectorAll('.pz-ki').forEach(function(ki){
+    const span = ki.querySelector('span');
+    if (!span) return;
+    const label = span.textContent.trim();
+    let off = false;
+    Object.keys(KIT_MAP).forEach(function(elName){
+      /* ⭐ 元素名带后缀（「反光板（补脸）」），所以用「包含」而不是「等于」 */
+      const elIsOff = offArr.some(function(x){ return x.indexOf(elName) >= 0; });
+      if (!elIsOff) return;
+      if (KIT_MAP[elName].some(function(w){ return label.indexOf(w) >= 0; })) off = true;
+    });
+    ki.classList.toggle('el-off', off);
+    const cb = ki.querySelector('input');
+    if (cb){
+      if (off) cb.checked = false;
+      else if (ki.classList.contains('must')) cb.checked = true;
+    }
+  });
+}
+
+/* ===== 重排分镜 ===== */
+function regenShots(){
+  if (!currentPlan){ fake('先选一个方案'); return; }
+  const recipes = SHOT_RECIPES[currentPlan];
+  if (!recipes) return;
+
+  // 用能跑的那个（原来的 genShots 引用不存在的 sfeList，会抛错）
+  genShots2(currentPlan);
+
+  // 给受影响的镜头打标记
+  let hitTotal = 0;
+  const hitNames = new Set();
+  document.querySelectorAll('#pzShotList .pz-shot').forEach(function(sh, i){
+    const r = recipes[i];
+    if (!r) return;
+    const hit = elHitOffNeeds(r.needs) || elHitOff(r.elem) || elHitOff(r.pose);
+    if (!hit) return;
+    hitTotal++;
+    hitNames.add(hit);
+    const badge = document.createElement('div');
+    badge.className = 'sh-hit';
+    badge.innerHTML = '⚠️ 这一镜用到你关掉的 <b>' + hit + '</b> —— 要么打开它，要么换一镜';
+    sh.insertBefore(badge, sh.firstChild);
+    sh.classList.add('has-hit');
+  });
+
+  // 数量徽章
+  const n = document.getElementById('pzShotN');
+  if (n) n.textContent = recipes.length;
+
+  // 顶部提示
+  const warn = document.getElementById('shWarn');
+  if (warn){
+    if (hitTotal){
+      warn.style.display = '';
+      warn.innerHTML = '<b>' + hitTotal + ' 镜受影响</b>'
+        + ' · 用到关掉的：' + Array.from(hitNames).join('、');
+    } else {
+      warn.style.display = 'none';
+      warn.innerHTML = '';
+    }
+  }
+
+  // 状态复位
+  EL_DIRTY = false;
+  const bar = document.getElementById('shBarT');
+  if (bar){
+    bar.textContent = '按当前' + (EL_OFF.size ? '（关了 ' + EL_OFF.size + ' 个）' : '') + '元素排了 ' + recipes.length + ' 镜';
+    bar.className = 'sh-bar-t';
+  }
+  elSyncKit();
+
+  fake(hitTotal
+    ? '重排完成 · ' + hitTotal + ' 镜用到你关掉的元素，已标红'
+    : '重排完成 · ' + recipes.length + ' 镜和当前元素对得上');
+}
+
+/* 进分镜 tab 时把元素状态同步过去 */
+const _pzTabOrig = pzTab;
+pzTab = function(el, key){
+  _pzTabOrig(el, key);
+  if (key === 'shots' && currentPlan){
+    const bar = document.getElementById('shBarT');
+    if (bar && EL_DIRTY){
+      bar.textContent = '元素改了 —— 点右边重排';
+      bar.className = 'sh-bar-t dirty';
+    }
+    const n = document.getElementById('pzShotN');
+    const recipes = SHOT_RECIPES[currentPlan] || [];
+    if (n) n.textContent = recipes.length;
+  }
+  if (key === 'kit') elSyncKit();
+};
+
+/* 元素 chip 统一挂点击（新建的元素也能点） */
+function elBindChips(){
+  document.querySelectorAll('#pz-els .el-c, #pz-els .pz-chip').forEach(function(el){
+    if (el.dataset.bound) return;
+    el.dataset.bound = '1';
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', function(){ elToggle(el); });
+  });
+}
+document.addEventListener('DOMContentLoaded', function(){
+  elBindChips();
+  if (typeof currentWho !== 'undefined' && currentWho){
+    const btn = document.querySelector('.who-btn.on');
+    if (btn) pickWho(btn, currentWho);
+  }
+});
 
 function pickWho(el, key){
   document.querySelectorAll('.who-btn').forEach(x=>x.classList.remove('on'));
@@ -5553,6 +5797,12 @@ function pickPlan2(which, card){
   set('elProps', p.props);
   set('elPoses', p.poses);
   set('elColors', p.colors);
+  // ⭐ 元素 chip 要能点（重新填充后必须重新绑定）
+  // 换方案：元素全换了，之前关掉的作废
+  if (typeof EL_OFF !== 'undefined' && EL_OFF.size) EL_OFF.clear();
+  if (typeof elBindChips === 'function') setTimeout(elBindChips, 0);
+  // 元素换了，标记需要重排
+  if (typeof elMarkDirty === 'function' && EL_OFF.size) setTimeout(elMarkDirty, 0);
 
   // 分镜 tab 数量 + 生成
   genShots2(which);
