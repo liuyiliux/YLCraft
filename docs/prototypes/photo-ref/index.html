@@ -2150,6 +2150,69 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 .rc-ho-l{font-size:12.5px;color:var(--tx3);margin-top:3px}
 .rc-ft{display:flex;align-items:center;gap:10px;padding:14px 24px;
   border-top:1px solid var(--bd)}
+
+/* ===== 打印工作台 ===== */
+.pw{display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:18px;margin-bottom:18px}
+.pw-left,.pw-mid,.pw-right{background:var(--bgCard);border:1px solid var(--bd2);
+  border-radius:var(--radiusMD);padding:15px 17px}
+.pw-h{font-size:14px;color:var(--photo);font-weight:600;margin-bottom:10px}
+.pw-blocks{display:flex;flex-direction:column;gap:6px}
+.pw-bk{display:flex;align-items:flex-start;gap:9px;padding:9px 11px;border-radius:7px;
+  background:var(--bgInput);border:1px solid transparent;cursor:pointer;transition:.16s}
+.pw-bk:hover{border-color:var(--bd3)}
+.pw-bk.on{border-color:color-mix(in srgb,var(--photo) 34%,transparent);
+  background:color-mix(in srgb,var(--photo) 6%,var(--bgInput))}
+.pw-bk input{margin:3px 0 0;accent-color:var(--photo);flex-shrink:0}
+.pw-bn{font-size:14px;color:var(--tx1);font-weight:500;min-width:70px}
+.pw-bd{font-size:12px;color:var(--tx3);line-height:1.45;flex:1}
+.pw-tip{font-size:12px;color:var(--tx3);margin-top:9px;line-height:1.5}
+.pw-order{display:flex;flex-direction:column;gap:5px}
+.pw-o{display:flex;align-items:center;gap:8px;padding:8px 11px;border-radius:6px;
+  background:var(--bgInput)}
+.pw-on{width:19px;height:19px;border-radius:50%;background:var(--photo);color:#1a1205;
+  font-size:11px;font-family:var(--fm);display:flex;align-items:center;
+  justify-content:center;flex-shrink:0;font-weight:600}
+.pw-ot{flex:1;font-size:13.5px;color:var(--tx2)}
+.pw-om{font-size:12px;color:var(--tx3);background:none;border:none;cursor:pointer;
+  padding:1px 4px;font-family:inherit;transition:.16s}
+.pw-om:hover{color:var(--photo)}
+.pw-empty{font-size:13px;color:var(--tx3);padding:12px;text-align:center}
+.pw-layouts{display:flex;flex-direction:column;gap:6px}
+.pw-la{text-align:left;padding:9px 12px;border-radius:7px;background:var(--bgInput);
+  border:1px solid transparent;cursor:pointer;transition:.16s;font-family:inherit}
+.pw-la:hover{border-color:var(--bd3)}
+.pw-la.on{border-color:var(--photo);background:color-mix(in srgb,var(--photo) 7%,var(--bgInput))}
+.pw-ln{display:block;font-size:13.5px;color:var(--tx1);font-weight:500}
+.pw-ld{display:block;font-size:11.5px;color:var(--tx3);margin-top:1px}
+.pw-refs{display:flex;flex-direction:column;gap:5px}
+.pw-rf{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;
+  background:var(--bgInput);cursor:pointer;transition:.16s;border:1px solid transparent}
+.pw-rf:hover{border-color:var(--bd3)}
+.pw-rf.on{border-color:color-mix(in srgb,var(--photo) 30%,transparent);
+  background:color-mix(in srgb,var(--photo) 6%,var(--bgInput))}
+.pw-rbox{width:16px;height:16px;border:1.4px solid var(--bd3);border-radius:3px;
+  display:flex;align-items:center;justify-content:center;font-size:10px;
+  color:var(--photo);flex-shrink:0}
+.pw-rf.on .pw-rbox{background:var(--photo);border-color:var(--photo);color:#1a1205}
+.pw-ri{font-size:12.5px;color:var(--tx2);min-width:52px;flex-shrink:0}
+.pw-rs{font-size:11.5px;color:var(--tx3);flex:1;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.pw-rlayouts{display:flex;gap:6px;flex-wrap:wrap}
+.pw-rl{font-size:12px;padding:6px 11px;border-radius:6px;border:1px solid var(--bd2);
+  background:transparent;color:var(--tx3);cursor:pointer;transition:.16s;font-family:inherit}
+.pw-rl:hover{border-color:var(--bd3);color:var(--tx2)}
+.pw-rl.on{border-color:var(--photo);color:var(--photo);
+  background:color-mix(in srgb,var(--photo) 10%,transparent)}
+.pw-bar{display:flex;align-items:center;gap:10px;padding:13px 17px;
+  background:var(--bgCard);border:1px solid var(--bd2);border-radius:var(--radiusMD)}
+.pw-bar-l{font-size:13px;color:var(--tx2)}
+.pw-dot{color:var(--bd3);margin:0 5px}
+.pw-btn{font-size:13px;padding:7px 15px;border-radius:6px;border:1px solid var(--bd2);
+  background:transparent;color:var(--tx2);cursor:pointer;transition:.16s;font-family:inherit}
+.pw-btn:hover{border-color:var(--photo);color:var(--photo)}
+.pw-btn.pri{background:var(--photo);border-color:var(--photo);color:#1a1205;font-weight:600}
+.pw-btn.pri:hover{filter:brightness(1.1)}
+@media (max-width:1200px){ .pw{grid-template-columns:1fr} }
 </style>
 </head>
 <body data-t="deep">
@@ -2815,6 +2878,7 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
       <button class="pz-tab" onclick="pzTab(this,'kit')">必带<em>10</em></button>
       <button class="pz-tab" onclick="pzTab(this,'cam')">拍摄</button>
       <button class="pz-tab" onclick="pzTab(this,'handoff')">交接</button>
+      <button class="pz-tab" onclick="pzTab(this,'print')">打印<em>新</em></button>
       <button class="pz-tab" style="margin-left:auto;color:var(--tx3)" onclick="openCue()">＋ 录口令</button>
     </nav>
 
@@ -3237,6 +3301,57 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
           </div>
           <div class="ho-saved" id="hoSavedTag"></div>
         </div>
+      </div>
+    </section>
+
+
+    <!-- ===== Tab：打印 ===== -->
+    <section class="pz-pane" id="pz-print">
+      <div class="pz-lead">
+        <p class="pz-lead-t">打印工作台</p>
+        <p class="pz-lead-b">
+          打什么、按什么顺序、印成什么版式 —— <b>你自己拼</b>。
+          打完可以打印，也可以「另存为 PDF」。
+        </p>
+      </div>
+
+      <div class="pw">
+        <div class="pw-left">
+          <div class="pw-h">① 印哪些块</div>
+          <div class="pw-blocks" id="pwBlocks"></div>
+          <div class="pw-tip">勾上的会印出来。右边的顺序可以上下调。</div>
+        </div>
+
+        <div class="pw-mid">
+          <div class="pw-h">② 印出来的顺序</div>
+          <div class="pw-order" id="pwOrder"></div>
+          <div class="pw-h" style="margin-top:16px">③ 版式</div>
+          <div class="pw-layouts" id="pwLayouts"></div>
+        </div>
+
+        <div class="pw-right">
+          <div class="pw-h">④ 参考图（选要印的）</div>
+          <div class="pw-refs" id="pwRefs"></div>
+          <div class="pw-h" style="margin-top:16px">参考图版式</div>
+          <div class="pw-rlayouts">
+            <button class="pw-rl on" onclick="pwSetRefLayout(this,'grid')">九宫格</button>
+            <button class="pw-rl" onclick="pwSetRefLayout(this,'big')">大图 2/页</button>
+            <button class="pw-rl" onclick="pwSetRefLayout(this,'blank')">图+空白写</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="pw-bar">
+        <div class="pw-bar-l">
+          <span id="pwCount">已选 0 块</span>
+          <span class="pw-dot">·</span>
+          <span id="pwPageEst">约 1 页</span>
+        </div>
+        <div class="spacer"></div>
+        <button class="pw-btn" onclick="pwPreset('all')">全部打印</button>
+        <button class="pw-btn" onclick="pwPreset('onsite')">只要现场</button>
+        <button class="pw-btn" onclick="pwPreset('retouch')">只要后期</button>
+        <button class="pw-btn pri" onclick="pwDoPrint()">预览并打印</button>
       </div>
     </section>
 
@@ -5413,6 +5528,361 @@ function openRetouchFromWork(){
   fake('打开修图面板 · 修完的版本回来能看「修前 / 修后」');
 }
 
+
+/* ==========================================================================
+   ⭐ 2026-10-22 打印工作台
+   用户可以自己拼：印哪些块 / 什么顺序 / 什么版式 / 哪几张参考图。
+   ========================================================================== */
+
+const PW_BLOCKS = [
+  { k:'cover',  n:'封面',       d:'项目名 + 日期 + 客户',        on:true,  onsite:false, retouch:true  },
+  { k:'theme',  n:'这组要什么',  d:'一句话主题 + 元素清单',        on:true,  onsite:false, retouch:true  },
+  { k:'cond',   n:'拍摄条件',    d:'时段 / 光线 / 参数 / 天气',    on:true,  onsite:true,  retouch:true  },
+  { k:'shots',  n:'分镜表',     d:'每镜：景别 / 画面 / 口令 / 风险', on:true,  onsite:true,  retouch:false },
+  { k:'kit',    n:'必带清单',    d:'打勾方框，出门前清点',          on:true,  onsite:true,  retouch:false },
+  { k:'refs',   n:'参考图',     d:'选中的参考图 + 偷师点',          on:true,  onsite:true,  retouch:true  },
+  { k:'cues',   n:'口令卡',     d:'大字口令，现场照着念',           on:true,  onsite:true,  retouch:false },
+  { k:'order',  n:'修图顺序',    d:'五步，交给后期',                on:true,  onsite:false, retouch:true  }
+];
+
+const PW_LAYOUTS = [
+  { k:'compact', n:'紧凑',   d:'全挤一页，揣兜里' },
+  { k:'normal',  n:'舒展',   d:'每块一段，1-2 页' },
+  { k:'onepage', n:'一页一块', d:'每块单独 A4，能撕页分发' }
+];
+
+let pwLayout = 'normal';
+let pwRefLayout = 'grid';
+let pwRefSel = {};      /* refId -> true */
+let pwOrderArr = [];    /* 按顺序的 block key */
+
+/* 初始化顺序 = 默认顺序 */
+PZ_INIT_PW();
+
+function PZ_INIT_PW(){
+  if (!pwOrderArr.length) pwOrderArr = PW_BLOCKS.map(function(b){ return b.k; });
+  /* 默认全选前 6 张参考图 */
+  if (typeof ORDER !== 'undefined'){
+    ORDER.forEach(function(id, i){ if (i < 6) pwRefSel[id] = true; });
+  }
+}
+
+function pwBlockByKey(k){
+  return PW_BLOCKS.find(function(b){ return b.k === k; });
+}
+
+function pwRender(){
+  /* ① 块的勾选 */
+  const host = document.getElementById('pwBlocks');
+  if (host){
+    host.innerHTML = PW_BLOCKS.map(function(b){
+      return '<label class="pw-bk' + (b.on ? ' on' : '') + '">'
+        + '<input type="checkbox"' + (b.on ? ' checked' : '')
+        + ' onchange="pwToggle(\'' + b.k + '\',this.checked)">'
+        + '<span class="pw-bn">' + b.n + '</span>'
+        + '<span class="pw-bd">' + b.d + '</span>'
+        + '</label>';
+    }).join('');
+  }
+
+  /* ② 顺序 */
+  const ord = document.getElementById('pwOrder');
+  if (ord){
+    const picked = pwOrderArr.filter(function(k){ return pwBlockByKey(k).on; });
+    ord.innerHTML = picked.map(function(k, i){
+      const b = pwBlockByKey(k);
+      return '<div class="pw-o">'
+        + '<span class="pw-on">' + (i + 1) + '</span>'
+        + '<span class="pw-ot">' + b.n + '</span>'
+        + '<button class="pw-om" onclick="pwMove(\'' + k + '\',-1)"'
+        +   ' title="上移">↑</button>'
+        + '<button class="pw-om" onclick="pwMove(\'' + k + '\',1)"'
+        +   ' title="下移">↓</button>'
+        + '</div>';
+    }).join('') || '<div class="pw-empty">还没勾任何块</div>';
+  }
+
+  /* ③ 版式 */
+  const lay = document.getElementById('pwLayouts');
+  if (lay){
+    lay.innerHTML = PW_LAYOUTS.map(function(L){
+      return '<button class="pw-la' + (L.k === pwLayout ? ' on' : '') + '"'
+        + ' onclick="pwSetLayout(\'' + L.k + '\')">'
+        + '<span class="pw-ln">' + L.n + '</span>'
+        + '<span class="pw-ld">' + L.d + '</span></button>';
+    }).join('');
+  }
+
+  /* ④ 参考图 */
+  const refs = document.getElementById('pwRefs');
+  if (refs){
+    const ids = (typeof ORDER !== 'undefined') ? ORDER : [];
+    refs.innerHTML = ids.map(function(id, i){
+      const on = !!pwRefSel[id];
+      const steal = (typeof STEAL !== 'undefined' && STEAL[id]) ? STEAL[id] : '（还没写偷师点）';
+      return '<div class="pw-rf' + (on ? ' on' : '') + '" onclick="pwToggleRef(\'' + id + '\')">'
+        + '<span class="pw-rbox">' + (on ? '✓' : '') + '</span>'
+        + '<span class="pw-ri">第 ' + (i + 1) + ' 张</span>'
+        + '<span class="pw-rs">' + steal.slice(0, 28) + '</span>'
+        + '</div>';
+    }).join('');
+  }
+
+  /* 计数 */
+  const picked = pwOrderArr.filter(function(k){ return pwBlockByKey(k).on; });
+  const refN = Object.keys(pwRefSel).filter(function(k){ return pwRefSel[k]; }).length;
+  let pages = picked.length;
+  if (pwLayout === 'compact') pages = Math.max(1, Math.ceil(picked.length / 4));
+  if (picked.indexOf('refs') >= 0 && refN){
+    pages += pwRefLayout === 'grid' ? Math.ceil(refN / 9) : Math.ceil(refN / 2);
+  }
+  const cnt = document.getElementById('pwCount');
+  const est = document.getElementById('pwPageEst');
+  if (cnt) cnt.textContent = '已选 ' + picked.length + ' 块 · ' + refN + ' 张参考图';
+  if (est) est.textContent = '约 ' + Math.max(1, pages) + ' 页';
+}
+
+function pwToggle(k, on){
+  const b = pwBlockByKey(k);
+  if (b) b.on = !!on;
+  pwRender();
+}
+function pwSetLayout(k){ pwLayout = k; pwRender(); }
+function pwSetRefLayout(el, k){
+  pwRefLayout = k;
+  el.parentElement.querySelectorAll('.pw-rl').forEach(function(x){ x.classList.remove('on'); });
+  el.classList.add('on');
+  pwRender();
+}
+function pwToggleRef(id){
+  pwRefSel[id] = !pwRefSel[id];
+  pwRender();
+}
+function pwMove(k, dir){
+  const i = pwOrderArr.indexOf(k);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= pwOrderArr.length) return;
+  const t = pwOrderArr[i];
+  pwOrderArr[i] = pwOrderArr[j];
+  pwOrderArr[j] = t;
+  pwRender();
+}
+
+/* 预设 */
+function pwPreset(which){
+  PW_BLOCKS.forEach(function(b){
+    if (which === 'all') b.on = true;
+    else if (which === 'onsite') b.on = b.onsite;
+    else if (which === 'retouch') b.on = b.retouch;
+  });
+  pwRender();
+  fake(which === 'all' ? '全部勾上了'
+    : which === 'onsite' ? '只留现场要用的'
+    : '只留交给后期的');
+}
+
+/* ============ 生成打印 ============ */
+function pwDoPrint(){
+  const picked = pwOrderArr.filter(function(k){ return pwBlockByKey(k).on; });
+  if (!picked.length){ fake('先勾至少一块'); return; }
+
+  const esc = function(s){
+    return String(s == null ? '' : s).replace(/[&<>]/g, function(m){
+      return { '&':'&amp;', '<':'&lt;', '>':'&gt;' }[m];
+    });
+  };
+  const txt = function(el){ return el ? el.textContent.trim().replace(/\s+/g, ' ') : ''; };
+  const compact = (pwLayout === 'compact');
+  const onepage = (pwLayout === 'onepage');
+
+  const css = [];
+  css.push('@page{size:A4;margin:' + (compact ? '8mm' : '15mm') + '}');
+  css.push('*{box-sizing:border-box}');
+  css.push('body{font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;'
+    + 'color:#111;line-height:1.6;font-size:' + (compact ? '9.5px' : '12.5px') + ';margin:0}');
+  css.push('h1{font-size:' + (compact ? '16px' : '22px') + ';margin:0 0 2px}');
+  css.push('.meta{font-size:' + (compact ? '8.5px' : '11px') + ';color:#777;margin-bottom:10px}');
+  css.push('section{margin-bottom:' + (compact ? '6px' : '14px') + ';'
+    + (onepage ? 'page-break-after:always;' : 'page-break-inside:avoid;') + '}');
+  css.push('section:last-child{page-break-after:auto}');
+  css.push('h2{font-size:' + (compact ? '10px' : '12px') + ';color:#b45309;margin:0 0 4px;'
+    + 'letter-spacing:.04em;text-transform:uppercase;border-bottom:1px solid #e5e5e5;padding-bottom:3px}');
+  css.push('.lead{font-size:' + (compact ? '11px' : '15px') + ';font-weight:600;margin-bottom:4px}');
+  css.push('ul{margin:0;padding-left:16px}li{margin-bottom:1px}');
+  css.push('.kv{display:grid;grid-template-columns:60px 1fr;gap:1px 8px}');
+  css.push('.kv .k{color:#888}');
+  css.push('.shot{border-left:2px solid #f0b400;padding-left:8px;margin-bottom:'
+    + (compact ? '4px' : '8px') + ';page-break-inside:avoid}');
+  css.push('.shot .sh{font-weight:600}');
+  css.push('.shot .sr{color:#666}');
+  css.push('.chk{display:inline-block;width:11px;height:11px;border:1.2px solid #555;'
+    + 'margin-right:5px;vertical-align:-1px}');
+  css.push('.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:'
+    + (compact ? '4px' : '8px') + '}');
+  css.push('.refimg{aspect-ratio:4/3;background:#eee;border:1px solid #ddd;'
+    + 'display:flex;align-items:center;justify-content:center;color:#aaa;font-size:9px}');
+  css.push('.refcap{font-size:' + (compact ? '7.5px' : '9.5px') + ';color:#444;margin-top:2px;line-height:1.35}');
+  css.push('.bigref{display:grid;grid-template-columns:1fr 1fr;gap:10px}');
+  css.push('.cue-b{font-size:' + (compact ? '13px' : '18px') + ';font-weight:600;'
+    + 'margin-bottom:5px;page-break-inside:avoid}');
+  css.push('.ord{counter-reset:o}.ord div{counter-increment:o;margin-bottom:1px}');
+  css.push('.ord div::before{content:counter(o) ". ";color:#b45309;font-weight:600}');
+  css.push('.note{font-size:9px;color:#888;border-top:1px dashed #ccc;padding-top:5px;margin-top:8px}');
+
+  const pzEl = document.querySelector('.pz-title');
+  const projName = pzEl ? pzEl.textContent : '拍摄项目';
+  const todayStr = new Date().toLocaleDateString('zh-CN', {
+    year:'numeric', month:'2-digit', day:'2-digit'
+  });
+
+  const parts = [];
+  parts.push('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">');
+  parts.push('<title>' + esc(projName) + ' · 打印</title>');
+  parts.push('<style>' + css.join('') + '</style></head><body>');
+
+  /* 按顺序生成 */
+  picked.forEach(function(k){
+    if (k === 'cover'){
+      parts.push('<section><h1>' + esc(projName) + '</h1>');
+      parts.push('<div class="meta">' + todayStr + ' · YLCraft</div>');
+      const h = (typeof collectHandoff === 'function') ? collectHandoff() : {};
+      if (h.what) parts.push('<div class="lead">' + esc(h.what) + '</div>');
+      parts.push('</section>');
+    }
+    else if (k === 'theme'){
+      parts.push('<section><h2>这组要什么</h2>');
+      const ex = document.querySelector('.ex-ta');
+      if (ex && ex.value) parts.push('<div class="lead">' + esc(ex.value.trim()) + '</div>');
+      /* 元素清单 */
+      const chips = Array.from(document.querySelectorAll('#pz-els .pz-chip:not(.off)'))
+        .map(function(x){ return txt(x); }).filter(Boolean);
+      if (chips.length){
+        parts.push('<ul>' + chips.map(function(x){ return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>');
+      }
+      parts.push('</section>');
+    }
+    else if (k === 'cond'){
+      const h = (typeof collectHandoff === 'function') ? collectHandoff() : {};
+      parts.push('<section><h2>拍的时候什么条件</h2>');
+      if (h.cond) parts.push('<div>' + esc(h.cond) + '</div>');
+      parts.push('</section>');
+    }
+    else if (k === 'shots'){
+      parts.push('<section><h2>分镜</h2>');
+      const cur = (typeof currentPlan !== 'undefined') ? currentPlan : null;
+      const recs = (cur && typeof SHOT_RECIPES !== 'undefined' && SHOT_RECIPES[cur]) ? SHOT_RECIPES[cur] : [];
+      if (!recs.length){
+        parts.push('<div class="sr">还没选方案</div>');
+      } else {
+        recs.forEach(function(r, i){
+          parts.push('<div class="shot">');
+          parts.push('<div class="sh">镜 ' + (i+1) + ' · ' + esc(r.frame || '') + '</div>');
+          parts.push('<div>' + esc(r.elem || '') + ' · ' + esc(r.pose || '') + '</div>');
+          if (r.light) parts.push('<div class="sr">光：' + esc(r.light) + '</div>');
+          if (r.take) parts.push('<div class="sr">怎么按：' + esc(r.take) + '</div>');
+          if (r.risk) parts.push('<div class="sr">⚠ ' + esc(r.risk) + '</div>');
+          parts.push('</div>');
+        });
+      }
+      parts.push('</section>');
+    }
+    else if (k === 'kit'){
+      parts.push('<section><h2>必带清单</h2>');
+      const items = Array.from(document.querySelectorAll('.pz-ki')).map(function(ki){
+        const sp = ki.querySelector('span');
+        const em = ki.querySelector('em');
+        return { t: txt(sp), e: em ? txt(em) : '', must: ki.classList.contains('must') };
+      }).filter(function(x){ return x.t; });
+      const groups = {};
+      document.querySelectorAll('.pz-kg').forEach(function(g, gi){
+        const h = txt(g.querySelector('.pz-kg-h'));
+        const list = Array.from(g.querySelectorAll('.pz-ki span')).map(txt);
+        if (!groups[h]) groups[h] = [];
+        groups[h] = groups[h].concat(list);
+      });
+      Object.keys(groups).forEach(function(gname){
+        parts.push('<div style="margin-bottom:5px"><b>' + esc(gname) + '</b><ul>');
+        groups[gname].forEach(function(t){
+          parts.push('<li><span class="chk"></span>' + esc(t) + '</li>');
+        });
+        parts.push('</ul></div>');
+      });
+      parts.push('</section>');
+    }
+    else if (k === 'refs'){
+      const ids = Object.keys(pwRefSel).filter(function(id){ return pwRefSel[id]; });
+      if (!ids.length) return;
+      parts.push('<section><h2>参考图</h2>');
+      if (pwRefLayout === 'grid'){
+        parts.push('<div class="grid">');
+        ids.forEach(function(id, i){
+          parts.push('<div><div class="refimg">图 ' + (ORDER.indexOf(id)+1) + '</div>');
+          parts.push('<div class="refcap">' + esc((STEAL[id]||'（还没写偷师点）')) + '</div></div>');
+        });
+        parts.push('</div>');
+      } else if (pwRefLayout === 'big'){
+        parts.push('<div class="bigref">');
+        ids.forEach(function(id){
+          parts.push('<div><div class="refimg" style="aspect-ratio:3/2">图 ' + (ORDER.indexOf(id)+1) + '</div>');
+          parts.push('<div class="refcap">' + esc((STEAL[id]||'（还没写偷师点）')) + '</div></div>');
+        });
+        parts.push('</div>');
+      } else {
+        ids.forEach(function(id){
+          parts.push('<div style="display:flex;gap:10px;margin-bottom:8px;page-break-inside:avoid">');
+          parts.push('<div style="flex:1"><div class="refimg">图 ' + (ORDER.indexOf(id)+1) + '</div></div>');
+          parts.push('<div style="flex:1;border-bottom:1px solid #ddd">'
+            + '<div class="refcap">' + esc((STEAL[id]||'')) + '</div>'
+            + '<div style="height:52px;border-bottom:1px solid #ddd;margin-top:4px"></div></div>');
+          parts.push('</div>');
+        });
+      }
+      parts.push('</section>');
+    }
+    else if (k === 'cues'){
+      parts.push('<section><h2>现场可以这么说</h2>');
+      const cues = Array.from(document.querySelectorAll('#preflight .cue'))
+        .slice(0, 10).map(txt).filter(Boolean);
+      if (cues.length){
+        cues.forEach(function(x){ parts.push('<div class="cue-b">' + esc(x.slice(0, 40)) + '</div>'); });
+      } else {
+        parts.push('<div class="sr">打开「出门前检查」后这里会有口令</div>');
+      }
+      parts.push('</section>');
+    }
+    else if (k === 'order'){
+      parts.push('<section><h2>修图顺序</h2><div class="ord">');
+      const steps = ['修瑕疵 —— 痘 / 纹 / 不要的东西先清干净',
+                     '限动态范围 —— 曲线保留最亮最黑',
+                     '磨皮 —— 高低频，不能破坏光',
+                     '肤色调整 —— 别偏蓝偏绿',
+                     '调色 / 风格化 —— 最后做'];
+      steps.forEach(function(x){ parts.push('<div>' + esc(x) + '</div>'); });
+      parts.push('</div></section>');
+    }
+  });
+
+  parts.push('<div class="note">YLCraft · ' + todayStr
+    + ' · 这份是按你勾的块和顺序生成的</div>');
+  parts.push('</body></html>');
+
+  if (typeof printToPaper === 'function'){
+    printToPaper(parts.join(''));
+    fake('已打开打印窗口 · 可以打印，也可以「另存为 PDF」');
+  } else {
+    fake('打印功能没加载');
+  }
+}
+
+/* Tab 切到打印时渲染 */
+(function(){
+  var __orig = pzTab;
+  pzTab = function(el, key){
+    __orig(el, key);
+    if (key === 'print'){ PZ_INIT_PW(); pwRender(); }
+  };
+})();
+
 function pickWho(el, key){
   document.querySelectorAll('.who-btn').forEach(x=>x.classList.remove('on'));
   el.classList.add('on');
@@ -6147,7 +6617,7 @@ if (document.readyState !== 'loading') sgRender();
 
 function pzTabClicks(key){
   const tabs = document.querySelectorAll('.pz-tab');
-  const map = {sugg:0, plan:1, els:2, shots:3, kit:4, cam:5, handoff:6};
+  const map = {sugg:0, plan:1, els:2, shots:3, kit:4, cam:5, handoff:6, print:7};
   pzTab(tabs[map[key]], key);
 }
 function toggleNote(btn){
