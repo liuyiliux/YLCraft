@@ -82,6 +82,48 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 .pm-k{font-size:12px;color:var(--tx3);margin-bottom:4px}
 .pm-v{font-size:19px;font-family:var(--fm);color:var(--pri);font-weight:600}
 
+/* 曝光面板：小直方图 + -3~+3EV 指示条（原型：静态示例数据） */
+.expo{padding:14px 18px 16px;border-bottom:1px solid var(--bd);
+  background:color-mix(in srgb,var(--photo) 4%,var(--card))}
+.expo-hd{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.expo-t{font-size:13px;color:var(--tx3);font-family:var(--fm);
+  text-transform:uppercase;letter-spacing:.06em}
+.expo-spacer{flex:1}
+.expo-tag{font-size:12px;padding:2px 8px;border-radius:6px;
+  background:var(--elev);color:var(--tx2);border:1px solid var(--bd2);
+  font-family:var(--fm)}
+.expo-tag.hot{color:var(--warn);
+  border-color:color-mix(in srgb,var(--warn) 45%,transparent);
+  background:color-mix(in srgb,var(--warn) 14%,transparent)}
+.expo-tag.ok{color:var(--ok);
+  border-color:color-mix(in srgb,var(--ok) 45%,transparent);
+  background:color-mix(in srgb,var(--ok) 14%,transparent)}
+.hist{display:flex;align-items:flex-end;gap:1.5px;height:44px;
+  padding:0 2px;margin-bottom:10px;border-bottom:1px solid var(--bd2)}
+.hist i{flex:1;border-radius:1px 1px 0 0;background:var(--tx3);opacity:.85}
+.ev{position:relative;height:28px;margin:0 2px}
+.ev-track{position:absolute;left:0;right:0;top:8px;height:8px;border-radius:4px;
+  background:linear-gradient(90deg,
+    color-mix(in srgb,var(--pri) 60%,var(--elev)),
+    var(--ok) 50%,
+    color-mix(in srgb,var(--err) 75%,var(--elev)))}
+.ev-mid{position:absolute;left:50%;top:4px;width:1px;height:16px;
+  background:var(--bd2)}
+.ev-needle{position:absolute;top:3px;width:4px;height:19px;border-radius:2px;
+  background:var(--photo);
+  box-shadow:0 0 8px color-mix(in srgb,var(--photo) 70%,transparent);
+  transform:translateX(-50%)}
+.ev-ticks{display:flex;justify-content:space-between;padding:0 2px;
+  font-size:12px;color:var(--tx3);font-family:var(--fm)}
+.ev-note{font-size:12px;color:var(--tx3);margin-top:9px;font-family:var(--fm)}
+.tip{margin-top:12px;padding:11px 13px;border-radius:10px;
+  background:color-mix(in srgb,var(--photo) 10%,var(--card));
+  border:1px solid color-mix(in srgb,var(--photo) 30%,transparent)}
+.tip-k{font-size:12px;color:var(--photo);font-family:var(--fm);
+  letter-spacing:.06em;margin-bottom:5px}
+.tip-x{font-size:14px;color:var(--tx1);line-height:1.6}
+.tip-x b{color:var(--photo)}
+
 /* 信息行 */
 .rows{padding:4px 0}
 .row{display:flex;gap:12px;padding:13px 18px;border-bottom:1px solid var(--bd);
@@ -296,7 +338,8 @@ const SHOTS = [
     tags:['逆光','全身','侧脸'],
     cue:'站定别动，我数三下',
     cueHit:'对小林 · 5/6 次有效',
-    cam:{ shutter:'1/2000', aperture:'f/1.8', iso:'100' },
+    cam:{ shutter:'1/2000', aperture:'f/1.8', iso:'100',
+          lens:'85mm', wb:'5200K', light:'硬光', ev:-0.7 },
     what:'桥洞做前景框 · 站定 · 侧脸',
     why:'逆光时最有层次的是轮廓，站定不动才能等到光穿过来',
     take:'连拍 8–10 张，等风',
@@ -307,7 +350,8 @@ const SHOTS = [
     tags:['逆光','特写','不看镜头'],
     cue:'你就当我不在，做你自己的事',
     cueHit:'对小林 · 5/6 次有效',
-    cam:{ shutter:'1/1500', aperture:'f/1.4', iso:'200' },
+    cam:{ shutter:'1/1500', aperture:'f/1.4', iso:'200',
+          lens:'135mm', wb:'5000K', light:'混合', ev:-0.3 },
     what:'风吹动头发 · 不看镜头 · 微侧',
     why:'风吹动头发，逆光会把发丝点亮——这是这组最出彩的一镜',
     take:'连拍抓，头发落下的一瞬',
@@ -318,7 +362,8 @@ const SHOTS = [
     tags:['蓝调','半身','回头'],
     cue:'往前走两步，我叫你时回头',
     cueHit:'通用口令',
-    cam:{ shutter:'1/60', aperture:'f/2.8', iso:'800' },
+    cam:{ shutter:'1/60', aperture:'f/2.8', iso:'800',
+          lens:'35mm', wb:'4000K', light:'柔光', ev:-1.0 },
     what:'远处塔 + 天空渐层 · 回头',
     why:'日落后 10 分钟天空渐变，塔做背景，人物轮廓变剪影',
     take:'单张精拍，手要稳',
@@ -329,6 +374,82 @@ const SHOTS = [
 let cur = 0;
 const state = { done:[], skip:[] };
 let black = false;
+
+// ===== 曝光面板 =====
+// 原型：直方图 / EV 是静态示例，真实现要接相机或相册
+function histFor(ev){
+  const n = 40, raw = [];
+  for(let i=0;i<n;i++){
+    const x = i/(n-1);
+    // 基础影调分布：暗部 + 中间调两个峰，再按曝光倾向整体位移
+    let v = Math.exp(-Math.pow((x-0.34)/0.24,2))
+          + 0.6*Math.exp(-Math.pow((x-0.7)/0.16,2)) + 0.1;
+    v *= 0.72 + 0.55*Math.exp(-Math.pow((x-(0.5+ev*0.1))/0.22,2));
+    raw.push(v);
+  }
+  const mx = Math.max(...raw);
+  return raw.map(v=>Math.max(6, Math.round(92*v/mx)));
+}
+
+function toneLevel(ev){
+  if(ev <= -0.7) return { t:'欠曝风险', c:'hot' };
+  if(ev >=  0.7) return { t:'过曝风险', c:'hot' };
+  return { t:'曝光正常', c:'ok' };
+}
+
+// 按当前参数算一句现场策略（规则简单，够用就行）
+function exposureTip(s){
+  const c = s.cam, tags = s.tags || [];
+  const ap = parseFloat(c.aperture.replace('f/',''));
+  const shutterFast = (()=>{
+    const m = c.shutter.match(/1\/(\d+)/);
+    return m ? parseInt(m[1],10) >= 1000 : false;
+  })();
+  const iso = parseInt(c.iso,10) || 0;
+  const close = /特写|近景/.test(s.frame);
+  const closeWord = s.frame.includes('特写') ? '特写' : '近景';
+
+  if(close && ap <= 1.8)
+    return `${c.aperture} 大光圈 + ${closeWord} → 眼睛对上焦后 <b>鼻尖会虚</b>，收一档到 f/2.8 或退半步`;
+  if(tags.includes('逆光') && shutterFast)
+    return `逆光 + 快门 ${c.shutter} → 脸容易欠曝，<b>先提亮 0.7EV</b> 或补反光板，别只保轮廓`;
+  if(tags.includes('蓝调') && iso >= 800)
+    return `蓝调 + ISO ${c.iso} → 光掉得快，<b>先抬 ISO 再放慢快门</b>，1/60 以下要贴稳`;
+  if(iso >= 800)
+    return `ISO ${c.iso} 偏高 → 亮部容易出噪，<b>宁可放慢一档快门</b>`;
+  return `当前参数偏保守，<b>按测光直接拍</b>，盯住直方图右端别溢出`;
+}
+
+function expoPanel(s){
+  const ev = s.cam.ev, lv = toneLevel(ev);
+  const pct = Math.max(5, Math.min(95, 50 + (ev/3)*45));
+  const bars = histFor(ev)
+    .map(h=>`<i style="height:${h}%"></i>`).join('');
+  return `
+      <div class="expo">
+        <div class="expo-hd">
+          <span class="expo-t">曝光</span>
+          <span class="expo-tag ${lv.c}">${lv.t} · ${ev>0?'+':''}${ev.toFixed(1)}EV</span>
+          <span class="expo-spacer"></span>
+          <span class="expo-tag">示例数据</span>
+        </div>
+        <div class="hist" aria-label="曝光直方图示例">${bars}</div>
+        <div class="ev">
+          <div class="ev-track"></div>
+          <div class="ev-mid"></div>
+          <div class="ev-needle" style="left:${pct}%"></div>
+        </div>
+        <div class="ev-ticks">
+          <span>-3</span><span>-2</span><span>-1</span><span>0</span>
+          <span>+1</span><span>+2</span><span>+3</span>
+        </div>
+        <div class="ev-note">示例数据 · 真实现要接相机/相册</div>
+        <div class="tip">
+          <div class="tip-k">曝光策略</div>
+          <div class="tip-x">${exposureTip(s)}</div>
+        </div>
+      </div>`;
+}
 
 function render(){
   const s = SHOTS[cur];
@@ -354,7 +475,12 @@ function render(){
         <div class="pm"><div class="pm-k">快门</div><div class="pm-v">${s.cam.shutter}</div></div>
         <div class="pm"><div class="pm-k">光圈</div><div class="pm-v">${s.cam.aperture}</div></div>
         <div class="pm"><div class="pm-k">ISO</div><div class="pm-v">${s.cam.iso}</div></div>
+        <div class="pm"><div class="pm-k">焦段</div><div class="pm-v">${s.cam.lens}</div></div>
+        <div class="pm"><div class="pm-k">白平衡</div><div class="pm-v">${s.cam.wb}</div></div>
+        <div class="pm"><div class="pm-k">光质</div><div class="pm-v">${s.cam.light}</div></div>
       </div>
+
+      ${expoPanel(s)}
 
       <div class="rows">
         <div class="row"><span class="rk">景别</span><span class="rv">${s.frame}</span></div>
