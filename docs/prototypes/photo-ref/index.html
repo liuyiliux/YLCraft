@@ -5697,6 +5697,8 @@ function pwDoPrint(){
 
   const css = [];
   css.push('@page{size:A4;margin:' + (compact ? '8mm' : '15mm') + '}');
+  /* ⭐ 打印时去掉浏览器自带的页眉页脚（URL/日期/页码会重复）*/
+  css.push('@page{margin-top:' + (compact ? '10mm' : '16mm') + '}');
   css.push('*{box-sizing:border-box}');
   css.push('body{font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;'
     + 'color:#111;line-height:1.6;font-size:' + (compact ? '9.5px' : '12.5px') + ';margin:0}');
@@ -5728,6 +5730,17 @@ function pwDoPrint(){
   css.push('.ord{counter-reset:o}.ord div{counter-increment:o;margin-bottom:1px}');
   css.push('.ord div::before{content:counter(o) ". ";color:#b45309;font-weight:600}');
   css.push('.note{font-size:9px;color:#888;border-top:1px dashed #ccc;padding-top:5px;margin-top:8px}');
+  /* ⭐ 元素 / 必带：多列网格，省纸 */
+  css.push('.elgrid,.kg{display:grid;grid-template-columns:repeat('
+    + (compact ? '4' : '3') + ',1fr);gap:' + (compact ? '4px 8px' : '7px 12px') + '}');
+  css.push('.elg,.kg{margin-bottom:' + (compact ? '3px' : '6px') + ';break-inside:avoid}');
+  css.push('.elgt,.kgt{font-size:' + (compact ? '8px' : '10px') + ';color:#b45309;'
+    + 'font-weight:600;margin-bottom:2px}');
+  css.push('.elgi,.kgi{display:flex;flex-wrap:wrap;gap:3px}');
+  css.push('.elchip,.kchip{display:inline-block;font-size:' + (compact ? '8px' : '10px') + ';'
+    + 'border:1px solid #ccc;border-radius:8px;padding:0 6px;line-height:1.6;'
+    + 'color:#333;white-space:nowrap}');
+  css.push('.kchip .chk{width:8px;height:8px;margin-right:3px;vertical-align:0}');
 
   const pzEl = document.querySelector('.pz-title');
   const projName = pzEl ? pzEl.textContent : '拍摄项目';
@@ -5753,11 +5766,34 @@ function pwDoPrint(){
       parts.push('<section><h2>这组要什么</h2>');
       const ex = document.querySelector('.ex-ta');
       if (ex && ex.value) parts.push('<div class="lead">' + esc(ex.value.trim()) + '</div>');
-      /* 元素清单 */
-      const chips = Array.from(document.querySelectorAll('#pz-els .pz-chip:not(.off)'))
-        .map(function(x){ return txt(x); }).filter(Boolean);
-      if (chips.length){
-        parts.push('<ul>' + chips.map(function(x){ return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>');
+
+      /* ⭐ 元素按组分类，多列排，过滤掉「等选定方案」和「避开xx」这类非元素 */
+      var groups = [];
+      document.querySelectorAll('#pz-els .pz-card').forEach(function(card){
+        var gn = txt(card.querySelector('.pz-card-n'));
+        if (!gn) return;
+        var items = Array.from(card.querySelectorAll('.pz-chip'))
+          .filter(function(x){ return !x.classList.contains('off') && !x.classList.contains('none'); })
+          .map(function(x){ return txt(x); })
+          .filter(function(t){
+            if (!t) return false;
+            if (t === '等选定方案' || t === '选光位') return false;
+            if (t.indexOf('避开') === 0) return false;   /* 「避开黄绿」是提醒不是元素 */
+            if (t.indexOf('还没') === 0) return false;
+            return true;
+          });
+        if (gn && items.length) groups.push({ n: gn, items: items });
+      });
+
+      if (groups.length){
+        parts.push('<div class="elgrid">');
+        groups.forEach(function(g){
+          parts.push('<div class="elg"><div class="elgt">' + esc(g.n) + '</div>'
+            + '<div class="elgi">'
+            + g.items.map(function(t){ return '<span class="elchip">' + esc(t) + '</span>'; }).join('')
+            + '</div></div>');
+        });
+        parts.push('</div>');
       }
       parts.push('</section>');
     }
@@ -5769,10 +5805,11 @@ function pwDoPrint(){
     }
     else if (k === 'shots'){
       parts.push('<section><h2>分镜</h2>');
-      const cur = (typeof currentPlan !== 'undefined') ? currentPlan : null;
-      const recs = (cur && typeof SHOT_RECIPES !== 'undefined' && SHOT_RECIPES[cur]) ? SHOT_RECIPES[cur] : [];
+      /* ⭐ 没选方案就用 A（不然打印出来是空的）*/
+      var cur = (typeof currentPlan !== 'undefined' && currentPlan) ? currentPlan : 'A';
+      var recs = (typeof SHOT_RECIPES !== 'undefined' && SHOT_RECIPES[cur]) ? SHOT_RECIPES[cur] : [];
       if (!recs.length){
-        parts.push('<div class="sr">还没选方案</div>');
+        parts.push('<div class="sr">还没有分镜内容</div>');
       } else {
         recs.forEach(function(r, i){
           parts.push('<div class="shot">');
@@ -5801,11 +5838,11 @@ function pwDoPrint(){
         groups[h] = groups[h].concat(list);
       });
       Object.keys(groups).forEach(function(gname){
-        parts.push('<div style="margin-bottom:5px"><b>' + esc(gname) + '</b><ul>');
+        parts.push('<div class="kg"><div class="kgt">' + esc(gname) + '</div><div class="kgi">');
         groups[gname].forEach(function(t){
-          parts.push('<li><span class="chk"></span>' + esc(t) + '</li>');
+          parts.push('<span class="kchip"><span class="chk"></span>' + esc(t) + '</span>');
         });
-        parts.push('</ul></div>');
+        parts.push('</div></div>');
       });
       parts.push('</section>');
     }
