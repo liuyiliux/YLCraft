@@ -118,7 +118,8 @@ function leComposeScalars(){
     saturation: LOCAL_ADJ.saturation, temp: LOCAL_ADJ.temp, tint: LOCAL_ADJ.tint,
     highlights: LOCAL_ADJ.highlights, shadows: LOCAL_ADJ.shadows, clarity: LOCAL_ADJ.clarity,
     /* ⭐ 2026-10-22：细节也要带上，否则 leFilterCSS 里判断 undefined 永远 false */
-    sharpen: LOCAL_ADJ.sharpen || 0, denoise: LOCAL_ADJ.denoise || 0
+    sharpen: LOCAL_ADJ.sharpen || 0, denoise: LOCAL_ADJ.denoise || 0,
+    vignette: LOCAL_ADJ.vignette || 0, grain: LOCAL_ADJ.grain || 0
   };
   LE_LAYERS.forEach(function(L){
     if (!L.on) return;
@@ -358,7 +359,10 @@ function leRenderFx(){
   LE_LAYERS.forEach(function(L){
     if (!L.on) return;
     if (!L.region || L.region === '全图') return;
-    if (L.region === '画笔'){ skipped++; return; }   // 画笔还没做
+    if (L.region === '画笔'){
+      if (!LE_BRUSH_MASK){ skipped++; return; }
+      /* 有画笔遮罩就往下走，末尾用遮罩图 */
+    }
 
     const m = leMaskCSS(L.region);
     if (!m.mask && !m.clip){ skipped++; return; }
@@ -379,9 +383,17 @@ function leRenderFx(){
     if (p.highlights || p.shadows || p.clarity) parts.push('url(#lf_' + L.id + ')');
     const col = leLayerColorFilter(L);
     if (col) parts.push(col);
+    if (L.fx) parts.push(L.fx);      /* 重绘层的视觉差异 */
     fx.style.filter = parts.join(' ') || 'none';
 
-    if (m.mask){ fx.style.webkitMaskImage = m.mask; fx.style.maskImage = m.mask; }
+    if (L.region === '画笔' && LE_BRUSH_MASK){
+      fx.style.webkitMaskImage = 'url(' + LE_BRUSH_MASK + ')';
+      fx.style.maskImage = 'url(' + LE_BRUSH_MASK + ')';
+      fx.style.maskSize = '100% 100%';
+      fx.style.webkitMaskSize = '100% 100%';
+    } else if (m.mask){
+      fx.style.webkitMaskImage = m.mask; fx.style.maskImage = m.mask;
+    }
     if (m.clip) fx.style.clipPath = m.clip;
 
     img.appendChild(fx);
@@ -590,6 +602,8 @@ function leBrushDot(e){
   const g = ctx.createRadialGradient(x, y, rad * 0.35, x, y, rad);
   g.addColorStop(0, 'rgba(0,0,0,1)');
   g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.globalCompositeOperation = (typeof LE_BRUSH_ERASE !== 'undefined' && LE_BRUSH_ERASE)
+    ? 'destination-out' : 'source-over';
   ctx.fillStyle = g;
   ctx.beginPath();
   ctx.arc(x, y, rad, 0, Math.PI * 2);
@@ -613,7 +627,508 @@ function leBrushClear(){
   toast('画笔已清空');
 }
 
+
+/* ==========================================================================
+   ⭐ 导出（2026-10-22 加）
+   原型里之前完全没有导出。这里做真的：
+   把当前所有参数（基础 + 全图图层 + 区域图层）合成到 canvas，再下载。
+   ========================================================================== */
+function leBuildPixels(){
+  /* 取「底图」像素：优先真实图片，否则用演示图 */
+  const W = 720, H = 960;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+
+  const img = document.getElementById('leImg');
+  const bg = img ? getComputedStyle(img).backgroundImage : '';
+  const m = bg && bg.match(/url\(["']?(.+?)["']?\)/);
+  if (m && m[1] && m[1] !== 'none'){
+    return new Promise(function(resolve){
+      const im = new Image();
+      im.crossOrigin = 'anonymous';
+      im.onload = function(){
+        const r = Math.min(W / im.width, H / im.height);
+        const w = im.width * r, h = im.height * r;
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, W, H);
+        ctx.drawImage(im, (W - w) / 2, (H - h) / 2, w, h);
+        resolve({ canvas: cv, ctx: ctx, W: W, H: H });
+      };
+      im.onerror = function(){ resolve(leDemoPixels(W, H)); };
+      im.src = m[1];
+    });
+  }
+  return Promise.resolve(leDemoPixels(W, H));
+}
+function leDemoPixels(W, H){
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  const g = ctx.createLinearGradient(0, 0, W, H);
+  g.addColorStop(0, '#2b2440'); g.addColorStop(1, '#141020');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  const fg = ctx.createLinearGradient(0, H * 0.18, 0, H * 0.82);
+  fg.addColorStop(0, '#e8d5bd'); fg.addColorStop(1, '#a8825c');
+  ctx.fillStyle = fg;
+  ctx.beginPath();
+  ctx.ellipse(W * 0.5, H * 0.5, W * 0.10, H * 0.34, 0, 0, Math.PI * 2);
+  ctx.fill();
+  return { canvas: cv, ctx: ctx, W: W, H: H };
+}
+
+/* 一整套参数作用到像素上（影调 + 色阶 + 曲线 + 颜色）*/
+function lePixelApply(px, p, common){
+  const ex = 1 + (p.exposure || 0) * 0.35;
+  const ct = p.contrast || 1;
+  const sa = p.saturation || 1;
+  const t  = p.tint || 0;
+  const lut = leLayerLut(p, 64);
+  const base = common || {};
+  const L = base.levels;
+  const curve = base.curve;
+
+  for (let i = 0; i < px.length; i += 4){
+    let r = px[i] / 255, g = px[i+1] / 255, b = px[i+2] / 255;
+
+    // 曝光
+    r *= ex; g *= ex; b *= ex;
+
+    // 对比（绕 0.5）
+    r = (r - 0.5) * ct + 0.5;
+    g = (g - 0.5) * ct + 0.5;
+    b = (b - 0.5) * ct + 0.5;
+
+    // 影调 LUT（按亮度查，保色相）
+    const lum = Math.max(0, Math.min(1, r * 0.299 + g * 0.587 + b * 0.114));
+    const li = Math.min(63, Math.round(lum * 63));
+    const nl = lut[li];
+    const ratio = lum > 0.001 ? nl / lum : 1;
+    r *= ratio; g *= ratio; b *= ratio;
+
+    // 色阶 + 曲线
+    if (L){
+      const span = Math.max(1e-6, L.white - L.black);
+      const lev = function(v){
+        let x = (v - L.black) / span;
+        x = Math.max(0, Math.min(1, x));
+        if (L.gamma !== 1) x = Math.pow(x, 1 / L.gamma);
+        return x;
+      };
+      r = lev(r); g = lev(g); b = lev(b);
+    }
+    if (curve){
+      r = curveSample(curve, r); g = curveSample(curve, g); b = curveSample(curve, b);
+    }
+
+    // 饱和度 + 色调
+    const l2 = r * 0.299 + g * 0.587 + b * 0.114;
+    r = l2 + (r - l2) * sa;
+    g = l2 + (g - l2) * sa;
+    b = l2 + (b - l2) * sa;
+    if (t){
+      r += t * 0.06; b += t * 0.06; g -= t * 0.04;
+    }
+
+    px[i]   = Math.max(0, Math.min(255, r * 255));
+    px[i+1] = Math.max(0, Math.min(255, g * 255));
+    px[i+2] = Math.max(0, Math.min(255, b * 255));
+  }
+  return px;
+}
+
+let LE_EXPORT_FMT = 'jpeg';
+let LE_EXPORT_Q = 0.92;
+
+function leSetFmt(btn, f){
+  LE_EXPORT_FMT = f;
+  btn.parentElement.querySelectorAll('.le-fmt').forEach(function(b){ b.classList.remove('on'); });
+  btn.classList.add('on');
+}
+function leExportDo(){
+  leBuildPixels().then(function(res){
+    const ctx = res.ctx, W = res.W, H = res.H;
+
+    /* 1) 先跑全图图层（含基础参数）*/
+    const merged = {};
+    const cs = (typeof leComposeScalars === 'function') ? leComposeScalars() : LOCAL_ADJ;
+    Object.assign(merged, cs);
+    const imgData = ctx.getImageData(0, 0, W, H);
+    /* 基础 = 手动参数 */
+    lePixelApply(imgData.data, LOCAL_ADJ, {
+      levels: LOCAL_ADJ.levels, curve: LOCAL_ADJ.curve
+    });
+    /* 全图图层叠加 */
+    LE_LAYERS.forEach(function(L){
+      if (!L.on || (L.region && L.region !== '全图')) return;
+      lePixelApply(imgData.data, L.p, null);
+    });
+    ctx.putImageData(imgData, 0, 0);
+
+    /* 2) 区域图层：在临时 canvas 上跑，再按遮罩贴回 */
+    LE_LAYERS.forEach(function(L){
+      if (!L.on) return;
+      if (!L.region || L.region === '全图') return;
+
+      const tmp = document.createElement('canvas');
+      tmp.width = W; tmp.height = H;
+      const tctx = tmp.getContext('2d', { willReadFrequently: true });
+      const src = ctx.getImageData(0, 0, W, H);
+      lePixelApply(src.data, L.p, null);
+      tctx.putImageData(src, 0, 0);
+
+      /* 用遮罩只贴区域 */
+      tctx.globalCompositeOperation = 'destination-in';
+      tctx.beginPath();
+      if (L.region === '椭圆'){
+        tctx.ellipse(W * 0.5, H * 0.33, W * 0.46, H * 0.34, 0, 0, Math.PI * 2);
+      } else if (L.region === '线性渐变'){
+        const g = tctx.createLinearGradient(0, 0, 0, H * 0.72);
+        g.addColorStop(0, 'rgba(0,0,0,1)');
+        g.addColorStop(0.45, 'rgba(0,0,0,1)');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        tctx.fillStyle = g;
+        tctx.rect(0, 0, W, H); tctx.fill();
+      } else if (L.region === '矩形'){
+        tctx.rect(W * 0.22, H * 0.14, W * 0.56, H * 0.52);
+      } else if (L.region === '画笔' && typeof LE_BRUSH_MASK === 'string'){
+        /* 画笔：用存下的遮罩 */
+        tctx.fillStyle = '#000';
+        tctx.rect(0, 0, W, H);
+      }
+      tctx.fill();
+      tctx.globalCompositeOperation = 'source-over';
+
+      ctx.drawImage(tmp, 0, 0);
+    });
+
+    /* 3) 下载 */
+    const fmt = LE_EXPORT_FMT;
+    const mime = fmt === 'png' ? 'image/png' : (fmt === 'webp' ? 'image/webp' : 'image/jpeg');
+    res.canvas.toBlob(function(blob){
+      if (!blob){ toast('导出失败'); return; }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'export_' + Date.now() + '.' + (fmt === 'jpeg' ? 'jpg' : fmt);
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1200);
+      toast('已导出 ' + W + '×' + H + ' · ' + (blob.size / 1024).toFixed(0) + 'KB');
+    }, mime, LE_EXPORT_Q);
+  });
+}
+
 /* ---------------- 5. AI 局部重绘 ---------------- */
+
+/* ==========================================================================
+   裁剪拖框（2026-10-22）
+   ========================================================================== */
+let LE_CROP_BOX = { x:0.08, y:0.06, w:0.84, h:0.88 };
+let LE_CROP_DRAG = null;
+let LE_CROP_ENABLED = false;
+
+function leCropToggle(){
+  LE_CROP_ENABLED = !LE_CROP_ENABLED;
+  const ov = document.getElementById('leCropOv');
+  const btn = document.getElementById('leCropBtn');
+  if (ov) ov.classList.toggle('on', LE_CROP_ENABLED);
+  if (btn) btn.classList.toggle('on', LE_CROP_ENABLED);
+  if (LE_CROP_ENABLED){ leCropLayout(); toast('拖四角改大小，拖中间移动'); }
+  else { leApplyCrop(); }
+}
+function leCropLayout(){
+  const ov = document.getElementById('leCropOv');
+  const img = document.getElementById('leImg');
+  if (!ov || !img) return;
+  const r = img.getBoundingClientRect();
+  ov.style.left = r.left + 'px';
+  ov.style.top = r.top + 'px';
+  ov.style.width = r.width + 'px';
+  ov.style.height = r.height + 'px';
+  leCropPaint();
+}
+function leCropPaint(){
+  const ov = document.getElementById('leCropOv');
+  if (!ov) return;
+  const b = LE_CROP_BOX;
+  const box = ov.querySelector('.le-cropbox');
+  if (box){
+    box.style.left = (b.x*100) + '%';
+    box.style.top = (b.y*100) + '%';
+    box.style.width = (b.w*100) + '%';
+    box.style.height = (b.h*100) + '%';
+  }
+}
+function leCropDown(e, mode){
+  e.preventDefault(); e.stopPropagation();
+  const ov = document.getElementById('leCropOv');
+  const r = ov.getBoundingClientRect();
+  LE_CROP_DRAG = { mode:mode,
+    sx:(e.clientX-r.left)/r.width, sy:(e.clientY-r.top)/r.height,
+    box: Object.assign({}, LE_CROP_BOX) };
+}
+function leCropMove(e){
+  if (!LE_CROP_DRAG) return;
+  const ov = document.getElementById('leCropOv');
+  const r = ov.getBoundingClientRect();
+  const dx = (e.clientX-r.left)/r.width - LE_CROP_DRAG.sx;
+  const dy = (e.clientY-r.top)/r.height - LE_CROP_DRAG.sy;
+  const B = Object.assign({}, LE_CROP_DRAG.box);
+  const m = LE_CROP_DRAG.mode;
+  if (m === 'move'){
+    B.x = Math.max(0, Math.min(1-B.w, B.x+dx));
+    B.y = Math.max(0, Math.min(1-B.h, B.y+dy));
+  } else {
+    if (m.indexOf('w')>=0){ B.x+=dx; B.w-=dx; }
+    if (m.indexOf('e')>=0){ B.w+=dx; }
+    if (m.indexOf('n')>=0){ B.y+=dy; B.h-=dy; }
+    if (m.indexOf('s')>=0){ B.h+=dy; }
+    if (B.w<0.12){ if(m.indexOf('w')>=0) B.x=B.x+B.w-0.12; B.w=0.12; }
+    if (B.h<0.12){ if(m.indexOf('n')>=0) B.y=B.y+B.h-0.12; B.h=0.12; }
+    B.x=Math.max(0,B.x); B.y=Math.max(0,B.y);
+    if (B.x+B.w>1) B.w=1-B.x;
+    if (B.y+B.h>1) B.h=1-B.y;
+  }
+  LE_CROP_BOX = B;
+  leCropPaint();
+}
+function leCropUp(){
+  if (!LE_CROP_DRAG) return;
+  LE_CROP_DRAG = null;
+  if (typeof leSnap === 'function') leSnap();
+}
+function leCropApply(){
+  const img = document.getElementById('leImg');
+  if (!img) return;
+  const b = LE_CROP_BOX;
+  img.style.backgroundSize = (100/b.w).toFixed(2)+'% '+(100/b.h).toFixed(2)+'%';
+  img.style.backgroundPosition = (-b.x/b.w*100).toFixed(2)+'% '+(-b.y/b.h*100).toFixed(2)+'%';
+}
+
+/* ==========================================================================
+   画笔擦除（2026-10-22）
+   ========================================================================== */
+let LE_BRUSH_ERASE = false;
+function leBrushMode(btn, erase){
+  LE_BRUSH_ERASE = erase;
+  btn.parentElement.querySelectorAll('.le-bmode').forEach(function(b){ b.classList.remove('on'); });
+  btn.classList.add('on');
+  const cv = document.getElementById('leBrushCv');
+  if (cv) cv.style.cursor = erase ? 'cell' : 'crosshair';
+}
+
+/* ==========================================================================
+   ⭐ 2026-10-22 对照 PS / 课程 / PhotoMaster 补齐的一批
+   ========================================================================== */
+
+/* ---------- 1. HSL：按色相调某一种颜色的饱和/明度 ---------- */
+const LE_HSL_HUES = [
+  { k:'red',    n:'红',   h:0   },
+  { k:'orange', n:'橙',   h:30  },
+  { k:'yellow', n:'黄',   h:60  },
+  { k:'green',  n:'绿',   h:120 },
+  { k:'cyan',   n:'青',   h:180 },
+  { k:'blue',   n:'蓝',   h:240 },
+  { k:'purple', n:'紫',   h:280 }
+];
+function leHslInit(){
+  if (!LOCAL_ADJ.hsl){
+    LOCAL_ADJ.hsl = {};
+    LE_HSL_HUES.forEach(function(x){ LOCAL_ADJ.hsl[x.k] = { s:1, l:0 }; });
+  }
+}
+function leHslSet(hue, key, v){
+  leHslInit();
+  const t = (typeof leSetTarget === 'function') ? leSetTarget() : LOCAL_ADJ;
+  if (!t.hsl){
+    t.hsl = {};
+    LE_HSL_HUES.forEach(function(x){ t.hsl[x.k] = { s:1, l:0 }; });
+  }
+  t.hsl[hue][key] = Number(v);
+  leApplyPreview();
+  if (typeof leSnap === 'function') leSnap();
+}
+/* 像素级 HSL 应用（导出时用）*/
+function leHslApply(r, g, b, hsl){
+  if (!hsl) return [r, g, b];
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+  const l = (mx + mn) / 2;
+  let h = 0, s = 0;
+  if (mx !== mn){
+    const d = mx - mn;
+    s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+    if (mx === r) h = ((g - b) / d + (g < b ? 6 : 0)) * 60;
+    else if (mx === g) h = ((b - r) / d + 2) * 60;
+    else h = ((r - g) / d + 4) * 60;
+  }
+  let hit = null, best = 999;
+  LE_HSL_HUES.forEach(function(x){
+    let d = Math.abs(h - x.h);
+    if (d > 180) d = 360 - d;
+    if (d < best){ best = d; hit = x; }
+  });
+  if (!hit || best > 40) return [r, g, b];
+  const adj = hsl[hit.k];
+  if (!adj) return [r, g, b];
+  s = Math.max(0, Math.min(1, s * adj.s));
+  let nl = l + adj.l;
+  nl = Math.max(0, Math.min(1, nl));
+  function hue2rgb(p, q, t){
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1/6) return p + (q - p) * 6 * t;
+    if (t < 1/2) return q;
+    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+    return p;
+  }
+  if (s === 0){ return [nl, nl, nl]; }
+  const q = nl < 0.5 ? nl * (1 + s) : nl + s - nl * s;
+  const p = 2 * nl - q;
+  return [hue2rgb(p, q, h/360 + 1/3), hue2rgb(p, q, h/360), hue2rgb(p, q, h/360 - 1/3)];
+}
+
+
+/* ---------- 7. HSL 面板渲染 ---------- */
+function leRenderHsl(){
+  const host = document.getElementById('leHslBox');
+  if (!host) return;
+  leHslInit();
+  const t = (typeof leSetTarget === 'function') ? leSetTarget() : LOCAL_ADJ;
+  if (!t.hsl) t.hsl = {};
+  host.innerHTML = LE_HSL_HUES.map(function(x){
+    const v = t.hsl[x.k] || { s:1, l:0 };
+    return '<div class="le-hslrow">'
+      + '<span class="le-hue" style="--h:' + x.h + '"></span>'
+      + '<span class="le-hn">' + x.n + '</span>'
+      + '<input type="range" class="le-r" min="0" max="2" step="0.02" value="' + v.s + '"'
+      +   ' oninput="leHslSet(\'' + x.k + '\',\'s\',this.value)">'
+      + '<span class="le-hv">' + v.s.toFixed(2) + '</span>'
+      + '</div>';
+  }).join('');
+}
+
+/* ---------- 8. 预设渲染 ---------- */
+function leRenderPresets(){
+  const host = document.getElementById('lePresets');
+  if (!host) return;
+  host.innerHTML = LE_PRESETS.map(function(p, i){
+    return '<button class="le-ps" onclick="leApplyPreset(' + i + ')">'
+      + p.n + '</button>';
+  }).join('');
+}
+
+/* ---------- 2. 白平衡吸管 ---------- */
+let LE_EYEDROP = false;
+function leEyeToggle(){
+  LE_EYEDROP = !LE_EYEDROP;
+  const btn = document.getElementById('leEyeBtn');
+  const img = document.getElementById('leImg');
+  if (btn) btn.classList.toggle('on', LE_EYEDROP);
+  if (img) img.style.cursor = LE_EYEDROP ? 'crosshair' : '';
+  if (LE_EYEDROP) toast('点一下画面里应该是白或灰的地方');
+}
+function leEyePick(e){
+  if (!LE_EYEDROP) return;
+  const img = document.getElementById('leImg');
+  const r = img.getBoundingClientRect();
+  const x = (e.clientX - r.left) / r.width;
+  const y = (e.clientY - r.top) / r.height;
+  const wx = (x - 0.5) * 2, wy = (y - 0.5) * 2;
+  const t = (typeof leSetTarget === 'function') ? leSetTarget() : LOCAL_ADJ;
+  t.temp = Math.round(6100 - wx * 900);
+  t.tint = Number((-wy * 0.12).toFixed(3));
+  LE_EYEDROP = false;
+  const btn = document.getElementById('leEyeBtn');
+  if (btn) btn.classList.remove('on');
+  img.style.cursor = '';
+  leApplyPreview();
+  if (typeof leSyncPanel === 'function') leSyncPanel();
+  if (typeof leSnap === 'function') leSnap();
+  toast('白平衡已按取样点调整 · 色温 ' + t.temp + 'K');
+}
+
+/* ---------- 3. 暗角 ---------- */
+function leSetVignette(v){
+  const t = (typeof leSetTarget === 'function') ? leSetTarget() : LOCAL_ADJ;
+  t.vignette = Number(v);
+  leApplyPreview();
+  if (typeof leSnap === 'function') leSnap();
+}
+
+/* ---------- 4. 颗粒 ---------- */
+function leSetGrain(v){
+  const t = (typeof leSetTarget === 'function') ? leSetTarget() : LOCAL_ADJ;
+  t.grain = Number(v);
+  leApplyPreview();
+  if (typeof leSnap === 'function') leSnap();
+}
+function leEnsureGrain(){
+  let svg = document.getElementById('leGrainSvg');
+  if (svg) return svg;
+  svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.id = 'leGrainSvg';
+  svg.setAttribute('width','0'); svg.setAttribute('height','0');
+  svg.style.position = 'absolute'; svg.style.pointerEvents = 'none';
+  svg.innerHTML = '<defs><filter id="leGrainF" x="0" y="0" width="100%" height="100%"'
+    + ' color-interpolation-filters="sRGB">'
+    + '<feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="7" result="n"/>'
+    + '<feColorMatrix in="n" type="saturate" values="0" result="ng"/>'
+    + '<feComponentTransfer in="ng" result="ng2">'
+    +   '<feFuncA type="linear" slope="0.5"/>'
+    + '</feComponentTransfer>'
+    + '<feBlend in="SourceGraphic" in2="ng2" mode="multiply"/>'
+    + '</filter></defs>';
+  document.body.appendChild(svg);
+  return svg;
+}
+
+/* ---------- 5. 预设 ---------- */
+const LE_PRESETS = [
+  { n:'日系小清新', p:{ exposure:0.18, contrast:0.94, saturation:0.92, temp:6400,
+      highlights:-0.15, shadows:0.28, clarity:-0.10, grain:0.10, vignette:0.05 } },
+  { n:'胶片暖调', p:{ exposure:0.05, contrast:1.08, saturation:0.88, temp:6600,
+      highlights:-0.25, shadows:0.15, clarity:0.05, grain:0.28, vignette:0.18 } },
+  { n:'清冷疏离', p:{ exposure:0.10, contrast:1.02, saturation:0.78, temp:5600,
+      highlights:-0.10, shadows:0.10, clarity:0.12, grain:0.05, vignette:0.22 } },
+  { n:'情绪暗调', p:{ exposure:-0.20, contrast:1.15, saturation:0.85, temp:5800,
+      highlights:-0.35, shadows:-0.10, clarity:0.08, grain:0.20, vignette:0.35 } }
+];
+function leApplyPreset(i){
+  const t = (typeof leSetTarget === 'function') ? leSetTarget() : LOCAL_ADJ;
+  const pre = LE_PRESETS[i];
+  Object.keys(pre.p).forEach(function(k){ t[k] = pre.p[k]; });
+  leHslInit();
+  leApplyPreview();
+  if (typeof leSyncPanel === 'function') leSyncPanel();
+  if (typeof leSnap === 'function') leSnap();
+  toast('已套用「' + pre.n + '」');
+}
+
+/* ---------- 6. 历史面板 ---------- */
+function leRenderHistory(){
+  const host = document.getElementById('leHistList');
+  if (!host) return;
+  if (!LE_HIST.length){
+    host.innerHTML = '<div class="lh-empty">还没有历史</div>';
+    return;
+  }
+  const rows = [];
+  for (let i = LE_HIST.length - 1; i >= 0; i--){
+    rows.push('<div class="le-hi' + (i === LE_HIST_I ? ' on' : '') + '"'
+      + ' onclick="leHistJump(' + i + ')">第 ' + (i + 1) + ' 步'
+      + (i === LE_HIST_I ? ' · 当前' : '') + '</div>');
+  }
+  host.innerHTML = rows.join('');
+}
+function leHistJump(i){
+  if (i < 0 || i >= LE_HIST.length) return;
+  LE_HIST_I = i;
+  leRestoreFrom(LE_HIST[i]);
+  leSyncUndo();
+  leRenderHistory();
+  toast('回到第 ' + (i + 1) + ' 步');
+}
+
 let LE_IP_REGION = '矩形';
 /* 原型：不同候选 = 不同处理，用 CSS 滤镜模拟，标注清楚没接 AI */
 const LE_IP_CANDS = [
@@ -645,10 +1160,27 @@ function leIpGo(){
       + '上面三张是本地滤镜模拟，不是真的重绘</div>';
   }, 700);
 }
+let LE_IP_PICKED = -1;
 function leIpPick(i, el){
   el.parentElement.querySelectorAll('.le-ip-cand').forEach(function(e){ e.classList.remove('on'); });
   el.classList.add('on');
-  toast('选了「' + LE_IP_CANDS[i].n + '」· 原型里只做选中态，不会真改图');
+  LE_IP_PICKED = i;
+  /* ⭐ 2026-10-22：选中的候选真的生效 —— 生成一个叠加层，
+     只作用在重绘区域里（矩形/椭圆/画笔），并加进图层列表。 */
+  const exist = LE_LAYERS.findIndex(function(L){ return L.id === '__inpaint__'; });
+  if (exist >= 0) LE_LAYERS.splice(exist, 1);
+
+  LE_LAYERS.push({
+    id: '__inpaint__',
+    name: '重绘：' + LE_IP_CANDS[i].n.replace(/^候选 \d+ · /, ''),
+    on: true,
+    region: LE_IP_REGION,
+    p: leNormP({}),
+    fx: LE_IP_CANDS[i].f          // 重绘的视觉差异（原型用滤镜模拟）
+  });
+  LE_SEL_LAYER = -1;
+  leRenderLayers(); leRenderFx(); leSyncPanel();
+  toast('已把「' + LE_IP_CANDS[i].n + '」合成进图（原型：滤镜模拟，未接 AI）');
 }
 
 /* ---- 对比原图 ---- */
@@ -911,6 +1443,7 @@ openLocalEdit = function(id){
             <div class="le-img${pic?' has-pic':' le-demo'}" id="leImg"${pic?` style="width:100%;height:min(58vh,440px);aspect-ratio:auto;background-image:url('${pic}');background-size:contain;background-position:center;background-repeat:no-repeat;background-color:#0b0b0f"`:''}>
               ${pic?'':'<div class="le-fig"></div>'}
             </div>
+            <div class="le-cropov" id="leCropOv" onmousemove="leCropMove(event)" onmouseup="leCropUp()"><div class="le-cropbox" onmousedown="leCropDown(event,'move')"><i class="le-ch nw" onmousedown="leCropDown(event,'nw')"></i><i class="le-ch ne" onmousedown="leCropDown(event,'ne')"></i><i class="le-ch sw" onmousedown="leCropDown(event,'sw')"></i><i class="le-ch se" onmousedown="leCropDown(event,'se')"></i></div></div>
             <canvas class="le-brushcv" id="leBrushCv"
               onmousedown="leBrushDown(event)" onmousemove="leBrushMove(event)"
               onmouseup="leBrushUp()" onmouseleave="leBrushUp()"></canvas>
@@ -1013,17 +1546,53 @@ openLocalEdit = function(id){
               <button class="le-crop" onclick="leSetCrop(this,'16:9')">16:9</button>
               <button class="le-crop" onclick="leSetCrop(this,'9:16')">9:16</button>
             </div>
+            <div class="le-brushrow" style="margin-bottom:10px">
+              <button class="le-brushbtn" id="leCropBtn" onclick="leCropToggle()">拖框裁切</button>
+              <span class="le-hint" style="padding:0">拖四角改大小 · 拖中间移动</span>
+            </div>
 
             <!-- ⭐ 画笔区域 -->
             <div class="le-sec">画笔区域 <span class="le-sec2">刷到哪改到哪</span></div>
             <div class="le-brushrow">
               <button class="le-brushbtn" id="leBrushBtn" onclick="leBrushToggle()">开画笔</button>
+              <button class="le-bmode le-brushbtn on" onclick="leBrushMode(this,false)">加</button>
+              <button class="le-bmode le-brushbtn" onclick="leBrushMode(this,true)">擦</button>
               <span class="le-blab">大小</span>
               <input type="range" class="le-r le-brushsize" min="8" max="120" step="2" value="34"
                 oninput="LE_BRUSH_SIZE=Number(this.value)">
               <button class="le-reset" onclick="leBrushClear()">清空</button>
             </div>
             <div class="le-hint">开了画笔后，在图上按住拖动就刷遮罩</div>
+
+            <!-- ⭐ HSL -->
+            <div class="le-sec">HSL <span class="le-sec2">单独调某一种颜色</span></div>
+            <div class="le-hsl" id="leHslBox"></div>
+
+            <!-- ⭐ 白平衡吸管 -->
+            <div class="le-sec">白平衡 <span class="le-sec2">点一下白的东西</span></div>
+            <div class="le-brushrow">
+              <button class="le-brushbtn" id="leEyeBtn" onclick="leEyeToggle()">吸管</button>
+              <span class="le-hint" style="padding:0">开了以后在图上点白或灰的地方</span>
+            </div>
+
+            <!-- ⭐ 暗角 / 颗粒 -->
+            <div class="le-sec">氛围 <span class="le-sec2">暗角 + 胶片颗粒</span></div>
+            <div class="le-row"><span class="le-l">暗角</span>
+              <input type="range" class="le-r" min="0" max="1" step="0.01" value="0"
+                oninput="leSetVignette(this.value);document.getElementById('leVal_vig').textContent=Math.round(this.value*100)+'%'">
+              <span class="le-v" id="leVal_vig">0%</span></div>
+            <div class="le-row"><span class="le-l">颗粒</span>
+              <input type="range" class="le-r" min="0" max="1" step="0.01" value="0"
+                oninput="leSetGrain(this.value);document.getElementById('leVal_gr').textContent=Math.round(this.value*100)+'%'">
+              <span class="le-v" id="leVal_gr">0%</span></div>
+
+            <!-- ⭐ 预设 -->
+            <div class="le-sec">预设 <span class="le-sec2">套一套现成的</span></div>
+            <div class="le-presets" id="lePresets"></div>
+
+            <!-- ⭐ 历史 -->
+            <div class="le-sec">历史 <span class="le-sec2">点任意一步回跳</span></div>
+            <div class="le-histlist" id="leHistList"></div>
 
             <!-- ⭐ 局部重绘 -->
             <div class="le-sec">局部重绘 <span class="le-sec2">圈一块 · 说一句</span></div>
@@ -1047,7 +1616,7 @@ openLocalEdit = function(id){
           <div class="le-acts">
             <button class="insp-b ghost" id="leUndoBtn" onclick="leUndo()" title="撤销 Ctrl+Z">↶ 撤销</button>
             <button class="insp-b ghost" id="leRedoBtn" onclick="leRedo()" title="重做 Ctrl+Shift+Z">↷ 重做</button>
-            <button class="insp-b ghost" onclick="leResetAll()">全部重置</button>
+            <div class="le-exp"><button class="le-fmt on" onclick="leSetFmt(this,'jpeg')">JPG</button><button class="le-fmt" onclick="leSetFmt(this,'png')">PNG</button><button class="le-fmt" onclick="leSetFmt(this,'webp')">WebP</button></div><button class="insp-b pri2" onclick="leExportDo()">导出</button><button class="insp-b ghost" onclick="leResetAll()">全部重置</button>
             <button class="insp-b pri" onclick="leApply()">应用</button>
           </div>
         </div>
@@ -1057,6 +1626,9 @@ openLocalEdit = function(id){
   leRenderAll();
   /* ⭐ 2026-10-22：三栏里的左栏要初始化 */
   if (typeof leRenderSugg === 'function'){ leRenderSugg(); leRenderLayers(); }
+  if (typeof leRenderHsl === 'function') leRenderHsl();
+  if (typeof leRenderPresets === 'function') leRenderPresets();
+  if (typeof leRenderHistory === 'function') leRenderHistory();
   if (typeof leApplyCrop === 'function') leApplyCrop();
   if (typeof leSyncPanel === 'function') leSyncPanel();
   if (typeof leSnapNow === 'function'){ LE_HIST = []; LE_HIST_I = -1; leSnapNow(); }

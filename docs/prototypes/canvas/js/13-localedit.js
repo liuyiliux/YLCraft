@@ -261,6 +261,8 @@ function leFilterCSS(){
   ensureCurveFilter();
   /* 同上：标量参数也走叠加版 */
   const a = (typeof leComposeScalars === 'function') ? leComposeScalars() : LOCAL_ADJ;
+  if (a.vignette == null) a.vignette = LOCAL_ADJ.vignette || 0;
+  if (a.grain == null) a.grain = LOCAL_ADJ.grain || 0;
   const parts = [
     'url(#leCurve)',
     `brightness(${(1 + a.exposure * 0.35).toFixed(3)})`,
@@ -283,6 +285,15 @@ function leFilterCSS(){
     leEnsureDetailFilters(a.denoise, a.sharpen);
     if (a.denoise > 0.01) parts.push('url(#leDenoise)');
     if (a.sharpen > 0.01) parts.push('url(#leSharpen)');
+  }
+  /* 暗角（CSS filter 没这个原语，用对比微调 + 容器阴影补）*/
+  if (a.vignette > 0.01){
+    parts.push('contrast(' + (1 + a.vignette * 0.06).toFixed(3) + ')');
+  }
+  /* 颗粒：SVG 噪点 */
+  if (a.grain > 0.01 && typeof leEnsureGrain === 'function'){
+    leEnsureGrain();
+    parts.push('url(#leGrainF)');
   }
   return parts.join(' ');
 }
@@ -570,6 +581,15 @@ function leRenderAll(){
 function leApplyPreview(){
   const img = document.getElementById('leImg');
   if (img) img.style.filter = leFilterCSS();
+  /* 暗角：容器内阴影，比 filter 更像真的暗角 */
+  if (img){
+    const a = (typeof leComposeScalars === 'function') ? leComposeScalars() : LOCAL_ADJ;
+    const v = (a.vignette != null ? a.vignette : (LOCAL_ADJ.vignette || 0));
+    img.style.boxShadow = v > 0.01
+      ? 'inset 0 0 ' + (v * 140).toFixed(0) + 'px ' + (v * 55).toFixed(0)
+        + 'px rgba(0,0,0,' + (v * 0.85).toFixed(2) + ')'
+      : '';
+  }
   if (typeof leDrawHistogram === 'function') leDrawHistogram();
   /* ⭐ 2026-10-22：17-channels.js 覆盖了面板（带色阶/通道/真直方图），
      它的重绘函数要在这里触发，否则拖滑块直方图不动。 */
