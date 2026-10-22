@@ -597,6 +597,8 @@ function leApplyPreview(){
   if (typeof leRenderCurve === 'function') leRenderCurve();
   /* 区域图层的叠加层 */
   if (typeof leRenderFx === 'function') leRenderFx();
+  /* 课程：下手别太狠 */
+  if (typeof leCheckHarsh === 'function') leCheckHarsh();
 }
 
 function closeLocalEdit(){

@@ -1129,6 +1129,192 @@ function leHistJump(i){
   toast('回到第 ' + (i + 1) + ' 步');
 }
 
+
+/* ==========================================================================
+   ⭐ 2026-10-22 按课程知识库补的三件（课程里的原话支撑）
+   ========================================================================== */
+
+/* ---------- 1. 肤色检查 ----------
+   课程原话：「鼠标移到脸上，仔细看一看，肤色有没有偏蓝偏绿的痕迹。」
+              「这绿色跟红色已经很接近了，这是不合适的。」
+              「我们首要的任务就是自然。」
+*/
+function leSkinCheck(){
+  const img = document.getElementById('leImg');
+  if (!img) return;
+
+  /* 取「脸」的位置：演示图里脸在中间偏上；真实图先取中间区域 */
+  const rect = img.getBoundingClientRect();
+  const cv = document.createElement('canvas');
+  cv.width = 80; cv.height = 100;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+
+  /* 用当前底图重建一遍（真实图才有意义）*/
+  const bg = getComputedStyle(img).backgroundImage;
+  const m = bg && bg.match(/url\(["']?(.+?)["']?\)/);
+
+  const run = function(){
+    const d = ctx.getImageData(0, 0, cv.width, cv.height).data;
+    let sr = 0, sg = 0, sb = 0, n = 0;
+    /* 只取中间 40%×30% 区域（脸大致在这）*/
+    const x0 = Math.floor(cv.width * 0.32), x1 = Math.floor(cv.width * 0.68);
+    const y0 = Math.floor(cv.height * 0.22), y1 = Math.floor(cv.height * 0.52);
+    for (let y = y0; y < y1; y++){
+      for (let x = x0; x < x1; x++){
+        const i = (y * cv.width + x) * 4;
+        sr += d[i]; sg += d[i+1]; sb += d[i+2]; n++;
+      }
+    }
+    if (!n) return;
+    sr /= n; sg /= n; sb /= n;
+
+    /* 判断：肤色应该是 R > G > B，且 R-G 差不太小、G-B 差不太大 */
+    const rg = sr - sg;      // 红-绿：肤色通常 15~60
+    const gb = sg - sb;      // 绿-蓝：肤色通常 10~50
+    const issues = [];
+
+    if (rg < 8)  issues.push('太不红了，偏灰/偏青');
+    if (rg > 75) issues.push('太红，可能是通道溢出');
+    if (gb < 5)  issues.push('蓝太多，肤色偏蓝');
+    if (gb > 65) issues.push('绿太多，肤色偏绿/偏黄');
+
+    /* 课程原话：「绿色跟红色已经很接近了，这是不合适的」*/
+    if (gb > rg * 0.85) issues.push('绿快追上红了 —— 这就是课程里说的「不合适」');
+
+    const pct = function(v){ return Math.round(v); };
+    const txt = '脸区平均色 R' + pct(sr) + ' G' + pct(sg) + ' B' + pct(sb);
+
+    const box = document.getElementById('leSkinOut');
+    if (!box) return;
+    box.style.display = '';        /* 之前忘了这一行，结果算出来了但盒子是 none */
+    if (!issues.length){
+      box.className = 'le-skin ok';
+      box.innerHTML = '<b>肤色正常</b><br>' + txt
+        + '<br><span class="le-skin-h">红大于绿大于蓝，比例在正常范围</span>';
+    } else {
+      box.className = 'le-skin bad';
+      box.innerHTML = '<b>肤色有问题</b><br>' + txt
+        + '<br>· ' + issues.join('<br>· ')
+        + '<br><span class="le-skin-h">课程原话：首要任务是自然</span>';
+    }
+  };
+
+  if (m && m[1] && m[1] !== 'none'){
+    const im = new Image();
+    im.crossOrigin = 'anonymous';
+    im.onload = function(){
+      ctx.drawImage(im, 0, 0, cv.width, cv.height);
+      run();
+    };
+    im.onerror = function(){
+      /* 读不了（跨域），退回演示图 */
+      ctx.fillStyle = '#cfae8b';
+      ctx.fillRect(0, 0, cv.width, cv.height);
+      run();
+    };
+    im.src = m[1];
+  } else {
+    /* 演示图：按当前参数渲染一个近似肤色 */
+    const t = (typeof leSetTarget === 'function') ? leSetTarget() : LOCAL_ADJ;
+    const base = [232, 213, 189];
+    const wb = (6100 - (t.temp || 6100)) / 2000;
+    const ti = (t.tint || 0);
+    const r = Math.max(0, Math.min(255, base[0] + wb * 38 + ti * 14));
+    const g = Math.max(0, Math.min(255, base[1] + wb * 12 - ti * 6));
+    const b = Math.max(0, Math.min(255, base[2] - wb * 34 + ti * 14));
+    ctx.fillStyle = 'rgb(' + Math.round(r) + ',' + Math.round(g) + ',' + Math.round(b) + ')';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    run();
+  }
+  toast('肤色检查：看的是脸区平均色');
+}
+
+/* ---------- 2. 参数太狠提醒 ----------
+   课程原话：「大家调色总是调不好，就是下手太狠。」
+              「过分的亮过分的柔了」
+*/
+const LE_HARSH = [
+  { k:'exposure',   hi:0.6,  lo:-0.6,  msg:'曝光超过 ±0.6EV 容易丢细节' },
+  { k:'contrast',   hi:1.25, lo:0.8,   msg:'对比度超出 0.8~1.25 容易失真' },
+  { k:'saturation', hi:1.3,  lo:0.7,   msg:'饱和度超出 0.7~1.3 会不自然' },
+  { k:'highlights', hi:0.6,  lo:-0.8,  msg:'高光动太多会丢亮部层次' },
+  { k:'shadows',    hi:0.7,  lo:-0.6,  msg:'阴影提太多会发灰' },
+  { k:'clarity',    hi:0.6,  lo:-0.6,  msg:'清晰度幅度大了会有光晕' },
+  { k:'sharpen',    hi:0.65, lo:null,  msg:'锐化过头会有白边' },
+  { k:'denoise',    hi:0.7,  lo:null,  msg:'降噪太狠会糊成塑料感' }
+];
+function leCheckHarsh(){
+  const t = (typeof leSetTarget === 'function') ? leSetTarget() : LOCAL_ADJ;
+  const out = [];
+  LE_HARSH.forEach(function(x){
+    const v = t[x.k];
+    if (v == null) return;
+    const h = x.hi, l = x.lo;
+    if ((h != null && v > h) || (l != null && v < l)) out.push(x.msg);
+  });
+  const box = document.getElementById('leHarsh');
+  if (!box) return;
+  if (!out.length){
+    box.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+  box.style.display = '';
+  box.innerHTML = '<b>⚠ 下手有点狠</b><br>· ' + out.join('<br>· ')
+    + '<br><span class="le-skin-h">课程原话：调色总是调不好，就是下手太狠</span>';
+}
+
+/* ---------- 3. 修图顺序 ----------
+   课程原话：「这顺序不对，这顺序错了。」
+              「啥都没做，皮肤也没调，啥都没做，你就调色了。」
+*/
+const LE_ORDER = [
+  { k:'fix',   n:'修瑕疵',     d:'痘痘 / 纹 / 不要的东西先清干净' },
+  { k:'range', n:'限动态范围', d:'曲线先保留最亮最黑，别让后面没法改' },
+  { k:'skin',  n:'磨皮',       d:'高低频，不能破坏光' },
+  { k:'tone',  n:'肤色调整',   d:'可选颜色，别偏蓝偏绿' },
+  { k:'grade', n:'调色风格化', d:'颜色分级 / 预设' }
+];
+let LE_ORDER_DONE = {};
+
+function leRenderOrder(){
+  const host = document.getElementById('leOrder');
+  if (!host) return;
+  host.innerHTML = LE_ORDER.map(function(o, i){
+    const done = !!LE_ORDER_DONE[o.k];
+    const prevDone = i === 0 || !!LE_ORDER_DONE[LE_ORDER[i-1].k];
+    /* 只在「后面有人做了、前面还没做」时才提醒，全空不提醒 */
+    const anyDone = LE_ORDER.some(function(x){ return !!LE_ORDER_DONE[x.k]; });
+    const warn = !done && !prevDone && anyDone;
+    return '<div class="le-ord' + (done ? ' done' : '') + (warn ? ' skip' : '') + '"'
+      + ' onclick="leToggleOrder(\'' + o.k + '\')">'
+      + '<span class="le-ord-n">' + (i+1) + '</span>'
+      + '<span class="le-ord-t">' + o.n
+      + (warn ? ' <em>前一步还没做</em>' : '')
+      + '<span class="le-ord-d">' + o.d + '</span></span>'
+      + '<span class="le-ord-c">' + (done ? '✓' : '○') + '</span>'
+      + '</div>';
+  }).join('');
+
+  /* 顺序乱了的提示 */
+  const doneList = LE_ORDER.filter(function(o){ return LE_ORDER_DONE[o.k]; });
+  const box = document.getElementById('leOrderWarn');
+  if (box){
+    if (doneList.length && LE_ORDER_DONE.grade
+        && !LE_ORDER_DONE.fix && !LE_ORDER_DONE.range && !LE_ORDER_DONE.skin){
+      box.style.display = '';
+      box.innerHTML = '<b>⚠ 先调色了，前面都没做</b><br>'
+        + '课程原话：「啥都没做，皮肤也没调，啥都没做，你就调色了。」';
+    } else {
+      box.style.display = 'none';
+    }
+  }
+}
+function leToggleOrder(k){
+  LE_ORDER_DONE[k] = !LE_ORDER_DONE[k];
+  leRenderOrder();
+}
+
 let LE_IP_REGION = '矩形';
 /* 原型：不同候选 = 不同处理，用 CSS 滤镜模拟，标注清楚没接 AI */
 const LE_IP_CANDS = [
@@ -1564,6 +1750,17 @@ openLocalEdit = function(id){
             </div>
             <div class="le-hint">开了画笔后，在图上按住拖动就刷遮罩</div>
 
+            <!-- ⭐ 课程三件：肤色检查 / 下手别太狠 / 修图顺序 -->
+            <div class="le-sec">肤色检查 <span class="le-sec2">看脸上有没有偏蓝偏绿</span></div>
+            <button class="le-ipgo" onclick="leSkinCheck()">检查肤色</button>
+            <div class="le-skin" id="leSkinOut" style="display:none"></div>
+
+            <div class="le-sec">修图顺序 <span class="le-sec2">点一下标记做完</span></div>
+            <div class="le-order" id="leOrder"></div>
+            <div class="le-harsh" id="leOrderWarn" style="display:none"></div>
+
+            <div class="le-harsh" id="leHarsh" style="display:none"></div>
+
             <!-- ⭐ HSL -->
             <div class="le-sec">HSL <span class="le-sec2">单独调某一种颜色</span></div>
             <div class="le-hsl" id="leHslBox"></div>
@@ -1629,6 +1826,7 @@ openLocalEdit = function(id){
   if (typeof leRenderHsl === 'function') leRenderHsl();
   if (typeof leRenderPresets === 'function') leRenderPresets();
   if (typeof leRenderHistory === 'function') leRenderHistory();
+  if (typeof leRenderOrder === 'function') leRenderOrder();
   if (typeof leApplyCrop === 'function') leApplyCrop();
   if (typeof leSyncPanel === 'function') leSyncPanel();
   if (typeof leSnapNow === 'function'){ LE_HIST = []; LE_HIST_I = -1; leSnapNow(); }
