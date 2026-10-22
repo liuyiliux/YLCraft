@@ -1563,3 +1563,47 @@
 
 /* 旋转时保持比例，别压扁 */
 .le-body3 .le-img{transform-origin:center center}
+
+/* ===== 可选颜色 / 色彩平衡 / 虚化 / 径向 / 动作 / 术前分析 ===== */
+.le-schues{display:flex;gap:3px;flex-wrap:wrap;margin-bottom:8px}
+.le-schue{font-size:8.5px;padding:3px 7px;border-radius:4px;border:1px solid var(--ln2);
+  background:var(--s2);color:var(--tx3);cursor:pointer;font-family:inherit;transition:.16s}
+.le-schue:hover{border-color:var(--ln3);color:var(--tx2)}
+.le-schue.on{background:var(--acs);border-color:var(--acl);color:var(--ac)}
+.le-selc{margin-bottom:12px}
+.le-cbal{margin-bottom:12px}
+.le-cbseg{margin-bottom:8px;padding:8px 10px;border-radius:6px;background:var(--s2)}
+.le-cbt{font-size:9px;color:var(--tx3);font-family:var(--fm);margin-bottom:5px}
+.le-cbseg .le-row{margin-bottom:4px}
+
+/* 虚化 / 径向层 */
+.le-blurlayer{position:absolute;inset:0;pointer-events:none;z-index:4}
+.le-radiallayer{position:absolute;inset:0;pointer-events:none;z-index:4}
+
+/* 动作 */
+.le-acts-list{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.le-act{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:5px;
+  background:var(--s2);border:1px solid var(--ln2);cursor:pointer;transition:.16s}
+.le-act:hover{border-color:var(--ac)}
+.le-act-n{flex:1;font-size:10px;color:var(--tx2)}
+.le-act-t{font-size:8.5px;color:var(--tx3);font-family:var(--fm)}
+.le-act-x{font-size:10px;color:var(--tx3);background:none;border:none;cursor:pointer;
+  font-family:inherit;padding:0 2px}
+.le-act-x:hover{color:#f87171}
+
+/* 术前分析 */
+.le-prelist{display:flex;flex-direction:column;gap:3px;margin-bottom:12px}
+.le-pre{display:flex;align-items:flex-start;gap:7px;padding:7px 10px;border-radius:5px;
+  background:var(--s2);border:1px solid var(--ln2);cursor:pointer;transition:.16s}
+.le-pre:hover{border-color:var(--ln3)}
+.le-pre.done{background:rgba(52,211,153,.07);border-color:rgba(52,211,153,.28)}
+.le-pre-c{font-size:9px;color:var(--tx3);flex-shrink:0;margin-top:1px}
+.le-pre.done .le-pre-c{color:#34d399}
+.le-pre-t{flex:1;font-size:10px;color:var(--tx2);line-height:1.4}
+.le-pre-d{display:block;font-size:8.5px;color:var(--tx3);margin-top:1px}
+
+/* 交接单 */
+.le-ho{padding:9px 11px;border-radius:6px;background:var(--s2);border:1px solid var(--ln2);
+  margin-bottom:12px}
+.le-ho-t{font-size:10.5px;color:var(--tx);line-height:1.5;margin-bottom:5px}
+.le-ho-l{font-size:9px;color:var(--tx3);line-height:1.6;margin-top:3px}

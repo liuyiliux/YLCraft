@@ -290,6 +290,18 @@ function leFilterCSS(){
   if (a.vignette > 0.01){
     parts.push('contrast(' + (1 + a.vignette * 0.06).toFixed(3) + ')');
   }
+  /* 可选颜色 / 色彩平衡 */
+  if (typeof leEnsureColorFilters === 'function'){
+    const t0 = (typeof leSetTarget === 'function') ? leSetTarget() : a;
+    const has = (t0.cbal && ['shadow','mid','high'].some(function(k){
+      const s = t0.cbal[k];
+      return s && (s.r || s.g || s.b);
+    })) || (t0.selcolor && Object.keys(t0.selcolor).some(function(k){
+      const v = t0.selcolor[k];
+      return v && (v.c || v.m || v.y || v.k);
+    }));
+    if (has) parts.push('url(#leColorF)');
+  }
   /* 颗粒：SVG 噪点 */
   if (a.grain > 0.01 && typeof leEnsureGrain === 'function'){
     leEnsureGrain();
@@ -599,6 +611,25 @@ function leApplyPreview(){
   if (typeof leRenderFx === 'function') leRenderFx();
   /* 课程：下手别太狠 */
   if (typeof leCheckHarsh === 'function') leCheckHarsh();
+
+  /* ⭐ 可选颜色 / 色彩平衡：用 feColorMatrix 近似（精准版在导出时按像素算）*/
+  if (typeof leEnsureColorFilters === 'function') leEnsureColorFilters();
+  const cbalEl = document.getElementById('leCbalLayer');
+  if (cbalEl){
+    const t = (typeof leSetTarget === 'function') ? leSetTarget() : LOCAL_ADJ;
+    const hasCbal = t.cbal && (
+      (t.cbal.shadow && (t.cbal.shadow.r || t.cbal.shadow.g || t.cbal.shadow.b)) ||
+      (t.cbal.mid && (t.cbal.mid.r || t.cbal.mid.g || t.cbal.mid.b)) ||
+      (t.cbal.high && (t.cbal.high.r || t.cbal.high.g || t.cbal.high.b))
+    );
+    const hasSel = t.selcolor && Object.keys(t.selcolor).some(function(k){
+      const v = t.selcolor[k];
+      return v && (v.c || v.m || v.y || v.k);
+    });
+    if (hasSel) cbalEl.style.display = '';
+    else if (hasCbal) cbalEl.style.display = '';
+    else cbalEl.style.display = 'none';
+  }
   if (typeof leSkinApplyPreview === 'function') leSkinApplyPreview();
   if (typeof leAutoSave === 'function') leAutoSave();
 }
