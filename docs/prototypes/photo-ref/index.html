@@ -1071,7 +1071,10 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 .pz-card:hover{border-color:var(--bd3)}
 .pz-card-h{display:flex;align-items:center;gap:10px;margin-bottom:14px}
 .pz-card-n{font-size:16px;font-weight:600;color:var(--tx1);letter-spacing:-.01em}
-.pz-info{margin-left:auto;width:22px;height:22px;border-radius:50%;
+.pz-pick-light{margin-left:auto;font-size:13px;padding:4px 11px;border-radius:5px;
+  border:1px solid var(--bd2);color:var(--tx3);transition:.16s}
+.pz-pick-light:hover{border-color:var(--photo);color:var(--photo)}
+.pz-info{margin-left:8px;width:22px;height:22px;border-radius:50%;
   border:1px solid var(--bd2);color:var(--tx3);font-size:12px;font-family:var(--fm);
   display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:.16s}
 .pz-info:hover{border-color:var(--pri);color:var(--pri)}
@@ -1115,6 +1118,142 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 .pz-shot-cue-h{font-size:13px;color:var(--tx3);margin-top:6px;font-family:var(--fm)}
 
 /* 必带 */
+
+/* 这次要表达什么 */
+.express{background:color-mix(in srgb,var(--photo) 6%,transparent);
+  border:1px solid color-mix(in srgb,var(--photo) 24%,transparent);
+  border-radius:10px;padding:20px 22px;margin-bottom:32px}
+.ex-l{display:block;font-size:13px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--photo);font-family:var(--fm);margin-bottom:10px}
+.ex-ta{width:100%;min-height:54px;padding:12px 15px;border-radius:8px;
+  border:1px solid color-mix(in srgb,var(--photo) 28%,transparent);
+  background:var(--bgInput);color:var(--tx1);font-size:16px;outline:none;
+  resize:none;line-height:1.6;font-family:var(--ff)}
+.ex-tip{margin-top:9px;font-size:13px;color:var(--tx3)}
+
+/* 构图自检 */
+.pz-shot-check{margin-top:16px;padding:16px 18px;border-radius:8px;
+  background:var(--bgInput);border:1px solid var(--bd2)}
+.psc-h{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--tx3);
+  font-family:var(--fm);margin-bottom:12px}
+.psc-q{display:flex;align-items:center;gap:12px;margin-bottom:9px}
+.psc-q:last-child{margin-bottom:0}
+.psc-l{font-size:13px;color:var(--tx3);min-width:34px;flex-shrink:0}
+.psc-in{flex:1;padding:8px 12px;border-radius:6px;border:1px solid var(--bd2);
+  background:var(--bgCard);color:var(--tx1);font-size:14px;outline:none;
+  font-family:var(--ff)}
+.psc-in:focus{border-color:var(--photo)}
+.psc-opts{display:flex;gap:6px}
+.psc-o{padding:6px 13px;border-radius:6px;border:1px solid var(--bd2);
+  background:var(--bgCard);color:var(--tx3);font-size:13px;transition:.16s}
+.psc-o:hover{border-color:var(--bd3);color:var(--tx1)}
+.psc-o.on{background:color-mix(in srgb,var(--pri) 15%,transparent);
+  border-color:var(--pri);color:var(--pri)}
+
+/* ===== 拍摄参数 ===== */
+.cam-sec{background:var(--bgCard);border:1px solid var(--bd2);border-radius:10px;
+  padding:22px 24px;margin-bottom:14px}
+.cam-h{display:flex;align-items:baseline;gap:11px;margin-bottom:14px;flex-wrap:wrap}
+.cam-t{font-size:16px;font-weight:600;color:var(--tx1)}
+.cam-s{font-size:14px;color:var(--tx3)}
+.cam-note{margin-top:12px;font-size:14px;color:var(--tx2);line-height:1.7}
+.cam-note b{color:var(--photo)}
+.cam-lens{display:flex;gap:8px;flex-wrap:wrap}
+.lens{padding:12px 20px;border-radius:7px;border:1px solid var(--bd2);
+  background:var(--bgInput);color:var(--tx2);font-size:16px;font-family:var(--fm);
+  transition:.16s}
+.lens:hover{border-color:var(--bd3);color:var(--tx1)}
+.lens.on{background:color-mix(in srgb,var(--photo) 16%,transparent);
+  border-color:var(--photo);color:var(--photo);font-weight:600}
+.cam-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.cam-chips{display:flex;gap:7px;flex-wrap:wrap}
+.cam-chip{padding:9px 15px;border-radius:6px;border:1px solid var(--bd2);
+  background:var(--bgInput);color:var(--tx2);font-size:15px;font-family:var(--fm);
+  transition:.16s}
+.cam-chip:hover{border-color:var(--bd3);color:var(--tx1)}
+.cam-chip.on{background:color-mix(in srgb,var(--pri) 15%,transparent);
+  border-color:var(--pri);color:var(--pri)}
+.cam-wb-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.wb-f{display:flex;flex-direction:column;gap:7px}
+.wb-l{font-size:13px;color:var(--tx3);font-family:var(--fm)}
+.wb-sel{width:100%;padding:10px 13px;border-radius:7px;border:1px solid var(--bd2);
+  background:var(--bgInput);color:var(--tx1);font-size:15px;outline:none;
+  font-family:var(--ff)}
+.cam-warn{padding:12px 15px;border-radius:7px;font-size:14px;line-height:1.7;
+  background:color-mix(in srgb,var(--warn) 8%,transparent);
+  border:1px solid color-mix(in srgb,var(--warn) 25%,transparent);color:var(--tx2)}
+.cam-warn b{color:var(--warn)}
+.cam-toggle{margin-left:auto;font-size:14px;padding:6px 14px;border-radius:6px;
+  border:1px solid var(--bd2);color:var(--tx2);transition:.16s}
+.cam-toggle:hover{border-color:var(--tx1);color:var(--tx1)}
+.light-mock{display:flex;align-items:center;gap:24px;padding:18px 0;flex-wrap:wrap}
+.lm-stage{position:relative;width:300px;height:130px;background:var(--bgInput);
+  border-radius:8px;border:1px solid var(--bd2)}
+.lm-subj{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:52px;height:52px;border-radius:50%;background:color-mix(in srgb,var(--photo) 22%,transparent);
+  border:1px solid color-mix(in srgb,var(--photo) 45%,transparent);
+  display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--photo)}
+.lm-lamp{position:absolute;padding:6px 10px;border-radius:6px;font-size:12px;
+  line-height:1.4;text-align:center;font-family:var(--fm)}
+.lm-lamp em{font-style:normal;opacity:.7;font-size:11px}
+.lm-main{left:14px;top:14px;background:color-mix(in srgb,var(--ok) 18%,transparent);
+  border:1px solid color-mix(in srgb,var(--ok) 40%,transparent);color:var(--ok)}
+.lm-shape{right:14px;bottom:14px;background:color-mix(in srgb,var(--drama) 18%,transparent);
+  border:1px solid color-mix(in srgb,var(--drama) 40%,transparent);color:var(--drama)}
+.lm-ratio{font-size:15px;color:var(--tx2)}
+.lm-ratio b{color:var(--photo);font-family:var(--fm);font-size:18px}
+
+/* ===== 后期交接 ===== */
+.ho-card{background:var(--bgCard);border:1px solid var(--bd2);border-radius:10px;
+  padding:8px 26px 26px}
+.ho-sec{padding:22px 0;border-bottom:1px solid var(--bd)}
+.ho-sec:last-child{border-bottom:none}
+.ho-h{font-size:15px;font-weight:600;color:var(--tx1);margin-bottom:13px}
+.ho-ta{width:100%;min-height:62px;padding:13px 15px;border-radius:8px;
+  border:1px solid var(--bd2);background:var(--bgInput);color:var(--tx1);
+  font-size:15px;outline:none;resize:none;line-height:1.65;font-family:var(--ff)}
+.ho-auto{display:flex;flex-direction:column;gap:0}
+.ho-row{display:flex;gap:14px;padding:9px 0;font-size:15px;border-bottom:1px solid var(--bd)}
+.ho-row:last-child{border-bottom:none}
+.ho-k{color:var(--tx3);font-size:13px;min-width:56px;flex-shrink:0;padding-top:2px}
+.ho-v{color:var(--tx1);font-family:var(--fm);flex:1}
+.ho-tip{margin-top:11px;font-size:13px;color:var(--tx3);font-family:var(--fm)}
+.ho-fixes{display:flex;flex-direction:column;gap:8px}
+.ho-fix{display:flex;gap:11px;align-items:flex-start;padding:11px 14px;
+  border-radius:7px;background:var(--bgInput);font-size:15px;color:var(--tx2);
+  line-height:1.6}
+.ho-dot{width:6px;height:6px;border-radius:50%;background:var(--warn);
+  flex-shrink:0;margin-top:7px}
+.ho-fix.ho-client .ho-dot{background:var(--coser)}
+.ho-fix.ho-client{background:color-mix(in srgb,var(--coser) 7%,var(--bgInput))}
+.ho-add{margin-top:9px;font-size:14px;color:var(--tx3);padding:7px 0;transition:.16s}
+.ho-add:hover{color:var(--photo)}
+.ho-order{display:flex;flex-direction:column;gap:1px;background:var(--bd2);
+  border:1px solid var(--bd2);border-radius:8px;overflow:hidden}
+.ho-o{display:flex;align-items:center;gap:13px;padding:14px 16px;background:var(--bgInput);
+  font-size:15px;color:var(--tx2)}
+.ho-o b{color:var(--photo)}
+.ho-oi{width:22px;height:22px;border-radius:50%;background:var(--bd2);color:var(--tx3);
+  font-size:12px;font-family:var(--fm);display:flex;align-items:center;
+  justify-content:center;flex-shrink:0}
+.ho-warn{margin-top:12px;font-size:14px;color:var(--err);line-height:1.7}
+.ho-warn b{color:var(--err)}
+.ho-export{display:flex;gap:9px;flex-wrap:wrap}
+.ho-btn{padding:10px 18px;border-radius:6px;border:1px solid var(--bd2);
+  color:var(--tx2);font-size:15px;transition:.16s}
+.ho-btn:hover{border-color:var(--tx3);color:var(--tx1)}
+.ho-btn.pri{background:var(--tx1);color:var(--bgPage);border-color:var(--tx1);font-weight:600}
+.ho-btn.pri:hover{background:var(--tx2)}
+/* 光位选择器 */
+.light-p{display:flex;flex-direction:column;gap:2px;padding:10px 13px;border-radius:7px;
+  border:1px solid var(--bd2);background:var(--bgInput);text-align:left;
+  transition:.16s;width:100%;margin-bottom:6px}
+.light-p:hover{border-color:var(--photo);background:var(--bgHover)}
+.lp-k{font-size:15px;color:var(--tx1);font-weight:600}
+.lp-a{font-size:12px;color:var(--photo);font-family:var(--fm)}
+.lp-n{font-size:13px;color:var(--tx3);line-height:1.4}
+.light-desc{display:block;margin-top:8px;font-size:13px;color:var(--tx3);
+  font-family:var(--fm);line-height:1.5}
 .pz-kit{max-width:560px}
 .pz-kg{margin-bottom:32px}
 .pz-kg-h{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--tx3);
@@ -2395,13 +2534,21 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 
     <nav class="pz-tabs">
       <button class="pz-tab on" onclick="pzTab(this,'plan')">方案</button>
-      <button class="pz-tab" onclick="pzTab(this,'els')">元素<em>8</em></button>
+      <button class="pz-tab" onclick="pzTab(this,'els')">元素<em>10</em></button>
       <button class="pz-tab" onclick="pzTab(this,'shots')">分镜<em id="pzShotN">0</em></button>
       <button class="pz-tab" onclick="pzTab(this,'kit')">必带<em>8</em></button>
+      <button class="pz-tab" onclick="pzTab(this,'cam')">拍摄</button>
+      <button class="pz-tab" onclick="pzTab(this,'handoff')">交接</button>
       <button class="pz-tab" style="margin-left:auto;color:var(--tx3)" onclick="openCue()">＋ 录口令</button>
     </nav>
 
     <section class="pz-pane on" id="pz-plan">
+      <div class="express">
+        <label class="ex-l">这次要表达什么</label>
+        <textarea class="ex-ta" placeholder="一句话就够。例如：秋天的松弛感，像朋友随手拍的，但每张都好看">秋天的松弛感，像朋友随手拍的，但每张都好看</textarea>
+        <div class="ex-tip">课程里每组片子他都会先说这个 —— 元素和分镜都该为它服务</div>
+      </div>
+
       <div class="pz-lead">
         <p class="pz-lead-t">这次怎么拍</p>
         <p class="pz-lead-b">你只说了「秋天去颐和园和朋友拍照」。基于<b>太阳方位</b>和<b>地形实测</b>，下面三个方案能成立——每个都标了具体时间和站位。</p>
@@ -2471,8 +2618,10 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
           <div class="pz-card-b" id="elTimes"><span class="pz-chip none">等选定方案</span></div>
           <div class="pz-note">算出来的，不是拍脑袋。改日期会跟着变。</div></div>
 
-        <div class="pz-card"><div class="pz-card-h"><span class="pz-card-n">光线</span><button class="pz-info" onclick="toggleNote(this)">i</button></div>
-          <div class="pz-card-b" id="elLights"><span class="pz-chip on">侧逆光</span><span class="pz-chip">逆光勾轮廓</span><span class="pz-chip no">正午顶光</span></div>
+        <div class="pz-card"><div class="pz-card-h"><span class="pz-card-n">光线</span>
+            <button class="pz-pick-light" onclick="openLightPick(this)">选光位</button>
+            <button class="pz-info" onclick="toggleNote(this)">i</button></div>
+          <div class="pz-card-b" id="elLights"><span class="pz-chip on">侧逆光</span><span class="light-desc">身后 45° · 左侧轮廓 + 鼻头有光</span></div>
           <div class="pz-note">秋天的光很短。4 点后开始金黄，5 点基本没了，实际能拍就一小时。</div></div>
 
         <div class="pz-card"><div class="pz-card-h"><span class="pz-card-n">环境元素</span><button class="pz-info" onclick="toggleNote(this)">i</button></div>
@@ -2490,6 +2639,14 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
         <div class="pz-card"><div class="pz-card-h"><span class="pz-card-n">姿势 / 口令</span><button class="pz-info" onclick="toggleNote(this)">i</button></div>
           <div class="pz-card-b" id="elPoses"><span class="pz-chip on">走两步回头</span><span class="pz-chip on">摸围巾</span><span class="pz-chip">看远处</span></div>
           <div class="pz-note">怎么让她动起来。口令比姿势图有用得多。</div></div>
+
+        
+        <div class="pz-card"><div class="pz-card-h"><span class="pz-card-n">表情</span><button class="pz-info" onclick="toggleNote(this)">i</button></div>
+          <div class="pz-card-b">
+            <span class="pz-chip on">不看镜头</span><span class="pz-chip">闭眼</span>
+            <span class="pz-chip">笑出来的一瞬</span><span class="pz-chip no">对镜头笑（她会僵）</span>
+          </div>
+          <div class="pz-note">人物状态。本色出演和角色扮演的区别就在这一格 —— 她想演什么，还是就让她做自己。</div></div>
 
         <div class="pz-card"><div class="pz-card-h"><span class="pz-card-n">色彩元素</span><button class="pz-info" onclick="toggleNote(this)">i</button></div>
           <div class="pz-card-b" id="elColors"><span class="pz-chip on">金黄 + 浅米</span><span class="pz-chip">暖但脸不偏黄</span></div>
@@ -2520,6 +2677,196 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
         <div class="pz-kg"><div class="pz-kg-h must">别忘</div>
           <label class="pz-ki must"><input type="checkbox"><span>提前查日落时间</span><em>17:05</em></label>
           <label class="pz-ki must"><input type="checkbox"><span>避开正午</span><em>顶光毁片</em></label></div>
+      </div>
+    </section>
+
+    <!-- ===== Tab：拍摄参数 ===== -->
+    <section class="pz-pane" id="pz-cam">
+      <div class="pz-lead">
+        <p class="pz-lead-t">这次怎么设相机</p>
+        <p class="pz-lead-b">
+          影响风格的只有三个：<b>焦段、光圈、快门</b>。
+          ISO 和白平衡不影响风格，但白平衡<b>决定现场能不能复现</b>。
+        </p>
+      </div>
+
+      <!-- 焦段 -->
+      <div class="cam-sec">
+        <div class="cam-h">
+          <span class="cam-t">焦段</span>
+          <span class="cam-s">影响的是透视</span>
+        </div>
+        <div class="cam-lens">
+          <button class="lens on" onclick="pickLens(this,'85mm','压缩感，脸更「正」，人像最常用')">85mm</button>
+          <button class="lens" onclick="pickLens(this,'50mm','接近人眼，最自然')">50mm</button>
+          <button class="lens" onclick="pickLens(this,'35mm','带环境，轻微透视，可切 APSC 当 50 用')">35mm</button>
+          <button class="lens" onclick="pickLens(this,'24mm','透视明显，脸会变形，慎用')">24mm</button>
+          <button class="lens" onclick="pickLens(this,'135mm','强压缩，背景糊成一片')">135mm</button>
+        </div>
+        <div class="cam-note" id="lensNote">压缩感，脸更「正」，人像最常用</div>
+      </div>
+
+      <!-- 光圈 / 快门 -->
+      <div class="cam-grid">
+        <div class="cam-sec">
+          <div class="cam-h"><span class="cam-t">光圈</span>
+            <span class="cam-s">影响景深和「写实度」</span></div>
+          <div class="cam-chips">
+            <button class="cam-chip on" onclick="pickA(this,'f/1.8','大光圈，梦幻，背景糊')">f/1.8</button>
+            <button class="cam-chip" onclick="pickA(this,'f/2.8','中，兼顾')">f/2.8</button>
+            <button class="cam-chip" onclick="pickA(this,'f/5.6','小光圈，写实，环境清晰')">f/5.6</button>
+            <button class="cam-chip" onclick="pickA(this,'f/8','很写实，故意保留环境')">f/8</button>
+          </div>
+          <div class="cam-note">「光圈越小，画面越写实」——不是越小越好，看你要梦幻还是要环境</div>
+        </div>
+
+        <div class="cam-sec">
+          <div class="cam-h"><span class="cam-t">快门</span>
+            <span class="cam-s">影响动的东西</span></div>
+          <div class="cam-chips">
+            <button class="cam-chip on" onclick="pickS(this,'1/2000','凝固')">1/2000</button>
+            <button class="cam-chip" onclick="pickS(this,'1/500','凝固')">1/500</button>
+            <button class="cam-chip" onclick="pickS(this,'1/125','轻微拖影')">1/125</button>
+            <button class="cam-chip" onclick="pickS(this,'1/30','明显拖影，有速度感')">1/30</button>
+          </div>
+          <div class="cam-note">慢快门能拍出「旋转的过程」，别只会凝固</div>
+        </div>
+      </div>
+
+      <!-- ⭐ 白平衡（两个数字相反） -->
+      <div class="cam-sec cam-wb">
+        <div class="cam-h"><span class="cam-t">白平衡</span>
+          <span class="cam-s">现场最容易记错的一项</span></div>
+        <div class="cam-wb-row">
+          <div class="wb-f">
+            <label class="wb-l">光源色温</label>
+            <select class="wb-sel" id="wbSrc">
+              <option>2700K 白炽灯（很暖）</option>
+              <option>3200K 钨丝灯（暖）</option>
+              <option selected>5600K 日光（中性）</option>
+              <option>6500K 阴天（偏冷）</option>
+              <option>闪光灯 5500K</option>
+            </select>
+          </div>
+          <div class="wb-f">
+            <label class="wb-l">相机设定</label>
+            <select class="wb-sel" id="wbCam">
+              <option>自动</option>
+              <option selected>日光 5500K</option>
+              <option>阴天 6000K</option>
+              <option>白炽灯 3200K</option>
+              <option>自定义</option>
+            </select>
+          </div>
+        </div>
+        <div class="cam-warn">
+          ⚠️ <b>这两个数字是相反的</b> —— 光源越暖 K 越小；
+          相机里的 K 越小，画面反而越冷。只记一个，回来复现不了。
+        </div>
+      </div>
+
+      <!-- ⭐ 光质（可判定） -->
+      <div class="cam-sec">
+        <div class="cam-h"><span class="cam-t">光质</span>
+          <span class="cam-s">看影子的边缘就知道</span></div>
+        <div class="cam-chips">
+          <button class="cam-chip" onclick="pickQ(this,'硬光')">硬光</button>
+          <button class="cam-chip on" onclick="pickQ(this,'柔光')">柔光</button>
+          <button class="cam-chip" onclick="pickQ(this,'不确定')">不确定</button>
+        </div>
+        <div class="cam-note">
+          <b>判据</b>：看鼻子在脸上的影子 —— <b>边缘像刀一样</b>是硬光；<b>没有边缘</b>或过渡均匀是柔光。
+          拿不准就先选「不确定」，到现场看一眼再改。
+        </div>
+      </div>
+
+      <!-- 布光图（灯光场景） -->
+      <div class="cam-sec cam-light">
+        <div class="cam-h"><span class="cam-t">布光</span>
+          <span class="cam-s">灯光人像才需要，自然光跳过</span>
+          <button class="cam-toggle" onclick="toggleLight()">展开</button></div>
+        <div class="light-body" id="lightBody" style="display:none">
+          <div class="light-mock">
+            <div class="lm-stage">
+              <div class="lm-subj">模特</div>
+              <div class="lm-lamp lm-main">主光<br><em>5600K · 30%</em></div>
+              <div class="lm-lamp lm-shape">造型光<br><em>+蓝片 · 15%</em></div>
+            </div>
+            <div class="lm-ratio">光比 <b>2:1</b></div>
+          </div>
+          <div class="cam-note">
+            <b>典型双灯</b>：一盏控制环境和色彩，一盏做造型（聚光筒 + 色片）。
+            光比可以先选 2:1，现场再看。
+          </div>
+        </div>
+      </div>
+    </section>
+    <!-- ===== Tab：后期交接 ===== -->
+    <section class="pz-pane" id="pz-handoff">
+      <div class="pz-lead">
+        <p class="pz-lead-t">拍完给后期留的话</p>
+        <p class="pz-lead-b">
+          拍的时候的想法，到修图时最容易忘。
+          <b>这张卡在修图时打开，直接告诉你当时怎么想的。</b>
+        </p>
+      </div>
+
+      <div class="ho-card">
+        <div class="ho-sec">
+          <div class="ho-h">这组要什么</div>
+          <textarea class="ho-ta" placeholder="一两句话就够。例如：秋天小清新，暖但不是假的暖，皮肤要真实">秋天小清新，暖但不是假的暖，皮肤要真实</textarea>
+        </div>
+
+        <div class="ho-sec">
+          <div class="ho-h">拍的时候什么条件</div>
+          <div class="ho-auto" id="hoAuto">
+            <div class="ho-row"><span class="ho-k">时段</span><span class="ho-v" id="hoTime">16:26 – 17:05（黄金）</span></div>
+            <div class="ho-row"><span class="ho-k">光线</span><span class="ho-v" id="hoLight">逆光 · 柔光</span></div>
+            <div class="ho-row"><span class="ho-k">参数</span><span class="ho-v" id="hoCam">85mm · f/1.8 · 1/2000 · ISO 100</span></div>
+            <div class="ho-row"><span class="ho-k">天气</span><span class="ho-v">晴 · 云量 12%</span></div>
+          </div>
+          <div class="ho-tip">这几行是自动带过来的 —— 不用重填</div>
+        </div>
+
+        <div class="ho-sec">
+          <div class="ho-h">已经知道要修的</div>
+          <div class="ho-fixes" id="hoFixes">
+            <div class="ho-fix"><span class="ho-dot"></span>脸部逆光偏暗，要提亮但别丢轮廓</div>
+            <div class="ho-fix"><span class="ho-dot"></span>第 3 镜桥上人多，背景虚得不够</div>
+          </div>
+          <button class="ho-add" onclick="addFix()">＋ 加一条</button>
+        </div>
+
+        <div class="ho-sec">
+          <div class="ho-h">客户/模特提过的要求</div>
+          <div class="ho-fixes">
+            <div class="ho-fix ho-client"><span class="ho-dot"></span>「不要太磨皮」（小林第 3 次说了）</div>
+          </div>
+        </div>
+
+        <!-- ⭐ 后期顺序 -->
+        <div class="ho-sec">
+          <div class="ho-h">修图顺序</div>
+          <div class="ho-order" id="hoOrder">
+            <div class="ho-o" data-step="1"><span class="ho-oi">1</span>修瑕疵（痘痘 / 纹 / 不要的东西）</div>
+            <div class="ho-o" data-step="2"><span class="ho-oi">2</span>曲线限制动态范围（保留最亮最黑）</div>
+            <div class="ho-o" data-step="3"><span class="ho-oi">3</span>磨皮（高低频，<b>不能破坏光</b>）</div>
+            <div class="ho-o" data-step="4"><span class="ho-oi">4</span>肤色调整（可选颜色）</div>
+            <div class="ho-o" data-step="5"><span class="ho-oi">5</span>调色 / 风格化（颜色分级）</div>
+          </div>
+          <div class="ho-warn">
+            ⚠️ <b>顺序错了等于白做</b> —— 跳过前面直接调色，是最常见的浪费。
+          </div>
+        </div>
+
+        <div class="ho-sec">
+          <div class="ho-h">导出</div>
+          <div class="ho-export">
+            <button class="ho-btn">存成备忘</button>
+            <button class="ho-btn">发给后期</button>
+            <button class="ho-btn pri">导出 PDF</button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -4298,6 +4645,95 @@ function pickWho(el, key){
 
   fake('已选「'+w.name+'」—— 怎么拍她、管用的口令、雷区都带出来了');
 }
+/* ===== 拍摄参数 ===== */
+
+function pscPick(el){
+  el.parentElement.querySelectorAll('.psc-o').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+}
+
+function pickLens(el, name, note){
+  el.parentElement.querySelectorAll('.lens').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById('lensNote').textContent = note;
+  if(window.lensName) lensName = name;
+  hoSync();
+}
+function pickA(el, v, note){
+  el.parentElement.querySelectorAll('.cam-chip').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+  window.aVal = v;
+  hoSync();
+}
+function pickS(el, v, note){
+  el.parentElement.querySelectorAll('.cam-chip').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+  window.sVal = v;
+  hoSync();
+}
+function pickQ(el, v){
+  el.parentElement.querySelectorAll('.cam-chip').forEach(x=>x.classList.remove('on'));
+  el.classList.add('on');
+  window.qVal = v;
+}
+function toggleLight(){
+  const b = document.getElementById('lightBody');
+  const btn = event.target;
+  const open = b.style.display === 'none';
+  b.style.display = open ? 'block' : 'none';
+  btn.textContent = open ? '收起' : '展开';
+}
+function hoSync(){
+  const lensEl = document.querySelector('.lens.on');
+  const aEl = document.querySelectorAll('.cam-chips .cam-chip.on')[0];
+  const sEl = document.querySelectorAll('.cam-chips .cam-chip.on')[1];
+  const lens = lensEl ? lensEl.textContent : '85mm';
+  const ap = window.aVal || 'f/1.8';
+  const sh = window.sVal || '1/2000';
+  const el = document.getElementById('hoCam');
+  if(el) el.textContent = lens + ' · ' + ap + ' · ' + sh + ' · ISO 100';
+}
+function addFix(){
+  const box = document.getElementById('hoFixes');
+  const d = document.createElement('div');
+  d.className = 'ho-fix';
+  d.innerHTML = '<span class="ho-dot"></span>';
+  d.contentEditable = 'true';
+  d.appendChild(document.createTextNode('点这里写'));
+  box.appendChild(d);
+  d.focus();
+}
+
+/* ===== 光位受控词表（七种）===== */
+const LIGHT_POSITIONS = [
+  {k:'顺光',   n:'脸全亮，缺立体感', a:'从相机方向'},
+  {k:'侧顺光', n:'有过渡，介于顺光和侧光之间', a:'两侧 45°'},
+  {k:'侧光',   n:'会出一个阴阳脸', a:'90°'},
+  {k:'侧逆光', n:'左侧轮廓 + 鼻头有光', a:'身后 45°'},
+  {k:'逆光',   n:'轮廓最强，层次感最好', a:'正后方'},
+  {k:'顶光',   n:'看鼻头在脸上的影子', a:'头顶'},
+  {k:'底光',   n:'恐怖感，一般不用', a:'下巴往上'}
+];
+function openLightPick(btn){
+  const card = btn.closest('.pz-card');
+  const box = card.querySelector('.pz-card-b');
+  if(card.dataset.openPick === '1'){ card.dataset.openPick=''; return; }
+  card.dataset.openPick = '1';
+  box.innerHTML = LIGHT_POSITIONS.map(l =>
+    '<button class="light-p" onclick="setLight(this,\''+l.k+'\')">'
+    + '<span class="lp-k">'+l.k+'</span>'
+    + '<span class="lp-a">'+l.a+'</span>'
+    + '<span class="lp-n">'+l.n+'</span>'
+    + '</button>').join('');
+}
+function setLight(el, name){
+  const card = el.closest('.pz-card');
+  const box = card.querySelector('.pz-card-b');
+  const info = LIGHT_POSITIONS.find(l=>l.k===name);
+  box.innerHTML = '<span class="pz-chip on">'+name+'</span>'
+    + '<span class="light-desc">'+info.a+' · '+info.n+'</span>';
+  card.dataset.openPick = '';
+}
 /* ===== 策划页 · Tab 与交互 ===== */
 function pzTab(el, key){
   document.querySelectorAll('.pz-tab').forEach(x=>x.classList.remove('on'));
@@ -4308,7 +4744,7 @@ function pzTab(el, key){
 }
 function pzTabClicks(key){
   const tabs = document.querySelectorAll('.pz-tab');
-  const map = {plan:0, els:1, shots:2, kit:3};
+  const map = {plan:0, els:1, shots:2, kit:3, cam:4, handoff:5};
   pzTab(tabs[map[key]], key);
 }
 function toggleNote(btn){
@@ -4389,6 +4825,17 @@ function genShots2(which){
       +   '<span class="pz-shot-v">'+r.take+'</span></div>'
       + '<div class="pz-shot-row"><span class="pz-shot-k">风险</span>'
       +   '<span class="pz-shot-v warn">'+r.risk+'</span></div>'
+      + '<div class="pz-shot-check">'
+      +   '<div class="psc-h">按快门前问自己两句</div>'
+      +   '<div class="psc-q"><span class="psc-l">看点</span>'
+      +     '<input class="psc-in" placeholder="这张图的看点是什么？"></div>'
+      +   '<div class="psc-q"><span class="psc-l">秩序</span>'
+      +     '<div class="psc-opts">'
+      +       '<button class="psc-o on" onclick="pscPick(this)">有秩序</button>'
+      +       '<button class="psc-o" onclick="pscPick(this)">没秩序</button>'
+      +       '<button class="psc-o" onclick="pscPick(this)">故意乱</button>'
+      +     '</div></div>'
+      + '</div>'
       + (cue ? '<div class="pz-shot-cue">'
           + '<div class="pz-shot-cue-l">对'+(WHO[currentWho].name)+'说</div>'
           + '<div class="pz-shot-cue-t">'+cue.t+'</div>'
