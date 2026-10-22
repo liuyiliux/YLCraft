@@ -61,7 +61,9 @@ function leComposeScalars(){
   const out = {
     exposure: LOCAL_ADJ.exposure, contrast: LOCAL_ADJ.contrast,
     saturation: LOCAL_ADJ.saturation, temp: LOCAL_ADJ.temp, tint: LOCAL_ADJ.tint,
-    highlights: LOCAL_ADJ.highlights, shadows: LOCAL_ADJ.shadows, clarity: LOCAL_ADJ.clarity
+    highlights: LOCAL_ADJ.highlights, shadows: LOCAL_ADJ.shadows, clarity: LOCAL_ADJ.clarity,
+    /* ⭐ 2026-10-22：细节也要带上，否则 leFilterCSS 里判断 undefined 永远 false */
+    sharpen: LOCAL_ADJ.sharpen || 0, denoise: LOCAL_ADJ.denoise || 0
   };
   LE_LAYERS.forEach(function(L){
     if (!L.on) return;
@@ -166,7 +168,7 @@ function leAdopt(id){
   if (!s) return;
   s.state = 'adopted';
   LE_LAYERS.push({ id:s.id, name:s.title, on:true, region:s.region, p:s.p });
-  leRenderSugg(); leRenderLayers(); leApplyPreview();
+  leRenderSugg(); leRenderLayers(); leApplyPreview(); leSnap();
   toast('已采纳 · 变成图层了，随时能关');
 }
 function leIgnore(id){
@@ -174,7 +176,7 @@ function leIgnore(id){
   if (!s) return;
   s.state = 'ignored';
   LE_LAYERS = LE_LAYERS.filter(function(L){ return L.id !== id; });
-  leRenderSugg(); leRenderLayers(); leApplyPreview();
+  leRenderSugg(); leRenderLayers(); leApplyPreview(); leSnap();
 }
 function leRestore(id){
   const s = LE_SUGG.find(function(x){ return x.id === id; });
@@ -184,19 +186,19 @@ function leRestore(id){
 }
 function leToggleLayer(i){
   LE_LAYERS[i].on = !LE_LAYERS[i].on;
-  leRenderLayers(); leApplyPreview();
+  leRenderLayers(); leApplyPreview(); leSnap();
 }
 function leDelLayer(i){
   const L = LE_LAYERS[i];
   const s = LE_SUGG.find(function(x){ return x.id === L.id; });
   if (s) s.state = 'ignored';
   LE_LAYERS.splice(i, 1);
-  leRenderSugg(); leRenderLayers(); leApplyPreview();
+  leRenderSugg(); leRenderLayers(); leApplyPreview(); leSnap();
 }
 function leClearLayers(){
   LE_LAYERS = [];
   LE_SUGG.forEach(function(s){ if (s.state === 'adopted') s.state = 'pending'; });
-  leRenderSugg(); leRenderLayers(); leApplyPreview();
+  leRenderSugg(); leRenderLayers(); leApplyPreview(); leSnap();
 }
 
 
@@ -336,6 +338,257 @@ function leRenderFx(){
       warn.style.display = 'none';
     }
   }
+}
+
+
+/* ==========================================================================
+   ⭐ 2026-10-22 一次补齐五件：撤销重做 / 锐化降噪 / 裁剪 / 画笔区域 / 局部重绘
+   ========================================================================== */
+
+/* ---------------- 1. 细节滤镜：降噪 + 锐化 ---------------- */
+function leEnsureDetailFilters(denoise, sharpen){
+  let svg = document.getElementById('leDetailSvg');
+  if (!svg){
+    svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.id = 'leDetailSvg';
+    svg.setAttribute('width','0'); svg.setAttribute('height','0');
+    svg.style.position='absolute'; svg.style.pointerEvents='none';
+    document.body.appendChild(svg);
+  }
+  const parts = ['<defs>'];
+  if (denoise > 0.01){
+    const r = (denoise * 1.6).toFixed(2);
+    parts.push('<filter id="leDenoise" x="0" y="0" width="100%" height="100%">'
+      + '<feGaussianBlur stdDeviation="' + r + '"/></filter>');
+  }
+  if (sharpen > 0.01){
+    /* USM 的矩阵近似：中间 1+4a，四邻 -a */
+    const a = (sharpen * 1.1);
+    const ctr = (1 + 4 * a).toFixed(3);
+    const na = (-a).toFixed(3);
+    const k = '0 ' + na + ' 0  ' + na + ' ' + ctr + ' ' + na + '  0 ' + na + ' 0';
+    parts.push('<filter id="leSharpen" x="0" y="0" width="100%" height="100%">'
+      + '<feConvolveMatrix order="3" preserveAlpha="true" kernelMatrix="'
+      + k + '"/></filter>');
+  }
+  parts.push('</defs>');
+  svg.innerHTML = parts.join('');
+}
+
+/* ---------------- 2. 撤销 / 重做 ---------------- */
+let LE_HIST = [];
+let LE_HIST_I = -1;
+let LE_SNAP_T = null;
+
+function leSnapNow(){
+  const s = {
+    adj: JSON.parse(JSON.stringify(LOCAL_ADJ)),
+    layers: JSON.parse(JSON.stringify(LE_LAYERS)),
+    sugg: LE_SUGG.map(function(x){ return { id:x.id, state:x.state }; }),
+    brush: LE_BRUSH_MASK
+  };
+  /* 干掉 redo 分支 */
+  LE_HIST = LE_HIST.slice(0, LE_HIST_I + 1);
+  LE_HIST.push(s);
+  if (LE_HIST.length > 60) LE_HIST.shift();
+  LE_HIST_I = LE_HIST.length - 1;
+  leSyncUndo();
+}
+/* 改动停下 400ms 再记一笔，拖滑块不会记成几十步 */
+function leSnap(){
+  if (LE_SNAP_T) clearTimeout(LE_SNAP_T);
+  LE_SNAP_T = setTimeout(function(){ LE_SNAP_T = null; leSnapNow(); }, 400);
+}
+function leRestoreFrom(s){
+  Object.assign(LOCAL_ADJ, JSON.parse(JSON.stringify(s.adj)));
+  LE_LAYERS = JSON.parse(JSON.stringify(s.layers));
+  s.sugg.forEach(function(x){
+    const t = LE_SUGG.find(function(y){ return y.id === x.id; });
+    if (t) t.state = x.state;
+  });
+  LE_BRUSH_MASK = s.brush || null;
+  if (typeof renderManual === 'function') renderManual();
+  else if (typeof leRenderAll === 'function') leRenderAll();
+  leRenderSugg(); leRenderLayers(); leApplyPreview();
+}
+function leUndo(){
+  if (LE_HIST_I <= 0){ toast('已经到头了'); return; }
+  LE_HIST_I--; leRestoreFrom(LE_HIST[LE_HIST_I]); leSyncUndo();
+  toast('撤销 · 第 ' + (LE_HIST_I + 1) + ' 步');
+}
+function leRedo(){
+  if (LE_HIST_I >= LE_HIST.length - 1){ toast('没有可重做的了'); return; }
+  LE_HIST_I++; leRestoreFrom(LE_HIST[LE_HIST_I]); leSyncUndo();
+  toast('重做 · 第 ' + (LE_HIST_I + 1) + ' 步');
+}
+function leSyncUndo(){
+  const u = document.getElementById('leUndoBtn');
+  const r = document.getElementById('leRedoBtn');
+  if (u) u.disabled = (LE_HIST_I <= 0);
+  if (r) r.disabled = (LE_HIST_I >= LE_HIST.length - 1);
+}
+document.addEventListener('keydown', function(e){
+  if (!(e.ctrlKey || e.metaKey)) return;
+  if (e.key === 'z' || e.key === 'Z'){
+    e.preventDefault();
+    if (e.shiftKey) leRedo(); else leUndo();
+  }
+});
+
+/* ---------------- 3. 裁剪（比例预设）---------------- */
+const LE_RATIOS = { '原图':null, '1:1':1, '4:3':4/3, '3:4':3/4, '16:9':16/9, '9:16':9/16 };
+function leSetCrop(btn, ratio){
+  LOCAL_ADJ.crop = ratio;
+  const box = document.getElementById('leCrops');
+  if (box) box.querySelectorAll('.le-crop').forEach(function(b){ b.classList.remove('on'); });
+  if (btn) btn.classList.add('on');
+  leApplyCrop();
+  leApplyPreview();
+  leSnap();
+}
+function leApplyCrop(){
+  const img = document.getElementById('leImg');
+  if (!img) return;
+  const r = LE_RATIOS[LOCAL_ADJ.crop];
+  if (!r){
+    img.style.aspectRatio = '';
+    img.style.removeProperty('--crop-h');
+    img.dataset.crop = '原图';
+    return;
+  }
+  img.style.aspectRatio = String(r);
+  img.dataset.crop = LOCAL_ADJ.crop;
+}
+
+/* ---------------- 4. 画笔区域 ---------------- */
+let LE_BRUSH_MASK = null;    // dataURL
+let LE_BRUSH_ON = false;
+let LE_BRUSH_SIZE = 34;
+let LE_BRUSH_DRAWING = false;
+
+function leBrushToggle(){
+  LE_BRUSH_ON = !LE_BRUSH_ON;
+  const cv = document.getElementById('leBrushCv');
+  const btn = document.getElementById('leBrushBtn');
+  if (cv) cv.classList.toggle('on', LE_BRUSH_ON);
+  if (btn) btn.classList.toggle('on', LE_BRUSH_ON);
+  if (LE_BRUSH_ON){
+    leBrushInitCanvas();
+    toast('画笔：直接在图上刷，刷到的地方才生效');
+  } else {
+    leBrushCommit();
+  }
+}
+function leBrushInitCanvas(){
+  const cv = document.getElementById('leBrushCv');
+  const img = document.getElementById('leImg');
+  if (!cv || !img) return;
+  const r = img.getBoundingClientRect();
+  cv.width = Math.max(2, Math.round(r.width));
+  cv.height = Math.max(2, Math.round(r.height));
+  cv.style.width = r.width + 'px';
+  cv.style.height = r.height + 'px';
+  /* fixed 定位盖到图片上（模板里 canvas 是 stage 的兄弟，不是图片的子元素） */
+  cv.style.position = 'fixed';
+  cv.style.left = r.left + 'px';
+  cv.style.top = r.top + 'px';
+  cv.style.zIndex = '580';
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  /* 之前画过的接着显示 */
+  if (LE_BRUSH_MASK){
+    const im = new Image();
+    im.onload = function(){ ctx.drawImage(im, 0, 0, cv.width, cv.height); };
+    im.src = LE_BRUSH_MASK;
+  }
+}
+function leBrushPos(e){
+  const cv = document.getElementById('leBrushCv');
+  const r = cv.getBoundingClientRect();
+  return [e.clientX - r.left, e.clientY - r.top];
+}
+function leBrushDown(e){
+  if (!LE_BRUSH_ON) return;
+  LE_BRUSH_DRAWING = true;
+  leBrushDot(e);
+}
+function leBrushMove(e){
+  if (!LE_BRUSH_ON || !LE_BRUSH_DRAWING) return;
+  leBrushDot(e);
+}
+function leBrushUp(){
+  if (!LE_BRUSH_DRAWING) return;
+  LE_BRUSH_DRAWING = false;
+  leBrushCommit();
+}
+function leBrushDot(e){
+  const cv = document.getElementById('leBrushCv');
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  const [x, y] = leBrushPos(e);
+  const rad = LE_BRUSH_SIZE / 2;
+  const g = ctx.createRadialGradient(x, y, rad * 0.35, x, y, rad);
+  g.addColorStop(0, 'rgba(0,0,0,1)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(x, y, rad, 0, Math.PI * 2);
+  ctx.fill();
+}
+function leBrushCommit(){
+  const cv = document.getElementById('leBrushCv');
+  if (!cv) return;
+  LE_BRUSH_MASK = cv.toDataURL('image/png');
+  leRenderFx();
+  leSnap();
+}
+function leBrushClear(){
+  const cv = document.getElementById('leBrushCv');
+  if (cv){
+    const ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, cv.width, cv.height);
+  }
+  LE_BRUSH_MASK = null;
+  leRenderFx();
+  toast('画笔已清空');
+}
+
+/* ---------------- 5. AI 局部重绘 ---------------- */
+let LE_IP_REGION = '矩形';
+/* 原型：不同候选 = 不同处理，用 CSS 滤镜模拟，标注清楚没接 AI */
+const LE_IP_CANDS = [
+  { n:'候选 1 · 补背景', f:'blur(0.6px) brightness(1.04) saturate(0.95)' },
+  { n:'候选 2 · 换色调', f:'hue-rotate(-16deg) saturate(1.15) brightness(1.02)' },
+  { n:'候选 3 · 更干净', f:'brightness(1.07) contrast(0.97) saturate(1.05)' }
+];
+function leIpRegion(btn, r){
+  LE_IP_REGION = r;
+  const box = btn.parentElement;
+  box.querySelectorAll('.le-ip-r').forEach(function(b){ b.classList.remove('on'); });
+  btn.classList.add('on');
+}
+function leIpGo(){
+  const ta = document.getElementById('leIpText');
+  const txt = (ta.value || '').trim();
+  if (!txt){ ta.focus(); toast('先说一句要换成什么'); return; }
+  const host = document.getElementById('leIpCands');
+  if (!host) return;
+  host.innerHTML = '<div class="le-ip-loading">正在生成 3 张…</div>';
+  setTimeout(function(){
+    host.innerHTML = LE_IP_CANDS.map(function(c, i){
+      return '<div class="le-ip-cand" onclick="leIpPick(' + i + ',this)">'
+        + '<div class="le-ip-img" style="filter:' + c.f + '">'
+        +   '<div class="le-ip-inner">' + txt.substring(0, 14) + '</div></div>'
+        + '<div class="le-ip-n">' + c.n + '</div>'
+        + '</div>';
+    }).join('') + '<div class="le-ip-warn">⚠️ 原型占位：还没接 AI，'
+      + '上面三张是本地滤镜模拟，不是真的重绘</div>';
+  }, 700);
+}
+function leIpPick(i, el){
+  el.parentElement.querySelectorAll('.le-ip-cand').forEach(function(e){ e.classList.remove('on'); });
+  el.classList.add('on');
+  toast('选了「' + LE_IP_CANDS[i].n + '」· 原型里只做选中态，不会真改图');
 }
 
 /* ---- 对比原图 ---- */
@@ -598,6 +851,9 @@ openLocalEdit = function(id){
             <div class="le-img${pic?' has-pic':' le-demo'}" id="leImg"${pic?` style="width:100%;height:min(58vh,440px);aspect-ratio:auto;background-image:url('${pic}');background-size:contain;background-position:center;background-repeat:no-repeat;background-color:#0b0b0f"`:''}>
               ${pic?'':'<div class="le-fig"></div>'}
             </div>
+            <canvas class="le-brushcv" id="leBrushCv"
+              onmousedown="leBrushDown(event)" onmousemove="leBrushMove(event)"
+              onmouseup="leBrushUp()" onmouseleave="leBrushUp()"></canvas>
             <div class="le-tag">${pic ? '真实图片预览 · ' + dims : '演示图预览 · 导入图片后这里显示你自己的图'} · 参数渲染，不是烘焙进图里</div>
           </div>
 
@@ -675,6 +931,48 @@ openLocalEdit = function(id){
             <!-- 选中点的输入/输出值（Camera Raw 也是这么显示的） -->
             <div class="le-curveio" id="leCurveIO">输入：— 输出：—</div>
             <div class="le-hint">点空白处加点（PS 上限 16）· 右键/Ctrl 点删点 · 双击拉直</div>
+
+            <!-- ⭐ 细节 -->
+            <div class="le-sec">细节 <span class="le-sec2">降噪先，锐化后</span></div>
+            ${leSlider('denoise','降噪','',0,1,0.01)}
+            ${leSlider('sharpen','锐化','',0,1,0.01)}
+
+            <!-- ⭐ 裁剪 -->
+            <div class="le-sec">裁剪
+              <span class="le-sec2">只改显示和导出</span>
+              <button class="le-reset" onclick="leSetCrop(null,'原图')">还原</button>
+            </div>
+            <div class="le-crops" id="leCrops">
+              <button class="le-crop on" onclick="leSetCrop(this,'原图')">原图</button>
+              <button class="le-crop" onclick="leSetCrop(this,'1:1')">1:1</button>
+              <button class="le-crop" onclick="leSetCrop(this,'4:3')">4:3</button>
+              <button class="le-crop" onclick="leSetCrop(this,'3:4')">3:4</button>
+              <button class="le-crop" onclick="leSetCrop(this,'16:9')">16:9</button>
+              <button class="le-crop" onclick="leSetCrop(this,'9:16')">9:16</button>
+            </div>
+
+            <!-- ⭐ 画笔区域 -->
+            <div class="le-sec">画笔区域 <span class="le-sec2">刷到哪改到哪</span></div>
+            <div class="le-brushrow">
+              <button class="le-brushbtn" id="leBrushBtn" onclick="leBrushToggle()">开画笔</button>
+              <span class="le-blab">大小</span>
+              <input type="range" class="le-r le-brushsize" min="8" max="120" step="2" value="34"
+                oninput="LE_BRUSH_SIZE=Number(this.value)">
+              <button class="le-reset" onclick="leBrushClear()">清空</button>
+            </div>
+            <div class="le-hint">开了画笔后，在图上按住拖动就刷遮罩</div>
+
+            <!-- ⭐ 局部重绘 -->
+            <div class="le-sec">局部重绘 <span class="le-sec2">圈一块 · 说一句</span></div>
+            <div class="le-ipregions">
+              <button class="le-ip-r on" onclick="leIpRegion(this,'矩形')">矩形</button>
+              <button class="le-ip-r" onclick="leIpRegion(this,'椭圆')">椭圆</button>
+              <button class="le-ip-r" onclick="leIpRegion(this,'画笔')">画笔</button>
+            </div>
+            <textarea class="le-ipta" id="leIpText"
+              placeholder="把这里换成什么？&#10;例如：去掉后面那个人 / 换成一片天空"></textarea>
+            <button class="le-ipgo" onclick="leIpGo()">生成 3 张</button>
+            <div class="le-ipcands" id="leIpCands"></div>
           </div>
         </div>
 
@@ -684,6 +982,8 @@ openLocalEdit = function(id){
             <span class="le-costn">本地像素运算 · 不走模型 · 参数留着随时能改</span>
           </div>
           <div class="le-acts">
+            <button class="insp-b ghost" id="leUndoBtn" onclick="leUndo()" title="撤销 Ctrl+Z">↶ 撤销</button>
+            <button class="insp-b ghost" id="leRedoBtn" onclick="leRedo()" title="重做 Ctrl+Shift+Z">↷ 重做</button>
             <button class="insp-b ghost" onclick="leResetAll()">全部重置</button>
             <button class="insp-b pri" onclick="leApply()">应用</button>
           </div>
@@ -694,6 +994,8 @@ openLocalEdit = function(id){
   leRenderAll();
   /* ⭐ 2026-10-22：三栏里的左栏要初始化 */
   if (typeof leRenderSugg === 'function'){ leRenderSugg(); leRenderLayers(); }
+  if (typeof leApplyCrop === 'function') leApplyCrop();
+  if (typeof leSnapNow === 'function'){ LE_HIST = []; LE_HIST_I = -1; leSnapNow(); }
 };
 
 /* ---- 重置色阶 ---- */
