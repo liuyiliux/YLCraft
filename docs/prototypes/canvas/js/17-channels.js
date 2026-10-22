@@ -831,15 +831,29 @@ function leExportDo(){
     const mime = fmt === 'png' ? 'image/png' : (fmt === 'webp' ? 'image/webp' : 'image/jpeg');
     res.canvas.toBlob(function(blob){
       if (!blob){ toast('导出失败'); return; }
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'export_' + Date.now() + '.' + (fmt === 'jpeg' ? 'jpg' : fmt);
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1200);
-      toast('已导出 ' + W + '×' + H + ' · ' + (blob.size / 1024).toFixed(0) + 'KB');
+      /* ⭐ 保留原图 EXIF（PhotoMaster 的做法）*/
+      if (LE_EXIF && LE_EXPORT_FMT === 'jpeg'){
+        blob.arrayBuffer().then(function(ab){
+          const bytes = new Uint8Array(ab);
+          const merged = leInjectExif(bytes, LE_EXIF);
+          doDownload(new Blob([merged], { type: 'image/jpeg' }), W, H);
+        });
+        return;
+      }
+      doDownload(blob, W, H);
     }, mime, LE_EXPORT_Q);
   });
+}
+function doDownload(blob, W, H){
+  const ext = LE_EXPORT_FMT === 'jpeg' ? 'jpg' : LE_EXPORT_FMT;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'export_' + Date.now() + '.' + ext;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1200);
+  toast('已导出 ' + W + '×' + H + ' · ' + (blob.size / 1024).toFixed(0) + 'KB'
+    + (LE_EXIF ? ' · 已保留 EXIF' : ''));
 }
 
 /* ---------------- 5. AI 局部重绘 ---------------- */
@@ -1054,6 +1068,387 @@ function leMoveLayer(i, dir){
   leRenderLayers(); leApplyPreview();
   if (typeof leSnap === 'function') leSnap();
   toast(dir < 0 ? '上移一层' : '下移一层');
+}
+
+
+/* ==========================================================================
+   ⭐ 2026-10-22 把旧版（26-retouch.js）的磨皮算法接进新面板
+   旧版是纯 canvas 像素算法，质量比 CSS 滤镜好得多：
+     低频 = 可分离盒式模糊 ×3（近似高斯，O(n)）
+     高频 = 原图 - 低频
+     合成：高频幅度大的（边缘/五官）保留，小的（噪点/毛孔）压掉
+   这就是「磨皮但不糊五官」的原理，也是课程里说的「磨皮不能破坏光」的基础。
+   ========================================================================== */
+
+/* 可分离盒式模糊（1D 前缀和，O(n)）*/
+function leBoxBlur1D(src, w, h, r, horiz){
+  const out = new Float32Array(src.length);
+  const n = horiz ? w : h, m = horiz ? h : w;
+  const win = 2 * r + 1;
+  for (let line = 0; line < m; line++){
+    for (let ch = 0; ch < 3; ch++){
+      let sum = 0;
+      const idx = function(i){
+        const x = horiz ? i : line;
+        const y = horiz ? line : i;
+        return (y * w + x) * 4 + ch;
+      };
+      for (let k = -r; k <= r; k++){
+        const ii = Math.max(0, Math.min(n - 1, k));
+        sum += src[idx(ii)];
+      }
+      for (let i = 0; i < n; i++){
+        out[idx(i)] = sum / win;
+        const addI = Math.min(n - 1, i + r + 1);
+        const subI = Math.max(0, i - r);
+        sum += src[idx(addI)] - src[idx(subI)];
+      }
+    }
+    for (let i = 0; i < n; i++){
+      const x = horiz ? i : line;
+      const y = horiz ? line : i;
+      out[(y * w + x) * 4 + 3] = src[(y * w + x) * 4 + 3];
+    }
+  }
+  return out;
+}
+
+/* 三次盒式模糊 ≈ 高斯 */
+function leBoxBlur3(src, w, h, r){
+  let a = src;
+  for (let k = 0; k < 3; k++){
+    a = leBoxBlur1D(a, w, h, r, true);
+    a = leBoxBlur1D(a, w, h, r, false);
+  }
+  return a;
+}
+
+/* 磨皮：高频阈值保边 */
+function leSkinSmooth(srcData, w, h, amt, rad){
+  const low = leBoxBlur3(srcData, w, h, Math.max(1, Math.round(rad)));
+  const out = new Uint8ClampedArray(srcData.length);
+  const THRESH = 30;
+  const keepFlat = 1 - amt;
+  for (let i = 0; i < srcData.length; i += 4){
+    for (let ch = 0; ch < 3; ch++){
+      const hi = srcData[i+ch] - low[i+ch];
+      const mag = Math.abs(hi);
+      const t = Math.min(1, mag / THRESH);
+      const keep = keepFlat + (1.0 - keepFlat) * t;
+      out[i+ch] = low[i+ch] + hi * keep;
+    }
+    out[i+3] = srcData[i+3];
+  }
+  return out;
+}
+
+/* 面板用：真的把磨皮作用到预览上（生成一张缓存图盖上去）*/
+let LE_SKIN_CACHE = null;
+
+function leSkinApplyPreview(){
+  const img = document.getElementById('leImg');
+  if (!img) return;
+  const amt = (LOCAL_ADJ.skinAmt || 0);
+  const rad = (LOCAL_ADJ.skinRad || 3);
+
+  /* 先移除旧的 */
+  img.querySelectorAll('.le-skinlayer').forEach(function(e){ e.remove(); });
+  if (amt < 0.01) return;
+
+  /* 取底图像素 */
+  const bg = getComputedStyle(img).backgroundImage;
+  const m = bg && bg.match(/url\(["']?(.+?)["']?\)/);
+  if (!m || m[1] === 'none'){
+    /* 演示图：用一个简单的模糊代替（真算法要像素）*/
+    const layer = document.createElement('div');
+    layer.className = 'le-skinlayer';
+    layer.style.backdropFilter = 'blur(' + (amt * 2.5).toFixed(2) + 'px)';
+    layer.style.opacity = amt;
+    layer.style.background = 'inherit';
+    layer.style.backgroundImage = bg;
+    layer.style.backgroundSize = 'inherit';
+    img.appendChild(layer);
+    return;
+  }
+
+  /* 真实图片：跑真算法 */
+  const im = new Image();
+  im.crossOrigin = 'anonymous';
+  im.onload = function(){
+    const W = Math.min(im.width, 900);
+    const H = Math.round(im.height * (W / im.width));
+    const cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    const ctx = cv.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(im, 0, 0, W, H);
+    const src = ctx.getImageData(0, 0, W, H).data;
+    const out = leSkinSmooth(src, W, H, amt, rad);
+    ctx.putImageData(new ImageData(out, W, H), 0, 0);
+
+    const layer = document.createElement('div');
+    layer.className = 'le-skinlayer';
+    layer.style.backgroundImage = 'url(' + cv.toDataURL('image/jpeg', 0.9) + ')';
+    layer.style.backgroundSize = 'cover';
+    layer.style.backgroundPosition = 'center';
+    layer.style.opacity = amt;
+    img.appendChild(layer);
+  };
+  im.onerror = function(){ /* 跨域读不了就跳过 */ };
+  im.src = m[1];
+}
+
+function leSetSkin(amt, rad){
+  const t = (typeof leSetTarget === 'function') ? leSetTarget() : LOCAL_ADJ;
+  if (amt != null) t.skinAmt = Number(amt);
+  if (rad != null) t.skinRad = Number(rad);
+  const a = document.getElementById('leVal_skinAmt');
+  if (a) a.textContent = Math.round((t.skinAmt || 0) * 100) + '%';
+  const r = document.getElementById('leVal_skinRad');
+  if (r) r.textContent = t.skinRad || 3;
+  leSkinApplyPreview();
+  if (typeof leSnap === 'function') leSnap();
+}
+
+
+/* ==========================================================================
+   ⭐ 2026-10-22 对照 PhotoMaster 补：EXIF 保留 + 自动保存
+   ========================================================================== */
+
+/* ---------- 1. EXIF 直通 ----------
+   PhotoMaster：「JPEG 原图可保留 EXIF」
+   做法：如果原图是 JPEG 且带 EXIF，把它那段 APP1 段原样塞进导出文件。
+   EXIF 是 JPEG 的 APP1 段（marker 0xFFE1），紧跟 SOI（0xFFD8）之后。
+*/
+function leExtractExif(jpegBytes){
+  /* 返回 EXIF APP1 段的原始字节（含 marker + length），没有就返回 null */
+  if (!jpegBytes || jpegBytes.length < 4) return null;
+  if (jpegBytes[0] !== 0xFF || jpegBytes[1] !== 0xD8) return null;
+  let p = 2;
+  while (p + 4 < jpegBytes.length){
+    if (jpegBytes[p] !== 0xFF) break;
+    const marker = jpegBytes[p+1];
+    if (marker === 0xDA) break;             /* SOS：后面是图像数据了 */
+    const len = (jpegBytes[p+2] << 8) | jpegBytes[p+3];
+    if (marker === 0xE1){
+      /* 检查是不是 Exif\0\0 */
+      const isExif = jpegBytes[p+4] === 0x45 && jpegBytes[p+5] === 0x78
+                  && jpegBytes[p+6] === 0x69 && jpegBytes[p+7] === 0x66;
+      if (isExif){
+        return jpegBytes.slice(p, p + 2 + len);
+      }
+    }
+    p += 2 + len;
+  }
+  return null;
+}
+
+function leInjectExif(jpegBytes, exifSegment){
+  if (!exifSegment || !jpegBytes) return jpegBytes;
+  /* SOI(2) + EXIF段 + 其余 */
+  const out = new Uint8Array(2 + exifSegment.length + (jpegBytes.length - 2));
+  out[0] = 0xFF; out[1] = 0xD8;
+  out.set(exifSegment, 2);
+  out.set(jpegBytes.slice(2), 2 + exifSegment.length);
+  return out;
+}
+
+/* 记录原图 EXIF（打开面板时取一次）*/
+let LE_EXIF = null;
+function leLoadExif(srcUrl){
+  if (!srcUrl) return;
+  fetch(srcUrl).then(function(r){ return r.arrayBuffer(); })
+    .then(function(buf){
+      const bytes = new Uint8Array(buf);
+      LE_EXIF = leExtractExif(bytes);
+      const info = document.getElementById('leExifInfo');
+      if (info){
+        info.textContent = LE_EXIF
+          ? '✓ 原图带 EXIF，导出时会保留'
+          : '原图没有 EXIF';
+      }
+    })
+    .catch(function(){
+      const info = document.getElementById('leExifInfo');
+      if (info) info.textContent = '读不到原图，EXIF 无法保留';
+    });
+}
+
+/* ---------- 2. 自动保存 ----------
+   PhotoMaster：「工程存 IndexedDB，停顿 0.6 秒写入」
+   我们存在 localStorage（原型够用），键名带项目 id。
+*/
+let LE_AUTOSAVE_T = null;
+const LE_SAVE_KEY = 'ylcraft_le_autosave_v1';
+
+function leCollectState(){
+  return {
+    v: 1,
+    t: Date.now(),
+    id: (typeof LE_ID !== 'undefined') ? LE_ID : null,
+    adj: JSON.parse(JSON.stringify(LOCAL_ADJ)),
+    layers: JSON.parse(JSON.stringify(LE_LAYERS)),
+    sugg: LE_SUGG.map(function(s){ return { id:s.id, state:s.state }; }),
+    order: JSON.parse(JSON.stringify(
+      (typeof LE_ORDER_DONE !== 'undefined') ? LE_ORDER_DONE : {}
+    )),
+    crop: (typeof LE_CROP_BOX !== 'undefined') ? LE_CROP_BOX : null
+  };
+}
+
+function leAutoSave(){
+  if (LE_AUTOSAVE_T) clearTimeout(LE_AUTOSAVE_T);
+  LE_AUTOSAVE_T = setTimeout(function(){
+    LE_AUTOSAVE_T = null;
+    try {
+      localStorage.setItem(LE_SAVE_KEY, JSON.stringify(leCollectState()));
+      leFlashSaved();
+    } catch (e){ /* 配额满了就算了 */ }
+  }, 600);
+}
+
+function leFlashSaved(){
+  const el = document.getElementById('leSavedTag');
+  if (!el) return;
+  el.textContent = '已自动保存 ' + new Date().toLocaleTimeString('zh-CN', {
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  });
+  el.classList.add('on');
+  clearTimeout(el._t);
+  el._t = setTimeout(function(){ el.classList.remove('on'); }, 2500);
+}
+
+function leRestoreSaved(){
+  try {
+    const raw = localStorage.getItem(LE_SAVE_KEY);
+    if (!raw) return false;
+    const s = JSON.parse(raw);
+    if (!s || s.v !== 1) return false;
+    Object.assign(LOCAL_ADJ, s.adj || {});
+    LE_LAYERS = s.layers || [];
+    (s.sugg || []).forEach(function(x){
+      const t = LE_SUGG.find(function(y){ return y.id === x.id; });
+      if (t) t.state = x.state;
+    });
+    if (typeof LE_ORDER_DONE !== 'undefined' && s.order){
+      Object.keys(s.order).forEach(function(k){ LE_ORDER_DONE[k] = s.order[k]; });
+    }
+    if (typeof LE_CROP_BOX !== 'undefined' && s.crop){
+      LE_CROP_BOX = s.crop;
+    }
+    return true;
+  } catch (e){ return false; }
+}
+
+function leClearSaved(){
+  try { localStorage.removeItem(LE_SAVE_KEY); } catch (e){}
+  toast('已清掉自动保存');
+}
+
+
+/* ==========================================================================
+   ⭐ 2026-10-22 把旧版液化也接进新面板
+   旧版 rtLiquify 是纯像素函数：在半径内按 (1-d/r)² 的权重反向采样，
+   推一下就变形。这里改成不依赖那个弹层的独立版本。
+   ========================================================================== */
+
+function leLiquifyPixels(cur, w, h, cx, cy, dx, dy, radius, strength){
+  const src = new Uint8ClampedArray(cur.data);
+  const out = cur.data;
+  const r2 = radius * radius;
+  for (let y = 0; y < h; y++){
+    for (let x = 0; x < w; x++){
+      const ddx = x - cx, ddy = y - cy;
+      const d2 = ddx * ddx + ddy * ddy;
+      if (d2 > r2) continue;
+      const d = Math.sqrt(d2);
+      const amt = strength * Math.pow(1 - d / radius, 2);
+      const sx = x - dx * amt, sy = y - dy * amt;
+      const x0 = Math.floor(sx), y0 = Math.floor(sy);
+      const fx = sx - x0, fy = sy - y0;
+      const idx = (y * w + x) * 4;
+      if (x0 < 0 || y0 < 0 || x0 >= w - 1 || y0 >= h - 1) continue;
+      for (let ch = 0; ch < 3; ch++){
+        const p00 = src[(y0*w+x0)*4+ch];
+        const p10 = src[(y0*w+x0+1)*4+ch];
+        const p01 = src[((y0+1)*w+x0)*4+ch];
+        const p11 = src[((y0+1)*w+x0+1)*4+ch];
+        const top = p00 + (p10 - p00) * fx;
+        const bot = p01 + (p11 - p01) * fx;
+        out[idx+ch] = top + (bot - top) * fy;
+      }
+      out[idx+3] = src[idx+3];
+    }
+  }
+  return out;
+}
+
+/* 面板交互：开液化后在图上按住拖动 */
+let LE_LIQ_ON = false;
+let LE_LIQ_LAST = null;
+let LE_LIQ_SIZE = 60;
+let LE_LIQ_STRENGTH = 0.55;
+
+function leLiquifyToggle(){
+  LE_LIQ_ON = !LE_LIQ_ON;
+  const btn = document.getElementById('leLiqBtn');
+  const cv = document.getElementById('leBrushCv');
+  if (btn) btn.classList.toggle('on', LE_LIQ_ON);
+  if (cv){
+    if (LE_LIQ_ON){
+      leBrushInitCanvas();
+      cv.classList.add('on');
+      cv.style.cursor = 'grab';
+      toast('液化：在图上按住往要推的方向拖');
+    } else {
+      cv.classList.remove('on');
+      btn && btn.classList.remove('on');
+      leBrushCommit();
+    }
+  }
+}
+
+function leLiquifyDown(e){
+  if (!LE_LIQ_ON) return;
+  leLiquifyMove(e);
+}
+function leLiquifyMove(e){
+  if (!LE_LIQ_ON) return;
+  const cv = document.getElementById('leBrushCv');
+  const img = document.getElementById('leImg');
+  if (!cv || !img) return;
+  const r = cv.getBoundingClientRect();
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+
+  if (!LE_LIQ_LAST){
+    LE_LIQ_LAST = { x: x, y: y };
+    return;
+  }
+  const dx = (x - LE_LIQ_LAST.x) * 0.9;
+  const dy = (y - LE_LIQ_LAST.y) * 0.9;
+  if (Math.abs(dx) < 0.4 && Math.abs(dy) < 0.4) return;
+  LE_LIQ_LAST = { x: x, y: y };
+
+  /* 拿当前 canvas 像素推一下 */
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  const w = cv.width, h = cv.height;
+  if (w < 4 || h < 4) return;
+  const data = ctx.getImageData(0, 0, w, h);
+  leLiquifyPixels(data, w, h, x, y, dx, dy, LE_LIQ_SIZE, LE_LIQ_STRENGTH);
+  ctx.putImageData(data, 0, 0);
+}
+function leLiquifyUp(){
+  LE_LIQ_LAST = null;
+  if (LE_LIQ_ON && typeof leBrushCommit === 'function'){ /* 累积在遮罩里 */ }
+}
+function leSetLiqSize(v){
+  LE_LIQ_SIZE = Number(v);
+  const el = document.getElementById('leVal_liqSize');
+  if (el) el.textContent = Math.round(v);
+}
+function leSetLiqStr(v){
+  LE_LIQ_STRENGTH = Number(v);
+  const el = document.getElementById('leVal_liqStr');
+  if (el) el.textContent = Math.round(v * 100) + '%';
 }
 
 /* ---------- 2. 白平衡吸管 ---------- */
@@ -1679,7 +2074,7 @@ openLocalEdit = function(id){
             </div>
             <div class="le-cropov" id="leCropOv" onmousemove="leCropMove(event)" onmouseup="leCropUp()"><div class="le-cropbox" onmousedown="leCropDown(event,'move')"><i class="le-ch nw" onmousedown="leCropDown(event,'nw')"></i><i class="le-ch ne" onmousedown="leCropDown(event,'ne')"></i><i class="le-ch sw" onmousedown="leCropDown(event,'sw')"></i><i class="le-ch se" onmousedown="leCropDown(event,'se')"></i></div></div>
             <canvas class="le-brushcv" id="leBrushCv"
-              onmousedown="leBrushDown(event)" onmousemove="leBrushMove(event)"
+              onmousedown="LE_LIQ_ON?leLiquifyDown(event):leBrushDown(event)" onmousemove="LE_LIQ_ON?leLiquifyMove(event):leBrushMove(event)"
               onmouseup="leBrushUp()" onmouseleave="leBrushUp()"></canvas>
             <div class="le-tag">${pic ? '真实图片预览 · ' + dims : '演示图预览 · 导入图片后这里显示你自己的图'} · 参数渲染，不是烘焙进图里</div>
           </div>
@@ -1798,6 +2193,33 @@ openLocalEdit = function(id){
             </div>
             <div class="le-hint">开了画笔后，在图上按住拖动就刷遮罩</div>
 
+            <!-- ⭐ 磨皮（旧版高低频算法接进来）-->
+            <div class="le-sec">磨皮 <span class="le-sec2">高低频分离 · 不破坏光</span></div>
+            <div class="le-row"><span class="le-l">强度</span>
+              <input type="range" class="le-r" min="0" max="1" step="0.01" value="0"
+                oninput="leSetSkin(this.value,null)">
+              <span class="le-v" id="leVal_skinAmt">0%</span></div>
+            <div class="le-row"><span class="le-l">半径</span>
+              <input type="range" class="le-r" min="1" max="12" step="1" value="3"
+                oninput="leSetSkin(null,this.value)">
+              <span class="le-v" id="leVal_skinRad">3</span></div>
+            <div class="le-hint">教证：磨皮不能破坏光 —— 下面的直方图会告诉你影调有没有被压扁</div>
+
+            <!-- ⭐ 液化（旧版算法接进来）-->
+            <div class="le-sec">液化 <span class="le-sec2">推脸 · 推身材</span></div>
+            <div class="le-brushrow">
+              <button class="le-brushbtn" id="leLiqBtn" onclick="leLiquifyToggle()">开液化</button>
+              <span class="le-blab">大小</span>
+              <input type="range" class="le-r le-brushsize" min="20" max="160" step="2" value="60"
+                oninput="leSetLiqSize(this.value)">
+              <span class="le-v" id="leVal_liqSize" style="width:26px">60</span>
+            </div>
+            <div class="le-row"><span class="le-l">强度</span>
+              <input type="range" class="le-r" min="0.1" max="1" step="0.05" value="0.55"
+                oninput="leSetLiqStr(this.value)">
+              <span class="le-v" id="leVal_liqStr">55%</span></div>
+            <div class="le-hint">开了在图上按住往要推的方向拖</div>
+
             <!-- ⭐ 课程三件：肤色检查 / 下手别太狠 / 修图顺序 -->
             <div class="le-sec">肤色检查 <span class="le-sec2">看脸上有没有偏蓝偏绿</span></div>
             <button class="le-ipgo" onclick="leSkinCheck()">检查肤色</button>
@@ -1840,6 +2262,14 @@ openLocalEdit = function(id){
             <div class="le-histlist" id="leHistList"></div>
 
             <!-- ⭐ 局部重绘 -->
+            <div class="le-sec">导出信息 <span class="le-sec2">EXIF + 自动保存</span></div>
+            <div class="le-exif" id="leExifInfo">正在检查原图 EXIF…</div>
+            <div class="le-savedtag" id="leSavedTag"></div>
+            <div class="le-brushrow" style="margin-top:6px">
+              <button class="le-brushbtn" onclick="leRestoreSaved()">恢复上次</button>
+              <button class="le-brushbtn" onclick="leClearSaved()">清掉自动保存</button>
+            </div>
+
             <div class="le-sec">局部重绘 <span class="le-sec2">圈一块 · 说一句</span></div>
             <div class="le-ipregions">
               <button class="le-ip-r on" onclick="leIpRegion(this,'矩形')">矩形</button>
@@ -1878,6 +2308,9 @@ openLocalEdit = function(id){
   if (typeof leApplyCrop === 'function') leApplyCrop();
   if (typeof leSyncPanel === 'function') leSyncPanel();
   if (typeof leSnapNow === 'function'){ LE_HIST = []; LE_HIST_I = -1; leSnapNow(); }
+  /* EXIF + 自动保存 */
+  if (typeof leLoadExif === 'function') leLoadExif(pic);
+  if (typeof leRestoreSaved === 'function' && leRestoreSaved()){ leRenderLayers(); leRenderSugg(); }
 };
 
 /* ---- 重置色阶 ---- */

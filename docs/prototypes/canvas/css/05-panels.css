@@ -1539,3 +1539,13 @@
 .lh-mv{font-size:10px;color:var(--tx3);cursor:pointer;padding:0 2px;background:none;
   border:none;font-family:inherit;transition:.16s;flex-shrink:0;line-height:1}
 .lh-mv:hover{color:var(--ac)}
+
+/* 磨皮图层（旧版高低频算法结果盖在图上）*/
+.le-skinlayer{position:absolute;inset:0;pointer-events:none;z-index:3}
+
+/* EXIF + 自动保存 */
+.le-exif{font-size:9.5px;color:var(--tx3);font-family:var(--fm);line-height:1.5;
+  padding:7px 10px;border-radius:5px;background:var(--s2);margin-bottom:6px}
+.le-savedtag{font-size:9px;color:#34d399;font-family:var(--fm);opacity:0;
+  transition:opacity .3s;text-align:center;padding:2px 0}
+.le-savedtag.on{opacity:1}

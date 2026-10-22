@@ -599,6 +599,8 @@ function leApplyPreview(){
   if (typeof leRenderFx === 'function') leRenderFx();
   /* 课程：下手别太狠 */
   if (typeof leCheckHarsh === 'function') leCheckHarsh();
+  if (typeof leSkinApplyPreview === 'function') leSkinApplyPreview();
+  if (typeof leAutoSave === 'function') leAutoSave();
 }
 
 function closeLocalEdit(){
