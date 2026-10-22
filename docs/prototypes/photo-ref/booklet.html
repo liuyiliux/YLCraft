@@ -54,6 +54,10 @@ body{background:var(--bgPage);color:var(--tx1);font-family:var(--ff);
 button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 input{font:inherit}
 a{color:inherit;text-decoration:none}
+code{font-family:var(--fm);font-size:var(--fs-xs);padding:1px 5px;border-radius:4px;
+  background:var(--bgInput);border:1px solid var(--bd2);color:var(--tx2);word-break:break-all}
+kbd{font-family:var(--fm);font-size:var(--fs-xs);padding:1px 5px;border-radius:4px;
+  border:1px solid var(--bd2);background:var(--bgCard);color:var(--tx2)}
 ::selection{background:color-mix(in srgb,var(--photo) 34%,transparent)}
 
 /* ---------- 顶栏 ---------- */
@@ -64,7 +68,7 @@ a{color:inherit;text-decoration:none}
 .logo i{width:28px;height:28px;border-radius:var(--radiusSM);flex-shrink:0;
   background:linear-gradient(135deg,var(--photo) 0%,#b45309 100%)}
 .top-sub{font-size:var(--fs-cap);color:var(--tx3);white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis;max-width:330px}
+  text-overflow:ellipsis;max-width:320px}
 .spacer{flex:1}
 .searchbox{position:relative;width:320px;flex-shrink:0}
 .searchbox input{width:100%;padding:9px 34px 9px 36px;border-radius:var(--radiusSM);
@@ -90,7 +94,9 @@ a{color:inherit;text-decoration:none}
 .btn:hover{border-color:var(--photo);color:var(--tx1)}
 .btn.pri{background:var(--photo);border-color:var(--photo);color:#231a02;font-weight:600}
 .btn.pri:hover{filter:brightness(1.06);color:#231a02}
-.btn.danger:hover{border-color:var(--err);color:var(--err)}
+.btn.quick{background:color-mix(in srgb,var(--photo) 10%,transparent);
+  border-color:color-mix(in srgb,var(--photo) 40%,transparent);color:var(--photo);font-weight:600}
+.btn.quick:hover{background:color-mix(in srgb,var(--photo) 16%,transparent);border-color:var(--photo)}
 
 /* ---------- 整体布局 ---------- */
 .shell{display:grid;grid-template-columns:300px minmax(0,1fr);gap:24px;
@@ -99,22 +105,23 @@ a{color:inherit;text-decoration:none}
 /* ---------- 左侧 ---------- */
 .side{position:sticky;top:88px;display:flex;flex-direction:column;gap:14px;
   max-height:calc(100vh - 112px);overflow:auto;padding-bottom:8px}
-.progbox{background:var(--bgCard);border:1px solid var(--bd2);
-  border-radius:var(--radiusMD);padding:14px 16px;flex-shrink:0}
-.prog-hd{display:flex;align-items:baseline;justify-content:space-between;
-  font-size:var(--fs-cap);color:var(--tx2)}
-.prog-hd b{font-family:var(--fm);font-size:var(--fs-h4);color:var(--photo)}
-.bar{height:8px;border-radius:4px;background:var(--bgInput);
-  border:1px solid var(--bd);margin:10px 0 9px;overflow:hidden}
-.bar i{display:block;height:100%;width:0;border-radius:4px;
-  background:linear-gradient(90deg,var(--photo) 0%,#f59e0b 100%);transition:width .35s}
-.prog-meta{display:flex;flex-direction:column;gap:3px;font-size:var(--fs-xs);color:var(--tx3)}
 .side-card{background:var(--bgCard);border:1px solid var(--bd2);
   border-radius:var(--radiusMD);overflow:hidden;flex-shrink:0}
 .side-card .hd{display:flex;align-items:center;justify-content:space-between;
   padding:12px 16px;border-bottom:1px solid var(--bd2);
   font-size:var(--fs-cap);font-weight:600}
 .side-card .hd span{font-family:var(--fm);font-weight:400;font-size:var(--fs-xs);color:var(--tx3)}
+.fav-list{padding:6px;max-height:250px;overflow:auto}
+.fav-item{display:flex;align-items:flex-start;gap:8px;width:100%;text-align:left;
+  padding:9px 10px;border-radius:8px;transition:.15s}
+.fav-item:hover{background:var(--bgHover)}
+.fav-item .fi-star{color:var(--photo);font-size:var(--fs-xs);line-height:1.7;flex-shrink:0}
+.fav-item .fi-t{flex:1;min-width:0}
+.fav-item .fi-title{font-size:var(--fs-cap);color:var(--tx2);line-height:1.4;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.fav-item:hover .fi-title{color:var(--tx1)}
+.fav-item .fi-ch{font-size:var(--fs-xs);color:var(--tx3);font-family:var(--fm);margin-top:2px}
+.fav-empty{padding:12px 14px 14px;font-size:var(--fs-xs);color:var(--tx3);line-height:1.7}
 .chlist{padding:6px}
 .ch{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
   padding:10px 12px;border-radius:var(--radiusSM);border:1px solid transparent;
@@ -127,10 +134,8 @@ a{color:inherit;text-decoration:none}
 .ch .t{flex:1;min-width:0;font-size:var(--fs-cap);color:var(--tx2);line-height:1.35}
 .ch.on .t{color:var(--tx1);font-weight:600}
 .ch .c{font-family:var(--fm);font-size:var(--fs-xs);color:var(--tx3);flex-shrink:0}
-.ch.done .c{color:var(--ok)}
-.side-foot{display:grid;grid-template-columns:1fr 1fr;gap:8px;flex-shrink:0}
-.side-foot .btn{font-size:var(--fs-xs);padding:8px}
-.side-foot .wide{grid-column:1/-1}
+.side-note{padding:10px 12px;border-radius:8px;background:var(--bgInput);
+  border:1px solid var(--bd);font-size:var(--fs-xs);color:var(--tx3);line-height:1.9}
 
 /* ---------- 主区 ---------- */
 .main{min-width:0;display:flex;flex-direction:column;gap:16px}
@@ -148,7 +153,7 @@ a{color:inherit;text-decoration:none}
   background:color-mix(in srgb,var(--photo) 10%,transparent);
   padding:4px 10px;border-radius:20px}
 .hero h1{font-size:var(--fs-h1);line-height:var(--lh-h);letter-spacing:-.01em;margin-bottom:10px}
-.hero p{font-size:var(--fs-body);color:var(--tx2);line-height:1.7;max-width:780px}
+.hero p{font-size:var(--fs-body);color:var(--tx2);line-height:1.7;max-width:800px}
 .hero-stats{display:flex;gap:24px;flex-wrap:wrap;margin-top:16px}
 .hs{display:flex;align-items:baseline;gap:7px;font-size:var(--fs-xs);color:var(--tx3)}
 .hs b{font-family:var(--fm);font-size:var(--fs-h4);color:var(--tx1)}
@@ -175,10 +180,6 @@ a{color:inherit;text-decoration:none}
 .chap-hd h2{font-size:var(--fs-h2);line-height:var(--lh-h)}
 .chap-hd .ch-sub{font-size:var(--fs-cap);color:var(--tx3);margin-top:2px}
 .chap-cnt{font-family:var(--fm);font-size:var(--fs-xs);color:var(--tx3);white-space:nowrap}
-.chap-cnt.ok{color:var(--ok)}
-.ch-mark{font-size:var(--fs-xs);padding:6px 11px;flex-shrink:0}
-.ch-mark:disabled{opacity:.55;cursor:default;border-color:color-mix(in srgb,var(--ok) 34%,transparent);
-  color:var(--ok)}
 
 /* ---------- 知识点卡 ---------- */
 .pt{background:var(--bgCard);border:1px solid var(--bd2);border-radius:var(--radiusMD);
@@ -186,23 +187,24 @@ a{color:inherit;text-decoration:none}
   transition:border-color .2s,box-shadow .2s,background .2s}
 .pt:hover{border-color:var(--bd3)}
 .pt.open{border-color:color-mix(in srgb,var(--photo) 34%,var(--bd2));box-shadow:var(--shadow)}
-.pt.read{border-color:color-mix(in srgb,var(--ok) 26%,var(--bd2))}
-.pt-hd{display:flex;align-items:flex-start;gap:13px;padding:15px 18px;
+.pt.flash{animation:flash 1.4s ease}
+@keyframes flash{0%,100%{box-shadow:0 0 0 0 transparent}25%{box-shadow:0 0 0 3px color-mix(in srgb,var(--photo) 45%,transparent)}}
+.pt-hd{display:flex;align-items:flex-start;gap:12px;padding:15px 18px;
   cursor:pointer;user-select:none}
-.ck{width:22px;height:22px;flex-shrink:0;margin-top:2px;border-radius:50%;
-  border:1px solid var(--bd3);display:flex;align-items:center;justify-content:center;
-  font-size:var(--fs-xs);color:transparent;background:var(--bgInput);transition:.18s}
-.ck:hover{border-color:var(--ok);color:var(--tx3)}
-.ck.on{background:color-mix(in srgb,var(--ok) 20%,transparent);
-  border-color:var(--ok);color:var(--ok);font-weight:700}
 .pt-ht{flex:1;min-width:0}
 .pt-t{font-size:var(--fs-h4);font-weight:600;line-height:1.4;color:var(--tx1)}
 .pt-brief{font-size:var(--fs-cap);color:var(--tx3);margin-top:3px;line-height:1.5}
 .pt-num{font-family:var(--fm);font-size:var(--fs-xs);color:var(--tx3);flex-shrink:0;margin-top:3px}
+.star{flex-shrink:0;width:28px;height:28px;border-radius:8px;border:1px solid var(--bd2);
+  background:var(--bgInput);color:var(--tx3);font-size:var(--fs-h4);line-height:1;
+  display:flex;align-items:center;justify-content:center;transition:.15s}
+.star:hover{border-color:var(--photo);color:var(--photo)}
+.star.on{color:var(--photo);border-color:color-mix(in srgb,var(--photo) 45%,transparent);
+  background:color-mix(in srgb,var(--photo) 12%,transparent)}
 .pt-chev{flex-shrink:0;color:var(--tx3);font-size:var(--fs-cap);
-  transition:transform .2s;margin-top:1px;line-height:1.2}
+  transition:transform .2s;margin-top:5px;line-height:1.2}
 .pt.open .pt-chev{transform:rotate(180deg)}
-.pt-body{display:none;padding:2px 18px 16px 53px}
+.pt-body{display:none;padding:2px 18px 16px 18px}
 .pt.open .pt-body{display:block}
 .pt-body p{font-size:var(--fs-body);color:var(--tx2);line-height:1.8;margin-bottom:10px}
 .pt-body p:last-of-type{margin-bottom:0}
@@ -214,10 +216,21 @@ a{color:inherit;text-decoration:none}
 .pt-tip b{color:var(--tx1)}
 .tip-lb{display:block;font-family:var(--fm);font-size:var(--fs-xs);
   color:var(--photo);margin-bottom:4px;letter-spacing:.06em}
-.pt-foot{display:flex;align-items:center;gap:12px;margin-top:14px}
-.pt-foot .btn{font-size:var(--fs-xs);padding:6px 12px}
-.pt-foot .hint{font-size:var(--fs-xs);color:var(--tx3)}
-.pt.read .readbtn{border-color:color-mix(in srgb,var(--ok) 40%,transparent);color:var(--ok)}
+.pt-imgs{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+  gap:12px;margin-top:16px}
+.pt-imgs.strip{grid-template-columns:repeat(5,minmax(0,1fr))}
+.pt-fig{margin:0;min-width:0}
+.pt-fig img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radiusSM);
+  border:1px solid var(--bd2);display:block;background:var(--bgInput)}
+.pt-fig figcaption{font-size:var(--fs-xs);color:var(--tx3);line-height:1.6;margin-top:6px}
+.img-ph{aspect-ratio:4/3;border-radius:var(--radiusSM);
+  border:1px dashed color-mix(in srgb,var(--photo) 28%,var(--bd2));
+  background:color-mix(in srgb,var(--photo) 3%,var(--bgInput));
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:5px;text-align:center;padding:8px}
+.img-ph .ph-t{font-size:var(--fs-xs);color:color-mix(in srgb,var(--photo) 72%,var(--tx2));
+  font-family:var(--fm);letter-spacing:.05em}
+.img-ph .ph-d{font-size:var(--fs-xs);color:var(--tx3);line-height:1.5}
 
 /* ---------- 空态 / 页脚 / toast ---------- */
 .empty{display:none;text-align:center;padding:60px 20px;margin-top:8px;
@@ -227,13 +240,88 @@ a{color:inherit;text-decoration:none}
 .empty .btn{margin-top:16px}
 .foot{margin-top:20px;padding-top:16px;border-top:1px solid var(--bd2);
   font-size:var(--fs-xs);color:var(--tx3);line-height:1.9}
-#_toast{position:fixed;left:50%;bottom:36px;transform:translateX(-50%);z-index:99;
+.foot b{color:var(--tx2)}
+.foot .fsec{margin-bottom:6px}
+#_toast{position:fixed;left:50%;bottom:36px;transform:translateX(-50%);z-index:120;
   padding:12px 20px;border-radius:8px;background:var(--bgElev);
   border:1px solid var(--bd3);color:var(--tx1);font-size:var(--fs-cap);
   box-shadow:var(--shadowModal);display:none;max-width:80vw;text-align:center}
 
+/* ---------- 速查表 ---------- */
+.qr-overlay{position:fixed;inset:0;z-index:100;display:none;
+  background:color-mix(in srgb,var(--bgPage) 84%,transparent);
+  backdrop-filter:blur(8px);padding:10px;overflow:auto}
+.qr-overlay.on{display:block}
+.qr-panel{max-width:1840px;margin:0 auto;background:var(--bgPage);
+  border:1px solid var(--bd2);border-radius:var(--radiusLG);
+  box-shadow:var(--shadowModal);overflow:hidden}
+.qr-hd{display:flex;align-items:center;gap:14px;padding:8px 20px;
+  border-bottom:1px solid var(--bd2);background:var(--bgElev);
+  position:sticky;top:0;z-index:2}
+.qr-hd h2{font-size:var(--fs-h2);line-height:var(--lh-h)}
+.qr-sub{font-size:var(--fs-xs);color:var(--tx3);margin-top:2px}
+.qr-close{margin-left:auto;width:34px;height:34px;border-radius:8px;
+  border:1px solid var(--bd2);background:var(--bgCard);color:var(--tx2);
+  font-size:var(--fs-h4);display:flex;align-items:center;justify-content:center}
+.qr-close:hover{border-color:var(--photo);color:var(--tx1)}
+.qr-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px;padding:8px;align-items:start}
+.qr-card{background:var(--bgCard);border:1px solid var(--bd2);
+  border-radius:var(--radiusMD);padding:10px 12px;min-width:0}
+.qr-card.span2{grid-column:span 2}
+.qr-card.span3{grid-column:span 3}
+.qr-card h3{font-size:var(--fs-h4);margin-bottom:7px;display:flex;
+  align-items:baseline;gap:9px;flex-wrap:wrap}
+.qr-card h3 span{font-size:var(--fs-xs);color:var(--tx3);font-weight:400}
+.qtable{width:100%;border-collapse:collapse;font-size:var(--fs-xs)}
+.qtable th{text-align:left;font-size:var(--fs-xs);color:var(--tx3);font-weight:400;
+  padding:4px 7px;border-bottom:1px solid var(--bd2);white-space:nowrap}
+.qtable td{padding:3px 7px;border-bottom:1px solid var(--bd);
+  color:var(--tx2);vertical-align:top;line-height:1.45}
+.qtable tr:last-child td{border-bottom:none}
+.qtable td.k{color:var(--tx1);font-weight:600;white-space:nowrap}
+.qtable td.hi{color:var(--photo)}
+.qr-slot{display:inline-flex;align-items:center;justify-content:center;
+  width:46px;height:32px;border-radius:5px;
+  border:1px dashed color-mix(in srgb,var(--photo) 26%,var(--bd2));
+  background:color-mix(in srgb,var(--photo) 4%,var(--bgInput));
+  font-size:var(--fs-xs);color:var(--tx3);vertical-align:middle;text-align:center;line-height:1.2}
+.jb5{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.jb-col{padding:8px;border-radius:var(--radiusSM);background:var(--bgInput);
+  border:1px solid var(--bd);min-width:0}
+.jb-name{font-size:var(--fs-h4);font-weight:700;color:var(--tx1);
+  display:flex;align-items:center;gap:6px;margin-bottom:5px}
+.jb-name i{width:6px;height:6px;border-radius:50%;background:var(--photo);flex-shrink:0}
+.jb-kv{font-size:var(--fs-xs);color:var(--tx3);line-height:1.55;margin-bottom:2px}
+.jb-kv b{color:var(--tx2);font-weight:500}
+.jb-col .qr-slot{width:100%;height:46px;margin-top:5px;flex-direction:column;gap:2px}
+.steps{display:flex;flex-direction:column;gap:4px}
+.step{display:flex;align-items:flex-start;gap:8px;padding:4px 8px;
+  border-radius:6px;background:var(--bgInput);border:1px solid var(--bd)}
+.step .sn{width:18px;height:18px;border-radius:50%;
+  background:color-mix(in srgb,var(--photo) 16%,transparent);color:var(--photo);
+  font-family:var(--fm);font-size:var(--fs-xs);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+.step .st{font-size:var(--fs-cap);color:var(--tx1);font-weight:600;line-height:1.5}
+.step .sd{font-size:var(--fs-xs);color:var(--tx3);line-height:1.55;margin-top:2px}
+.sh-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sh-col{padding:8px;border-radius:var(--radiusSM);background:var(--bgInput);
+  border:1px solid var(--bd)}
+.sh-col h4{font-size:var(--fs-cap);margin-bottom:4px;color:var(--tx1)}
+.sh-col p{font-size:var(--fs-xs);color:var(--tx3);line-height:1.55}
+.sh-col .qr-slot{display:flex;flex-direction:column;gap:2px;width:100%;height:56px;margin-top:6px}
+.err-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.err-i{padding:5px 8px;border-radius:6px;background:var(--bgInput);
+  border:1px solid var(--bd);min-width:0}
+.err-i b{display:block;font-size:var(--fs-xs);color:var(--tx1);margin-bottom:2px}
+.err-i span{display:block;font-size:var(--fs-xs);color:var(--tx3);line-height:1.5}
+.qr-note{font-size:var(--fs-xs);color:var(--tx3);line-height:1.7;margin-top:10px}
+
 /* ---------- 响应式 ---------- */
-@media(max-width:1180px){
+@media(max-width:1280px){
+  .qr-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .qr-card.span3{grid-column:span 2}
+  .jb5{grid-template-columns:repeat(3,minmax(0,1fr))}
   .top-sub{display:none}
   .searchbox{width:240px}
 }
@@ -243,9 +331,17 @@ a{color:inherit;text-decoration:none}
   .shell{grid-template-columns:1fr;padding:16px;gap:16px}
   .side{position:static;max-height:none;order:2}
   .main{order:1}
-  .pt-body{padding-left:18px}
   .chap-hd{flex-wrap:wrap}
   .hero{padding:22px 20px}
+  .pt-imgs.strip{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .qr-grid{grid-template-columns:1fr}
+  .qr-card.span2,.qr-card.span3{grid-column:auto}
+  .jb5{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .sh-grid{grid-template-columns:1fr}
+}
+@media(max-width:640px){
+  .jb5{grid-template-columns:1fr}
+  .pt-imgs.strip{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 </style>
 </head>
@@ -253,13 +349,14 @@ a{color:inherit;text-decoration:none}
 
 <div class="top">
   <div class="logo"><i></i>学习手册</div>
-  <span class="top-sub">通用人像摄影知识点 · 能翻、能搜、能勾掉</span>
+  <span class="top-sub">常翻常查的人像摄影知识本</span>
   <div class="spacer"></div>
   <div class="searchbox">
     <span class="ico">⌕</span>
-    <input id="q" type="search" placeholder="搜知识点，比如：顺光 / 景深 / 磨皮" autocomplete="off">
+    <input id="q" type="search" placeholder="搜知识点，比如：逆光 / 景深 / 磨皮" autocomplete="off">
     <button class="clr" id="clr" onclick="clearSearch()" title="清空">✕</button>
   </div>
+  <button class="btn quick" onclick="openQuick()" title="打开速查表（快捷键 Q）">⚡ 速查</button>
   <div class="themes">
     <button class="th on" data-t="deep" onclick="setTheme('deep',this)"><i style="background:#22d3ee"></i>深海</button>
     <button class="th" data-t="moonlight" onclick="setTheme('moonlight',this)"><i style="background:#a78bfa"></i>月光</button>
@@ -269,55 +366,50 @@ a{color:inherit;text-decoration:none}
 </div>
 
 <div class="shell">
-  <!-- 左：进度 + 章节目录 -->
+  <!-- 左：收藏 + 章节目录 -->
   <aside class="side">
-    <div class="progbox">
-      <div class="prog-hd"><span>阅读进度</span><b id="pct">0%</b></div>
-      <div class="bar"><i id="bar"></i></div>
-      <div class="prog-meta">
-        <span id="doneCount">0 / 0 个知识点</span>
-        <span id="chapDone">0 / 0 章读完</span>
-      </div>
+    <div class="side-card">
+      <div class="hd">我的收藏 <span id="favCount">0</span></div>
+      <div class="fav-list" id="favList"></div>
+      <div class="fav-empty" id="favEmpty">点任意知识点右上角的 ☆，把它钉在这里。下次查同一件事，直接翻收藏。</div>
     </div>
     <div class="side-card">
-      <div class="hd">章节目录 <span id="chTotal">11 章</span></div>
+      <div class="hd">章节目录 <span id="chTotal">14 章</span></div>
       <div class="chlist" id="chlist"></div>
     </div>
-    <div class="side-foot">
-      <button class="btn" onclick="expandAll(true)">全部展开</button>
-      <button class="btn" onclick="expandAll(false)">全部收起</button>
-      <button class="btn wide danger" onclick="resetProgress()">清空阅读进度</button>
+    <div class="side-note">
+      按 <kbd>/</kbd> 搜知识点 · <kbd>Q</kbd> 打开速查 · <kbd>Esc</kbd> 关闭 / 清空<br>
+      带虚线框的位置是预留图位，图后补。
     </div>
   </aside>
 
   <!-- 右：内容 -->
   <main class="main">
     <section class="hero">
-      <div class="hero-tag">人像摄影 · 通用知识点</div>
+      <div class="hero-tag">人像摄影 · 通用知识</div>
       <h1>人像摄影学习手册</h1>
       <p>
-        下面 14 章，是把人像摄影里反复被验证过的知识重新整理成通用版本：
-        不照搬任何人的原话，也不针对某一位摄影师。每一条都尽量落到「怎么判断、怎么动手」上，
-        看完能直接用在拍摄和修图里。
+        这是一本「随手翻」的知识本，不是待办清单：左边按章节找，顶上用速查表对照，
+        常查的几页点星标钉进「我的收藏」。知识点可以折叠，带虚线框的位置是留给图例的，
+        以后补上远景、全景、特写这类示例图就能直接横向对比。
       </p>
       <div class="hero-stats">
-        <span class="hs"><b id="hsCh">11</b>章</span>
-        <span class="hs"><b id="hsPt">37</b>个知识点</span>
+        <span class="hs"><b id="hsCh">14</b>章</span>
+        <span class="hs"><b id="hsPt">110</b>个知识点</span>
+        <span class="hs"><b>6</b>张速查表</span>
         <span class="hs"><b>3</b>套主题</span>
-        <span class="hs">进度自动保存</span>
       </div>
       <div class="hero-actions">
-        <button class="btn pri" onclick="continueRead()">▶ 继续阅读</button>
+        <button class="btn pri" onclick="openQuick()">⚡ 打开速查表</button>
         <button class="btn" onclick="gotoChapter('ch-1')">从第 1 章开始</button>
-        <button class="btn" onclick="fake('搜索框在右上角，输入「顺光」「磨皮」「色温」都能搜')">搜知识点</button>
+        <button class="btn" onclick="document.getElementById('q').focus()">搜知识点</button>
       </div>
     </section>
 
     <div class="note">
-      <b>怎么用这一页：</b>
-      左边点章节跳转；右上角搜索会实时过滤知识点并自动展开命中项；
-      每张卡片左上角的圆圈是「已读」勾选，进度存在浏览器本地，刷新、关掉再打开都还在。
-      点卡片标题可以展开或收起。
+      <b>怎么查：</b>右上角搜索会实时过滤并自动展开命中项；
+      顶部「速查」是一屏能看完的对照表（景别 / 光位 / 参数 / 柔硬光 / 后期顺序 / 常见错误）；
+      每张卡片右上角的 ☆ 是收藏，收藏会出现在左边，刷新、关掉再打开都还在。
     </div>
 
     <div class="resline" id="resline"></div>
@@ -331,17 +423,160 @@ a{color:inherit;text-decoration:none}
     </div>
 
     <div class="foot">
-      本页为产品原型：内容为通用摄影知识整理，不包含任何付费内容原文或特定作者信息。
-      阅读进度保存在本机浏览器（localStorage: <span style="font-family:var(--fm)">ylcraft_booklet_progress</span>），换浏览器不会同步。
+      <div class="fsec"><b>图例规范（以后补图用）：</b>
+        图片统一放在 <code>docs/prototypes/photo-ref/img/</code> 下。
+        知识点的图按 <code>img/ch{章号}-{点号}/{序号}-{关键词}.jpg</code> 命名，
+        例如 <code>img/ch05-1/01-远景.jpg</code>、<code>img/ch06-1/02-侧逆光.jpg</code>；
+        速查表的图放 <code>img/quickref/</code>，按
+        <code>jingbie-yuan|quan|zhong|jin|te.jpg</code>、
+        <code>guangwei-shun|ceshun|ce|ceini|ni|ding|di.jpg</code>、
+        <code>soft-vs-hard.jpg</code> 命名。
+        建议 1200×800（3:2）或 900×1200（3:4），JPG 质量 80，单张不超过 300KB；
+        说明文字写进数据里的 <code>cap</code> 字段，图没到之前占位框会自动显示。
+      </div>
+      <div class="fsec"><b>收藏：</b>保存在本机浏览器
+        <code>localStorage: ylcraft_booklet_favorites</code>，换浏览器不会同步。
+      </div>
+      <div class="fsec">本页为产品原型：内容为通用摄影知识整理，不包含任何付费内容原文或特定作者信息。</div>
     </div>
   </main>
+</div>
+
+<!-- ==================== 速查表 ==================== -->
+<div class="qr-overlay" id="quick" aria-hidden="true" onclick="quickBackdrop(event)">
+  <div class="qr-panel">
+    <div class="qr-hd">
+      <div>
+        <h2>速查表</h2>
+        <div class="qr-sub">常翻的六张对照表 · 点卡片图位以后补示例 · 按 Esc 关闭</div>
+      </div>
+      <button class="qr-close" onclick="closeQuick()" title="关闭">✕</button>
+    </div>
+    <div class="qr-grid">
+
+      <div class="qr-card span3">
+        <h3>① 景别五级 <span>人占画面 / 用来干什么 / 注意什么 / 图例位（以后横向对比）</span></h3>
+        <div class="jb5">
+          <div class="jb-col">
+            <div class="jb-name"><i></i>远景</div>
+            <div class="jb-kv">人占：<b>1/5 以下</b></div>
+            <div class="jb-kv">用途：交代环境、天气、人在哪</div>
+            <div class="jb-kv">注意：人太小，表情无效</div>
+            <div class="qr-slot">图例待补<br><span>远景 · 人小环境大</span></div>
+          </div>
+          <div class="jb-col">
+            <div class="jb-name"><i></i>全景</div>
+            <div class="jb-kv">人占：<b>1/3 – 1/2</b></div>
+            <div class="jb-kv">用途：全身姿态、穿搭、场景关系</div>
+            <div class="jb-kv">注意：脚和头顶别乱切</div>
+            <div class="qr-slot">图例待补<br><span>全景 · 站姿全身</span></div>
+          </div>
+          <div class="jb-col">
+            <div class="jb-name"><i></i>中景</div>
+            <div class="jb-kv">人占：<b>约 1/2（膝以上）</b></div>
+            <div class="jb-kv">用途：动作、互动、手在干什么</div>
+            <div class="jb-kv">注意：手别从画面边缘长进来</div>
+            <div class="qr-slot">图例待补<br><span>中景 · 膝盖以上</span></div>
+          </div>
+          <div class="jb-col">
+            <div class="jb-name"><i></i>近景</div>
+            <div class="jb-kv">人占：<b>约 2/3（胸以上）</b></div>
+            <div class="jb-kv">用途：表情、眼神、情绪转折</div>
+            <div class="jb-kv">注意：对焦锁眼睛</div>
+            <div class="qr-slot">图例待补<br><span>近景 · 胸口以上</span></div>
+          </div>
+          <div class="jb-col">
+            <div class="jb-name"><i></i>特写</div>
+            <div class="jb-kv">人占：<b>占满（肩以上 / 局部）</b></div>
+            <div class="jb-kv">用途：情绪高点、皮肤和细节</div>
+            <div class="jb-kv">注意：背景干净、对焦极准</div>
+            <div class="qr-slot">图例待补<br><span>特写 · 脸占满画面</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="qr-card span2">
+        <h3>② 七个光位 <span>光从哪来 / 脸上什么样 / 什么时候用 / 图位</span></h3>
+        <table class="qtable">
+          <thead><tr><th>光位</th><th>光从哪来</th><th>脸上特征</th><th>什么时候用</th><th>图位</th></tr></thead>
+          <tbody>
+            <tr><td class="k">顺光</td><td>相机方向</td><td>全脸亮、立体感弱</td><td>干净、证件、小清新</td><td><span class="qr-slot">待补</span></td></tr>
+            <tr><td class="k">侧顺光</td><td>侧前约 45°</td><td>明暗过渡自然、最稳</td><td>大多数人像</td><td><span class="qr-slot">待补</span></td></tr>
+            <tr><td class="k">侧光</td><td>侧面约 90°</td><td>一半亮一半暗、阴阳脸</td><td>个性、结构感</td><td><span class="qr-slot">待补</span></td></tr>
+            <tr><td class="k">侧逆光</td><td>侧后约 45°</td><td>轮廓亮、鼻头有高光</td><td>氛围、发丝光</td><td><span class="qr-slot">待补</span></td></tr>
+            <tr><td class="k">逆光</td><td>正后方</td><td>脸暗、只看轮廓</td><td>剪影、氛围</td><td><span class="qr-slot">待补</span></td></tr>
+            <tr><td class="k">顶光</td><td>头顶正上方</td><td>眼窝、鼻下压出阴影</td><td>压抑、戏剧、正午</td><td><span class="qr-slot">待补</span></td></tr>
+            <tr><td class="k">底光</td><td>下巴往上</td><td>反常规阴影、恐怖</td><td>情绪、角色感</td><td><span class="qr-slot">待补</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="qr-card">
+        <h3>③ 参数一图流 <span>动它，画面变什么</span></h3>
+        <table class="qtable">
+          <thead><tr><th>参数</th><th>影响</th><th>数值大</th><th>数值小</th></tr></thead>
+          <tbody>
+            <tr><td class="k">焦段</td><td>透视</td><td>长焦压缩、脸更「正」</td><td>广角夸张、脸易变形</td></tr>
+            <tr><td class="k">光圈</td><td>景深 + 写实度</td><td>f 大：前后清楚、写实</td><td>f 小：虚化梦幻</td></tr>
+            <tr><td class="k">快门</td><td>动的东西</td><td>1/1000：凝固</td><td>1/30：拖影、动感</td></tr>
+            <tr><td class="k">ISO</td><td>亮度 + 噪点</td><td>高：亮但噪点多</td><td>低：干净但可能欠曝</td></tr>
+            <tr><td class="k">白平衡</td><td>冷暖 + 色调</td><td>相机数值大更暖</td><td>相机数值小更冷</td></tr>
+          </tbody>
+        </table>
+        <div class="qr-note">一句话：焦段决定你站多远，光圈决定背景多糊，快门决定动不动，ISO 决定能不能拍。先保高光，再谈风格。</div>
+      </div>
+
+      <div class="qr-card">
+        <h3>④ 柔光 vs 硬光 <span>判据：影子边缘</span></h3>
+        <div class="sh-grid">
+          <div class="sh-col">
+            <h4>硬光</h4>
+            <p>影子深、边缘锐利，像刀切。反差大、质感强，会放大瑕疵。来源：裸灯、聚光筒、正午太阳。</p>
+            <div class="qr-slot">图例待补<br><span>硬光 · 影子边缘锐利</span></div>
+          </div>
+          <div class="sh-col">
+            <h4>柔光</h4>
+            <p>影子没有边界、亮暗过渡均匀。反差小、皮肤平滑。来源：柔光箱、双层柔光布、阴天、纱帘。</p>
+            <div class="qr-slot">图例待补<br><span>柔光 · 影子边缘化开</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="qr-card">
+        <h3>⑤ 后期顺序五步 <span>顺序错了就白做</span></h3>
+        <div class="steps">
+          <div class="step"><span class="sn">1</span><div><div class="st">修瑕疵</div><div class="sd">痘、斑、碎发、背景杂物，先打底</div></div></div>
+          <div class="step"><span class="sn">2</span><div><div class="st">框动态范围</div><div class="sd">曲线保住最亮最暗，高光别爆</div></div></div>
+          <div class="step"><span class="sn">3</span><div><div class="st">磨皮</div><div class="sd">只修脏阴影，不动结构，保留毛孔</div></div></div>
+          <div class="step"><span class="sn">4</span><div><div class="st">肤色</div><div class="sd">脸 / 脖子 / 手一致，自然有血色</div></div></div>
+          <div class="step"><span class="sn">5</span><div><div class="st">调色风格化</div><div class="sd">先全局后局部，风格化最后做</div></div></div>
+        </div>
+      </div>
+
+      <div class="qr-card">
+        <h3>⑥ 常见错误清单 <span>对一下自己有没有</span></h3>
+        <div class="err-grid">
+          <div class="err-i"><b>顺序错</b><span>没修皮先调色 → 按固定顺序重做</span></div>
+          <div class="err-i"><b>下手太狠</b><span>颜色浓、磨皮塑料 → 关层对比，滑杆不过半</span></div>
+          <div class="err-i"><b>亮度过头</b><span>脸死白、没细节 → 转黑白看是不是一块亮斑</span></div>
+          <div class="err-i"><b>肤色假</b><span>发绿 / 发青 / 惨白 → 吸管取色，和脖子对比</span></div>
+          <div class="err-i"><b>磨皮塑料</b><span>没毛孔、和头发锐度不匹配 → 保留纹理，加细颗粒</span></div>
+          <div class="err-i"><b>液化过头</b><span>三角形脸、背景线歪 → 只推 5%–10%，检查背景</span></div>
+          <div class="err-i"><b>曝光不注意</b><span>高光溢出、暗部死黑 → 拍前看直方图 / 高光警告</span></div>
+          <div class="err-i"><b>背景没检查</b><span>电线、垃圾桶、路人 → 按快门前扫一遍四边</span></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
 </div>
 
 <div id="_toast"></div>
 
 <script>
-/* ==================== 内容数据（全部为通用知识点改写） ==================== */
+/* ==================== 内容数据（全部为通用知识点改写，正文未改动） ==================== */
 const BOOK = [
+
 {
   id: 1,
   title: '人像摄影学什么',
@@ -2259,31 +2494,76 @@ const BOOK = [
 
 ];
 
-/* ==================== 状态与工具 ==================== */
-const READ_KEY = 'ylcraft_booklet_progress';
+
+
+/* ==================== UI 状态 ==================== */
+const FAV_KEY = 'ylcraft_booklet_favorites';
 const THEME_KEY = 'ylcraft_booklet_theme';
+
+/* 图例约定：
+   目录：docs/prototypes/photo-ref/img/
+   知识点图：img/ch{章号}-{点号}/{序号}-{关键词}.jpg  例：img/ch05-1/01-远景.jpg
+   速查表图：img/quickref/jingbie-yuan.jpg / guangwei-ceini.jpg / soft-vs-hard.jpg
+   尺寸：1200×800（3:2）或 900×1200（3:4），JPG 质量 80，单张 ≤300KB
+   数据：point.imgs = [{ src, cap }]；src 为空时自动显示占位框。 */
+const IMG_SLOTS = {
+  '2-2': [
+    { src: '', label: '透视对比', cap: '应放：同机位 24 / 50 / 85 的半身对比，标出鼻子比例和背景松紧' }
+  ],
+  '3-7': [
+    { src: '', label: '逆光补脸', cap: '应放：逆光 + 反光板补脸的现场示意，标出光源、反光板、机位' }
+  ],
+  '5-1': [
+    { src: '', label: '远景', cap: '应放：远景示例（人小、环境大，交代场景）' },
+    { src: '', label: '全景', cap: '应放：全景示例（站立全身，看姿态和穿搭）' },
+    { src: '', label: '中景', cap: '应放：中景示例（膝盖以上，看动作和手）' },
+    { src: '', label: '近景', cap: '应放：近景示例（胸口以上，看表情）' },
+    { src: '', label: '特写', cap: '应放：特写示例（肩部以上 / 脸占满画面）' }
+  ],
+  '6-1': [
+    { src: '', label: '七种光位', cap: '应放：七种光位示意（可拼一张七宫格，标出光源位置和脸上明暗）' }
+  ],
+  '6-3': [
+    { src: '', label: '硬光', cap: '应放：硬光示例（影子边缘锐利，像刀切）' },
+    { src: '', label: '柔光', cap: '应放：柔光示例（影子没有边界，亮暗过渡均匀）' }
+  ],
+  '7-3': [
+    { src: '', label: '单灯位置', cap: '应放：单灯 45° 位置示意，标出灯、机位、人物和脖子阴影' }
+  ],
+  '8-3': [
+    { src: '', label: '配色示例', cap: '应放：橙蓝 / 红青 两组配色示例，标出主色、辅色、点缀色' }
+  ],
+  '10-2': [
+    { src: '', label: '高低频', cap: '应放：高低频分层示意（低频=光影、高频=纹理），标出两层分别修什么' }
+  ],
+  '11-1': [
+    { src: '', label: '液化前后', cap: '应放：液化前后对比（保守 vs 过度），虚线分界，标出背景直线检查点' }
+  ]
+};
+
 const ALL_POINTS = [];
 BOOK.forEach(ch => ch.points.forEach((p, i) => {
   p.id = ch.id + '-' + (i + 1);
   p.ch = ch.id;
+  p.chTitle = ch.title;
   ALL_POINTS.push(p);
 }));
 
-let readSet = new Set();
+let favSet = new Set();
 try {
-  const raw = JSON.parse(localStorage.getItem(READ_KEY) || '[]');
-  if (Array.isArray(raw)) raw.forEach(id => readSet.add(String(id)));
-} catch (e) { readSet = new Set(); }
+  const raw = JSON.parse(localStorage.getItem(FAV_KEY) || '[]');
+  if (Array.isArray(raw)) raw.forEach(id => favSet.add(String(id)));
+} catch (e) { favSet = new Set(); }
 
-function saveRead() {
-  try { localStorage.setItem(READ_KEY, JSON.stringify([...readSet])); } catch (e) {}
+function saveFav() {
+  try { localStorage.setItem(FAV_KEY, JSON.stringify([...favSet])); } catch (e) {}
 }
 function fake(msg) {
   let d = document.getElementById('_toast');
   d.textContent = msg;
   d.style.display = 'block';
   clearTimeout(window._tt);
-  window._tt = setTimeout(() => { d.style.display = 'none'; }, 2600);
+  window._tt = setTimeout(() => { d.style.display = 'none'; }, 2400);
 }
 
 /* ==================== 渲染 ==================== */
@@ -2293,11 +2573,42 @@ function renderChapters() {
     <button class="ch" data-target="ch-${ch.id}" onclick="gotoChapter('ch-${ch.id}')">
       <span class="n">${String(ch.id).padStart(2, '0')}</span>
       <span class="t">${ch.title}</span>
-      <span class="c" id="sc-${ch.id}">0/${ch.points.length}</span>
+      <span class="c">${ch.points.length} 点</span>
     </button>`).join('');
   document.getElementById('chTotal').textContent = BOOK.length + ' 章';
   document.getElementById('hsCh').textContent = BOOK.length;
   document.getElementById('hsPt').textContent = ALL_POINTS.length;
+}
+
+function renderImgs(p) {
+  const imgs = (Array.isArray(p.imgs) && p.imgs.length) ? p.imgs : (IMG_SLOTS[p.id] || []);
+  if (!imgs.length) return '';
+  const strip = p.id === '5-1' ? ' strip' : '';
+  const figs = imgs.map(im => {
+    if (im.src) {
+      return `<figure class="pt-fig">
+        <img src="${im.src}" alt="${im.cap || ''}" loading="lazy"
+          data-cap="${im.cap || ''}" data-label="${im.label || ''}" onerror="imgFallback(this)">
+        <figcaption>${im.cap || ''}</figcaption>
+      </figure>`;
+    }
+    return `<figure class="pt-fig">
+      <div class="img-ph">
+        <span class="ph-t">图例待补</span>
+        <span class="ph-d">${im.cap || ''}</span>
+      </div>
+      <figcaption>${im.label || ''}</figcaption>
+    </figure>`;
+  }).join('');
+  return `<div class="pt-imgs${strip}">${figs}</div>`;
+}
+
+function imgFallback(img) {
+  const cap = img.getAttribute('data-cap') || '';
+  const label = img.getAttribute('data-label') || '';
+  const fig = img.closest('.pt-fig');
+  if (!fig) return;
+  fig.innerHTML = `<div class="img-ph"><span class="ph-t">图例待补</span><span class="ph-d">${cap}</span></div><figcaption>${label}</figcaption>`;
 }
 
 function renderBook() {
@@ -2310,126 +2621,114 @@ function renderBook() {
           <h2>${ch.title}</h2>
           <div class="ch-sub">${ch.sub}</div>
         </div>
-        <span class="chap-cnt" id="cc-${ch.id}">0 / ${ch.points.length} 已读</span>
-        <button class="btn ch-mark" id="mb-${ch.id}" onclick="markChapter(${ch.id})">本章全标已读</button>
+        <span class="chap-cnt">${ch.points.length} 个知识点</span>
       </div>
       ${ch.points.map((p, i) => `
         <article class="pt" data-id="${p.id}" data-ch="${ch.id}" data-open="0">
           <div class="pt-hd" onclick="togglePoint('${p.id}')">
-            <button class="ck" title="标记已读" onclick="toggleRead(event,'${p.id}')">✓</button>
             <div class="pt-ht">
               <div class="pt-t">${p.title}</div>
               <div class="pt-brief">${p.brief}</div>
             </div>
             <span class="pt-num">${ch.id}.${i + 1}</span>
+            <button class="star" data-id="${p.id}" title="收藏这一条" onclick="toggleFav(event,'${p.id}')">☆</button>
             <span class="pt-chev">⌄</span>
           </div>
           <div class="pt-body">
             ${p.body.map(t => `<p>${t}</p>`).join('')}
             <div class="pt-tip"><span class="tip-lb">怎么用</span>${p.tip}</div>
-            <div class="pt-foot">
-              <button class="btn readbtn" onclick="toggleRead(event,'${p.id}')">标记已读</button>
-              <span class="hint">点标题可展开 / 收起</span>
-            </div>
+            ${renderImgs(p)}
           </div>
         </article>`).join('')}
     </section>`).join('');
 
-  // 建立搜索索引（标题 + 摘要 + 正文 + 提示 + 章节名）
+  // 搜索索引（标题 + 摘要 + 正文 + 提示 + 章节名）
   const byId = {};
   ALL_POINTS.forEach(p => { byId[p.id] = p; });
   wrap.querySelectorAll('.pt').forEach(el => {
     const p = byId[el.dataset.id];
-    const ch = BOOK.find(c => c.id === p.ch);
-    const raw = [ch.title, ch.sub, p.title, p.brief, p.body.join(' '), p.tip]
+    const raw = [p.chTitle, p.brief, p.title, p.brief, p.body.join(' '), p.tip, (p.imgs || []).map(x => x.cap || '').join(' ')]
       .join(' ').replace(/<[^>]+>/g, '').toLowerCase();
     el.dataset.search = raw;
   });
 }
 
-/* ==================== 已读进度 ==================== */
-function refreshProgress() {
-  const total = ALL_POINTS.length;
-  const done = readSet.size;
-  const pct = total ? Math.round(done / total * 100) : 0;
-
-  document.getElementById('pct').textContent = pct + '%';
-  document.getElementById('bar').style.width = pct + '%';
-  document.getElementById('doneCount').textContent = done + ' / ' + total + ' 个知识点';
-
-  let chDone = 0;
-  BOOK.forEach(ch => {
-    const d = ch.points.filter(p => readSet.has(p.id)).length;
-    const full = d === ch.points.length;
-    if (full) chDone++;
-
-    const sc = document.getElementById('sc-' + ch.id);
-    if (sc) sc.textContent = d + '/' + ch.points.length;
-    const chBtn = document.querySelector('.ch[data-target="ch-' + ch.id + '"]');
-    if (chBtn) chBtn.classList.toggle('done', full);
-
-    const cc = document.getElementById('cc-' + ch.id);
-    if (cc) {
-      cc.textContent = full ? '✓ 本章已读完' : d + ' / ' + ch.points.length + ' 已读';
-      cc.classList.toggle('ok', full);
-    }
-    const mb = document.getElementById('mb-' + ch.id);
-    if (mb) {
-      mb.disabled = full;
-      mb.textContent = full ? '本章已读完' : '本章全标已读';
-    }
+/* ==================== 收藏 ==================== */
+function refreshFav() {
+  document.getElementById('favCount').textContent = favSet.size;
+  document.querySelectorAll('.star').forEach(btn => {
+    const on = favSet.has(btn.dataset.id);
+    btn.classList.toggle('on', on);
+    btn.textContent = on ? '★' : '☆';
+    btn.title = on ? '取消收藏' : '收藏这一条';
   });
-  document.getElementById('chapDone').textContent = chDone + ' / ' + BOOK.length + ' 章读完';
 
-  document.querySelectorAll('.pt').forEach(el => {
-    const on = readSet.has(el.dataset.id);
-    el.classList.toggle('read', on);
-    const ck = el.querySelector('.ck');
-    if (ck) ck.classList.toggle('on', on);
-    const rb = el.querySelector('.readbtn');
-    if (rb) rb.textContent = on ? '已读 ✓' : '标记已读';
-  });
+  const list = document.getElementById('favList');
+  const empty = document.getElementById('favEmpty');
+  const favs = ALL_POINTS.filter(p => favSet.has(p.id));
+  if (!favs.length) {
+    list.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  list.innerHTML = favs.map(p => `
+    <button class="fav-item" onclick="jumpToPoint('${p.id}')" title="${p.title}">
+      <span class="fi-star">★</span>
+      <span class="fi-t">
+        <span class="fi-title">${p.title}</span>
+        <span class="fi-ch">CH ${String(p.ch).padStart(2, '0')} · ${p.chTitle}</span>
+      </span>
+    </button>`).join('');
 }
 
-function toggleRead(e, id) {
+function toggleFav(e, id) {
   if (e) e.stopPropagation();
-  if (readSet.has(id)) readSet.delete(id);
-  else readSet.add(id);
-  saveRead();
-  refreshProgress();
+  if (favSet.has(id)) {
+    favSet.delete(id);
+    fake('已取消收藏');
+  } else {
+    favSet.add(id);
+    fake('已收藏，左侧「我的收藏」里可以直接翻');
+  }
+  saveFav();
+  refreshFav();
+  const btn = document.querySelector('.star[data-id="' + id + '"]');
+  if (btn) btn.classList.add('pulse');
 }
 
-function markChapter(chId) {
-  const ch = BOOK.find(c => c.id === chId);
-  if (!ch) return;
-  ch.points.forEach(p => readSet.add(p.id));
-  saveRead();
-  refreshProgress();
-  fake('第 ' + chId + ' 章已全部标记为已读');
-}
-
-function resetProgress() {
-  if (!readSet.size) { fake('现在还没有任何已读记录'); return; }
-  if (!confirm('确定清空全部阅读进度吗？此操作不可撤销。')) return;
-  readSet.clear();
-  saveRead();
-  refreshProgress();
-  fake('阅读进度已清空');
-}
-
-/* ==================== 展开 / 收起 ==================== */
+/* ==================== 折叠 / 跳转 ==================== */
 function togglePoint(id) {
   const el = document.querySelector('.pt[data-id="' + id + '"]');
   if (!el) return;
   const open = el.classList.toggle('open');
   el.dataset.open = open ? '1' : '0';
 }
-function expandAll(open) {
-  document.querySelectorAll('.pt').forEach(el => {
-    el.classList.toggle('open', open);
-    el.dataset.open = open ? '1' : '0';
-  });
-  fake(open ? '已展开全部知识点' : '已收起全部知识点');
+
+function gotoChapter(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.querySelectorAll('.ch').forEach(b => b.classList.toggle('on', b.dataset.target === id));
+}
+
+function jumpToPoint(id) {
+  const q = document.getElementById('q');
+  if (q.value.trim()) clearSearch();
+  const el = document.querySelector('.pt[data-id="' + id + '"]');
+  if (!el) return;
+  el.classList.add('open');
+  el.dataset.open = '1';
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.remove('flash');
+  void el.offsetWidth;
+  el.classList.add('flash');
+  const p = ALL_POINTS.find(x => x.id === id);
+  if (p) {
+    document.querySelectorAll('.ch').forEach(b =>
+      b.classList.toggle('on', b.dataset.target === 'ch-' + p.ch));
+  }
+  closeQuick();
 }
 
 /* ==================== 搜索 ==================== */
@@ -2479,26 +2778,27 @@ function clearSearch() {
   input.focus();
 }
 
-/* ==================== 章节跳转 / 滚动高亮 ==================== */
-function gotoChapter(id) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  document.querySelectorAll('.ch').forEach(b => b.classList.toggle('on', b.dataset.target === id));
+/* ==================== 速查表 ==================== */
+function openQuick() {
+  const box = document.getElementById('quick');
+  box.classList.add('on');
+  box.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+  closeSearchHint();
 }
-function continueRead() {
-  const next = ALL_POINTS.find(p => !readSet.has(p.id));
-  if (!next) {
-    fake('全部知识点都读完了，真的？');
-    return;
-  }
-  const el = document.querySelector('.pt[data-id="' + next.id + '"]');
-  if (!el) return;
-  el.classList.add('open');
-  el.dataset.open = '1';
-  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  document.querySelectorAll('.ch').forEach(b => b.classList.toggle('on', b.dataset.target === 'ch-' + next.ch));
-  fake('继续：第 ' + next.ch + ' 章 · ' + next.title);
+function closeQuick() {
+  const box = document.getElementById('quick');
+  if (!box.classList.contains('on')) return;
+  box.classList.remove('on');
+  box.setAttribute('aria-hidden', 'true');
+  document.body.style.overflow = '';
+}
+function quickBackdrop(e) {
+  if (e.target && e.target.id === 'quick') closeQuick();
+}
+function closeSearchHint() {
+  const clr = document.getElementById('clr');
+  if (!document.getElementById('q').value.trim()) clr.style.display = 'none';
 }
 
 /* ==================== 主题 ==================== */
@@ -2515,7 +2815,7 @@ function setTheme(t, el, quiet) {
 /* ==================== 初始化 ==================== */
 renderChapters();
 renderBook();
-refreshProgress();
+refreshFav();
 
 (function initTheme() {
   let t = 'deep';
@@ -2528,8 +2828,17 @@ refreshProgress();
 const qInput = document.getElementById('q');
 qInput.addEventListener('input', e => doSearch(e.target.value));
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') clearSearch();
-  if (e.key === '/' && document.activeElement !== qInput) {
+  const box = document.getElementById('quick');
+  if (e.key === 'Escape') {
+    if (box.classList.contains('on')) { closeQuick(); return; }
+    if (qInput.value) { clearSearch(); return; }
+  }
+  const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
+  if (!typing && (e.key === 'q' || e.key === 'Q')) {
+    e.preventDefault();
+    openQuick();
+  }
+  if (!typing && e.key === '/') {
     e.preventDefault();
     qInput.focus();
   }
