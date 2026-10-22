@@ -1424,3 +1424,34 @@
 
 /* 裁剪生效时图片的圆角收敛一点，别让裁切边看着突兀 */
 .le-img[data-crop]:not([data-crop="原图"]){border-radius:4px}
+
+/* ===== 裁剪真生效（用 data-crop 属性，避开 !important 打架）===== */
+.le-body3 .le-img:not([data-crop="原图"]){
+  flex:0 0 auto !important;
+  height:auto !important;
+  max-height:100%;
+  max-width:100%;
+  align-self:center;
+  background-size:cover !important;
+}
+.le-body3 .le-img[data-crop="1:1"]{aspect-ratio:1/1 !important}
+.le-body3 .le-img[data-crop="4:3"]{aspect-ratio:4/3 !important}
+.le-body3 .le-img[data-crop="3:4"]{aspect-ratio:3/4 !important}
+.le-body3 .le-img[data-crop="16:9"]{aspect-ratio:16/9 !important}
+.le-body3 .le-img[data-crop="9:16"]{aspect-ratio:9/16 !important}
+
+/* ===== 正在改谁：基础 or 某个图层 ===== */
+.le-target{font-size:10px;color:var(--tx3);font-family:var(--fm);
+  padding:7px 10px;border-radius:6px;background:var(--s2);
+  border:1px solid var(--ln2);margin-bottom:10px;line-height:1.4}
+.le-target.layer{color:var(--ac);background:var(--acs);border-color:var(--acl)}
+.le-backbase{width:100%;font-size:9.5px;padding:5px;border-radius:5px;
+  border:1px dashed var(--ln3);background:transparent;color:var(--tx3);
+  cursor:pointer;font-family:inherit;margin-bottom:10px;transition:.16s}
+.le-backbase:hover{border-color:var(--ac);color:var(--ac)}
+/* 选中的图层行 */
+.lh-ly.sel{border-color:var(--acl) !important;background:var(--acs) !important;
+  cursor:pointer}
+.lh-ly{cursor:pointer}
+.lh-dirty{font-size:8.5px;padding:1px 5px;border-radius:3px;
+  background:rgba(34,211,238,.16);color:var(--ac);font-family:var(--fm);flex-shrink:0}

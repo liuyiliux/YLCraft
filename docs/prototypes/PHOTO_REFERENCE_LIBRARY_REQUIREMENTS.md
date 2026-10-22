@@ -4157,3 +4157,126 @@ leRedo()      // Ctrl+Shift+Z
 | 3 | 画笔**擦除**（只能加不能减）|
 | 4 | 重绘结果**真的合成回图**（现在只做选中态）|
 | 5 | 导出（这一页没有导出按钮）|
+---
+
+# 四十八、v41：修两个真问题（裁剪没反应 / 采纳后参数不变）
+
+> 用户：「两个问题。点裁剪没反应 应该预览吧。
+> 然后左边的 ai 建议 应该是修改的右边参数吧 点采纳图片有变化 右边参数没变化」
+
+## 48.1 ⚠️ 问题一：点裁剪没反应
+
+### 根因：我自己的全屏 CSS 用 `!important` 压掉了 JS
+
+`leApplyCrop()` 里是这么写的：
+
+```js
+img.style.aspectRatio = String(r);
+```
+
+但我在改全屏时加过这条：
+
+```css
+.le-body3 .le-img{ aspect-ratio:auto !important; }
+```
+
+**`!important` 的 CSS 规则 > inline style** —— 所以 JS 设了也被压掉。
+
+### 修法：改成走 `data-crop` 属性
+
+```js
+img.dataset.crop = LOCAL_ADJ.crop;   // 只设属性，不设 inline
+```
+
+```css
+.le-body3 .le-img[data-crop="1:1"]{ aspect-ratio:1/1 !important }
+.le-body3 .le-img[data-crop="4:3"]{ aspect-ratio:4/3 !important }
+.le-body3 .le-img[data-crop="3:4"]{ aspect-ratio:3/4 !important }
+.le-body3 .le-img[data-crop="16:9"]{ aspect-ratio:16/9 !important }
+.le-body3 .le-img[data-crop="9:16"]{ aspect-ratio:9/16 !important }
+/* 裁切时用 cover，才像真的裁过 */
+.le-body3 .le-img:not([data-crop="原图"]){ background-size:cover !important }
+```
+
+### 实测
+
+| 比例 | 图片实际尺寸 |
+|---|---|
+| 1:1 | **640 × 640** |
+| 16:9 | **640 × 360** |
+
+**之前点哪个都没反应，因为 CSS 一直压着。**
+
+## 48.2 ⚠️ 问题二：采纳后右边参数没变
+
+### 根因：图层参数和滑块是两套东西
+
+- 采纳建议 → 参数进了 `LE_LAYERS[i].p`
+- 右边滑块显示的是 `LOCAL_ADJ`（基础参数）
+
+**两者从来没打通。** 所以图片变了，滑块还停在 0。
+
+### 修法：选中图层，滑块就调它
+
+**这是 Photoshop / PhotoMaster 的做法** —— 选中哪一层，面板就显示哪一层的参数。
+
+```
+右栏顶部：正在改：整体提亮，背景压暗，拉开层次   ← 青色高亮
+         [← 回到基础参数]
+
+曝光  ▬▬▬●▬▬▬  +0.20EV      ← 这就是那个图层的参数
+对比  ▬▬▬●▬▬▬  1.06
+高光  ▬▬●▬▬▬▬  -0.12
+阴影  ▬▬▬▬●▬▬  +0.18
+```
+
+**关键实现**：
+
+```js
+function leSetTarget(){
+  if (LE_SEL_LAYER >= 0 && LE_LAYERS[LE_SEL_LAYER]) return LE_LAYERS[LE_SEL_LAYER].p;
+  return LOCAL_ADJ;
+}
+// leSet 里：
+const t = leSetTarget();   // ← 有选中图层就改图层，没有就改基础
+t[key] = Number(v);
+```
+
+配套改动：
+
+| 改动 | 效果 |
+|---|---|
+| **采纳时自动选中新图层** | 点「采纳」→ 右边立刻显示它的参数 |
+| **图层行可点选中/取消** | 点哪层就调哪层 |
+| **图层行显示「改过」徽章** | 知道这层被你动过 |
+| **「← 回到基础参数」** | 退回调全局 |
+| `leNormP(p)` | 采纳时把参数补全默认值，滑块不会有空值 |
+
+### 实测
+
+| 项 | 结果 |
+|---|---|
+| 采纳前滑块 | 曝光 0 · 对比 1 · 高光 0 · 阴影 0 |
+| **采纳后滑块** | **曝光 0.2 · 对比 1.06 · 高光 -0.12 · 阴影 0.18** ✓ |
+| 右栏标题 | 「正在改：整体提亮，背景压暗，拉开层次」✓ |
+| 拖滑块 | 写进 `LE_LAYERS[0].p`，**基础参数不动** ✓ |
+
+## 48.3 ⚠️ 过程中还踩了一个正则的坑
+
+`leSyncPanel()` 里要读出滑块的参数名，我写的是：
+
+```js
+.match(/'\\\\(\\\\w+\\\\)'/)   // ← 错
+```
+
+**Python 里多转义了一层，到 JS 变成 `\\(` 和 `\w` 的字面匹配**，
+永远匹配不上 → 滑块值一直不更新，而且**不报错**。
+
+改成：
+
+```js
+.match(/'([a-zA-Z]+)'/)
+```
+
+**教训**：Python 写 JS 正则时，`\\` 的数量要数清楚；
+配套的办法是**改完立刻在浏览器里 `console` 验证一次**，别只看代码。

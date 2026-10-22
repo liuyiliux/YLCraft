@@ -396,10 +396,14 @@ function leFmt(key, v){
 }
 
 function leSet(key, v){
-  LOCAL_ADJ[key] = Number(v);
+  /* ⭐ 2026-10-22：选中了图层就改那个图层，否则改基础参数。
+     用户指出「点采纳图片有变化，右边参数没变化」，这里就是根因。 */
+  const t = (typeof leSetTarget === 'function') ? leSetTarget() : LOCAL_ADJ;
+  t[key] = Number(v);
   const el = document.getElementById('leVal_' + key);
   if (el) el.textContent = leFmt(key, Number(v)) + (key==='temp'?'K':'') + (key==='exposure'?'EV':'');
   leApplyPreview();
+  if (typeof leMarkLayerDirty === 'function') leMarkLayerDirty();
   if (typeof leSnap === 'function') leSnap();
 }
 

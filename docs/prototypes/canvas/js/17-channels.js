@@ -55,6 +55,61 @@ const LE_SUGG_DEF = [
 ];
 let LE_SUGG = JSON.parse(JSON.stringify(LE_SUGG_DEF));
 let LE_LAYERS = [];   // {id, name, on, region, p}
+/* ⭐ 2026-10-22：选中的图层。选中后右边滑块调的就是它 ——
+   用户指出「点采纳图片有变化，右边参数没变化」，就是这个没做。 */
+let LE_SEL_LAYER = -1;
+
+const LE_P_DEF = {
+  exposure:0, contrast:1, saturation:1, temp:6100, tint:0,
+  highlights:0, shadows:0, clarity:0, sharpen:0, denoise:0
+};
+function leNormP(p){ return Object.assign({}, LE_P_DEF, p || {}); }
+function leSetTarget(){
+  if (LE_SEL_LAYER >= 0 && LE_LAYERS[LE_SEL_LAYER]) return LE_LAYERS[LE_SEL_LAYER].p;
+  return LOCAL_ADJ;
+}
+function leSelectLayer(i){
+  LE_SEL_LAYER = (LE_SEL_LAYER === i) ? -1 : i;
+  leRenderLayers();
+  leSyncPanel();
+}
+/* 图层参数被滑块改了之后，图层行上标一下「改过」 */
+function leMarkLayerDirty(){
+  const host = document.getElementById('leLayers');
+  if (!host || LE_SEL_LAYER < 0 || !LE_LAYERS[LE_SEL_LAYER]) return;
+  const rows = host.querySelectorAll('.lh-ly');
+  const row = rows[LE_SEL_LAYER];
+  if (row && !row.querySelector('.lh-dirty')){
+    const d = document.createElement('span');
+    d.className = 'lh-dirty';
+    d.textContent = '改过';
+    row.insertBefore(d, row.querySelector('.lh-x'));
+  }
+}
+function leSyncPanel(){
+  const isLayer = LE_SEL_LAYER >= 0 && LE_LAYERS[LE_SEL_LAYER];
+  const t = leSetTarget();
+  const hd = document.getElementById('leTarget');
+  if (hd){
+    hd.textContent = isLayer ? ('正在改：' + LE_LAYERS[LE_SEL_LAYER].name) : '正在改：基础（手动）';
+    hd.className = 'le-target' + (isLayer ? ' layer' : '');
+  }
+  const back = document.getElementById('leBackBase');
+  if (back) back.style.display = isLayer ? '' : 'none';
+
+  document.querySelectorAll('.le-panel input[type=range]').forEach(function(inp){
+    const m = (inp.getAttribute('oninput') || '').match(/'([a-zA-Z]+)'/);
+    if (!m) return;
+    const k = m[1];
+    if (k === 'black' || k === 'white' || k === 'gamma') return;   // 色阶单独管
+    let v = t[k];
+    if (v == null) v = LE_P_DEF[k];
+    if (v == null) return;
+    inp.value = v;
+    const el = document.getElementById('leVal_' + k);
+    if (el) el.textContent = leFmt(k, v) + (k === 'temp' ? 'K' : '') + (k === 'exposure' ? 'EV' : '');
+  });
+}
 
 /* ---- 叠加：标量（曝光/对比/饱和/色温/色调）---- */
 function leComposeScalars(){
@@ -148,13 +203,14 @@ function leRenderLayers(){
     host.innerHTML = '<div class="lh-empty">还没有图层。<br>采纳一条建议，它就变成图层 ——<br>能关掉、能删掉，原图不动。</div>';
   } else {
     host.innerHTML = LE_LAYERS.map(function(L, i){
-      return '<div class="lh-ly' + (L.on ? '' : ' off') + '">'
-        + '<button class="lh-eye' + (L.on ? ' on' : '') + '" onclick="leToggleLayer(' + i + ')">'
+      return '<div class="lh-ly' + (L.on ? '' : ' off')
+        + (i === LE_SEL_LAYER ? ' sel' : '') + '" onclick="leSelectLayer(' + i + ')">'
+        + '<button class="lh-eye' + (L.on ? ' on' : '') + '" onclick="event.stopPropagation();leToggleLayer(' + i + ')">'
         +   (L.on ? '◉' : '○') + '</button>'
         + '<span class="lh-ly-n">' + L.name + '</span>'
         + '<span class="lh-ly-r' + (L.region === '全图' ? '' : ' local') + '">'
         +   (L.region === '全图' ? '全图' : '仅' + L.region) + '</span>'
-        + '<button class="lh-x" onclick="leDelLayer(' + i + ')">✕</button>'
+        + '<button class="lh-x" onclick="event.stopPropagation();leDelLayer(' + i + ')">✕</button>'
         + '</div>';
     }).join('');
   }
@@ -167,9 +223,10 @@ function leAdopt(id){
   const s = LE_SUGG.find(function(x){ return x.id === id; });
   if (!s) return;
   s.state = 'adopted';
-  LE_LAYERS.push({ id:s.id, name:s.title, on:true, region:s.region, p:s.p });
-  leRenderSugg(); leRenderLayers(); leApplyPreview(); leSnap();
-  toast('已采纳 · 变成图层了，随时能关');
+  LE_LAYERS.push({ id:s.id, name:s.title, on:true, region:s.region, p:leNormP(s.p) });
+  LE_SEL_LAYER = LE_LAYERS.length - 1;   /* 自动选中它，右边就是这条的参数 */
+  leRenderSugg(); leRenderLayers(); leApplyPreview(); leSyncPanel(); leSnap();
+  toast('已采纳 · 已选中这个图层，右边滑块调的就是它');
 }
 function leIgnore(id){
   const s = LE_SUGG.find(function(x){ return x.id === id; });
@@ -193,12 +250,14 @@ function leDelLayer(i){
   const s = LE_SUGG.find(function(x){ return x.id === L.id; });
   if (s) s.state = 'ignored';
   LE_LAYERS.splice(i, 1);
-  leRenderSugg(); leRenderLayers(); leApplyPreview(); leSnap();
+  LE_SEL_LAYER = -1;
+  leRenderSugg(); leRenderLayers(); leApplyPreview(); leSyncPanel(); leSnap();
 }
 function leClearLayers(){
   LE_LAYERS = [];
   LE_SUGG.forEach(function(s){ if (s.state === 'adopted') s.state = 'pending'; });
-  leRenderSugg(); leRenderLayers(); leApplyPreview(); leSnap();
+  LE_SEL_LAYER = -1;
+  leRenderSugg(); leRenderLayers(); leApplyPreview(); leSyncPanel(); leSnap();
 }
 
 
@@ -447,17 +506,18 @@ function leSetCrop(btn, ratio){
   leSnap();
 }
 function leApplyCrop(){
+  /* ⭐ 2026-10-22：之前用 img.style.aspectRatio 设，但全屏 CSS 里有
+     aspect-ratio:auto !important，把 inline 压掉了 → 点了没反应。
+     现在只设 data-crop，由 CSS 规则按属性接管。 */
   const img = document.getElementById('leImg');
   if (!img) return;
-  const r = LE_RATIOS[LOCAL_ADJ.crop];
-  if (!r){
-    img.style.aspectRatio = '';
-    img.style.removeProperty('--crop-h');
-    img.dataset.crop = '原图';
-    return;
+  img.dataset.crop = LOCAL_ADJ.crop || '原图';
+  const btnBox = document.getElementById('leCrops');
+  if (btnBox){
+    btnBox.querySelectorAll('.le-crop').forEach(function(b){
+      b.classList.toggle('on', b.textContent.trim() === (LOCAL_ADJ.crop || '原图'));
+    });
   }
-  img.style.aspectRatio = String(r);
-  img.dataset.crop = LOCAL_ADJ.crop;
 }
 
 /* ---------------- 4. 画笔区域 ---------------- */
@@ -858,6 +918,9 @@ openLocalEdit = function(id){
           </div>
 
           <div class="le-panel">
+            <div class="le-target" id="leTarget">正在改：基础（手动）</div>
+            <button class="le-backbase" id="leBackBase" style="display:none"
+              onclick="LE_SEL_LAYER=-1;leRenderLayers();leSyncPanel()">← 回到基础参数</button>
             <div class="le-sec">基础</div>
             ${leSlider('exposure','曝光','EV',-2,2,0.05)}
             ${leSlider('contrast','对比度','',0.5,1.5,0.01)}
@@ -995,6 +1058,7 @@ openLocalEdit = function(id){
   /* ⭐ 2026-10-22：三栏里的左栏要初始化 */
   if (typeof leRenderSugg === 'function'){ leRenderSugg(); leRenderLayers(); }
   if (typeof leApplyCrop === 'function') leApplyCrop();
+  if (typeof leSyncPanel === 'function') leSyncPanel();
   if (typeof leSnapNow === 'function'){ LE_HIST = []; LE_HIST_I = -1; leSnapNow(); }
 };
 
