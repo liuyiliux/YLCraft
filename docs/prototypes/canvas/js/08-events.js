@@ -69,6 +69,39 @@ if (new URLSearchParams(location.search).get('embed') === '1'){
   document.head.appendChild(st);
 }
 
+/* ⭐ 2026-10-22 从摄影原型「发给后期」过来（?openEdit=1）：
+   直接打开修图面板，而不是让用户落在空画布上。
+   注意：新开画布时 DOC.items 是空的（还没导照片），
+   所以要等初始化完之后自己补一张占位图，否则永远打不开。 */
+if (new URLSearchParams(location.search).get('openEdit') === '1'){
+  let __oeTries = 0;
+  const __oeTimer = setInterval(function(){
+    __oeTries++;
+    if (__oeTries > 80){ clearInterval(__oeTimer); return; }   // 最多等 16 秒
+    if (typeof openLocalHub !== 'function' || typeof DOC === 'undefined') return;
+    clearInterval(__oeTimer);
+
+    setTimeout(function(){
+      let id;
+      if (DOC.items && DOC.items.length){
+        id = DOC.items[0].id;
+      } else {
+        /* 没导照片：补一张占位图，并说清楚这是占位 */
+        id = '__openEditDemo__';
+        DOC.items.push({
+          id: id, order: 0, duration: 4,
+          name: '占位演示图（还没导入照片）',
+          w: 1024, h: 1365, status: 'ok'
+        });
+        if (typeof toast === 'function'){
+          toast('还没导入照片，先拿一张占位图给你看修图面板');
+        }
+      }
+      openLocalHub('edit', id);
+    }, 400);
+  }, 200);
+}
+
 /* ================= P4：context chips 可移除（画布侧） ================= */
 let disabledCites = new Set();
 

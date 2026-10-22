@@ -1884,6 +1884,80 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 .ho-saved{font-size:11px;color:var(--tx3);font-family:var(--fm);
   margin-top:9px;text-align:center;opacity:0;transition:opacity .3s}
 .ho-saved.on{opacity:1}
+
+/* ===== AI 建议 Tab ===== */
+.sg-bar{display:flex;align-items:center;gap:9px;padding:14px 18px;border-radius:var(--radiusMD);
+  background:var(--bgCard);border:1px solid var(--bd2);margin-bottom:18px}
+.sg-bar-t{font-size:15px;color:var(--tx2)}
+.sg-bar-t b{color:var(--tx1);font-family:var(--fm);font-size:17px}
+.sg-bar-s{color:var(--bd3)}
+.sg-all{margin-left:auto;font-size:14px;padding:7px 15px;border-radius:var(--radiusXS);
+  border:1px solid var(--bd2);color:var(--tx2);transition:.16s;background:transparent;cursor:pointer}
+.sg-all:hover{border-color:var(--ok);color:var(--ok)}
+.sg-list{display:flex;flex-direction:column;gap:10px}
+.sg-cat{font-size:12px;letter-spacing:.08em;color:var(--tx3);
+  font-family:var(--fm);margin:14px 0 8px;text-transform:uppercase}
+.sg-cat:first-child{margin-top:0}
+.sg-card{position:relative;padding:16px 18px;border-radius:var(--radiusMD);
+  background:var(--bgCard);border:1px dashed var(--bd2);transition:.18s}
+.sg-card:hover{border-color:var(--bd3)}
+.sg-card.adopted{border:1px solid color-mix(in srgb,var(--ok) 32%,transparent);
+  background:color-mix(in srgb,var(--ok) 4%,var(--bgCard))}
+.sg-card.ignored{opacity:.5;border-style:dotted}
+.sg-hd{display:flex;align-items:flex-start;gap:11px;margin-bottom:9px}
+.sg-dot{width:15px;height:15px;border-radius:50%;border:2px solid var(--bd3);
+  flex-shrink:0;margin-top:3px;transition:.16s}
+.sg-card.adopted .sg-dot{background:var(--ok);border-color:var(--ok)}
+.sg-t{flex:1;font-size:16px;color:var(--tx1);font-weight:500;line-height:1.5}
+.sg-card.ignored .sg-t{text-decoration:line-through}
+.sg-tag{font-size:12px;padding:2px 8px;border-radius:4px;font-family:var(--fm);
+  flex-shrink:0;white-space:nowrap}
+.sg-tag.adp{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}
+.sg-tag.edit{background:color-mix(in srgb,var(--pri) 16%,transparent);color:var(--pri)}
+.sg-why{font-size:14px;color:var(--tx2);line-height:1.65;padding-left:26px;margin-bottom:9px}
+.sg-why b{color:var(--photo)}
+.sg-src{display:flex;align-items:center;gap:7px;padding-left:26px;margin-bottom:12px;
+  font-size:13px;font-family:var(--fm);flex-wrap:wrap}
+.sg-src-l{color:var(--tx3)}
+.sg-src-v{padding:2px 9px;border-radius:4px}
+.sg-src-v.calc{background:color-mix(in srgb,var(--ok) 14%,transparent);color:var(--ok)}
+.sg-src-v.infer{background:color-mix(in srgb,var(--pri) 14%,transparent);color:var(--pri)}
+.sg-src-v.guess{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+.sg-acts{display:flex;gap:8px;padding-left:26px;flex-wrap:wrap}
+.sg-btn{font-size:14px;padding:7px 16px;border-radius:var(--radiusXS);border:1px solid var(--bd2);
+  color:var(--tx2);transition:.16s;background:transparent;cursor:pointer;font-family:inherit}
+.sg-btn:hover{border-color:var(--tx3);color:var(--tx1)}
+.sg-btn.yes{border-color:color-mix(in srgb,var(--ok) 40%,transparent);
+  color:var(--ok);background:color-mix(in srgb,var(--ok) 8%,transparent)}
+.sg-btn.yes:hover{background:color-mix(in srgb,var(--ok) 16%,transparent)}
+.sg-btn.no:hover{border-color:var(--err);color:var(--err)}
+.sg-edit{display:block;margin:10px 0 0 26px;padding:11px 13px;border-radius:var(--radiusXS);
+  border:1px solid var(--pri);background:var(--bgInput);color:var(--tx1);
+  font-size:15px;outline:none;line-height:1.55;resize:none;font-family:var(--ff);
+  width:calc(100% - 26px)}
+.sg-ignored{margin-top:22px;padding-top:18px;border-top:1px solid var(--bd2)}
+.sg-ign-h{font-size:14px;color:var(--tx3);display:flex;align-items:center;gap:8px;
+  padding:6px 0;transition:.16s;background:none;border:none;cursor:pointer;font-family:inherit}
+.sg-ign-h:hover{color:var(--tx1)}
+.sg-ign-h em{font-style:normal;font-family:var(--fm);font-size:12px;
+  padding:1px 7px;border-radius:9px;background:var(--bd2)}
+.sg-ign-body{margin-top:10px;display:flex;flex-direction:column;gap:7px}
+.sg-ign-i{display:flex;align-items:center;gap:12px;padding:11px 15px;border-radius:var(--radiusXS);
+  background:var(--bgInput);font-size:14px;color:var(--tx3)}
+.sg-ign-i span{flex:1;text-decoration:line-through}
+.sg-ign-r{font-size:13px;color:var(--tx3);padding:4px 11px;border-radius:5px;
+  border:1px solid var(--bd2);transition:.16s;background:none;cursor:pointer;font-family:inherit}
+.sg-ign-r:hover{border-color:var(--ok);color:var(--ok)}
+.sg-compare{margin-top:26px;display:flex;align-items:center;gap:12px}
+.sg-cmp-btn{padding:10px 18px;border-radius:var(--radiusXS);border:1px solid var(--bd2);
+  color:var(--tx2);font-size:14px;transition:.16s;user-select:none;background:none;
+  cursor:pointer;font-family:inherit}
+.sg-cmp-btn:hover{border-color:var(--photo);color:var(--photo)}
+.sg-cmp-btn:active{background:color-mix(in srgb,var(--photo) 14%,transparent)}
+.sg-cmp-tip{font-size:13px;color:var(--tx3)}
+.comp-bar{position:fixed;top:0;left:0;right:0;z-index:90;padding:11px 24px;
+  background:color-mix(in srgb,var(--photo) 92%,transparent);color:#1a1205;
+  font-size:15px;font-weight:600;text-align:center}
 </style>
 </head>
 <body data-t="deep">
@@ -2539,7 +2613,8 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
     </header>
 
     <nav class="pz-tabs">
-      <button class="pz-tab on" onclick="pzTab(this,'plan')">方案</button>
+      <button class="pz-tab on" onclick="pzTab(this,'sugg')">建议<em id="sgTabN">9</em></button>
+      <button class="pz-tab" onclick="pzTab(this,'plan')">方案</button>
       <button class="pz-tab" onclick="pzTab(this,'els')">元素<em>10</em></button>
       <button class="pz-tab" onclick="pzTab(this,'shots')">分镜<em id="pzShotN">0</em></button>
       <button class="pz-tab" onclick="pzTab(this,'kit')">必带<em>8</em></button>
@@ -2548,7 +2623,41 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
       <button class="pz-tab" style="margin-left:auto;color:var(--tx3)" onclick="openCue()">＋ 录口令</button>
     </nav>
 
-    <section class="pz-pane on" id="pz-plan">
+    <!-- ===== Tab：AI 建议 ===== -->
+    <section class="pz-pane on" id="pz-sugg">
+      <div class="pz-lead">
+        <p class="pz-lead-t">AI 看完这套方案给的 9 条</p>
+        <p class="pz-lead-b">
+          每一条都是<b>建议，不是结论</b>。采纳了才会写进元素清单和分镜，
+          采纳之后<b>随时能撤回</b>。每条都标了它<b>是怎么来的</b>。
+        </p>
+      </div>
+
+      <div class="sg-bar">
+        <span class="sg-bar-t"><b id="sgTotal">9</b> 条建议</span>
+        <span class="sg-bar-s">·</span>
+        <span class="sg-bar-t"><b id="sgPend">9</b> 条等你确认</span>
+        <div class="spacer"></div>
+        <button class="sg-all" onclick="adoptAll()">全部采纳</button>
+      </div>
+
+      <div class="sg-list" id="sgList"></div>
+
+      <div class="sg-ignored" id="sgIgnored" style="display:none">
+        <button class="sg-ign-h" onclick="toggleIgnored()">
+          <span id="sgIgnArrow">▸</span> 已忽略 <em id="sgIgnN">0</em>
+        </button>
+        <div class="sg-ign-body" id="sgIgnBody" style="display:none"></div>
+      </div>
+
+      <div class="sg-compare">
+        <button class="sg-cmp-btn" onmousedown="showOrig(true)" onmouseup="showOrig(false)"
+          onmouseleave="showOrig(false)">按住看 AI 原方案</button>
+        <span class="sg-cmp-tip">你改过的标题会被临时盖掉</span>
+      </div>
+    </section>
+
+    <section class="pz-pane" id="pz-plan">
       <div class="express">
         <label class="ex-l">这次要表达什么</label>
         <textarea class="ex-ta" placeholder="一句话就够。例如：秋天的松弛感，像朋友随手拍的，但每张都好看">秋天的松弛感，像朋友随手拍的，但每张都好看</textarea>
@@ -4801,9 +4910,9 @@ function saveHandoff(){
 
 function sendToRetouch(){
   if (!saveHandoff()) return;
-  /* 打开画布端修图页（新标签，保留策划页）*/
-  window.open('../canvas/index.html?handoff=1', '_blank');
-  fake('已发给后期 · 新标签里打开修图页');
+  /* 打开画布端并直接进修图面板（新标签，保留策划页）*/
+  window.open('../canvas/index.html?openEdit=1', '_blank');
+  fake('已发给后期 · 新标签里会直接打开修图面板');
 }
 
 function exportHandoffPDF(){
@@ -4869,9 +4978,212 @@ function pzTab(el, key){
   /* ⭐ 切到交接页时，把上次存的标出来 */
   if (key === 'handoff' && typeof restoreHandoffTag === 'function') restoreHandoffTag();
 }
+
+/* ==========================================================================
+   AI 建议 Tab
+   设计原则（对齐 PhotoMaster 那套）：
+   1. 建议是起点不是结论 —— 每条都能采纳 / 忽略 / 改
+   2. 每条都标明「怎么来的」，不让用户以为是铁律
+   3. 采纳后可撤回
+   ========================================================================== */
+const SG_SUGG = [
+  { id:'sg1', cat:'画面元素', t:'加一条暖色织物（围巾或披肩）',
+    why:'现在全身都是冷色，<b>逆光下会发灰</b>，视线没有落点。暖色织物能把眼睛拉回脸上，也能当道具。',
+    src:'infer', from:'审美库 · 逆光人像 216 张里 68% 有暖色点缀' },
+
+  { id:'sg2', cat:'画面元素', t:'拿掉手里那杯热饮',
+    why:'热饮在画面下方会<b>抢走视线</b>，而且和「秋天清冷」的调子不搭。要么别入画，要么换成和围巾同色系的。',
+    src:'guess', from:'按方案里的「冷调」推的，没数据支撑' },
+
+  { id:'sg3', cat:'画面元素', t:'加一个能挡风的东西（树 / 廊柱）',
+    why:'这个时段<b>风速 3.4m/s</b>，头发会乱。有个遮挡物既能挡风，也能给画面一个纵深。',
+    src:'calc', from:'地点光线 API · 16:26-17:05 风速 3.4m/s' },
+
+  { id:'sg4', cat:'分镜', t:'第 3 镜从全身改成半身',
+    why:'第 3 镜要拍「回头的表情」，全身在这个距离<b>表情会糊成一个小点</b>。半身才能看清。',
+    src:'infer', from:'按「要表达什么」推的 —— 你要的是情绪不是环境' },
+
+  { id:'sg5', cat:'分镜', t:'第 5 镜后加一个空镜',
+    why:'一组片子直接从人到人，<b>节奏会顶</b>。中间插一个空镜（桥洞 / 水面）能让整组喘一口气。',
+    src:'infer', from:'审美库 · 8-12 张一组的中段普遍有空镜' },
+
+  { id:'sg6', cat:'拍摄参数', t:'光圈收到 f/2.2，别开 f/1.8',
+    why:'f/1.8 在 85mm 上<b>景深只有 4cm 左右</b>，眼睛对上焦后鼻尖和耳朵都会虚。收到 f/2.2 才够用。',
+    src:'calc', from:'85mm + 1.5m 距离 → 景深计算' },
+
+  { id:'sg7', cat:'拍摄参数', t:'快门提到 1/2500',
+    why:'逆光拍摄时脸在暗部，<b>手抖更容易显出来</b>。1/2000 贴着安全线，提到 1/2500 更稳。',
+    src:'calc', from:'85mm 安全快门 1/85s，逆光补偿 ×2 档' },
+
+  { id:'sg8', cat:'风险提醒', t:'16:40 之后桥上会有人流高峰',
+    why:'这个位置 <b>16:40-17:10 是游客返程高峰</b>，等机位会很耗时间。建议 16:20 前到，先把空镜拍完。',
+    src:'guess', from:'历史客流规律，不是实时数据' },
+
+  { id:'sg9', cat:'风险提醒', t:'逆光时脸部会欠曝 1 档左右',
+    why:'太阳在正前方，<b>测光会被天空带偏</b>。要么用反光板补，要么手动 +0.7EV 再压高光。',
+    src:'calc', from:'按「逆光 + 天空占画面上半」推的' }
+];
+
+let sgState = {};   /* id -> 'pending' | 'adopted' | 'ignored' */
+let sgEdit = {};    /* id -> 用户改过的标题 */
+let sgIgnOpen = false;
+
+function sgInit(){
+  SG_SUGG.forEach(function(s){ if (!sgState[s.id]) sgState[s.id] = 'pending'; });
+}
+sgInit();
+
+const SG_SRC_LABEL = {
+  calc:  { n:'计算得出', cls:'calc' },
+  infer: { n:'推理',     cls:'infer' },
+  guess: { n:'猜测',     cls:'guess' }
+};
+const SG_CAT_ORDER = ['画面元素','分镜','拍摄参数','风险提醒'];
+
+function sgRender(){
+  const host = document.getElementById('sgList');
+  if (!host) return;
+
+  const pend = SG_SUGG.filter(function(s){ return sgState[s.id] === 'pending'; }).length;
+  const igs  = SG_SUGG.filter(function(s){ return sgState[s.id] === 'ignored'; });
+
+  const t = document.getElementById('sgTotal');
+  const p = document.getElementById('sgPend');
+  const tn = document.getElementById('sgTabN');
+  if (t) t.textContent = SG_SUGG.length;
+  if (p) p.textContent = pend;
+  if (tn) tn.textContent = pend;
+
+  let html = '';
+  SG_CAT_ORDER.forEach(function(cat){
+    const list = SG_SUGG.filter(function(s){
+      return s.cat === cat && sgState[s.id] !== 'ignored';
+    });
+    if (!list.length) return;
+    html += '<div class="sg-cat">' + cat + '</div>';
+    list.forEach(function(s){
+      const st = sgState[s.id];
+      const adopted = st === 'adopted';
+      const title = sgEdit[s.id] || s.t;
+      const src = SG_SRC_LABEL[s.src] || SG_SRC_LABEL.infer;
+      html += '<div class="sg-card' + (adopted ? ' adopted' : '') + '" id="sgc-' + s.id + '">'
+        + '<div class="sg-hd">'
+        +   '<span class="sg-dot"></span>'
+        +   '<span class="sg-t" id="sgt-' + s.id + '">' + title + '</span>'
+        +   (adopted ? '<span class="sg-tag adp">已采纳</span>' : '')
+        +   (sgEdit[s.id] ? '<span class="sg-tag edit">改过</span>' : '')
+        + '</div>'
+        + '<div class="sg-why">' + s.why + '</div>'
+        + '<div class="sg-src"><span class="sg-src-l">怎么来的</span>'
+        +   '<span class="sg-src-v ' + src.cls + '">' + src.n + '</span>'
+        +   '<span class="sg-src-l">' + s.from + '</span></div>'
+        + '<div class="sg-acts">'
+        +   (adopted
+              ? '<button class="sg-btn" onclick="sgAdopt(\'' + s.id + '\',false)">撤回</button>'
+              : '<button class="sg-btn yes" onclick="sgAdopt(\'' + s.id + '\',true)">采纳</button>')
+        +   '<button class="sg-btn" onclick="sgEditOpen(\'' + s.id + '\')">改一下</button>'
+        +   '<button class="sg-btn no" onclick="sgIgnore(\'' + s.id + '\',true)">忽略</button>'
+        + '</div>'
+        + '</div>';
+    });
+  });
+  host.innerHTML = html || '<div class="sg-cat">没有待确认的建议了</div>';
+
+  /* 已忽略区 */
+  const box = document.getElementById('sgIgnored');
+  const ignN = document.getElementById('sgIgnN');
+  const ignBody = document.getElementById('sgIgnBody');
+  if (ignN) ignN.textContent = igs.length;
+  if (box) box.style.display = igs.length ? '' : 'none';
+  if (ignBody){
+    ignBody.style.display = sgIgnOpen ? '' : 'none';
+    ignBody.innerHTML = igs.map(function(s){
+      return '<div class="sg-ign-i"><span>' + s.t + '</span>'
+        + '<button class="sg-ign-r" onclick="sgIgnore(\'' + s.id + '\',false)">恢复</button></div>';
+    }).join('');
+  }
+  const arrow = document.getElementById('sgIgnArrow');
+  if (arrow) arrow.textContent = sgIgnOpen ? '▾' : '▸';
+}
+
+function sgAdopt(id, yes){
+  sgState[id] = yes ? 'adopted' : 'pending';
+  sgRender();
+  fake(yes ? '已采纳 · 会写进元素清单和分镜，随时能撤回' : '已撤回');
+}
+
+function sgIgnore(id, yes){
+  sgState[id] = yes ? 'ignored' : 'pending';
+  sgRender();
+  fake(yes ? '已忽略 · 在「已忽略」里还能恢复' : '已恢复');
+}
+
+function sgEditOpen(id){
+  const card = document.getElementById('sgc-' + id);
+  if (!card) return;
+  if (card.querySelector('.sg-edit')) return;
+  const s = SG_SUGG.find(function(x){ return x.id === id; });
+  const ta = document.createElement('textarea');
+  ta.className = 'sg-edit';
+  ta.rows = 2;
+  ta.value = sgEdit[id] || s.t;
+  ta.onblur = function(){
+    const v = ta.value.trim();
+    if (v && v !== s.t) sgEdit[id] = v;
+    else delete sgEdit[id];
+    sgRender();
+  };
+  card.appendChild(ta);
+  ta.focus();
+}
+
+function adoptAll(){
+  SG_SUGG.forEach(function(s){
+    if (sgState[s.id] === 'pending') sgState[s.id] = 'adopted';
+  });
+  sgRender();
+  fake('全部采纳了 · 不满意的地方逐条撤回就行');
+}
+
+function toggleIgnored(){
+  sgIgnOpen = !sgIgnOpen;
+  sgRender();
+}
+
+/* 按住看 AI 原方案：临时盖掉用户改过的标题 */
+function showOrig(on){
+  SG_SUGG.forEach(function(s){
+    const el = document.getElementById('sgt-' + s.id);
+    if (!el) return;
+    el.textContent = on ? s.t : (sgEdit[s.id] || s.t);
+  });
+  const tip = document.querySelector('.sg-cmp-tip');
+  if (tip) tip.textContent = on ? '这是 AI 原话，松开回到你改过的版本' : '你改过的标题会被临时盖掉';
+
+  /* 顶部提示条 */
+  let bar = document.getElementById('sgCompBar');
+  if (on){
+    if (!bar){
+      bar = document.createElement('div');
+      bar.id = 'sgCompBar';
+      bar.className = 'comp-bar';
+      bar.textContent = 'AI 原方案（只读）';
+      document.body.appendChild(bar);
+    }
+  } else if (bar){
+    bar.remove();
+  }
+}
+
+/* 进页面渲染一次 */
+document.addEventListener('DOMContentLoaded', function(){
+  sgRender();
+});
+if (document.readyState !== 'loading') sgRender();
+
 function pzTabClicks(key){
   const tabs = document.querySelectorAll('.pz-tab');
-  const map = {plan:0, els:1, shots:2, kit:3, cam:4, handoff:5};
+  const map = {sugg:0, plan:1, els:2, shots:3, kit:4, cam:5, handoff:6};
   pzTab(tabs[map[key]], key);
 }
 function toggleNote(btn){
