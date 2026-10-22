@@ -4014,7 +4014,7 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
     <div class="pf-ft">
       <button class="btn" onclick="closePreflight()">关闭</button>
       <div class="spacer"></div>
-      <button class="btn" onclick="fake('导出成一张纸，打印带走')">导出成纸</button>
+      <button class="btn" onclick="exportPreflightPaper()">导出成纸</button>
       <button class="btn pri" onclick="fake('存为这次拍摄的方案，明天直接从这里进现场模式')">存为这次方案</button>
     </div>
   </div>
@@ -5248,6 +5248,156 @@ function rcToggle(el, k){
 }
 
 /* 作品 → 修图：真打开画布，并把这张的信息带过去 */
+
+/* ==========================================================================
+   ⭐ 2026-10-22 出门前检查 → 导出成纸
+   现场没网、手上有油、戴手套 —— 打印一张纸比翻手机靠谱。
+   用浏览器原生打印（自带「另存为 PDF」）。
+   ========================================================================== */
+function exportPreflightPaper(){
+  const esc = function(s){
+    return String(s == null ? '' : s).replace(/[&<>]/g, function(m){
+      return { '&':'&amp;', '<':'&lt;', '>':'&gt;' }[m];
+    });
+  };
+  const txt = function(el){ return el ? el.textContent.trim().replace(/\s+/g, ' ') : ''; };
+
+  /* 这次拍什么：从 preflight 面板里真实读取选中项 */
+  const pickOn = function(sel){
+    return Array.from(document.querySelectorAll(sel))
+      .filter(function(x){ return x.classList.contains('on'); })
+      .map(function(x){ return txt(x); });
+  };
+  const crowds = pickOn('#pfCrowd .pf-chip.on');
+  const lightRows = Array.from(document.querySelectorAll('#preflight .pf-row'));
+  const scene = lightRows.map(function(row){
+    const l = txt(row.querySelector('.pf-l'));
+    const vals = pickOn.call(null, '#preflight .pf-row') ; /* 占位，下面单独算 */
+    const items = Array.from(row.querySelectorAll('.chip.on')).map(txt);
+    return items.length ? l + '：' + items.join(' / ') : null;
+  }).filter(Boolean);
+
+  /* 最容易踩的 */
+  const risks = Array.from(document.querySelectorAll('#preflight .pf-risk')).map(function(r){
+    return {
+      h: txt(r.querySelector('.pr-h')),
+      b: txt(r.querySelector('.pr-b')),
+      w: txt(r.querySelector('.pr-w'))
+    };
+  });
+
+  /* 这一类的偏好 */
+  const knows = Array.from(document.querySelectorAll('#preflight .pk-item')).map(function(k){
+    return { h: txt(k.querySelector('.pk-h')), b: txt(k.querySelector('.pk-b')) };
+  });
+
+  /* 口令（只取够用的条数，纸面有限）*/
+  const cues = Array.from(document.querySelectorAll('#preflight .cue')).slice(0, 8).map(function(cu){
+    const t = txt(cu.querySelector('.cue-t')) || txt(cu);
+    return t.slice(0, 60);
+  }).filter(Boolean);
+
+  const today = new Date().toLocaleDateString('zh-CN', {
+    year:'numeric', month:'2-digit', day:'2-digit'
+  });
+
+  let __printHTML = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">'
+    + '<title>出门前检查</title><style>'
+    + '@page{size:A4;margin:14mm}'
+    + 'body{font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;'
+    +   'color:#111;line-height:1.6;font-size:12.5px;margin:0}'
+    + 'h1{font-size:19px;margin:0 0 3px}'
+    + '.sub{font-size:11px;color:#777;margin-bottom:14px}'
+    + 'section{margin-bottom:12px;page-break-inside:avoid}'
+    + 'h2{font-size:11.5px;color:#b45309;margin:0 0 5px;letter-spacing:.04em;'
+    +   'border-bottom:1px solid #e5e5e5;padding-bottom:3px}'
+    + '.chips{display:flex;flex-wrap:wrap;gap:5px}'
+    + '.chip{border:1px solid #bbb;border-radius:12px;padding:1px 9px;font-size:11.5px}'
+    + '.row{display:flex;gap:8px;margin-bottom:3px}'
+    + '.row .k{color:#888;min-width:30px}'
+    + '.risk{margin-bottom:7px;padding-left:9px;border-left:2px solid #f0b400}'
+    + '.risk .rh{font-weight:600}'
+    + '.risk .rb{color:#444}'
+    + '.risk .rw{font-size:10.5px;color:#999;margin-top:1px}'
+    + '.kv{margin-bottom:5px}'
+    + '.kv b{display:block}'
+    + '.cue{font-size:12px;margin-bottom:2px;padding-left:12px;position:relative}'
+    + '.cue::before{content:"·";position:absolute;left:3px;color:#b45309}'
+    + '.foot{margin-top:14px;border-top:1px dashed #ccc;padding-top:7px;'
+    +   'font-size:10.5px;color:#888}'
+    + '</style></head><body>';
+
+  __printHTML += '<h1>出门前检查</h1>';
+  __printHTML += '<div class="sub">' + today + ' · YLCraft</div>';
+
+  if (crowds.length || scene.length){
+    __printHTML += '<section><h2>这次拍什么</h2>';
+    if (crowds.length){
+      __printHTML += '<div class="row"><span class="k">拍谁</span>'
+        + '<div class="chips">'
+        + crowds.map(function(x){ return '<span class="chip">' + esc(x) + '</span>'; }).join('')
+        + '</div></div>';
+    }
+    scene.forEach(function(s){
+      const parts = s.split('：');
+      __printHTML += '<div class="row"><span class="k">' + esc(parts[0] || '') + '</span>'
+        + '<span>' + esc(parts.slice(1).join('：')) + '</span></div>';
+    });
+    __printHTML += '</section>';
+  }
+
+  if (risks.length){
+    __printHTML += '<section><h2>这次最容易踩的</h2>'
+      + risks.map(function(r){
+          return '<div class="risk"><div class="rh">' + esc(r.h) + '</div>'
+            + (r.b ? '<div class="rb">' + esc(r.b) + '</div>' : '')
+            + (r.w ? '<div class="rw">' + esc(r.w) + '</div>' : '')
+            + '</div>';
+        }).join('')
+      + '</section>';
+  }
+
+  if (knows.length){
+    __printHTML += '<section><h2>这一类的偏好</h2>'
+      + knows.map(function(k){
+          return '<div class="kv"><b>' + esc(k.h) + '</b>'
+            + esc(k.b) + '</div>';
+        }).join('')
+      + '</section>';
+  }
+
+  if (cues.length){
+    __printHTML += '<section><h2>现场可以这么说</h2>'
+      + cues.map(function(x){ return '<div class="cue">' + esc(x) + '</div>'; }).join('')
+      + '</section>';
+  }
+
+  __printHTML += '<div class="foot">这张纸揣兜里 —— 现场风大、手冷、没网的时候看它。'
+    + '内容是照着这次的选择算出来的，不是通用清单。</div>';
+  __printHTML += '</body></__printHTML>';
+
+  const __oldFrame = document.getElementById('__printFrame');
+  if (__oldFrame) __oldFrame.remove();
+  const f = document.createElement('iframe');
+  f.id = '__printFrame';
+  f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+  document.body.appendChild(f);
+  const d = f.contentWindow.document;
+  d.open(); d.write(__printHTML); d.close();
+  f.onload = function(){
+    setTimeout(function(){
+      try { f.contentWindow.focus(); f.contentWindow.print(); } catch(e){}
+    }, 120);
+  };
+  setTimeout(function(){
+    try {
+      if (!f.__printed){ f.__printed = 1; f.contentWindow.focus(); f.contentWindow.print(); }
+    } catch(e){}
+  }, 400);
+
+  fake('已打开打印窗口 · 选「另存为 PDF」就能存下来');
+}
+
 function openRetouchFromWork(){
   const id = (typeof ORDER !== 'undefined' && typeof dtCur !== 'undefined')
     ? ORDER[dtCur] : null;
@@ -5438,11 +5588,93 @@ function sendToRetouch(){
   fake('已发给后期 · 新标签里会直接打开修图面板');
 }
 
+/* ⭐ 2026-10-22 导出成纸：用浏览器原生打印，自带「另存为 PDF」*/
 function exportHandoffPDF(){
-  /* 原型：不真生成 PDF，说明清楚 */
-  const h = collectHandoff();
-  fake('原型占位：PDF 导出还没做（真实现走服务端渲染）');
-  console.log('交接单内容', h);
+  var h = collectHandoff();
+  var escFn = function(s){
+    return String(s == null ? '' : s).replace(/[&<>]/g, function(m){
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m];
+    });
+  };
+
+  var orderList = [];
+  document.querySelectorAll('#hoOrder .ho-o').forEach(function(el){
+    orderList.push(el.textContent.replace(/^\s*\d+\s*/, '').trim());
+  });
+
+  var todayStr = new Date().toLocaleDateString('zh-CN', {
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  });
+  var pzEl = document.querySelector('.pz-title');
+  var projName = pzEl ? pzEl.textContent : '拍摄项目';
+
+  var parts = [];
+  parts.push('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">');
+  parts.push('<title>' + escFn(projName) + ' · 交接单</title>');
+  parts.push('<style>');
+  parts.push('@page{size:A4;margin:16mm}');
+  parts.push('body{font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;color:#111;line-height:1.65;font-size:13px;margin:0}');
+  parts.push('h1{font-size:20px;margin:0 0 3px}');
+  parts.push('.sub{font-size:11px;color:#777;margin-bottom:16px}');
+  parts.push('section{margin-bottom:14px;page-break-inside:avoid}');
+  parts.push('h2{font-size:12px;color:#b45309;margin:0 0 6px;letter-spacing:.04em;text-transform:uppercase;border-bottom:1px solid #e5e5e5;padding-bottom:4px}');
+  parts.push('.lead{font-size:15px;font-weight:600;margin-bottom:6px}');
+  parts.push('ul{margin:0;padding-left:18px}');
+  parts.push('li{margin-bottom:2px}');
+  parts.push('.order{counter-reset:o}');
+  parts.push('.order div{counter-increment:o;margin-bottom:2px}');
+  parts.push('.order div::before{content:counter(o) ". ";color:#b45309;font-weight:600}');
+  parts.push('.note{font-size:11.5px;color:#666;margin-top:10px;border-top:1px dashed #ccc;padding-top:8px}');
+  parts.push('.sign{margin-top:22px;display:flex;gap:40px;font-size:11.5px;color:#666}');
+  parts.push('.sign span{flex:1;border-top:1px solid #ccc;padding-top:4px}');
+  parts.push('</style></head><body>');
+
+  parts.push('<h1>拍摄交接单</h1>');
+  parts.push('<div class="sub">' + escFn(projName) + ' · ' + todayStr + ' · YLCraft</div>');
+
+  if (h.what){
+    parts.push('<section><h2>这组要什么</h2><div class="lead">' + escFn(h.what) + '</div></section>');
+  }
+  if (h.cond){
+    parts.push('<section><h2>拍的时候什么条件</h2><div>' + escFn(h.cond) + '</div></section>');
+  }
+  if (h.fixes && h.fixes.length){
+    parts.push('<section><h2>已经知道要修的</h2><ul>');
+    h.fixes.forEach(function(x){ parts.push('<li>' + escFn(x) + '</li>'); });
+    parts.push('</ul></section>');
+  }
+  if (h.ask){
+    parts.push('<section><h2>客户 / 模特提过的要求</h2><div>' + escFn(h.ask) + '</div></section>');
+  }
+  if (orderList.length){
+    parts.push('<section><h2>修图顺序（顺序错了等于白做）</h2><div class="order">');
+    orderList.forEach(function(x){ parts.push('<div>' + escFn(x) + '</div>'); });
+    parts.push('</div></section>');
+  }
+
+  parts.push('<div class="note">这张纸拍完就交出去 —— 后期照着修，不容易丢当时的想法。在「脚本策划 → 交接」里改，改了重新导一次。</div>');
+  parts.push('<div class="sign"><span>摄影师</span><span>后期</span><span>日期</span></div>');
+  parts.push('</body></html>');
+
+  printToPaper(parts.join(''));
+  fake('已打开打印窗口 · 选「另存为 PDF」就能存下来');
+}
+
+/* 共用的打印函数 */
+function printToPaper(htmlText){
+  var prev = document.getElementById('__printFrame');
+  if (prev) prev.remove();
+  var fr = document.createElement('iframe');
+  fr.id = '__printFrame';
+  fr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+  document.body.appendChild(fr);
+  var d = fr.contentWindow.document;
+  d.open();
+  d.write(htmlText);
+  d.close();
+  setTimeout(function(){
+    try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch(e){}
+  }, 150);
 }
 
 /* 打开策划页时，如果之前存过，就把「已存」标出来 */
