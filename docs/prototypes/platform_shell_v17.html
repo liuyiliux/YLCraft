@@ -486,7 +486,6 @@ const NAV = [
     sub:[
       { k:'p-ref',     n:'参考库' },
       { k:'p-plan',    n:'脚本策划' },
-      { k:'p-book',    n:'学习手册', tag:'新' },
       { k:'p-onsite',  n:'现场视图' },
       { k:'p-model',   n:'模特档案' },
       { k:'p-light',   n:'地点光线' },
@@ -531,6 +530,7 @@ const NAV = [
   { key:'kb', t:'知识库', ic:'cap', desc:'把外面的知识收进来，Agent 能查', tag:'新',
     sub:[
       { k:'kb-all',  n:'内容' },
+      { k:'kb-book', n:'学习手册', tag:'新' },
       { k:'kb-qa',   n:'问答', tag:'RAG' },
       { k:'kb-prov', n:'处理设置' },
       { k:'kb-recent',n:'最近阅读' },
@@ -606,7 +606,7 @@ function findSub(k){
 const PHOTO_FRAMES = {
   'p-ref':     'photo-ref/index.html',
   'p-plan':    'photo-ref/index.html?page=plan',
-  'p-book':    'photo-ref/booklet.html',
+  'kb-book':   'photo-ref/booklet.html',
   'p-onsite':  'photo-ref/onsite.html',
   'p-model':   'photo-ref/model-profile.html',
   'p-light':   'photo-ref/light-api.html',
@@ -865,6 +865,14 @@ const KB_KINDS = {
 };
 
 const KB_ITEMS = [
+  /* ⭐ 平台预制：摄影学习手册本身就是一份知识，
+     Agent 在「脚本策划 → 建议」里可以引用它。 */
+  { id:'k-photo-book', k:'preset', t:'人像摄影学习手册',
+    src:'平台预制 · 结构化的摄影知识', from:'YLCraft',
+    at:'2026-10-22', chunks:100, words:120000,
+    tags:['摄影','人像','学习手册','平台预制'], col:'平台预制',
+    state:'ready', hot:0.95, read:1 },
+
   { id:'k1', k:'wechat', t:'AI 生图的提示词工程实践（2025 修订版）',
     src:'mp.weixin.qq.com/s/…', from:'卡兹克', at:'2026-10-16',
     chunks:42, words:8400, tags:['提示词','生图'], col:'提示词相关',
@@ -1400,6 +1408,8 @@ let kbDetailTab = 'text';
 function kbOpen(id){
   const it = KB_ITEMS.find(x=>x.id===id);
   if (!it) return;
+  /* ⭐ 学习手册不是普通条目，直接打开手册本体 */
+  if (id === 'k-photo-book'){ go('kb-book'); return; }
   kbSel = id;
   renderKbDetail();
 }
