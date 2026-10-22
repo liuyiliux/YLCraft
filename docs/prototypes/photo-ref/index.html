@@ -2213,6 +2213,102 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 .pw-btn.pri{background:var(--photo);border-color:var(--photo);color:#1a1205;font-weight:600}
 .pw-btn.pri:hover{filter:brightness(1.1)}
 @media (max-width:1200px){ .pw{grid-template-columns:1fr} }
+
+/* ===== 元素编辑（可加/删/改） ===== */
+.pz-card-h .pz-add-btn{margin-left:6px;width:19px;height:19px;border-radius:50%;
+  border:1px solid var(--bd3);background:transparent;color:var(--tx3);font-size:13px;
+  line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:.16s;font-family:inherit;flex-shrink:0}
+.pz-card-h .pz-add-btn:hover{border-color:var(--photo);color:var(--photo);
+  background:color-mix(in srgb,var(--photo) 12%,transparent)}
+#pz-els .pz-chip{padding-right:19px}
+#pz-els .pz-chip .pz-chip-x{position:absolute;right:2px;top:50%;transform:translateY(-50%);
+  font-size:11px;color:var(--tx3);opacity:0;transition:.16s;line-height:1;
+  width:14px;height:14px;display:flex;align-items:center;justify-content:center;
+  border-radius:50%;cursor:pointer}
+#pz-els .pz-chip:hover .pz-chip-x{opacity:1}
+#pz-els .pz-chip .pz-chip-x:hover{color:var(--err);background:color-mix(in srgb,var(--err) 16%,transparent)}
+#pz-els .pz-chip.custom{border-style:dashed}
+#pz-els .pz-chip.none{padding-right:11px}
+#pz-els .pz-chip.none .pz-chip-x{display:none}
+
+/* ===== 方案页：参考图卡片 ===== */
+.pr-refs{background:var(--bgCard);border:1px solid var(--bd2);
+  border-radius:var(--radiusMD);padding:15px 17px;margin-bottom:18px}
+.pr-hd{display:flex;align-items:baseline;gap:10px;margin-bottom:11px}
+.pr-t{font-size:16px;color:var(--tx1);font-weight:600}
+.pr-s{font-size:12.5px;color:var(--tx3)}
+.pr-btn{font-size:12.5px;padding:5px 13px;border-radius:6px;border:1px solid var(--bd2);
+  background:transparent;color:var(--tx2);cursor:pointer;transition:.16s;font-family:inherit}
+.pr-btn:hover{border-color:var(--photo);color:var(--photo)}
+.pr-body{display:flex;gap:10px;flex-wrap:wrap}
+.pr-empty{font-size:13px;color:var(--tx3);line-height:1.65;padding:14px;
+  border:1px dashed var(--bd3);border-radius:7px;width:100%}
+.pr-card{width:158px;position:relative;border:1px solid var(--bd2);
+  border-radius:7px;overflow:hidden;background:var(--bgInput)}
+.pr-thumb{height:96px;display:flex;align-items:center;justify-content:center;
+  font-size:12px;color:var(--tx3);background:linear-gradient(150deg,#2a2340,#141020)}
+.pr-txt{font-size:11.5px;color:var(--tx3);line-height:1.45;padding:7px 9px}
+.pr-del{position:absolute;top:4px;right:4px;width:17px;height:17px;border-radius:50%;
+  border:none;background:rgba(0,0,0,.55);color:#fff;font-size:12px;line-height:1;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;opacity:0;
+  transition:.16s;font-family:inherit}
+.pr-card:hover .pr-del{opacity:1}
+.pr-del:hover{background:var(--err)}
+
+/* ===== 参考图选择器 ===== */
+.rp{position:fixed;inset:0;z-index:97;display:none;align-items:center;
+  justify-content:center;background:rgba(0,0,0,.62);backdrop-filter:blur(4px);padding:24px}
+.rp.on{display:flex}
+.rp-box{width:min(620px,96vw);max-height:84vh;display:flex;flex-direction:column;
+  background:var(--bgElev);border:1px solid var(--bd2);border-radius:var(--radiusLG);
+  box-shadow:var(--shadowModal);overflow:hidden}
+.rp-hd{display:flex;align-items:flex-start;gap:12px;padding:19px 22px;
+  border-bottom:1px solid var(--bd)}
+.rp-title{font-size:18px;color:var(--tx1);font-weight:600;margin-bottom:3px}
+.rp-sub{font-size:12.5px;color:var(--tx3)}
+.rp-x{margin-left:auto;font-size:16px;color:var(--tx3);background:none;border:none;
+  cursor:pointer;padding:2px 6px;font-family:inherit}
+.rp-x:hover{color:var(--tx1)}
+.rp-body{padding:16px 22px;overflow-y:auto;flex:1;display:flex;
+  flex-direction:column;gap:7px}
+.rp-item{display:flex;align-items:center;gap:10px;padding:11px 13px;border-radius:7px;
+  background:var(--bgInput);cursor:pointer;transition:.16s;border:1px solid transparent}
+.rp-item:hover{border-color:var(--bd3)}
+.rp-item.on{border-color:var(--photo);
+  background:color-mix(in srgb,var(--photo) 7%,var(--bgInput))}
+.rp-box2{width:17px;height:17px;border:1.4px solid var(--bd3);border-radius:3px;
+  display:flex;align-items:center;justify-content:center;font-size:10px;
+  color:var(--photo);flex-shrink:0}
+.rp-item.on .rp-box2{background:var(--photo);border-color:var(--photo);color:#1a1205}
+.rp-th{font-size:12.5px;color:var(--tx2);flex-shrink:0;min-width:44px}
+.rp-steal{font-size:12.5px;color:var(--tx3);flex:1;line-height:1.5}
+.rp-item.on .rp-steal{color:var(--tx2)}
+.rp-ft{display:flex;align-items:center;gap:10px;padding:13px 22px;
+  border-top:1px solid var(--bd);font-size:12.5px;color:var(--tx3)}
+
+/* ===== 出门前检查：只读摘要 ===== */
+.pf-readonly{display:flex;align-items:center;gap:10px;padding:11px 14px;
+  border-radius:7px;background:var(--bgInput);border:1px solid var(--bd2);
+  flex-wrap:wrap}
+.pf-readonly .pf-ro-v{flex:1 1 100%;margin-top:2px}
+.pf-readonly .pf-ro-k{flex:0 0 auto}
+.pf-readonly .pf-ro-go{margin-left:auto}
+.pf-ro-k{font-size:11.5px;color:var(--tx3);font-family:var(--fm);flex-shrink:0}
+.pf-ro-v{font-size:13.5px;color:var(--tx2);flex:1;line-height:1.5}
+.pf-ro-v.empty{color:var(--tx3);font-style:italic}
+.pf-ro-go{font-size:12px;padding:4px 11px;border-radius:5px;border:1px solid var(--bd2);
+  background:transparent;color:var(--tx3);cursor:pointer;transition:.16s;
+  font-family:inherit;flex-shrink:0;white-space:nowrap}
+.pf-ro-go:hover{border-color:var(--photo);color:var(--photo)}
+.pf-ro-go-wrap{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+
+/* ===== 出门前：现场速查口令 ===== */
+.pf-quick{display:flex;flex-direction:column;gap:6px;margin-bottom:4px}
+.pf-q{padding:9px 13px;border-radius:7px;background:var(--bgInput);
+  border-left:2px solid var(--photo)}
+.pf-q b{display:block;font-size:14px;color:var(--tx1);margin-bottom:2px}
+.pf-q span{font-size:12px;color:var(--tx3)}
 </style>
 </head>
 <body data-t="deep">
@@ -2943,6 +3039,17 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
         <div class="who-card" id="whoCard"></div>
       </div>
 
+      <!-- ===== 参考图（挂到这次拍摄上） ===== -->
+      <div class="pr-refs">
+        <div class="pr-hd">
+          <span class="pr-t">参考图</span>
+          <span class="pr-s">这次要照着拍的 · 每张写一句「偷什么」</span>
+          <div style="flex:1"></div>
+          <button class="pr-btn" onclick="openRefPicker()">从参考库选</button>
+        </div>
+        <div class="pr-body" id="prRefs"></div>
+      </div>
+
       <!-- ===== 这次拍哪种（三种专题模板） ===== -->
       <div class="tp">
         <div class="tp-hd">
@@ -3358,6 +3465,27 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
   </div>
 </div><!-- /pagePlan -->
 
+
+
+<!-- ===== 参考图选择器 ===== -->
+<div class="rp" id="refPicker">
+  <div class="rp-box">
+    <div class="rp-hd">
+      <div>
+        <div class="rp-title">从参考库选这次要用的</div>
+        <div class="rp-sub">选中的会挂到这个项目上，打印和分镜里都能带出来。</div>
+      </div>
+      <button class="rp-x" onclick="closeRefPicker()">✕</button>
+    </div>
+    <div class="rp-body" id="rpList"></div>
+    <div class="rp-ft">
+      <span id="rpCount">已选 0 张</span>
+      <div class="spacer"></div>
+      <button class="btn" onclick="closeRefPicker()">取消</button>
+      <button class="btn pri" onclick="rpConfirm()">挂上去</button>
+    </div>
+  </div>
+</div>
 
 <!-- ===== 修图前清单 ===== -->
 <div class="rc" id="retouchChecklist">
@@ -3878,55 +4006,23 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
       <div class="pf-left">
         <div class="pf-sec">
           <div class="pf-sec-t">这次拍的是谁</div>
-          <div class="pf-groups" id="pfCrowd">
-            <div class="pf-grp-h">证据最足（有具体口令结论）</div>
-            <div class="pf-chips">
-              <button class="pf-chip on" onclick="pickPref(this,'老年')">老年 / 中老年</button>
-              <button class="pf-chip" onclick="pickPref(this,'情侣')">情侣</button>
-              <button class="pf-chip" onclick="pickPref(this,'领证')">领证跟拍</button>
-              <button class="pf-chip" onclick="pickPref(this,'coser')">coser / 角色扮演</button>
-            </div>
-            <div class="pf-grp-h">有分组方法（按关系 / 流程组织）</div>
-            <div class="pf-chips">
-              <button class="pf-chip" onclick="pickPref(this,'婚纱')">婚纱 / 婚礼</button>
-              <button class="pf-chip" onclick="pickPref(this,'家庭')">家庭 / 亲子 / 儿童</button>
-              <button class="pf-chip" onclick="pickPref(this,'旅拍')">旅拍</button>
-            </div>
-            <div class="pf-grp-h">暂时没有专门结论</div>
-            <div class="pf-chips">
-              <button class="pf-chip ghost" onclick="pickPref(this,'个人写真')">个人写真 / 形象照</button>
-              <button class="pf-chip ghost" onclick="pickPref(this,'博主')">小红书博主</button>
-              <button class="pf-chip ghost" onclick="pickPref(this,'商业')">商业 / 产品人像</button>
-              <button class="pf-chip ghost" onclick="fake('一个库里没有的类型 —— 拍完可以自己补一条结论进去')">＋ 其他</button>
-            </div>
+          <div class="pf-readonly">
+            <span class="pf-ro-k">拍谁</span>
+            <span class="pf-ro-v" id="pfWhoV">（还没选）</span>
+            <button class="pf-ro-go" onclick="pfGoEdit('plan')">去方案页改 →</button>
           </div>
         </div>
 
         <div class="pf-sec">
           <div class="pf-sec-t">这次的光和场景</div>
-          <div class="pf-row">
-            <span class="pf-l">光</span>
-            <button class="chip on" onclick="tog(this)">逆光</button>
-            <button class="chip" onclick="tog(this)">侧逆光</button>
-            <button class="chip" onclick="tog(this)">顺光</button>
-            <button class="chip" onclick="tog(this)">阴天柔光</button>
-            <button class="chip" onclick="tog(this)">硬光</button>
-          </div>
-          <div class="pf-row">
-            <span class="pf-l">时段</span>
-            <button class="chip on" onclick="tog(this)">傍晚</button>
-            <button class="chip" onclick="tog(this)">白天</button>
-            <button class="chip" onclick="tog(this)">蓝调</button>
-            <button class="chip" onclick="tog(this)">夜</button>
-          </div>
-          <div class="pf-row">
-            <span class="pf-l">场景</span>
-            <button class="chip" onclick="tog(this)">公园 / 校园</button>
-            <button class="chip on" onclick="tog(this)">海边 / 水边</button>
-            <button class="chip" onclick="tog(this)">室内居家</button>
-            <button class="chip" onclick="tog(this)">街拍</button>
+          <div class="pf-readonly">
+            <span class="pf-ro-k">条件</span>
+            <span class="pf-ro-v" id="pfSceneV">（还没选）</span>
+            <button class="pf-ro-go" onclick="pfGoEdit('els')">去元素页改 →</button>
           </div>
         </div>
+
+        
 
         <div class="pf-sec">
           <div class="pf-sec-t">这一类的偏好（调研结论）</div>
@@ -3977,103 +4073,17 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 
         <div class="pf-sec">
           <div class="pf-sec-t">
-            这一类的口令
-            <span class="pf-hint">按作用位置选，图只是验证</span>
+            现场可以这么说
+            <span class="pf-hint">只放最常用的 3 条，完整在口令库</span>
           </div>
-          <div class="pf-filters">
-            <button class="cue-f on" onclick="cueFilter(this,'all')">全部</button>
-            <button class="cue-f" onclick="cueFilter(this,'下巴')">下巴</button>
-            <button class="cue-f" onclick="cueFilter(this,'眼神')">眼神</button>
-            <button class="cue-f" onclick="cueFilter(this,'手')">手</button>
-            <button class="cue-f" onclick="cueFilter(this,'肩')">肩</button>
-            <button class="cue-f" onclick="cueFilter(this,'重心')">重心</button>
-            <button class="cue-f" onclick="cueFilter(this,'表情')">表情</button>
+          <div class="pf-quick">
+            <div class="pf-q"><b>手摸一下围巾就好</b><span>给件事做，手自然有地方放</span></div>
+            <div class="pf-q"><b>往前走，我数到三你回头</b><span>比「转过来」自然</span></div>
+            <div class="pf-q"><b>再来一遍，收一点</b><span>演过头时用</span></div>
           </div>
-
-          <div class="pf-cues">
-            <div class="cue">
-              <div class="cue-top">
-                <span class="cue-part">手</span>
-                <span class="cue-type">任务式</span>
-                <span class="cue-trust ok">多来源共识</span>
-              </div>
-              <div class="cue-q">「手摸一下围巾就好」</div>
-              <div class="cue-why">给她一件事做，手自然有地方放，不用解释「手放哪」。</div>
-              <div class="cue-row">
-                <span class="cr-l">重试</span><span class="cr-v">「摸一下就好，不用抓」</span>
-              </div>
-              <div class="cue-row">
-                <span class="cr-l">过头</span><span class="cr-v">抓得太紧会显得紧张</span>
-              </div>
-            </div>
-
-            <div class="cue">
-              <div class="cue-top">
-                <span class="cue-part">下巴</span>
-                <span class="cue-type">任务式</span>
-                <span class="cue-trust ok">多来源共识</span>
-              </div>
-              <div class="cue-q">「把额头轻轻送向镜头」</div>
-              <div class="cue-why">不强调下巴，下巴会自己找到位置。比「收下巴」有效。</div>
-              <div class="cue-row">
-                <span class="cr-l">重试</span><span class="cr-v">「再往前一点点，不用探脖子」</span>
-              </div>
-              <div class="cue-row">
-                <span class="cr-l">过头</span><span class="cr-v">整个脖子前探，像在憋气</span>
-              </div>
-            </div>
-
-            <div class="cue">
-              <div class="cue-top">
-                <span class="cue-part">眼神</span>
-                <span class="cue-type">任务式</span>
-                <span class="cue-trust ok">多来源共识</span>
-              </div>
-              <div class="cue-q">「现在眼睛看我手指，不用转脸」</div>
-              <div class="cue-why"><b>把脸和眼解耦</b>——一句话管两件事，脸不动只要眼神过来。</div>
-              <div class="cue-row">
-                <span class="cr-l">重试</span><span class="cr-v">「脸别动，就眼睛过来」</span>
-              </div>
-            </div>
-
-            <div class="cue">
-              <div class="cue-top">
-                <span class="cue-part">肩</span>
-                <span class="cue-type">指令式</span>
-                <span class="cue-trust ok">多来源共识</span>
-              </div>
-              <div class="cue-q">「远一点那边的肩膀往后走半步」</div>
-              <div class="cue-why"><b>用参照物代替左右</b>——不说「左肩」，因为她不知道谁的左。</div>
-              <div class="cue-row">
-                <span class="cr-l">别用</span><span class="cr-v">「肩膀放下」——对方不懂怎么放</span>
-              </div>
-            </div>
-
-            <div class="cue warn">
-              <div class="cue-top">
-                <span class="cue-part">表情</span>
-                <span class="cue-type">场景式</span>
-                <span class="cue-trust warn">⚠ 只解情绪</span>
-              </div>
-              <div class="cue-q">「闭眼听十秒风声，睁眼以后看向车窗里面」</div>
-              <div class="cue-why">场景式只解决情绪，<b>不能用来定下巴和手的位置</b>——否则对方自由发挥跑偏。</div>
-              <div class="cue-row">
-                <span class="cr-l">别用</span><span class="cr-v">「孤独一点」——形容词，做不到</span>
-              </div>
-            </div>
-
-            <div class="cue danger">
-              <div class="cue-top">
-                <span class="cue-part">眼神</span>
-                <span class="cue-type">解剖式</span>
-                <span class="cue-trust bad">⚠ 有专业反证</span>
-              </div>
-              <div class="cue-q">squinch（眯起下眼睑）</div>
-              <div class="cue-why">眼科医生指出：<b>人没有单独的肌肉能抬起下眼睑</b>，这个口令在解剖上做不到。</div>
-              <div class="cue-row">
-                <span class="cr-l">替代</span><span class="cr-v">「做完整的真笑，再非常轻微把眼睛睁开」</span>
-              </div>
-            </div>
+          <div class="pf-ro-go-wrap">
+            <button class="pf-ro-go" onclick="openCueLib()">打开口令库（全部）→</button>
+            <button class="pf-ro-go" onclick="pzTabByName('shots')">去分镜看每镜的口令 →</button>
           </div>
         </div>
 
@@ -5561,9 +5571,21 @@ PZ_INIT_PW();
 
 function PZ_INIT_PW(){
   if (!pwOrderArr.length) pwOrderArr = PW_BLOCKS.map(function(b){ return b.k; });
-  /* 默认全选前 6 张参考图 */
+  /* ⭐ 默认用方案页挂的那些参考图；没挂才退回前 6 张
+     注意：这里不能直接用 PR_SEL —— 它在后面的代码块里才声明（TDZ），
+     所以直接读 localStorage。 */
   if (typeof ORDER !== 'undefined'){
-    ORDER.forEach(function(id, i){ if (i < 6) pwRefSel[id] = true; });
+    var pinnedMap = {};
+    try {
+      var rawP = localStorage.getItem('ylcraft_photo_project_refs_v1');
+      if (rawP) pinnedMap = JSON.parse(rawP) || {};
+    } catch(e){}
+    var pinnedIds = ORDER.filter(function(id){ return pinnedMap[id]; });
+    if (pinnedIds.length){
+      ORDER.forEach(function(id){ pwRefSel[id] = !!pinnedMap[id]; });
+    } else {
+      ORDER.forEach(function(id, i){ if (i < 6) pwRefSel[id] = true; });
+    }
   }
 }
 
@@ -5919,6 +5941,363 @@ function pwDoPrint(){
     if (key === 'print'){ PZ_INIT_PW(); pwRender(); }
   };
 })();
+
+
+/* ==========================================================================
+   ⭐ 2026-10-22 元素真可编辑
+   之前：chip 只能点开关，不能加 / 删 / 改文字。
+   现在：加 + 删 + 双击改 + 存 localStorage。
+   ========================================================================== */
+
+const EL_EDIT_KEY = 'ylcraft_photo_elements_v1';
+let EL_CUSTOM = {};      /* 组名 -> [新增的元素] */
+let EL_REMOVED = {};     /* 组名 -> [被删掉的元素] */
+
+function elLoadCustom(){
+  try {
+    const raw = localStorage.getItem(EL_EDIT_KEY);
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    EL_CUSTOM = d.custom || {};
+    EL_REMOVED = d.removed || {};
+  } catch(e){}
+}
+function elSaveCustom(){
+  try {
+    localStorage.setItem(EL_EDIT_KEY, JSON.stringify({
+      custom: EL_CUSTOM, removed: EL_REMOVED
+    }));
+  } catch(e){}
+}
+
+/* 给每个元素组加工具栏（+ 按钮）并让 chip 能删 */
+function elEnhance(){
+  document.querySelectorAll('#pz-els .pz-card').forEach(function(card){
+    const nameEl = card.querySelector('.pz-card-n');
+    if (!nameEl) return;
+    const gname = nameEl.textContent.trim();
+    const body = card.querySelector('.pz-card-b');
+    if (!body) return;
+
+    /* ① 加「＋」按钮（只加一次）*/
+    if (!card.querySelector('.pz-add-btn')){
+      const btn = document.createElement('button');
+      btn.className = 'pz-add-btn';
+      btn.textContent = '＋';
+      btn.title = '加一个元素';
+      btn.onclick = function(ev){ ev.stopPropagation(); elAddPrompt(gname); };
+      const hd = card.querySelector('.pz-card-h');
+      if (hd) hd.appendChild(btn);
+    }
+
+    /* ② 把自定义元素塞进 body */
+    const customs = EL_CUSTOM[gname] || [];
+    const removed = EL_REMOVED[gname] || [];
+    customs.forEach(function(t){
+      if (body.querySelector('[data-t="' + t.replace(/"/g,'') + '"]')) return;
+      const sp = document.createElement('span');
+      sp.className = 'pz-chip on custom'; sp.textContent = t;
+      sp.dataset.t = t;
+      body.appendChild(sp);
+    });
+    /* ③ 删掉被移除的 */
+    removed.forEach(function(t){
+      Array.from(body.querySelectorAll('.pz-chip')).forEach(function(ch){
+        if (ch.textContent.trim() === t) ch.remove();
+      });
+    });
+
+    /* ④ chip 加删除按钮 */
+    Array.from(body.querySelectorAll('.pz-chip')).forEach(function(ch){
+      if (ch.classList.contains('none')) return;
+      ch.dataset.t = ch.textContent.trim();
+      if (ch.querySelector('.pz-chip-x')) return;
+      const x = document.createElement('span');
+      x.className = 'pz-chip-x';
+      x.textContent = '×';
+      x.title = '删掉这个元素';
+      x.onclick = function(ev){
+        ev.stopPropagation();
+        elRemove(gname, ch.dataset.t);
+      };
+      ch.appendChild(x);
+      /* 双击改字 */
+      ch.ondblclick = function(ev){
+        ev.stopPropagation();
+        elRename(gname, ch.dataset.t);
+      };
+    });
+  });
+}
+
+function elAddPrompt(gname){
+  const v = prompt('给「' + gname + '」加一个元素：');
+  if (!v) return;
+  const t = v.trim();
+  if (!t) return;
+  if (!EL_CUSTOM[gname]) EL_CUSTOM[gname] = [];
+  if (EL_CUSTOM[gname].indexOf(t) < 0) EL_CUSTOM[gname].push(t);
+  /* 如果之前删过同名的，取消删除 */
+  if (EL_REMOVED[gname]){
+    EL_REMOVED[gname] = EL_REMOVED[gname].filter(function(x){ return x !== t; });
+  }
+  elSaveCustom();
+  elEnhance();
+  if (typeof elMarkDirty === 'function') elMarkDirty();
+  fake('加了「' + t + '」· 记得去分镜重排');
+}
+
+function elRemove(gname, t){
+  if (!EL_REMOVED[gname]) EL_REMOVED[gname] = [];
+  if (EL_REMOVED[gname].indexOf(t) < 0) EL_REMOVED[gname].push(t);
+  elSaveCustom();
+  elEnhance();
+  if (typeof elMarkDirty === 'function') elMarkDirty();
+  fake('删了「' + t + '」· 想找回就刷新页面（还没做撤销）');
+}
+
+function elRename(gname, t){
+  const v = prompt('改成什么？', t);
+  if (v === null) return;
+  const nt = v.trim();
+  if (!nt || nt === t) return;
+  /* 先删旧的，再加新的 */
+  if (!EL_REMOVED[gname]) EL_REMOVED[gname] = [];
+  EL_REMOVED[gname].push(t);
+  if (!EL_CUSTOM[gname]) EL_CUSTOM[gname] = [];
+  EL_CUSTOM[gname].push(nt);
+  elSaveCustom();
+  elEnhance();
+  if (typeof elMarkDirty === 'function') elMarkDirty();
+  fake('「' + t + '」改成了「' + nt + '」');
+}
+
+/* 挂到已有的 elBindChips 之后 */
+var __elBindOrig = elBindChips;
+elBindChips = function(){
+  __elBindOrig();
+  elEnhance();
+};
+
+/* 启动时加载 */
+document.addEventListener('DOMContentLoaded', function(){
+  elLoadCustom();
+  setTimeout(elEnhance, 300);
+});
+
+
+/* ==========================================================================
+   ⭐ 2026-10-22 参考图挂到项目上
+   之前：「用到分镜」只是 toast，参考库的图挂不到任何项目。
+   现在：方案页有「参考图」卡片 → 从参考库选 → 挂上去 → 分镜/打印都带出来。
+   ========================================================================== */
+
+const PR_KEY = 'ylcraft_photo_project_refs_v1';
+let PR_SEL = {};        /* refId -> true  （已挂到这个项目）*/
+let RP_TMP = {};        /* 选择器里的临时勾选 */
+
+function prLoad(){
+  try {
+    const raw = localStorage.getItem(PR_KEY);
+    PR_SEL = raw ? JSON.parse(raw) : {};
+  } catch(e){ PR_SEL = {}; }
+}
+function prSave(){
+  try { localStorage.setItem(PR_KEY, JSON.stringify(PR_SEL)); } catch(e){}
+}
+
+/* 渲染方案页的参考图卡片 */
+function prRender(){
+  const host = document.getElementById('prRefs');
+  if (!host) return;
+  const ids = Object.keys(PR_SEL).filter(function(k){ return PR_SEL[k]; });
+  if (!ids.length){
+    host.innerHTML = '<div class="pr-empty">还没挂参考图 —— 点右上角「从参考库选」。'
+      + '<br>拍了半天没想法，就是因为参考图没提前挑好。</div>';
+    return;
+  }
+  host.innerHTML = ids.map(function(id){
+    const idx = (typeof ORDER !== 'undefined') ? ORDER.indexOf(id) : -1;
+    const steal = (typeof STEAL !== 'undefined' && STEAL[id]) ? STEAL[id] : '';
+    return '<div class="pr-card">'
+      + '<div class="pr-thumb">图 ' + (idx + 1) + '</div>'
+      + '<div class="pr-txt">' + steal + '</div>'
+      + '<button class="pr-del" onclick="prUnpin(\'' + id + '\')" title="取消挂载">×</button>'
+      + '</div>';
+  }).join('');
+}
+
+function prUnpin(id){
+  PR_SEL[id] = false;
+  prSave(); prRender();
+  fake('取消了这张参考图');
+}
+function prPin(id){
+  PR_SEL[id] = true;
+  prSave(); prRender();
+  fake('挂上了 · 分镜和打印都会带出来');
+}
+
+/* ===== 选择器 ===== */
+function openRefPicker(){
+  const ids = (typeof ORDER !== 'undefined') ? ORDER : [];
+  RP_TMP = {};
+  Object.keys(PR_SEL).forEach(function(k){ if (PR_SEL[k]) RP_TMP[k] = true; });
+
+  const host = document.getElementById('rpList');
+  host.innerHTML = ids.map(function(id, i){
+    const steal = (typeof STEAL !== 'undefined' && STEAL[id]) ? STEAL[id] : '（还没写偷师点）';
+    const on = !!RP_TMP[id];
+    return '<div class="rp-item' + (on ? ' on' : '') + '" id="rpi-' + id + '"'
+      + ' onclick="rpToggle(\'' + id + '\')">'
+      + '<span class="rp-box2">' + (on ? '✓' : '') + '</span>'
+      + '<span class="rp-th">图 ' + (i+1) + '</span>'
+      + '<span class="rp-steal">' + steal + '</span>'
+      + '</div>';
+  }).join('');
+  rpCount();
+  document.getElementById('refPicker').classList.add('on');
+}
+function closeRefPicker(){
+  document.getElementById('refPicker').classList.remove('on');
+}
+function rpToggle(id){
+  RP_TMP[id] = !RP_TMP[id];
+  const el = document.getElementById('rpi-' + id);
+  if (el){
+    el.classList.toggle('on', !!RP_TMP[id]);
+    el.querySelector('.rp-box2').textContent = RP_TMP[id] ? '✓' : '';
+  }
+  rpCount();
+}
+function rpCount(){
+  const n = Object.keys(RP_TMP).filter(function(k){ return RP_TMP[k]; }).length;
+  const el = document.getElementById('rpCount');
+  if (el) el.textContent = '已选 ' + n + ' 张';
+}
+function rpConfirm(){
+  const picked = Object.keys(RP_TMP).filter(function(k){ return RP_TMP[k]; });
+  PR_SEL = {};
+  picked.forEach(function(id){ PR_SEL[id] = true; });
+  prSave(); prRender(); closeRefPicker();
+  fake(picked.length ? '挂上了 ' + picked.length + ' 张参考图' : '一张都没挂');
+}
+
+/* ===== 建议里也能推荐参考图 ===== */
+function aiRecommendRefs(){
+  /* 演示：按方案的关键词去匹配参考库的偷师点 */
+  const want = [];
+  if (typeof currentPlan !== 'undefined' && currentPlan === 'A') want.push('逆光');
+  if (typeof currentPlan !== 'undefined' && currentPlan === 'B') want.push('柱子');
+  const ids = (typeof ORDER !== 'undefined') ? ORDER : [];
+  const hits = ids.filter(function(id){
+    const s = (typeof STEAL !== 'undefined' && STEAL[id]) ? STEAL[id] : '';
+    return want.some(function(w){ return s.indexOf(w) >= 0; });
+  });
+  if (!hits.length){
+    fake('这次没找到特别对得上的参考图 —— 从参考库里自己挑更靠谱');
+    return;
+  }
+  openRefPicker();
+  /* 把推荐的先勾上 */
+  hits.forEach(function(id){ if (!RP_TMP[id]) rpToggle(id); });
+  fake('推荐了 ' + hits.length + ' 张（按「' + want.join('、') + '」匹配偷师点），确认一下');
+}
+
+/* 启动 */
+document.addEventListener('DOMContentLoaded', function(){
+  prLoad();
+  setTimeout(prRender, 400);
+});
+
+
+/* ==========================================================================
+   ⭐ 2026-10-22 出门前检查瘦身
+   之前：它把「拍谁 / 光时段场景 / 口令」又做了一遍可编辑 chips，
+        和方案页、元素页、分镜、口令库全重复。
+   现在：只读摘要 + 指路按钮 —— 它只做「出门前最后看一眼」。
+   ========================================================================== */
+
+/* 从方案页 / 元素页读出当前状态，填进只读摘要 */
+function pfRefreshReadOnly(){
+  /* ① 拍谁 */
+  const wv = document.getElementById('pfWhoV');
+  if (wv){
+    let name = '（还没选）';
+    if (typeof currentWho !== 'undefined' && typeof WHO !== 'undefined' && WHO[currentWho]){
+      const w = WHO[currentWho];
+      name = w.name + ' · ' + w.act;
+    }
+    wv.textContent = name;
+    wv.className = 'pf-ro-v' + (name === '（还没选）' ? ' empty' : '');
+  }
+
+  /* ② 光和场景：
+     优先读元素页当前显示的 chips；没填就退回方案数据（PZ_PLAN / PLAN_ELEMENTS）*/
+  const sv = document.getElementById('pfSceneV');
+  if (sv){
+    let items = [];
+    /* a. 元素页的 chips */
+    items = Array.from(document.querySelectorAll('#pz-els .pz-chip.on:not(.off)'))
+      .map(function(x){
+        var t = x.cloneNode(true);
+        var del = t.querySelector('.pz-chip-x');
+        if (del) del.remove();
+        return t.textContent.trim();
+      })
+      .filter(function(t){ return t && t !== '等选定方案'; });
+
+    /* b. 元素页没内容 → 用方案数据 */
+    if (!items.length && typeof currentPlan !== 'undefined' && currentPlan){
+      var src = null;
+      if (typeof PZ_PLAN !== 'undefined' && PZ_PLAN[currentPlan]) src = PZ_PLAN[currentPlan];
+      else if (typeof PLAN_ELEMENTS !== 'undefined' && PLAN_ELEMENTS[currentPlan]) src = PLAN_ELEMENTS[currentPlan];
+      if (src){
+        ['lights','times'].forEach(function(k){
+          if (src[k] && src[k].length) items = items.concat(src[k].slice(0, 3));
+        });
+      }
+    }
+
+    if (items.length){
+      sv.textContent = items.slice(0, 6).join(' · ')
+        + (items.length > 6 ? ' 等 ' + items.length + ' 项' : '');
+      sv.className = 'pf-ro-v';
+    } else {
+      sv.textContent = '（还没选方案 / 元素）';
+      sv.className = 'pf-ro-v empty';
+    }
+  }
+}
+
+/* 指路：关掉弹窗，跳到对应 tab */
+function pfGoEdit(tabKey){
+  closePreflight();
+  const map = { plan:'方案', els:'元素', shots:'分镜' };
+  const want = map[tabKey] || '';
+  const btn = Array.from(document.querySelectorAll('.pz-tab')).find(function(b){
+    return b.textContent.indexOf(want) === 0;
+  });
+  if (btn) btn.click();
+  else fake('先打开一个项目');
+}
+
+function pzTabByName(key){
+  const map = { sugg:'建议', plan:'方案', els:'元素', shots:'分镜',
+                kit:'必带', cam:'拍摄', handoff:'交接', print:'打印' };
+  const want = map[key] || '';
+  const btn = Array.from(document.querySelectorAll('.pz-tab')).find(function(b){
+    return b.textContent.indexOf(want) === 0;
+  });
+  if (btn){ btn.click(); closePreflight(); }
+}
+
+/* 打开出门前检查时刷新 */
+var __openPreflightOrig = openPreflight;
+openPreflight = function(){
+  __openPreflightOrig();
+  setTimeout(pfRefreshReadOnly, 60);
+};
 
 function pickWho(el, key){
   document.querySelectorAll('.who-btn').forEach(x=>x.classList.remove('on'));
