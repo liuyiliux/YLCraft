@@ -1879,6 +1879,11 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
   padding:13px 22px;border-radius:var(--radiusSM);background:var(--bgElev);
   border:1px solid var(--bd3);color:var(--tx1);font-size:var(--fs-cap);
   box-shadow:var(--shadowModal);max-width:82vw;line-height:1.6}
+
+/* 交接单已存提示 */
+.ho-saved{font-size:11px;color:var(--tx3);font-family:var(--fm);
+  margin-top:9px;text-align:center;opacity:0;transition:opacity .3s}
+.ho-saved.on{opacity:1}
 </style>
 </head>
 <body data-t="deep">
@@ -1902,6 +1907,7 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
   <button class="btn" onclick="fake('批量上传：100–500 张，先勾一批标签整批套用')">批量上传</button>
   <button class="btn" onclick="fake('截帧入库：取前后各 1–2 秒的 3–5 张候选帧，自动带时间码')">截帧入库</button>
   <button class="btn" onclick="openCueLib()">口令库</button>
+  <button class="btn" onclick="openBooklet()">学习手册</button>
   <button class="btn" onclick="window.open('model-profile.html','_blank')">模特档案</button>
   <button class="btn" onclick="window.open('light-api.html','_blank')">地点光线</button>
   <button class="btn pri" onclick="openPreflight()">出门前检查</button>
@@ -2862,10 +2868,11 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
         <div class="ho-sec">
           <div class="ho-h">导出</div>
           <div class="ho-export">
-            <button class="ho-btn">存成备忘</button>
-            <button class="ho-btn">发给后期</button>
-            <button class="ho-btn pri">导出 PDF</button>
+            <button class="ho-btn" onclick="saveHandoff()">存成备忘</button>
+            <button class="ho-btn" onclick="sendToRetouch()">发给后期</button>
+            <button class="ho-btn pri" onclick="exportHandoffPDF()">导出 PDF</button>
           </div>
+          <div class="ho-saved" id="hoSavedTag"></div>
         </div>
       </div>
     </section>
@@ -4693,6 +4700,13 @@ function hoSync(){
   const el = document.getElementById('hoCam');
   if(el) el.textContent = lens + ' · ' + ap + ' · ' + sh + ' · ISO 100';
 }
+
+/* ⭐ 学习手册入口：记住上次读的章节，回来能接着读 */
+function openBooklet(){
+  window.open('booklet.html', '_blank');
+  fake('学习手册 · 11 章通用知识点，读完能勾已读');
+}
+
 function addFix(){
   const box = document.getElementById('hoFixes');
   const d = document.createElement('div');
@@ -4702,6 +4716,104 @@ function addFix(){
   d.appendChild(document.createTextNode('点这里写'));
   box.appendChild(d);
   d.focus();
+}
+
+
+/* ==========================================================================
+   ⭐ 2026-10-22 打通：交接单 → 修图页
+   之前三个按钮没有 onclick，是纯装饰。
+   修图端（canvas/js/17-channels.js 的 leLoadHandoff）读的是：
+     localStorage['ylcraft_project_handoff'] = { what, cond, fixes[], ask, order[] }
+   这里负责写。
+   ========================================================================== */
+const HANDOFF_KEY = 'ylcraft_project_handoff';
+
+function collectHandoff(){
+  /* 这组要什么 */
+  const ta = document.querySelector('.ho-ta');
+  const what = ta ? ta.value.trim() : '';
+
+  /* 拍摄条件：时段 / 光线 / 参数 / 天气 */
+  const rows = document.querySelectorAll('#hoAuto .ho-row');
+  const condParts = [];
+  rows.forEach(function(r){
+    const k = r.querySelector('.ho-k');
+    const v = r.querySelector('.ho-v');
+    if (k && v) condParts.push(k.textContent.trim() + ' ' + v.textContent.trim());
+  });
+  const cond = condParts.join(' · ');
+
+  /* 已知要修 */
+  const fixes = [];
+  document.querySelectorAll('#hoFixes .ho-fix').forEach(function(el){
+    const t = el.textContent.trim();
+    if (t && t !== '点这里写') fixes.push(t);
+  });
+
+  /* 客户要求 */
+  const asks = [];
+  document.querySelectorAll('.ho-client').forEach(function(el){
+    const t = el.textContent.trim();
+    if (t) asks.push(t);
+  });
+
+  /* 修图顺序 */
+  const order = [];
+  document.querySelectorAll('#hoOrder .ho-o').forEach(function(el){
+    order.push(el.textContent.replace(/^\s*\d+\s*/, '').trim());
+  });
+
+  return { what: what, cond: cond, fixes: fixes, ask: asks.join(' / '), order: order };
+}
+
+function saveHandoff(){
+  const h = collectHandoff();
+  h.at = Date.now();
+  h.from = 'photo-ref';
+  try {
+    localStorage.setItem(HANDOFF_KEY, JSON.stringify(h));
+  } catch (e){
+    fake('存不了 —— 浏览器禁了本地存储');
+    return false;
+  }
+  const tag = document.getElementById('hoSavedTag');
+  if (tag){
+    tag.textContent = '✓ 已存到本地 · 修图页打开时会自动带过去'
+      + '（' + h.fixes.length + ' 条要修）';
+    tag.className = 'ho-saved on';
+  }
+  fake('交接单已存好 · 修图页会自动带过去');
+  return true;
+}
+
+function sendToRetouch(){
+  if (!saveHandoff()) return;
+  /* 打开画布端修图页（新标签，保留策划页）*/
+  window.open('../canvas/index.html?handoff=1', '_blank');
+  fake('已发给后期 · 新标签里打开修图页');
+}
+
+function exportHandoffPDF(){
+  /* 原型：不真生成 PDF，说明清楚 */
+  const h = collectHandoff();
+  fake('原型占位：PDF 导出还没做（真实现走服务端渲染）');
+  console.log('交接单内容', h);
+}
+
+/* 打开策划页时，如果之前存过，就把「已存」标出来 */
+function restoreHandoffTag(){
+  try {
+    const raw = localStorage.getItem(HANDOFF_KEY);
+    if (!raw) return;
+    const h = JSON.parse(raw);
+    const tag = document.getElementById('hoSavedTag');
+    if (tag && h && h.at){
+      const d = new Date(h.at);
+      tag.textContent = '上次存于 ' + d.toLocaleString('zh-CN')
+        + ' · ' + (h.fixes ? h.fixes.length : 0) + ' 条要修';
+      tag.className = 'ho-saved on';
+    }
+  } catch (e){}
 }
 
 /* ===== 光位受控词表（七种）===== */
@@ -4741,6 +4853,8 @@ function pzTab(el, key){
   document.querySelectorAll('.pz-pane').forEach(x=>x.classList.remove('on'));
   document.getElementById('pz-'+key).classList.add('on');
   window.scrollTo({top:0,behavior:'smooth'});
+  /* ⭐ 切到交接页时，把上次存的标出来 */
+  if (key === 'handoff' && typeof restoreHandoffTag === 'function') restoreHandoffTag();
 }
 function pzTabClicks(key){
   const tabs = document.querySelectorAll('.pz-tab');

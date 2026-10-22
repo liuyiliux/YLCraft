@@ -1,0 +1,1093 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>学习手册 · 摄影原型</title>
+<style>
+/* ==================== 主题系统（对齐摄影原型 index.html） ==================== */
+:root{
+  --radiusSM:8px; --radiusMD:12px; --radiusLG:16px;
+  --fm:'JetBrains Mono','SF Mono',Consolas,monospace;
+  --ff:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  /* 字号：h1 32 / h2 24 / h3 20 / h4 18 / body 16 / caption 14 / small 12（12 为最小值） */
+  --fs-h1:32px; --fs-h2:24px; --fs-h3:20px; --fs-h4:18px;
+  --fs-body:16px; --fs-cap:14px; --fs-xs:12px;
+  --lh-h:1.35; --lh-b:1.55;
+}
+/* Deep（深海）· 默认 */
+[data-t="deep"]{
+  --bgPage:#09090b; --bgCard:#16161a; --bgElev:#1f1f27; --bgInput:#111116; --bgHover:#1c1c22;
+  --tx1:#e4e4e7; --tx2:#a1a1aa; --tx3:#71717a;
+  --bd:rgba(255,255,255,.06); --bd2:rgba(255,255,255,.12); --bd3:rgba(255,255,255,.22);
+  --pri:#22d3ee; --ok:#4ade80; --warn:#fbbf24; --err:#f87171;
+  --photo:#fbbf24; --coser:#f472b6; --drama:#a78bfa;
+  --shadow:0 4px 12px rgba(0,0,0,.12); --shadowEl:0 6px 16px rgba(0,0,0,.14);
+  --shadowModal:0 12px 32px rgba(0,0,0,.2);
+}
+/* Moonlight（月光）· 薰衣草 */
+[data-t="moonlight"]{
+  --bgPage:#0d0b10; --bgCard:#141118; --bgElev:#1d1a24; --bgInput:#100e14; --bgHover:#211d2a;
+  --tx1:#e4e4ec; --tx2:#8884a4; --tx3:#6b6786;
+  --bd:rgba(167,139,250,.06); --bd2:rgba(167,139,250,.14); --bd3:rgba(167,139,250,.28);
+  --pri:#a78bfa; --ok:#4ade80; --warn:#fbbf24; --err:#f87171;
+  --photo:#fbbf24; --coser:#f472b6; --drama:#a78bfa;
+  --shadow:0 4px 12px rgba(0,0,0,.14); --shadowEl:0 6px 16px rgba(0,0,0,.16);
+  --shadowModal:0 12px 32px rgba(0,0,0,.22);
+}
+/* Dawn（晨曦）· 亮色墨绿 */
+[data-t="dawn"]{
+  --bgPage:#f8f7f4; --bgCard:#ffffff; --bgElev:#fafaf9; --bgInput:#f2f1ee; --bgHover:#f0efec;
+  --tx1:#1c1917; --tx2:#78716c; --tx3:#a8a29e;
+  --bd:#e7e5e4; --bd2:#d6d3d1; --bd3:#a8a29e;
+  --pri:#0d9488; --ok:#16a34a; --warn:#d97706; --err:#dc2626;
+  --photo:#d97706; --coser:#db2777; --drama:#7c3aed;
+  --shadow:0 1px 2px rgba(0,0,0,.06); --shadowEl:0 3px 8px rgba(0,0,0,.1);
+  --shadowModal:0 12px 32px rgba(0,0,0,.16);
+}
+
+*{box-sizing:border-box;margin:0;padding:0;scrollbar-width:thin;scrollbar-color:var(--bd3) transparent}
+html{scroll-behavior:smooth}
+body{background:var(--bgPage);color:var(--tx1);font-family:var(--ff);
+  font-size:var(--fs-body);line-height:var(--lh-b);-webkit-font-smoothing:antialiased;
+  transition:background .3s,color .3s}
+button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input{font:inherit}
+a{color:inherit;text-decoration:none}
+::selection{background:color-mix(in srgb,var(--photo) 34%,transparent)}
+
+/* ---------- 顶栏 ---------- */
+.top{display:flex;align-items:center;gap:12px;padding:14px 24px;
+  border-bottom:1px solid var(--bd2);background:color-mix(in srgb,var(--bgElev) 92%,transparent);
+  backdrop-filter:blur(10px);position:sticky;top:0;z-index:50}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:var(--fs-h4);white-space:nowrap}
+.logo i{width:28px;height:28px;border-radius:var(--radiusSM);flex-shrink:0;
+  background:linear-gradient(135deg,var(--photo) 0%,#b45309 100%)}
+.top-sub{font-size:var(--fs-cap);color:var(--tx3);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;max-width:330px}
+.spacer{flex:1}
+.searchbox{position:relative;width:320px;flex-shrink:0}
+.searchbox input{width:100%;padding:9px 34px 9px 36px;border-radius:var(--radiusSM);
+  border:1px solid var(--bd2);background:var(--bgInput);color:var(--tx1);
+  font-size:var(--fs-cap);outline:none;transition:.2s}
+.searchbox input:focus{border-color:var(--photo);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--photo) 14%,transparent)}
+.searchbox .ico{position:absolute;left:12px;top:50%;transform:translateY(-50%);
+  color:var(--tx3);font-size:var(--fs-cap);pointer-events:none}
+.searchbox .clr{position:absolute;right:6px;top:50%;transform:translateY(-50%);
+  padding:3px 8px;border-radius:6px;color:var(--tx3);font-size:var(--fs-xs);display:none}
+.searchbox .clr:hover{background:var(--bgHover);color:var(--tx1)}
+.themes{display:flex;gap:6px;padding:4px;border-radius:var(--radiusSM);
+  background:var(--bgInput);border:1px solid var(--bd2);flex-shrink:0}
+.th{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:6px;
+  font-size:var(--fs-xs);color:var(--tx2);transition:.18s}
+.th:hover{background:var(--bgHover);color:var(--tx1)}
+.th.on{background:var(--bgCard);color:var(--tx1);box-shadow:var(--shadow)}
+.th i{width:11px;height:11px;border-radius:50%;display:inline-block}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:8px 14px;border-radius:var(--radiusSM);border:1px solid var(--bd2);
+  background:var(--bgCard);font-size:var(--fs-cap);color:var(--tx2);transition:.18s;white-space:nowrap}
+.btn:hover{border-color:var(--photo);color:var(--tx1)}
+.btn.pri{background:var(--photo);border-color:var(--photo);color:#231a02;font-weight:600}
+.btn.pri:hover{filter:brightness(1.06);color:#231a02}
+.btn.danger:hover{border-color:var(--err);color:var(--err)}
+
+/* ---------- 整体布局 ---------- */
+.shell{display:grid;grid-template-columns:300px minmax(0,1fr);gap:24px;
+  max-width:1500px;margin:0 auto;padding:24px;align-items:start}
+
+/* ---------- 左侧 ---------- */
+.side{position:sticky;top:88px;display:flex;flex-direction:column;gap:14px;
+  max-height:calc(100vh - 112px);overflow:auto;padding-bottom:8px}
+.progbox{background:var(--bgCard);border:1px solid var(--bd2);
+  border-radius:var(--radiusMD);padding:14px 16px;flex-shrink:0}
+.prog-hd{display:flex;align-items:baseline;justify-content:space-between;
+  font-size:var(--fs-cap);color:var(--tx2)}
+.prog-hd b{font-family:var(--fm);font-size:var(--fs-h4);color:var(--photo)}
+.bar{height:8px;border-radius:4px;background:var(--bgInput);
+  border:1px solid var(--bd);margin:10px 0 9px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;border-radius:4px;
+  background:linear-gradient(90deg,var(--photo) 0%,#f59e0b 100%);transition:width .35s}
+.prog-meta{display:flex;flex-direction:column;gap:3px;font-size:var(--fs-xs);color:var(--tx3)}
+.side-card{background:var(--bgCard);border:1px solid var(--bd2);
+  border-radius:var(--radiusMD);overflow:hidden;flex-shrink:0}
+.side-card .hd{display:flex;align-items:center;justify-content:space-between;
+  padding:12px 16px;border-bottom:1px solid var(--bd2);
+  font-size:var(--fs-cap);font-weight:600}
+.side-card .hd span{font-family:var(--fm);font-weight:400;font-size:var(--fs-xs);color:var(--tx3)}
+.chlist{padding:6px}
+.ch{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+  padding:10px 12px;border-radius:var(--radiusSM);border:1px solid transparent;
+  border-bottom:1px solid var(--bd);transition:.15s}
+.ch:hover{background:var(--bgHover)}
+.ch.on{background:color-mix(in srgb,var(--photo) 10%,transparent);
+  border-color:color-mix(in srgb,var(--photo) 30%,transparent)}
+.ch .n{font-family:var(--fm);font-size:var(--fs-xs);color:var(--tx3);width:20px;flex-shrink:0}
+.ch.on .n{color:var(--photo)}
+.ch .t{flex:1;min-width:0;font-size:var(--fs-cap);color:var(--tx2);line-height:1.35}
+.ch.on .t{color:var(--tx1);font-weight:600}
+.ch .c{font-family:var(--fm);font-size:var(--fs-xs);color:var(--tx3);flex-shrink:0}
+.ch.done .c{color:var(--ok)}
+.side-foot{display:grid;grid-template-columns:1fr 1fr;gap:8px;flex-shrink:0}
+.side-foot .btn{font-size:var(--fs-xs);padding:8px}
+.side-foot .wide{grid-column:1/-1}
+
+/* ---------- 主区 ---------- */
+.main{min-width:0;display:flex;flex-direction:column;gap:16px}
+.hero{position:relative;overflow:hidden;padding:26px 28px;
+  border-radius:var(--radiusLG);border:1px solid var(--bd2);
+  background:radial-gradient(120% 150% at 0% 0%,
+    color-mix(in srgb,var(--photo) 13%,transparent),transparent 55%),var(--bgCard)}
+.hero::after{content:'';position:absolute;right:-60px;top:-60px;width:240px;height:240px;
+  border-radius:50%;pointer-events:none;
+  background:radial-gradient(circle,color-mix(in srgb,var(--photo) 16%,transparent),transparent 70%)}
+.hero-tag{display:inline-flex;align-items:center;gap:6px;margin-bottom:14px;
+  font-size:var(--fs-xs);font-family:var(--fm);letter-spacing:.08em;
+  color:var(--photo);text-transform:uppercase;
+  border:1px solid color-mix(in srgb,var(--photo) 36%,transparent);
+  background:color-mix(in srgb,var(--photo) 10%,transparent);
+  padding:4px 10px;border-radius:20px}
+.hero h1{font-size:var(--fs-h1);line-height:var(--lh-h);letter-spacing:-.01em;margin-bottom:10px}
+.hero p{font-size:var(--fs-body);color:var(--tx2);line-height:1.7;max-width:780px}
+.hero-stats{display:flex;gap:24px;flex-wrap:wrap;margin-top:16px}
+.hs{display:flex;align-items:baseline;gap:7px;font-size:var(--fs-xs);color:var(--tx3)}
+.hs b{font-family:var(--fm);font-size:var(--fs-h4);color:var(--tx1)}
+.hero-actions{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+.note{padding:12px 16px;border-radius:var(--radiusSM);
+  background:color-mix(in srgb,var(--photo) 7%,transparent);
+  border:1px solid color-mix(in srgb,var(--photo) 24%,transparent);
+  font-size:var(--fs-cap);color:var(--tx2);line-height:1.7}
+.note b{color:var(--photo)}
+.resline{display:none;align-items:center;gap:10px;padding:10px 14px;
+  border-radius:var(--radiusSM);background:var(--bgCard);border:1px solid var(--bd2);
+  font-size:var(--fs-cap);color:var(--tx2)}
+.resline b{color:var(--photo);font-family:var(--fm)}
+
+/* ---------- 章节 ---------- */
+.chap{margin-top:8px;scroll-margin-top:96px}
+.chap-hd{display:flex;align-items:center;gap:14px;padding:14px 4px 12px;
+  border-bottom:1px solid var(--bd2);margin-bottom:14px}
+.ch-num{font-family:var(--fm);font-size:var(--fs-xs);color:var(--photo);flex-shrink:0;
+  background:color-mix(in srgb,var(--photo) 12%,transparent);
+  border:1px solid color-mix(in srgb,var(--photo) 30%,transparent);
+  border-radius:8px;padding:5px 9px}
+.chap-hd .ch-ht{flex:1;min-width:0}
+.chap-hd h2{font-size:var(--fs-h2);line-height:var(--lh-h)}
+.chap-hd .ch-sub{font-size:var(--fs-cap);color:var(--tx3);margin-top:2px}
+.chap-cnt{font-family:var(--fm);font-size:var(--fs-xs);color:var(--tx3);white-space:nowrap}
+.chap-cnt.ok{color:var(--ok)}
+.ch-mark{font-size:var(--fs-xs);padding:6px 11px;flex-shrink:0}
+.ch-mark:disabled{opacity:.55;cursor:default;border-color:color-mix(in srgb,var(--ok) 34%,transparent);
+  color:var(--ok)}
+
+/* ---------- 知识点卡 ---------- */
+.pt{background:var(--bgCard);border:1px solid var(--bd2);border-radius:var(--radiusMD);
+  margin-bottom:12px;overflow:hidden;
+  transition:border-color .2s,box-shadow .2s,background .2s}
+.pt:hover{border-color:var(--bd3)}
+.pt.open{border-color:color-mix(in srgb,var(--photo) 34%,var(--bd2));box-shadow:var(--shadow)}
+.pt.read{border-color:color-mix(in srgb,var(--ok) 26%,var(--bd2))}
+.pt-hd{display:flex;align-items:flex-start;gap:13px;padding:15px 18px;
+  cursor:pointer;user-select:none}
+.ck{width:22px;height:22px;flex-shrink:0;margin-top:2px;border-radius:50%;
+  border:1px solid var(--bd3);display:flex;align-items:center;justify-content:center;
+  font-size:var(--fs-xs);color:transparent;background:var(--bgInput);transition:.18s}
+.ck:hover{border-color:var(--ok);color:var(--tx3)}
+.ck.on{background:color-mix(in srgb,var(--ok) 20%,transparent);
+  border-color:var(--ok);color:var(--ok);font-weight:700}
+.pt-ht{flex:1;min-width:0}
+.pt-t{font-size:var(--fs-h4);font-weight:600;line-height:1.4;color:var(--tx1)}
+.pt-brief{font-size:var(--fs-cap);color:var(--tx3);margin-top:3px;line-height:1.5}
+.pt-num{font-family:var(--fm);font-size:var(--fs-xs);color:var(--tx3);flex-shrink:0;margin-top:3px}
+.pt-chev{flex-shrink:0;color:var(--tx3);font-size:var(--fs-cap);
+  transition:transform .2s;margin-top:1px;line-height:1.2}
+.pt.open .pt-chev{transform:rotate(180deg)}
+.pt-body{display:none;padding:2px 18px 16px 53px}
+.pt.open .pt-body{display:block}
+.pt-body p{font-size:var(--fs-body);color:var(--tx2);line-height:1.8;margin-bottom:10px}
+.pt-body p:last-of-type{margin-bottom:0}
+.pt-body b{color:var(--tx1);font-weight:600}
+.pt-tip{margin-top:14px;padding:11px 14px;border-radius:var(--radiusSM);
+  background:color-mix(in srgb,var(--photo) 7%,transparent);
+  border-left:3px solid var(--photo);
+  font-size:var(--fs-cap);color:var(--tx2);line-height:1.7}
+.pt-tip b{color:var(--tx1)}
+.tip-lb{display:block;font-family:var(--fm);font-size:var(--fs-xs);
+  color:var(--photo);margin-bottom:4px;letter-spacing:.06em}
+.pt-foot{display:flex;align-items:center;gap:12px;margin-top:14px}
+.pt-foot .btn{font-size:var(--fs-xs);padding:6px 12px}
+.pt-foot .hint{font-size:var(--fs-xs);color:var(--tx3)}
+.pt.read .readbtn{border-color:color-mix(in srgb,var(--ok) 40%,transparent);color:var(--ok)}
+
+/* ---------- 空态 / 页脚 / toast ---------- */
+.empty{display:none;text-align:center;padding:60px 20px;margin-top:8px;
+  border:1px dashed var(--bd2);border-radius:var(--radiusMD);
+  color:var(--tx3);font-size:var(--fs-cap);line-height:1.8}
+.empty b{display:block;font-size:var(--fs-h3);color:var(--tx2);margin-bottom:8px}
+.empty .btn{margin-top:16px}
+.foot{margin-top:20px;padding-top:16px;border-top:1px solid var(--bd2);
+  font-size:var(--fs-xs);color:var(--tx3);line-height:1.9}
+#_toast{position:fixed;left:50%;bottom:36px;transform:translateX(-50%);z-index:99;
+  padding:12px 20px;border-radius:8px;background:var(--bgElev);
+  border:1px solid var(--bd3);color:var(--tx1);font-size:var(--fs-cap);
+  box-shadow:var(--shadowModal);display:none;max-width:80vw;text-align:center}
+
+/* ---------- 响应式 ---------- */
+@media(max-width:1180px){
+  .top-sub{display:none}
+  .searchbox{width:240px}
+}
+@media(max-width:980px){
+  .top{flex-wrap:wrap;padding:12px 16px}
+  .searchbox{order:6;width:100%}
+  .shell{grid-template-columns:1fr;padding:16px;gap:16px}
+  .side{position:static;max-height:none;order:2}
+  .main{order:1}
+  .pt-body{padding-left:18px}
+  .chap-hd{flex-wrap:wrap}
+  .hero{padding:22px 20px}
+}
+</style>
+</head>
+<body data-t="deep">
+
+<div class="top">
+  <div class="logo"><i></i>学习手册</div>
+  <span class="top-sub">通用人像摄影知识点 · 能翻、能搜、能勾掉</span>
+  <div class="spacer"></div>
+  <div class="searchbox">
+    <span class="ico">⌕</span>
+    <input id="q" type="search" placeholder="搜知识点，比如：顺光 / 景深 / 磨皮" autocomplete="off">
+    <button class="clr" id="clr" onclick="clearSearch()" title="清空">✕</button>
+  </div>
+  <div class="themes">
+    <button class="th on" data-t="deep" onclick="setTheme('deep',this)"><i style="background:#22d3ee"></i>深海</button>
+    <button class="th" data-t="moonlight" onclick="setTheme('moonlight',this)"><i style="background:#a78bfa"></i>月光</button>
+    <button class="th" data-t="dawn" onclick="setTheme('dawn',this)"><i style="background:#0d9488"></i>晨曦</button>
+  </div>
+  <a class="btn" href="index.html">← 回摄影参考库</a>
+</div>
+
+<div class="shell">
+  <!-- 左：进度 + 章节目录 -->
+  <aside class="side">
+    <div class="progbox">
+      <div class="prog-hd"><span>阅读进度</span><b id="pct">0%</b></div>
+      <div class="bar"><i id="bar"></i></div>
+      <div class="prog-meta">
+        <span id="doneCount">0 / 0 个知识点</span>
+        <span id="chapDone">0 / 0 章读完</span>
+      </div>
+    </div>
+    <div class="side-card">
+      <div class="hd">章节目录 <span id="chTotal">11 章</span></div>
+      <div class="chlist" id="chlist"></div>
+    </div>
+    <div class="side-foot">
+      <button class="btn" onclick="expandAll(true)">全部展开</button>
+      <button class="btn" onclick="expandAll(false)">全部收起</button>
+      <button class="btn wide danger" onclick="resetProgress()">清空阅读进度</button>
+    </div>
+  </aside>
+
+  <!-- 右：内容 -->
+  <main class="main">
+    <section class="hero">
+      <div class="hero-tag">人像摄影 · 通用知识点</div>
+      <h1>人像摄影学习手册</h1>
+      <p>
+        下面 11 章，是把人像摄影里反复被验证过的知识重新整理成通用版本：
+        不照搬任何人的原话，也不针对某一位摄影师。每一条都尽量落到「怎么判断、怎么动手」上，
+        看完能直接用在拍摄和修图里。
+      </p>
+      <div class="hero-stats">
+        <span class="hs"><b id="hsCh">11</b>章</span>
+        <span class="hs"><b id="hsPt">37</b>个知识点</span>
+        <span class="hs"><b>3</b>套主题</span>
+        <span class="hs">进度自动保存</span>
+      </div>
+      <div class="hero-actions">
+        <button class="btn pri" onclick="continueRead()">▶ 继续阅读</button>
+        <button class="btn" onclick="gotoChapter('ch-1')">从第 1 章开始</button>
+        <button class="btn" onclick="fake('搜索框在右上角，输入「顺光」「磨皮」「色温」都能搜')">搜知识点</button>
+      </div>
+    </section>
+
+    <div class="note">
+      <b>怎么用这一页：</b>
+      左边点章节跳转；右上角搜索会实时过滤知识点并自动展开命中项；
+      每张卡片左上角的圆圈是「已读」勾选，进度存在浏览器本地，刷新、关掉再打开都还在。
+      点卡片标题可以展开或收起。
+    </div>
+
+    <div class="resline" id="resline"></div>
+
+    <div id="book"></div>
+    <div class="empty" id="empty">
+      <b>没有搜到匹配的知识点</b>
+      换个关键词试试，比如「光圈」「逆光」「高低频」；或者清空搜索看全部内容。
+      <br>
+      <button class="btn" onclick="clearSearch()">清空搜索</button>
+    </div>
+
+    <div class="foot">
+      本页为产品原型：内容为通用摄影知识整理，不包含任何付费内容原文或特定作者信息。
+      阅读进度保存在本机浏览器（localStorage: <span style="font-family:var(--fm)">ylcraft_booklet_progress</span>），换浏览器不会同步。
+    </div>
+  </main>
+</div>
+
+<div id="_toast"></div>
+
+<script>
+/* ==================== 内容数据（全部为通用知识点改写） ==================== */
+const BOOK = [
+  {
+    id: 1,
+    title: '人像摄影学什么',
+    sub: '先把成长路径看清楚，再谈技术',
+    points: [
+      {
+        title: '三个门槛：技能、审美、表达',
+        brief: '技术决定下限，审美决定上限，表达决定你像谁',
+        body: [
+          `行业里常见的一种分法：一个摄影师的成长受三样东西影响——技能、审美、表达思维。技能是相机怎么用、光怎么布、图怎么修，最容易量化，也最容易在短时间内补上来。`,
+          `审美决定了同样的技术能拍出什么水平。两个人参数一样、器材一样，出片水平差很多，差的就是眼光：知道什么好看、为什么好看、哪里不对。`,
+          `表达是再往上一步：你想拍什么、为什么拍、这组片子想让人感觉到什么。它不靠背，靠平时看的东西和想的事情。`,
+          `这三样是依次卡人的：技能不够，卡在「拍不出来」；技能够了，卡在「拍出来不好看」；审美也过了，才会卡在「拍出来不像我」。大多数人不是没天赋，是还没到第三个门槛。`
+        ],
+        tip: `回头看你最近 20 张图，先分清问题出在哪一层：糊、崩、脏是技术；不难看但没意思，是审美；好看但跟谁拍都一个样，是表达。`
+      },
+      {
+        title: '提高审美的三条路',
+        brief: '从「只知道好看」走到「说得出为什么」',
+        body: [
+          `第一条是看大师作品，但别停在「好看」两个字上。把一张图拆成能描述的东西：光从哪边来、明暗怎么过渡、颜色是什么关系、人是怎么站的。看得懂结构，才算学到。`,
+          `第二条是补一点美术底子。透视、比例、色彩关系这些，学过画的人往往进步更快——不是因为他们会画，是因为他们习惯看结构而不是看效果。`,
+          `第三条是给自己找一套可对照的标准。化妆、造型这些行业对五官比例、脸型线条有一套相对客观的衡量方式，知道「眼睛多大算自然、下巴多尖算过」，判断起来比凭感觉稳。审美不是纯主观，它也有可以拆解的「度」。`
+        ],
+        tip: `练习：随便挑一张你喜欢的图，写三句话——光是怎么来的、颜色是什么关系、人为什么站在那个位置。写不出来，说明只是「觉得好看」。`
+      },
+      {
+        title: '经验怎么积累',
+        brief: '靠的不是拍得多，是「看过，并且记住了」',
+        body: [
+          `行业里常说，积累靠的是生活里的画面。比如清晨房间还黑着，但你知道天亮了——因为有一缕光从窗帘缝里打到床头。这种画面记住，以后写方案、找光的时候就能拿出来用。`,
+          `所以可以给自己建一个小素材库：看到打动你的画面就存下来，写清楚「它为什么打动我」。等到要写拍摄方案、脑子空的时候，翻自己的库比翻别人的图管用。`,
+          `经验不是拍摄数量自动换来的。同一个场景拍十次而不观察，不如认真看一次、记一次。`
+        ],
+        tip: `每周存 5 张「跟拍摄无关但你想记住」的画面，配一句为什么。三个月后你写方案的速度会明显变快。`
+      }
+    ]
+  },
+  {
+    id: 2,
+    title: '参数与风格',
+    sub: '相机上六个参数，真正决定风格的只有三个',
+    points: [
+      {
+        title: '六个参数，只有三个影响风格',
+        brief: '焦段、光圈、快门改风格；ISO、白平衡、对焦只是把画面弄干净',
+        body: [
+          `相机上经常被拿出来讲的六个参数是：焦段、光圈、快门、感光度、白平衡、对焦。但真正会改变照片风格的只有前三个——<b>焦段、光圈、快门</b>。`,
+          `感光度主要影响亮度和噪点，白平衡主要影响色彩倾向，对焦只决定哪块清晰。它们很重要，但重要在「别出错」，而不是「出风格」。`,
+          `实操上的含义很直接：想换一种感觉，先动焦段、光圈、快门；发现画面脏、偏色、糊，再去查 ISO、白平衡、对焦。`
+        ],
+        tip: `每组片子至少记下焦段、光圈、快门，外加一句「为什么这么选」。只记数字不记理由，下次还是不会用。`
+      },
+      {
+        title: '焦段影响的是透视',
+        brief: '关键不是毫米数，是相机离人有多远、透视怎么变',
+        body: [
+          `广角把近处放大、把远处推远，透视被夸张，脸靠得越近越容易变形；50mm 左右接近人眼看到的比例；85–135mm 有压缩感，脸看起来更「正」，所以成了人像常用焦段；200mm 以上压缩更强，背景会被拉近。`,
+          `要记住的是：焦段本身不改变脸，改变脸的是你为了装满画面而站到的距离。用广角拍半身，你得凑得很近，透视就夸张了；用长焦拍半身，你退得很远，透视就被压平。`,
+          `85mm 被偏爱，不是因为它高级，而是它刚好让你站在一个舒服的距离上，既不用贴着人，也能得到不变形的比例。`
+        ],
+        tip: `同一个机位、同一个人，分别用 24 / 50 / 85 拍一张半身，对比鼻子的比例和背景的松紧，比看十篇教程都直观。`
+      },
+      {
+        title: '光圈影响景深，也影响「写实度」',
+        brief: '大光圈梦幻，小光圈写实；虚化是一种减法',
+        body: [
+          `景深有个简单的记法：<b>光圈越大、焦段越长、对焦距离越近，景深越浅</b>；反过来就越深。`,
+          `大光圈（f/1.2–f/1.8）虚化强，画面梦幻，适合特写；小光圈（f/5.6 以上）前后都清楚，画面更写实，适合带环境的半身、全身。光圈不只影响「糊不糊」，还影响整张图的气质。`,
+          `虚化还有一个很实用的用法：<b>做减法</b>。背景乱、江面难看、路边杂物多，与其硬构图，不如开大光圈把它屏蔽掉。但整组都靠大光圈，会显得空、显得腻，要有变化。`
+        ],
+        tip: `拍之前先问自己：这张图想让观众看清背景，还是只想看人？答案决定光圈，而不是习惯性开到最大。`
+      },
+      {
+        title: '快门影响「动的东西」',
+        brief: '高速凝固，慢速拖影；快门决定画面有没有动感',
+        body: [
+          `高速快门（1/1000 以上）能凝固动作：跳起来、甩头发、水花溅起。慢速快门（1/30 以下）会留下拖影，画面里能感觉到运动的过程，甚至旋转的感觉。`,
+          `拍安静站着的人，快门主要是防抖，保证不糊；拍会动的人或物，快门才真正参与创作——它决定你是要「抓住那一瞬间」，还是要「让时间流过去」。`,
+          `慢门有代价：手抖、人动、环境光变化都会毁片。要么上脚架，要么用闪光凝固主体再让环境拖影，要么多拍几十张挑一张。`
+        ],
+        tip: `想拍出动感，别只调快门。让模特真的动起来（走、转、甩），再用稍慢的快门连拍，比让 ta 摆一个「像在动」的姿势自然得多。`
+      }
+    ]
+  },
+  {
+    id: 3,
+    title: '构图与景别',
+    sub: '构图不是背公式，是给画面建立秩序',
+    points: [
+      {
+        title: '构图 ≠ 构图法',
+        brief: '构图是规划画面，构图法是别人总结的公式',
+        body: [
+          `构图是你拍照时对画面做的规划：谁在画面里、放在哪、留多少空、什么进什么出。构图法是从大量好作品里归纳出来的公式，比如三分法、对称、引导线。`,
+          `构图法对新手很友好，能快速让画面看起来有秩序。但长期只套公式，人会变死板——因为你一直在完成别人的画面，而不是解决眼前这个场景。`,
+          `更稳的做法是：先用构图法起步，再慢慢回到「这张图我想让观众先看什么、然后看什么」，按这个目标去安排元素。`
+        ],
+        tip: `拍之前用一句话说出这张图的观看顺序，比如「先看到人，再看到窗，再看到桌上的杯子」。说不出来，画面大概率是散的。`
+      },
+      {
+        title: '「秩序」才是核心',
+        brief: '画面里的线条、色彩、元素在有序排列',
+        body: [
+          `行业里有个比三分法更好用的判断：<b>画面有没有秩序</b>。秩序就是画面里的线条、颜色、元素在有序地排列，不打架、不重复、不抢戏。`,
+          `建立秩序最有效的手段是做减法：去掉多余的、压暗干扰的、虚化抢眼的。画面越干净，剩下的东西越有力量。`,
+          `检查一张图乱不乱，看三件事：有没有多余元素、观众的视线有没有落点、有没有两条线在互相打架。`
+        ],
+        tip: `拍完先别夸自己，问一句「这张图里最没用的东西是什么」。能找到，就说明还能减。`
+      },
+      {
+        title: '景别要认识',
+        brief: '远景、全景、中景、近景、特写，各干各的活',
+        body: [
+          `常见的五级景别：<b>远景</b>——环境全貌，人很小；<b>全景</b>——站立全身；<b>中景</b>——膝盖以上；<b>近景</b>——胸口以上，头顶留一点空；<b>特写</b>——肩部以上，头顶常常切掉一块。`,
+          `景别不只是「拍多近」，它决定了这张图在讲什么：远景讲环境和关系，全景讲姿态和穿搭，中景讲动作和互动，近景讲表情，特写讲情绪和细节。`,
+          `一组片子里景别要有变化。全是半身，看十张像看一张；远景、中景、特写交替，整组才有节奏。`
+        ],
+        tip: `拍一组时给自己定个最低要求：至少一个远景或全景交代环境，至少一个特写抓情绪，中间用中景和近景过渡。`
+      },
+      {
+        title: '三分法不只在横竖里',
+        brief: '三分是切分画面的一种方式，不是唯一答案',
+        body: [
+          `三分法常被理解成「把主体放在两条线的交点上」，但它真正的作用是把画面切成几块，让每一块都有内容、有轻重。`,
+          `竖构图一样可以三分：坐在床边、靠在窗边的时候，用窗框、床沿、墙线去切分画面，让上中下三段各自成立。`,
+          `三分只是秩序的一种。对称、重复、留白、对角线都能建立秩序。判断标准不是「有没有踩线」，而是「画面稳不稳、视线顺不顺」。`
+        ],
+        tip: `下次构图先别想三分法，先看现场有哪些天然的横线和竖线（窗、门、桌沿、地平线），用它们切画面，往往比硬套网格好看。`
+      }
+    ]
+  },
+  {
+    id: 4,
+    title: '光线',
+    sub: '光位决定脸的结构，柔硬决定过渡',
+    points: [
+      {
+        title: '七种光位',
+        brief: '光从哪来，决定脸上哪里亮、影子往哪倒',
+        body: [
+          `按光源和相机的相对位置，人像常讲七种光位：<b>顺光</b>（从相机方向打过去）、<b>侧顺光</b>（两侧约 45°）、<b>侧光</b>（约 90°）、<b>侧逆光</b>（身后约 45°）、<b>逆光</b>（正后方）、<b>顶光</b>（头顶）、<b>底光</b>（从下巴往上）。`,
+          `每一种光位在脸上留下的结构都不一样：顺光整张脸亮、立体感弱；侧光会出现明显的明暗分界，俗称阴阳脸；侧逆光勾轮廓、鼻头带一点光；逆光主要看轮廓和层次；顶光会在眼窝、鼻子下面压出阴影；底光则会制造恐怖、不安的感觉。`,
+          `现场判断光位最快的办法是<b>看影子</b>：影子往哪边倒，光就从反方向来；影子边缘清不清楚，决定这是硬光还是柔光。`
+        ],
+        tip: `到一个场地先别举相机，站到模特的位置转一圈，看脸上明暗怎么变。找到你想要的明暗关系，再决定相机站哪。`
+      },
+      {
+        title: '柔光还是硬光，看影子边缘',
+        brief: '边缘像刀一样是硬光，过渡均匀是柔光',
+        body: [
+          `判断柔硬不用记器材名字，看影子边缘就行：影子深、边缘锐利、像刀切出来的是<b>硬光</b>；影子没有明显边界、亮部到暗部过渡均匀的是<b>柔光</b>。`,
+          `柔光的原理是<b>扩大发光面积</b>，让光线从多个方向、经过折射反射后落到人脸上。所以「加个柔光罩」不一定就柔，关键看这个光源相对人脸有多大。`,
+          `从硬到柔有个谱系：裸灯最硬，加菲涅尔透镜偏硬，标准罩稍软，柔光箱加一层柔光布更柔，双层柔光布很柔，阴天和云是天然的大柔光箱，最柔。`,
+          `还有一个容易忽略的点：同一个柔光箱，离人越近越柔，拉远就变硬。因为决定软硬的是「光源看起来有多大」，不是标签。`
+        ],
+        tip: `想要柔光又只有小灯，把柔光布尽量靠近人脸、把灯尽量靠近柔光布，比换更大的灯便宜得多。`
+      },
+      {
+        title: '顺光的陷阱',
+        brief: '顺光最省事，也最容易把脸拍成一张平纸',
+        body: [
+          `顺光最省事：脸全亮、曝光好控、肤色好看。但它也最容易拍出「一刀切」的脸——没有明暗过渡，鼻子和脸颊糊在一起，人像立刻变证件照。`,
+          `顺光不是不能用，行业里用顺光拍人像的人很多，区别在于他们会主动制造立体感：让人稍微转一点角度、用侧一点的顺光、加一条发丝光或轮廓光、用暗背景把轮廓压出来。`,
+          `判断标准很简单：如果脸上找不到明确的亮部和暗部，只有一片均匀的亮，那就是顺光用平了。`
+        ],
+        tip: `用顺光时，让模特把脸转 15–30 度，或者把光源往侧边挪半米，立体感立刻就回来了。`
+      }
+    ]
+  },
+  {
+    id: 5,
+    title: '灯光',
+    sub: '灯怎么选、色温怎么记，两个最容易踩的坑',
+    points: [
+      {
+        title: '闪光灯还是常亮灯',
+        brief: '一个功率大但看不见，一个所见即所得但功率小',
+        body: [
+          `闪光灯的优点：功率大、能压环境光、能凝固动作、色温稳定；缺点：拍之前看不到最终效果，需要引闪、测光，连续拍摄有回电间隔。`,
+          `常亮灯的优点：所见即所得，调光调色直观，拍视频也能用；缺点：功率和续航有限，大场景压不住环境光，部分灯色温会漂。`,
+          `怎么选看场景：室内拍静态人像、想压暗环境、想凝固动作，用闪光灯更省力；拍情绪、拍慢节奏、新手需要立刻看到效果，用常亮灯更友好。`
+        ],
+        tip: `别纠结器材高低，先看你要不要「压环境」。环境光很亮又要主体突出，闪光灯几乎是唯一解。`
+      },
+      {
+        title: '色温的两个数字是相反的',
+        brief: '光源数值越大越蓝，相机数值越大越暖，最容易记反',
+        body: [
+          `这是最容易记错的一条：<b>光源的色温数值越大，光越蓝；相机里设置的色温数值越大，画面越暖（越黄）</b>。两个数字的方向是相反的。`,
+          `所以复现一个灯光效果，只记一个数字是不够的。必须同时记：现场光源大概是什么色温，相机当时设了多少。少记一个，下次就复现不出来。`,
+          `混合光环境（比如窗外日光加室内暖灯）下，自动白平衡经常失灵，你会看到脸一半黄一半蓝。这时候只能手动一档一档试，或者干脆用灰卡定一个基准，再靠后期统一。`
+        ],
+        tip: `记色温用「两边一起记」：光源 3200K + 相机 4000K 这种格式。只写一个数，过两周你自己都看不懂。`
+      },
+      {
+        title: '灯越近越柔，也衰减得越快',
+        brief: '相对大小决定软硬，距离决定明暗差',
+        body: [
+          `决定光软硬的是「光源相对人脸有多大」，所以同一个灯，贴近脸就柔，拉远就硬。这也是为什么大柔光箱要尽量靠近人。`,
+          `距离还决定衰减：灯离人越近，亮部和暗部的差距越大，光越有戏剧性；离得越远，光越平、越均匀。想要立体感就靠近，想要干净通透就拉远。`,
+          `双灯的思路可以记成一句话：<b>一盏大面积、低功率的灯负责环境和整体亮度，一盏小面积、有方向的灯负责造型</b>。两盏灯各干一件事，画面就不容易乱。`
+        ],
+        tip: `只有一盏灯也能拍出层次：让灯靠近脸制造明暗过渡，再用一块白板或反光板在暗侧补一点，比加第二盏灯更可控。`
+      }
+    ]
+  },
+  {
+    id: 6,
+    title: '后期基础',
+    sub: '先懂颜色关系，再谈调色顺序',
+    points: [
+      {
+        title: '色彩原理：先看三要素，再看关系',
+        brief: '色相、明度、饱和度 + 互补色和相邻色',
+        body: [
+          `颜色可以拆成三个要素：<b>色相</b>（是什么颜色）、<b>明度</b>（有多亮）、<b>饱和度</b>（有多艳）。调色时先说清自己要动哪一个，不然一顿操作下来只会「变了，但不知道变哪了」。`,
+          `颜色之间有两种常用关系：<b>互补色</b>（橙配蓝、红配青、黄配紫）对比强、有张力；<b>相邻色</b>（比如黄、橙、红）和谐、稳。一张图里通常有一个主色、一个辅色，关系清楚就不乱。`,
+          `所谓风格化，本质是决定画面里哪几个颜色说话、说到多大声。不是叠加滤镜，而是选择。`
+        ],
+        tip: `看一张喜欢的图，试着说出它的主色和辅色，以及它们是什么关系。能说出来，你就能把这个配色搬到自己的片子里。`
+      },
+      {
+        title: '调色的顺序',
+        brief: '先框住动态范围，再定对比，最后才做风格',
+        body: [
+          `一个比较稳的顺序是：<b>先用曲线把动态范围框住</b>，保住最亮和最暗的细节；再定初始对比度；然后提一点黑、压一点暗部，把基调定下来；接着处理肤色；最后才做色彩倾向和风格化。`,
+          `为什么肤色要放后面、风格化要放最后：肤色是观众最敏感的部分，先把脸弄自然，再去谈氛围。反过来先加风格，脸偏了你也看不出来，因为整张图都偏了。`,
+          `顺序错了最典型的后果是返工：调完颜色发现皮肤还脏，只能回头重做，前面的调色白费。`
+        ],
+        tip: `把顺序写成自己的检查清单贴在显示器边：动态范围 → 对比 → 基调 → 肤色 → 风格。每张图按顺序过一遍。`
+      },
+      {
+        title: '是照片好看，不是你调得好看',
+        brief: '底子好的照片套什么色调都成立',
+        body: [
+          `有个很扎心但很有用的判断：一张底子好的照片，套什么色调都还行；底子不好，调色只是给问题加了一层滤镜。`,
+          `很多「风格化很明显」的图，去掉调色之后依然好看——因为光、构图、人物状态都在。反过来，如果一张图只有调完色才成立，说明前期没拍好。`,
+          `所以别用调色去救曝光、救构图、救皮肤。那些问题在前期解决，成本低得多。`
+        ],
+        tip: `调完色把图转成黑白看一遍。黑白还站得住，说明你的光影和构图是对的；站不住，先回去补前期。`
+      }
+    ]
+  },
+  {
+    id: 7,
+    title: '磨皮',
+    sub: '磨皮最难：修的是光影，不是把皮磨平',
+    points: [
+      {
+        title: '磨皮不能破坏光',
+        brief: '磨皮修的是高光阴影，不是把皮肤磨成一张纸',
+        body: [
+          `磨皮的本质，是<b>修正脸上的高光阴影</b>，让皮肤干净、质感对，而不是把皮肤磨平。这是人像后期里最容易做错、也最难补的一步。`,
+          `动手之前先看光：光从哪边来、脸上哪块该亮、哪块阴影是结构。鼻梁的亮、颧骨下的暗、下颌线的过渡，这些是脸的立体感来源，磨掉了人就变塑料。`,
+          `只处理不该有的东西：痘、斑、坑、脏点、不自然的油光。该留的结构、毛孔、质感，尽量保住。`
+        ],
+        tip: `修图前先新建一个观察层（提高对比或转黑白），专门用来看明暗结构。看清楚了再动手，比修到一半发现光没了强。`
+      },
+      {
+        title: '高低频分离',
+        brief: '光影和纹理分开修，互不干扰',
+        body: [
+          `高低频分离的思路是把一张脸拆成两层：<b>低频</b>是颜色和光影（大结构），<b>高频</b>是纹理和细节（毛孔、痘印、碎发）。低频用模糊得到，高频用原图减去低频。`,
+          `修的时候，低频层改光影和肤色过渡，高频层改痘印、毛孔、小瑕疵。两层分开，改纹理不会破坏光影，改光影也不会把纹理糊掉。`,
+          `新手最常见的错误是直接在原图上糊，结果纹理和光影一起没了，脸变成一块橡皮。`
+        ],
+        tip: `磨皮之前先把明显的痘、瑕疵、碎发修干净（相当于打底），再做高低频。带着一堆瑕疵去磨，很容易磨成一团浆糊。`
+      },
+      {
+        title: '过分柔会显得假',
+        brief: '假不是「磨多了」，是局部和整体不匹配',
+        body: [
+          `「假」的技术解释往往不是磨皮磨多了这么简单，而是<b>局部和整体的锐度不匹配</b>：脸被磨得没有纹理，头发、衣服、背景却根根分明，眼睛一看就觉得别扭。`,
+          `还有一种是过度柔化只发生在某一块：比如用了纱、用了柔焦，结果纱的边缘模糊、中间却清晰，观感就很奇怪。`,
+          `真实感来自一致性：皮肤、毛发、布料、环境的质感应该在同一套逻辑里。保留一点毛孔和皮肤纹理，是「真」的来源。`
+        ],
+        tip: `磨完把图缩小到 30% 看整体，再放大到 100% 看皮肤。两个尺度都自然，才算过关；只有放大好看、缩小奇怪，通常是磨过头了。`
+      },
+      {
+        title: '「油腻」到底是什么',
+        brief: '不是颜色问题，是质感问题',
+        body: [
+          `油腻不是色调问题，是<b>质感问题</b>。典型表现：皮肤特别光溜、高光糊成一片、看不到原本的皮肤纹理，像在脸上打了一层蜡。`,
+          `成因通常是三件事叠加：磨皮过度、高光提得太亮、锐化过头。三者都会让皮肤失去「有毛孔、有细微起伏」的真实感。`,
+          `判断方法：把图缩小看。如果脸像一块反光的塑料，就是油；如果还能看出皮肤的呼吸感，就是对的。`
+        ],
+        tip: `觉得脸油，先别急着调色。降低高光、减一点磨皮、把纹理还回去，往往比改颜色有效。`
+      }
+    ]
+  },
+  {
+    id: 8,
+    title: '创作：画面元素 → 拍摄脚本',
+    sub: '从元素清单到一组片子，中间隔着一个脚本',
+    points: [
+      {
+        title: '每个画面元素都有属性',
+        brief: '先列元素，再问「它能怎么用」',
+        body: [
+          `一组片子里通常有很多组成元素，常见的有十类：场景、服装穿搭、环境元素、反光或透光道具、动态元素、生活道具、光线、色彩、表情、姿势。`,
+          `关键在于：每个元素都有自己的<b>属性</b>，同一个东西可以有不止一种用法。自行车是动态元素，可以拍她骑着过来；湖面是环境，也可以是反光道具；保鲜膜是透光元素；棱镜能照出彩虹一样的光；衣服上的一小块光斑，同样属于环境元素。`,
+          `不是只有「大面积的光」才叫光。脸上、衣服上那些小光斑，同样是画面元素，也能决定一张图的质感。`
+        ],
+        tip: `写方案时先列一张元素清单，每个元素后面写一句「它可以怎么用」。写到没有新用法，再开始排拍摄顺序。`
+      },
+      {
+        title: '元素要自洽',
+        brief: '场景、服装、道具、光、色得说同一种语言',
+        body: [
+          `元素之间要<b>自洽</b>：场景、服装、道具、光线、色彩得说同一种语言。观众一眼看过去觉得「对」，往往不是因为某个元素多厉害，而是因为整套元素互相对得上。`,
+          `有个很聪明的做法：不靠道具硬贴主题，靠配色就够了。比如节日主题，一条红裙子配绿领结、一条绿裙子配白领子，红配绿反复出现，主题就成立了。`,
+          `但元素是有限的，排到最后容易露馅。脚上的袜子、鞋、手里的小物，如果跟整体冲突，观众的眼睛会立刻被拽过去。所以清单要列全，包括容易忽略的细节。`,
+          `还有一条很实用的经验：<b>别给自己找麻烦</b>。拍小清新就找清新的场景和服装，硬把清新人像放进废弃工厂，不是绝对拍不出来，是要花几倍的力气去救。`
+        ],
+        tip: `拍之前把所有元素摆在一起看一眼（衣服、道具、场景照片、参考图），有没有哪一个明显不属于这套语言？有就换掉。`
+      },
+      {
+        title: '一组片子不是一张好图',
+        brief: '整组要有起伏，抽掉最好那张还成立',
+        body: [
+          `一组片子不是「挑一张最好的」就完事。整组要有起伏：景别变化、情绪推进、明暗节奏，甚至拍摄地点的变化。`,
+          `检验方法很直接：把整组里最好看的那张抽掉，剩下的还成立吗？如果抽掉就散了，说明整组是靠一张图撑着的，不是一组作品。`,
+          `所谓拍摄脚本，不是分镜表，是<b>元素的有序组合加上每张图的任务</b>。这张负责交代环境，那张负责情绪，另一张负责细节，各司其职。`
+        ],
+        tip: `拍完一组按顺序排一遍，问自己三个问题：有没有开场、有没有高潮、有没有收尾。缺哪个就补拍哪个。`
+      }
+    ]
+  },
+  {
+    id: 9,
+    title: '三种创作专题',
+    sub: '小清新 / 个性灯光 / 情绪，三种专题的前期与后期',
+    points: [
+      {
+        title: '小清新',
+        brief: '清新元素组合 + 轻后期，重点是干净',
+        body: [
+          `前期：小清新的核心是<b>清新元素的组合</b>——浅色、碎花、条纹、格子的服装，干净通透的场景，自然光，少量不抢戏的道具。别硬塞重色、重质感的东西进去。`,
+          `后期：整体提亮、降低一点饱和、阴影偏青、高光偏蓝，往胶片的感觉上靠，但保留数码的画质和细节。肤色一定要自然，不自然的画面就不叫小清新了。`,
+          `要注意的是，小清新不是「把颜色调淡」。它是整组从场景到服化道到色调都在同一个轻盈的调子里，缺一环就会显得勉强。`
+        ],
+        tip: `拍之前先看衣服和场景放一起的照片：如果两张图放在一起已经像一组，现场大概率能拍成；如果打架，换一个更快。`
+      },
+      {
+        title: '个性灯光人像',
+        brief: '双灯分工 + 先定配色，后期顺着前期走',
+        body: [
+          `前期：常用双灯，分工明确——<b>一盏大面积、低功率的灯负责环境光和整体色彩，一盏小面积、有方向的灯负责造型</b>，可以用聚光筒、造型片、色片做出形状。`,
+          `配色要在拍之前就定好，比如橙蓝、红青、蓝白这类互补或对比组合。一张图通常有一个主色和一个辅色，关系清楚，画面才有记忆点。`,
+          `后期：顺着前期的配色走，强化主色、压住辅色，别把造型光的颜色调没了。这类片子的色彩本身就是内容，不是装饰。`
+        ],
+        tip: `拍之前先写一句「这张图我要橙配蓝」，然后让服装、背景、灯光都往这两个颜色上靠，比拍完再想怎么调色省事得多。`
+      },
+      {
+        title: '情绪人像',
+        brief: '情绪是整组的曲线，不是单张的标签',
+        body: [
+          `情绪不是单张图上的一个标签，而是<b>整组的主题和曲线</b>。常见的一种走向是：从平静开始，慢慢积累，到一个爆发点，再安静下来，最后留一个出口——比如光、窗、远处的一点亮。`,
+          `表达手法上，很有效的是对比：人物表情非常平淡、甚至没有表情，但环境元素很「吵」——凌乱的房间、晃动的树影、强烈的色块。人物越静，环境越响，情绪越明显。`,
+          `后期要克制、统一，服务整组的情绪。单张好看但破坏了整组节奏的图，宁可不要。`
+        ],
+        tip: `排整组时先排情绪曲线，再排构图。把每张图标注成「起 / 承 / 转 / 合」，缺哪一段就补拍哪一段。`
+      }
+    ]
+  },
+  {
+    id: 10,
+    title: '术后与术前',
+    sub: '动手之前先分析，比修得好更重要',
+    points: [
+      {
+        title: '术前分析的六个检查点',
+        brief: '打开文件先别修，先看六件事',
+        body: [
+          `拿到一张图，先分析再动手。可以固定检查六个点：<b>① 光从哪来、明暗结构是什么；② 高光有没有过、该不该保留；③ 哪些阴影是结构、哪些是脏；④ 皮肤瑕疵和质感现在是什么状态；⑤ 肤色有没有偏色；⑥ 整组的色彩和氛围统不统一。</b>`,
+          `前三点决定你「能不能修、修哪里」；第四、五点决定磨皮和肤色的力度；第六点决定调色的方向。六点过完，再打开工具。`,
+          `分析的时候最好把图缩小看整体、再放大看细节，两个尺度来回看。只看一个尺度，很容易修过头。`
+        ],
+        tip: `把这六点做成一张检查表，每张图修之前逐条打勾。修多了会形成肌肉记忆，但一开始必须靠清单。`
+      },
+      {
+        title: '反面案例：修过头的三种脸',
+        brief: '三角形脸、惨白脸、塑料脸',
+        body: [
+          `第一种是<b>脸型推过头</b>：下巴推得太尖、脸颊削得太多，脸变成一个三角形，第一眼就不像真人。第二种是<b>肤色修过头</b>：惨白、没有血色，像打了很厚的粉。第三种是<b>皮肤磨过头</b>：没有毛孔、没有起伏，像塑料。`,
+          `这三个问题的共同点是：没有对照，凭手感一路加。每一步单独看都不夸张，叠在一起就过了。`,
+          `避免的方法很朴素：每做一步就跟原图对比一次；把图缩小看整体；做完先放一放，过一晚再看，问题会自己跳出来。`
+        ],
+        tip: `修完把原图和成片并排放在一起，如果成片第一眼更「假」而不是更「好」，就是过了。`
+      },
+      {
+        title: '参考色不能硬搬',
+        brief: '题材、光线、场景接近，颜色才搬得动',
+        body: [
+          `看到喜欢的色调可以学，但有个前提：你的照片在题材、光线、场景上跟参考接近。不接近的时候硬套，颜色会跟画面唱反调——比如把冷调电影色套进暖光小清新，人脸会发灰。`,
+          `更值得学的是<b>思路</b>，不是参数：它为什么用这个主色、为什么阴影偏青、为什么高光留一点暖。理解了这个，你才能在自己的片子里做调整。`,
+          `还有一点要接受：胶片和数码的动态范围不一样，硬要一模一样是做不到的，只能往那个感觉上靠。`
+        ],
+        tip: `存参考图的时候顺便写一句「它为什么好看」，只存图不写理由，过一阵你就只记得「好看」，用不上。`
+      }
+    ]
+  },
+  {
+    id: 11,
+    title: '常见错误',
+    sub: '顺序、力度、亮度，以及审美这件事',
+    points: [
+      {
+        title: '后期顺序错',
+        brief: '什么都没修就先调色，是最常见的白做',
+        body: [
+          `最典型的错误是：皮肤还脏、瑕疵还在、光还没理顺，就先开始调色。结果颜色好看，但脸是脏的；或者调完发现还得回头重做。`,
+          `一个稳妥的顺序是：<b>修瑕疵 → 磨皮 → 肤色 → 调色风格化</b>。每一步都建立在上一步干净的基础上。`,
+          `顺序不是死规定，但大方向不能反：先解决「不对」，再追求「好看」。`
+        ],
+        tip: `如果一张图你调了半小时还觉得哪里不对，先退回调色层，看看皮肤和光影是不是还没处理干净。`
+      },
+      {
+        title: '下手太狠',
+        brief: '调色、磨皮、液化，三个最容易过头的地方',
+        body: [
+          `调色、磨皮、液化，是人像后期最容易过头的三件事。过头的共同原因是：一直盯着屏幕加，没有停下来对比。`,
+          `一个简单的控制方法：每次操作完，把这一层关掉再打开，看差别是不是「刚好」。如果关掉之后觉得原图更好，说明加多了。`,
+          `宁可分两次做，也不要一次做到位。第二次微调的时候，你的眼睛已经适应了，判断会更准。`
+        ],
+        tip: `定一条自己的规矩：任何滑杆一次不超过一半，宁可分两次。你会发现返工率明显下降。`
+      },
+      {
+        title: '亮度、肤色过头',
+        brief: '目标不是白，是通透',
+        body: [
+          `皮肤提得太亮，会失去细节和血色，脸变成一张白纸；脸比背景亮太多，会显得像贴上去的，不真实。`,
+          `通透不等于白。<b>通透是有明暗、有血色、有质感</b>：该亮的地方亮，该有阴影的地方有阴影，皮肤下面还有一点红。`,
+          `判断的时候别只看脸，把脸和脖子、手、背景放一起看。肤色一跳出来，就是过了。`
+        ],
+        tip: `调完肤色，把图转成黑白看明暗关系。黑白里脸如果是一块均匀的亮斑，说明你提得太狠了。`
+      },
+      {
+        title: '审美教不会，但可以练',
+        brief: '把「感觉」拆成可以检查的项',
+        body: [
+          `审美这件事，很难靠一句话教会。别人告诉你「这张图高级」，你还是不知道高级在哪；只有自己看过足够多、拆过足够多，才会慢慢长出来。`,
+          `但可以练：大量看、主动拆解、拿自己的图跟好图对照。更实际的是给自己一套检查清单，把模糊的「感觉不对」拆成「光不对 / 色不对 / 构图散 / 皮肤假」。`,
+          `工具能帮你检查、提醒、记录，但替不了你的眼睛。审美最终是你自己的判断力。`
+        ],
+        tip: `每个月挑 10 张自己的旧图，用现在的眼光重新看一遍，写下当时没看出来的问题。进步往往就藏在这里。`
+      }
+    ]
+  }
+];
+
+/* ==================== 状态与工具 ==================== */
+const READ_KEY = 'ylcraft_booklet_progress';
+const THEME_KEY = 'ylcraft_booklet_theme';
+const ALL_POINTS = [];
+BOOK.forEach(ch => ch.points.forEach((p, i) => {
+  p.id = ch.id + '-' + (i + 1);
+  p.ch = ch.id;
+  ALL_POINTS.push(p);
+}));
+
+let readSet = new Set();
+try {
+  const raw = JSON.parse(localStorage.getItem(READ_KEY) || '[]');
+  if (Array.isArray(raw)) raw.forEach(id => readSet.add(String(id)));
+} catch (e) { readSet = new Set(); }
+
+function saveRead() {
+  try { localStorage.setItem(READ_KEY, JSON.stringify([...readSet])); } catch (e) {}
+}
+function fake(msg) {
+  let d = document.getElementById('_toast');
+  d.textContent = msg;
+  d.style.display = 'block';
+  clearTimeout(window._tt);
+  window._tt = setTimeout(() => { d.style.display = 'none'; }, 2600);
+}
+
+/* ==================== 渲染 ==================== */
+function renderChapters() {
+  const list = document.getElementById('chlist');
+  list.innerHTML = BOOK.map(ch => `
+    <button class="ch" data-target="ch-${ch.id}" onclick="gotoChapter('ch-${ch.id}')">
+      <span class="n">${String(ch.id).padStart(2, '0')}</span>
+      <span class="t">${ch.title}</span>
+      <span class="c" id="sc-${ch.id}">0/${ch.points.length}</span>
+    </button>`).join('');
+  document.getElementById('chTotal').textContent = BOOK.length + ' 章';
+  document.getElementById('hsCh').textContent = BOOK.length;
+  document.getElementById('hsPt').textContent = ALL_POINTS.length;
+}
+
+function renderBook() {
+  const wrap = document.getElementById('book');
+  wrap.innerHTML = BOOK.map(ch => `
+    <section class="chap" id="ch-${ch.id}" data-ch="${ch.id}">
+      <div class="chap-hd">
+        <span class="ch-num">CH ${String(ch.id).padStart(2, '0')}</span>
+        <div class="ch-ht">
+          <h2>${ch.title}</h2>
+          <div class="ch-sub">${ch.sub}</div>
+        </div>
+        <span class="chap-cnt" id="cc-${ch.id}">0 / ${ch.points.length} 已读</span>
+        <button class="btn ch-mark" id="mb-${ch.id}" onclick="markChapter(${ch.id})">本章全标已读</button>
+      </div>
+      ${ch.points.map((p, i) => `
+        <article class="pt" data-id="${p.id}" data-ch="${ch.id}" data-open="0">
+          <div class="pt-hd" onclick="togglePoint('${p.id}')">
+            <button class="ck" title="标记已读" onclick="toggleRead(event,'${p.id}')">✓</button>
+            <div class="pt-ht">
+              <div class="pt-t">${p.title}</div>
+              <div class="pt-brief">${p.brief}</div>
+            </div>
+            <span class="pt-num">${ch.id}.${i + 1}</span>
+            <span class="pt-chev">⌄</span>
+          </div>
+          <div class="pt-body">
+            ${p.body.map(t => `<p>${t}</p>`).join('')}
+            <div class="pt-tip"><span class="tip-lb">怎么用</span>${p.tip}</div>
+            <div class="pt-foot">
+              <button class="btn readbtn" onclick="toggleRead(event,'${p.id}')">标记已读</button>
+              <span class="hint">点标题可展开 / 收起</span>
+            </div>
+          </div>
+        </article>`).join('')}
+    </section>`).join('');
+
+  // 建立搜索索引（标题 + 摘要 + 正文 + 提示 + 章节名）
+  const byId = {};
+  ALL_POINTS.forEach(p => { byId[p.id] = p; });
+  wrap.querySelectorAll('.pt').forEach(el => {
+    const p = byId[el.dataset.id];
+    const ch = BOOK.find(c => c.id === p.ch);
+    const raw = [ch.title, ch.sub, p.title, p.brief, p.body.join(' '), p.tip]
+      .join(' ').replace(/<[^>]+>/g, '').toLowerCase();
+    el.dataset.search = raw;
+  });
+}
+
+/* ==================== 已读进度 ==================== */
+function refreshProgress() {
+  const total = ALL_POINTS.length;
+  const done = readSet.size;
+  const pct = total ? Math.round(done / total * 100) : 0;
+
+  document.getElementById('pct').textContent = pct + '%';
+  document.getElementById('bar').style.width = pct + '%';
+  document.getElementById('doneCount').textContent = done + ' / ' + total + ' 个知识点';
+
+  let chDone = 0;
+  BOOK.forEach(ch => {
+    const d = ch.points.filter(p => readSet.has(p.id)).length;
+    const full = d === ch.points.length;
+    if (full) chDone++;
+
+    const sc = document.getElementById('sc-' + ch.id);
+    if (sc) sc.textContent = d + '/' + ch.points.length;
+    const chBtn = document.querySelector('.ch[data-target="ch-' + ch.id + '"]');
+    if (chBtn) chBtn.classList.toggle('done', full);
+
+    const cc = document.getElementById('cc-' + ch.id);
+    if (cc) {
+      cc.textContent = full ? '✓ 本章已读完' : d + ' / ' + ch.points.length + ' 已读';
+      cc.classList.toggle('ok', full);
+    }
+    const mb = document.getElementById('mb-' + ch.id);
+    if (mb) {
+      mb.disabled = full;
+      mb.textContent = full ? '本章已读完' : '本章全标已读';
+    }
+  });
+  document.getElementById('chapDone').textContent = chDone + ' / ' + BOOK.length + ' 章读完';
+
+  document.querySelectorAll('.pt').forEach(el => {
+    const on = readSet.has(el.dataset.id);
+    el.classList.toggle('read', on);
+    const ck = el.querySelector('.ck');
+    if (ck) ck.classList.toggle('on', on);
+    const rb = el.querySelector('.readbtn');
+    if (rb) rb.textContent = on ? '已读 ✓' : '标记已读';
+  });
+}
+
+function toggleRead(e, id) {
+  if (e) e.stopPropagation();
+  if (readSet.has(id)) readSet.delete(id);
+  else readSet.add(id);
+  saveRead();
+  refreshProgress();
+}
+
+function markChapter(chId) {
+  const ch = BOOK.find(c => c.id === chId);
+  if (!ch) return;
+  ch.points.forEach(p => readSet.add(p.id));
+  saveRead();
+  refreshProgress();
+  fake('第 ' + chId + ' 章已全部标记为已读');
+}
+
+function resetProgress() {
+  if (!readSet.size) { fake('现在还没有任何已读记录'); return; }
+  if (!confirm('确定清空全部阅读进度吗？此操作不可撤销。')) return;
+  readSet.clear();
+  saveRead();
+  refreshProgress();
+  fake('阅读进度已清空');
+}
+
+/* ==================== 展开 / 收起 ==================== */
+function togglePoint(id) {
+  const el = document.querySelector('.pt[data-id="' + id + '"]');
+  if (!el) return;
+  const open = el.classList.toggle('open');
+  el.dataset.open = open ? '1' : '0';
+}
+function expandAll(open) {
+  document.querySelectorAll('.pt').forEach(el => {
+    el.classList.toggle('open', open);
+    el.dataset.open = open ? '1' : '0';
+  });
+  fake(open ? '已展开全部知识点' : '已收起全部知识点');
+}
+
+/* ==================== 搜索 ==================== */
+function doSearch(qRaw) {
+  const q = (qRaw || '').trim().toLowerCase();
+  let shown = 0;
+
+  document.querySelectorAll('.pt').forEach(el => {
+    const hit = !q || (el.dataset.search || '').indexOf(q) >= 0;
+    el.style.display = hit ? '' : 'none';
+    if (hit) shown++;
+    if (q) el.classList.add('open');
+    else el.classList.toggle('open', el.dataset.open === '1');
+  });
+
+  document.querySelectorAll('.chap').forEach(sec => {
+    const any = Array.prototype.some.call(sec.querySelectorAll('.pt'),
+      el => el.style.display !== 'none');
+    sec.style.display = any ? '' : 'none';
+  });
+
+  const resline = document.getElementById('resline');
+  const empty = document.getElementById('empty');
+  if (q) {
+    resline.style.display = 'flex';
+    resline.innerHTML = '';
+    const t = document.createElement('span');
+    t.textContent = '找到 ' + shown + ' 个知识点 · 关键词「' + qRaw.trim() + '」';
+    resline.appendChild(t);
+    const b = document.createElement('button');
+    b.className = 'btn';
+    b.style.cssText = 'padding:4px 10px;font-size:12px;margin-left:auto';
+    b.textContent = '清空搜索';
+    b.onclick = clearSearch;
+    resline.appendChild(b);
+  } else {
+    resline.style.display = 'none';
+  }
+  empty.style.display = (q && shown === 0) ? 'block' : 'none';
+  document.getElementById('clr').style.display = q ? 'block' : 'none';
+}
+
+function clearSearch() {
+  const input = document.getElementById('q');
+  input.value = '';
+  doSearch('');
+  input.focus();
+}
+
+/* ==================== 章节跳转 / 滚动高亮 ==================== */
+function gotoChapter(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.querySelectorAll('.ch').forEach(b => b.classList.toggle('on', b.dataset.target === id));
+}
+function continueRead() {
+  const next = ALL_POINTS.find(p => !readSet.has(p.id));
+  if (!next) {
+    fake('全部知识点都读完了，真的？');
+    return;
+  }
+  const el = document.querySelector('.pt[data-id="' + next.id + '"]');
+  if (!el) return;
+  el.classList.add('open');
+  el.dataset.open = '1';
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  document.querySelectorAll('.ch').forEach(b => b.classList.toggle('on', b.dataset.target === 'ch-' + next.ch));
+  fake('继续：第 ' + next.ch + ' 章 · ' + next.title);
+}
+
+/* ==================== 主题 ==================== */
+function setTheme(t, el, quiet) {
+  document.body.setAttribute('data-t', t);
+  document.querySelectorAll('.th').forEach(x => x.classList.toggle('on', x.dataset.t === t));
+  try { localStorage.setItem(THEME_KEY, t); } catch (e) {}
+  if (!quiet) {
+    const names = { deep: '深海', moonlight: '月光', dawn: '晨曦' };
+    fake('主题：' + (names[t] || t));
+  }
+}
+
+/* ==================== 初始化 ==================== */
+renderChapters();
+renderBook();
+refreshProgress();
+
+(function initTheme() {
+  let t = 'deep';
+  try { t = localStorage.getItem(THEME_KEY) || 'deep'; } catch (e) {}
+  if (!['deep', 'moonlight', 'dawn'].includes(t)) t = 'deep';
+  const btn = document.querySelector('.th[data-t="' + t + '"]');
+  setTheme(t, btn, true);
+})();
+
+const qInput = document.getElementById('q');
+qInput.addEventListener('input', e => doSearch(e.target.value));
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') clearSearch();
+  if (e.key === '/' && document.activeElement !== qInput) {
+    e.preventDefault();
+    qInput.focus();
+  }
+});
+
+// 滚动时高亮当前章节
+const sections = Array.prototype.slice.call(document.querySelectorAll('.chap'));
+let spyTick = false;
+window.addEventListener('scroll', () => {
+  if (spyTick) return;
+  spyTick = true;
+  requestAnimationFrame(() => {
+    spyTick = false;
+    let cur = sections[0];
+    sections.forEach(s => {
+      if (s.getBoundingClientRect().top <= 150) cur = s;
+    });
+    if (cur) {
+      document.querySelectorAll('.ch').forEach(b =>
+        b.classList.toggle('on', b.dataset.target === cur.id));
+    }
+  });
+}, { passive: true });
+</script>
+</body>
+</html>
