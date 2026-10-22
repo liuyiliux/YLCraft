@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>图片编辑 v2 · AI 建议 → 图层</title>
+<style>
+:root{
+  /* ⭐ 照片优先：界面全部中性灰，只用一处强调色，且不在画布附近 */
+  --bg:#0a0a0c; --bg1:#101013; --bg2:#16161a; --s1:#0f0f12; --s2:#1c1c21; --s3:#26262d;
+  --ln:#22222a; --ln2:#2e2e38; --ln3:#3a3a46;
+  --tx:#e8e8ec; --tx2:#a1a1ad; --tx3:#6c6c78;
+  --ac:#22d3ee; --acs:rgba(34,211,238,.1); --acl:rgba(34,211,238,.4);
+  --ok:#34d399; --oks:rgba(52,211,153,.1); --okl:rgba(52,211,153,.4);
+  --wn:#fbbf24; --wnl:rgba(251,191,36,.35);
+  --r2:7px; --fm:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:13px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* 顶栏 */
+.top{display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid var(--ln);
+  background:var(--bg1);flex:0 0 auto}
+.mk{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,#22d3ee,#0891b2);
+  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#04222a}
+.ttl{font-size:13px;font-weight:600}
+.sub{font-size:10.5px;color:var(--tx3);margin-left:auto}
+
+/* 三栏：左建议+图层 / 中画布 / 右参数 */
+.main{display:flex;flex:1;min-height:0}
+.left{width:300px;flex:0 0 300px;border-right:1px solid var(--ln);background:var(--bg1);
+  overflow-y:auto;padding:13px 14px}
+.left::-webkit-scrollbar,.right::-webkit-scrollbar{width:6px}
+.left::-webkit-scrollbar-thumb,.right::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:3px}
+.stage{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:12px;padding:20px;min-width:0;background:var(--bg)}
+.right{width:320px;flex:0 0 320px;border-left:1px solid var(--ln);background:var(--bg1);
+  overflow-y:auto;padding:13px 14px}
+
+/* 画布 */
+.imgwrap{width:100%;max-width:340px;aspect-ratio:2/3;border-radius:10px;overflow:hidden;
+  position:relative;background:linear-gradient(165deg,#2b2440,#141020);
+  box-shadow:0 14px 44px -14px rgba(0,0,0,.9);transition:filter .06s linear}
+.fig{position:absolute;left:42%;top:18%;width:16%;height:64%;
+  background:linear-gradient(175deg,#e8d5bd,#a8825c);border-radius:42% 42% 20% 20%/16% 16% 8% 8%}
+.mask{position:absolute;left:20%;top:12%;width:60%;height:52%;
+  border:1.5px dashed var(--wnl);border-radius:50%;
+  background:rgba(251,191,36,.06);display:none;pointer-events:none}
+.mask.on{display:block}
+.tag{font-size:10px;color:var(--tx3)}
+.tag b{color:var(--tx2)}
+
+/* 对比遮罩 */
+.cmpbar{position:fixed;top:0;left:0;right:0;z-index:99;padding:9px 20px;
+  background:rgba(251,191,36,.94);color:#1a1205;font-size:12.5px;font-weight:600;
+  text-align:center;display:none}
+.cmpbar.on{display:block}
+
+/* 通用 */
+.sec{font-size:10px;color:var(--tx3);letter-spacing:.05em;margin:14px 0 8px;
+  display:flex;align-items:center;gap:7px}
+.sec:first-child{margin-top:0}
+.sec em{font-style:normal;font-family:var(--fm);font-size:9px;padding:1px 6px;
+  border-radius:9px;background:var(--s2);color:var(--tx3)}
+
+/* ⭐ AI 建议卡 */
+.sg{padding:11px 12px;border-radius:8px;background:var(--bg2);
+  border:1px dashed var(--ln2);margin-bottom:7px;transition:.16s}
+.sg:hover{border-color:var(--ln3)}
+.sg.adopted{border:1px solid var(--okl);background:rgba(52,211,153,.05)}
+.sg.ignored{opacity:.4;border-style:dotted}
+.sg-hd{display:flex;align-items:flex-start;gap:8px;margin-bottom:6px}
+.sg-dot{width:13px;height:13px;border-radius:50%;border:2px solid var(--ln3);
+  flex-shrink:0;margin-top:2px;transition:.16s}
+.sg.adopted .sg-dot{background:var(--ok);border-color:var(--ok)}
+.sg-t{flex:1;font-size:12.5px;color:var(--tx);line-height:1.5;font-weight:500}
+.sg.ignored .sg-t{text-decoration:line-through;color:var(--tx3)}
+.sg-kind{font-size:9px;padding:1px 6px;border-radius:3px;font-family:var(--fm);
+  background:var(--s2);color:var(--tx3);flex-shrink:0}
+.sg-why{font-size:11px;color:var(--tx3);line-height:1.6;padding-left:21px;margin-bottom:6px}
+.sg-src{font-size:9px;font-family:var(--fm);padding-left:21px;margin-bottom:8px}
+.sg-src.v{color:var(--ok)}
+.sg-src.g{color:var(--wn)}
+.sg-acts{display:flex;gap:6px;padding-left:21px}
+.sg-b{font-size:10.5px;padding:4px 11px;border-radius:5px;border:1px solid var(--ln2);
+  color:var(--tx2);background:transparent;font-family:inherit;cursor:pointer;transition:.16s}
+.sg-b:hover{border-color:var(--tx3);color:var(--tx)}
+.sg-b.y{border-color:var(--okl);color:var(--ok);background:var(--oks)}
+.sg-b.y:hover{background:rgba(52,211,153,.18)}
+.sg-b.n:hover{border-color:#f87171;color:#f87171}
+
+/* 图层 */
+.ly{display:flex;align-items:center;gap:8px;padding:9px 11px;border-radius:7px;
+  background:var(--bg2);border:1px solid var(--ln);margin-bottom:6px;transition:.16s}
+.ly.off{opacity:.4}
+.ly-eye{width:18px;height:18px;border-radius:4px;border:1px solid var(--ln2);
+  background:transparent;cursor:pointer;flex-shrink:0;font-size:10px;color:var(--tx3);
+  display:flex;align-items:center;justify-content:center;font-family:inherit}
+.ly-eye.on{background:var(--acs);border-color:var(--acl);color:var(--ac)}
+.ly-n{flex:1;font-size:11.5px;color:var(--tx)}
+.ly-r{font-size:9px;font-family:var(--fm);color:var(--tx3);
+  padding:1px 6px;border-radius:3px;background:var(--s2)}
+.ly-x{font-size:12px;color:var(--tx3);cursor:pointer;padding:0 3px;background:none;
+  border:none;font-family:inherit;transition:.16s}
+.ly-x:hover{color:#f87171}
+.empty{font-size:11px;color:var(--tx3);line-height:1.7;padding:14px 4px;text-align:center}
+
+/* 参数 */
+.row{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+.l{font-size:11px;color:var(--tx2);flex:0 0 44px}
+input[type=range]{flex:1;min-width:0;-webkit-appearance:none;appearance:none;height:3px;
+  background:var(--ln2);border-radius:2px;outline:none;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;
+  border-radius:50%;background:var(--ac);cursor:grab;box-shadow:0 0 0 2px rgba(34,211,238,.2)}
+.v{font-size:10px;font-family:var(--fm);color:var(--ac);flex:0 0 56px;text-align:right}
+.curwrap{background:var(--bg2);border:1px solid var(--ln);border-radius:6px;padding:6px}
+svg.curve{width:100%;display:block;cursor:crosshair}
+.diag{stroke:rgba(255,255,255,.12);stroke-width:1;stroke-dasharray:3 3}
+.grid{stroke:rgba(255,255,255,.06);stroke-width:1}
+.path{fill:none;stroke:var(--ac);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.dot{fill:var(--ac);stroke:var(--bg1);stroke-width:1.5;cursor:grab}
+.hint{font-size:9px;color:var(--tx3);margin-top:5px;text-align:center}
+.chs{display:inline-flex;gap:2px;margin-left:4px}
+.ch{font-size:9px;padding:1px 7px;border-radius:3px;cursor:pointer;background:var(--s2);
+  border:1px solid var(--ln2);color:var(--tx3);font-family:inherit}
+.ch.on{color:var(--ac);border-color:var(--acl);background:var(--acs)}
+.ch.r.on{color:#f87171;border-color:rgba(248,113,113,.5);background:rgba(248,113,113,.12)}
+.ch.g.on{color:#34d399;border-color:rgba(52,211,153,.5);background:rgba(52,211,153,.12)}
+.ch.b.on{color:#60a5fa;border-color:rgba(96,165,250,.5);background:rgba(96,165,250,.12)}
+.reset{margin-left:auto;font-size:9px;color:var(--ac);background:transparent;
+  border:1px solid var(--acl);border-radius:3px;padding:1px 7px;cursor:pointer;font-family:inherit}
+
+/* 区域选择 */
+.regions{display:flex;gap:5px;flex-wrap:wrap}
+.rg{font-size:10px;padding:5px 11px;border-radius:5px;border:1px solid var(--ln2);
+  color:var(--tx3);background:var(--s2);cursor:pointer;font-family:inherit;transition:.16s}
+.rg:hover{border-color:var(--ln3);color:var(--tx2)}
+.rg.on{background:var(--acs);border-color:var(--acl);color:var(--ac)}
+.reg-note{font-size:9.5px;color:var(--tx3);line-height:1.6;margin-top:7px}
+
+/* 底部能力对照 */
+.capbar{border-top:1px solid var(--ln);background:var(--s1);padding:9px 16px;flex:0 0 auto}
+.capbar-h{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.capbar-t{font-size:10px;color:var(--tx2)}
+.capbar-k{font-size:9px;font-family:var(--fm);color:var(--ac);background:var(--acs);
+  border:1px solid var(--acl);border-radius:3px;padding:1px 6px}
+.capbar-r{display:flex;gap:14px;flex-wrap:wrap;margin-left:auto}
+.cr{display:flex;align-items:center;gap:6px;font-size:9.5px;color:var(--tx3)}
+.cr-b{font-size:8px;border-radius:3px;padding:1px 5px}
+.cr-b.l2{color:var(--ac);background:var(--acs)}
+.cr-b.l3{color:var(--wn);background:rgba(251,191,36,.12)}
+.cr-arrow{color:var(--tx3);font-size:10px}
+.cr-same{color:var(--ok);font-size:9px}
+
+.foot{display:flex;align-items:center;gap:10px;padding:9px 16px;border-top:1px solid var(--ln);
+  background:var(--bg1);flex:0 0 auto}
+.cost{font-size:11px;color:var(--tx2)}
+.cost b{color:var(--ok);font-family:var(--fm);font-size:14px}
+.costn{font-size:9.5px;color:var(--tx3);margin-left:6px}
+.acts{margin-left:auto;display:flex;gap:7px}
+.btn{font-size:10.5px;padding:6px 13px;border-radius:6px;cursor:pointer;
+  border:1px solid var(--ln2);background:var(--s2);color:var(--tx2);font-family:inherit}
+.btn:hover{color:var(--tx);background:var(--s3)}
+.btn.pri{color:#04222a;background:var(--ac);border-color:var(--ac);font-weight:600}
+.btn.pri:hover{filter:brightness(1.1)}
+.kbd{font-family:var(--fm);font-size:9px;padding:1px 5px;border-radius:3px;
+  border:1px solid var(--ln2);background:var(--s2);color:var(--tx2)}
+</style>
+</head>
+<body>
+
+<div class="cmpbar" id="cmpBar">正在看原图 —— 松开回到你改过的版本</div>
+
+<div class="top">
+  <span class="mk">YL</span>
+  <span class="ttl">图片编辑</span>
+  <span class="sub">AI 给建议 · 你决定要不要 · 采纳了还能改</span>
+</div>
+
+<div class="main">
+
+  <!-- ============ 左：AI 建议 + 图层 ============ -->
+  <aside class="left">
+    <div class="sec">AI 读完这张图的建议 <em id="sgPend">3 条待确认</em></div>
+    <div id="sgList"></div>
+
+    <div class="sec">图层 <em id="lyN">0</em>
+      <button class="reset" onclick="clearLayers()">清空</button></div>
+    <div id="lyList"></div>
+  </aside>
+
+  <!-- ============ 中：画布 ============ -->
+  <div class="stage">
+    <div class="imgwrap" id="img">
+      <div class="fig"></div>
+      <div class="mask" id="mask"></div>
+    </div>
+    <div class="tag">
+      实时预览 · <b>参数渲染不是烘焙进图里</b> ·
+      按住 <span class="kbd">\</span> 对比原图
+    </div>
+  </div>
+
+  <!-- ============ 右：参数 ============ -->
+  <aside class="right">
+    <div class="sec">基础</div>
+    <div class="row"><span class="l">曝光</span>
+      <input type="range" min="-2" max="2" step="0.05" value="0" oninput="setV('exposure',this.value)">
+      <span class="v" id="vExposure">+0.00EV</span></div>
+    <div class="row"><span class="l">对比度</span>
+      <input type="range" min="0.5" max="1.5" step="0.01" value="1" oninput="setV('contrast',this.value)">
+      <span class="v" id="vContrast">1.00</span></div>
+    <div class="row"><span class="l">饱和度</span>
+      <input type="range" min="0" max="2" step="0.01" value="1" oninput="setV('saturation',this.value)">
+      <span class="v" id="vSaturation">1.00</span></div>
+    <div class="row"><span class="l">色温</span>
+      <input type="range" min="4000" max="8000" step="50" value="6100" oninput="setV('temp',this.value)">
+      <span class="v" id="vTemp">6100K</span></div>
+
+    <div class="sec">色阶 <button class="reset" onclick="resetLevels()">复位</button></div>
+    <div class="row"><span class="l">黑场</span>
+      <input type="range" min="0" max="1" step="0.005" value="0" oninput="setLevel('black',this.value)">
+      <span class="v" id="vBlack">0</span></div>
+    <div class="row"><span class="l">白场</span>
+      <input type="range" min="0" max="1" step="0.005" value="1" oninput="setLevel('white',this.value)">
+      <span class="v" id="vWhite">255</span></div>
+    <div class="row"><span class="l">Gamma</span>
+      <input type="range" min="0.3" max="3" step="0.02" value="1" oninput="setLevel('gamma',this.value)">
+      <span class="v" id="vGamma">1.00</span></div>
+
+    <div class="sec">曲线
+      <span class="chs">
+        <button class="ch on" data-ch="rgb" onclick="setCh('rgb')">RGB</button>
+        <button class="ch r" data-ch="r" onclick="setCh('r')">R</button>
+        <button class="ch g" data-ch="g" onclick="setCh('g')">G</button>
+        <button class="ch b" data-ch="b" onclick="setCh('b')">B</button>
+      </span>
+      <button class="reset" onclick="resetCurve()">拉直</button>
+    </div>
+    <div class="curwrap">
+      <svg class="curve" id="curveSvg" viewBox="0 0 200 200"
+        onmousedown="cDown(event)" onmousemove="cMove(event)"
+        onmouseup="cUp()" onmouseleave="cUp()" ondblclick="resetCurve()">
+        <line x1="0" y1="200" x2="200" y2="0" class="diag"/>
+        <line x1="50" y1="0" x2="50" y2="200" class="grid"/>
+        <line x1="100" y1="0" x2="100" y2="200" class="grid"/>
+        <line x1="150" y1="0" x2="150" y2="200" class="grid"/>
+        <line x1="0" y1="50" x2="200" y2="50" class="grid"/>
+        <line x1="0" y1="100" x2="200" y2="100" class="grid"/>
+        <line x1="0" y1="150" x2="200" y2="150" class="grid"/>
+        <path id="curvePath" class="path" d=""/>
+        <g id="curvePts"></g>
+      </svg>
+    </div>
+    <div class="hint">拖中间的点做 S 曲线 · 双击拉直</div>
+
+    <div class="sec">这块改动影响哪里</div>
+    <div class="regions">
+      <button class="rg on" onclick="setRegion(this,'全图')">全图</button>
+      <button class="rg" onclick="setRegion(this,'矩形')">矩形</button>
+      <button class="rg" onclick="setRegion(this,'椭圆')">椭圆</button>
+      <button class="rg" onclick="setRegion(this,'线性渐变')">线性渐变</button>
+      <button class="rg" onclick="setRegion(this,'画笔')">画笔</button>
+    </div>
+    <div class="reg-note" id="regNote">
+      全图 —— 现在改的是整张。选局部之后，改动只落在框住的地方。
+    </div>
+  </aside>
+</div>
+
+<!-- 底部：能力对照 —— 这一页存在的意义 -->
+<div class="capbar">
+  <div class="capbar-h">
+    <span class="capbar-t">这一页调的能力</span>
+    <span class="capbar-k">image-adjust</span>
+    <span class="capbar-r">
+      <span class="cr"><span class="cr-b l2">L2 页面</span>本页</span>
+      <span class="cr-arrow">↘</span>
+      <span class="cr"><span class="cr-b l3">L3 画布</span>调色节点</span>
+      <span class="cr-arrow">↘</span>
+      <span class="cr-same">同一个能力 · 同一套参数</span>
+    </span>
+  </div>
+  <div style="font-size:9px;color:var(--tx3);line-height:1.55">
+    🔴 <b style="color:var(--tx2)">页面与节点是兄弟</b> ——
+    不是「画布调用页面」，也不是「页面提取成节点」。两者都调
+    <code style="color:var(--ac);font-family:var(--fm)">POST /api/v1/images/adjust</code>，
+    各自有各自的壳。
+  </div>
+</div>
+
+<div class="foot">
+  <div class="cost">
+    花费 <b>0</b>
+    <span class="costn">本地像素运算 · 不走模型 · 参数留着随时能改</span>
+  </div>
+  <div class="acts">
+    <button class="btn" onclick="resetAll()">全部重置</button>
+    <button class="btn pri" onclick="applyIt()">应用</button>
+  </div>
+</div>
+
+<script>
+/* ================================================================
+   核心：AI 建议 ≠ 结果。每条建议都是一份「待采纳的参数」，
+   采纳后变成图层，图层能关、能删、能改。
+   ================================================================ */
+
+/* ---------- 建议数据 ---------- */
+const SUGGESTIONS = [
+  {
+    id:'s1', kind:'调色', state:'pending',
+    title:'整体提亮一点，背景压暗，拉开层次',
+    why:'画面偏暗，主体和背景亮度接近，看着闷',
+    src:'v', srcText:'读图推的',
+    region:'全图',
+    params:{ exposure:0.18, contrast:1.07 },
+    levels:{ black:0.035, white:0.985, gamma:1.02 }
+  },
+  {
+    id:'s2', kind:'调色', state:'pending',
+    title:'脸上高光压一点，鼻梁别过曝',
+    why:'鼻梁和额头的高光已经贴边，再亮点就糊了',
+    src:'v', srcText:'读图推的',
+    region:'椭圆',
+    params:{ exposure:-0.1 },
+    levels:null
+  },
+  {
+    id:'s3', kind:'裁剪', state:'pending',
+    title:'裁成 3:4 竖构图，去掉左边那块空墙',
+    why:'左边三分之一几乎没有信息，主体偏右下',
+    src:'g', srcText:'构图推算',
+    region:'全图',
+    params:null, levels:null, crop:'3:4'
+  }
+];
+
+/* ---------- 图层 ---------- */
+let LAYERS = [];   // {id, name, on, region, params, levels, crop}
+let SUGG = JSON.parse(JSON.stringify(SUGGESTIONS));
+
+/* ---------- 手动参数（当没有图层时用）---------- */
+const MAN = {
+  exposure:0, contrast:1, saturation:1, temp:6100,
+  levels:{black:0, white:1, gamma:1},
+  channel:'rgb',
+  curves:{ rgb:[[0,0],[1,1]], r:[[0,0],[1,1]], g:[[0,0],[1,1]], b:[[0,0],[1,1]] }
+};
+let DRAG=-1, REGION='全图', COMPARING=false, CROP='原图';
+
+/* ================= 建议渲染 ================= */
+function renderSugg(){
+  const box = document.getElementById('sgList');
+  const act = SUGG.filter(s=>s.state==='pending');
+  const ign = SUGG.filter(s=>s.state==='ignored');
+
+  let h = act.map(s=>{
+    return '<div class="sg">'
+      + '<div class="sg-hd">'
+      +   '<span class="sg-dot"></span>'
+      +   '<span class="sg-t">'+s.title+'</span>'
+      +   '<span class="sg-kind">'+s.kind+'</span>'
+      + '</div>'
+      + '<div class="sg-why">'+s.why+'</div>'
+      + '<div class="sg-src '+s.src+'">来源：'+s.srcText+(s.region!=='全图'?' · 只影响'+s.region:'')+'</div>'
+      + '<div class="sg-acts">'
+      +   '<button class="sg-b y" onclick="adopt(\''+s.id+'\')">采纳</button>'
+      +   '<button class="sg-b n" onclick="ignore(\''+s.id+'\')">忽略</button>'
+      + '</div>'
+      + '</div>';
+  }).join('');
+
+  if (ign.length){
+    h += '<div style="font-size:9.5px;color:var(--tx3);margin:10px 0 6px">已忽略</div>';
+    h += ign.map(s=>'<div class="sg ignored">'
+      + '<div class="sg-hd"><span class="sg-dot"></span>'
+      + '<span class="sg-t">'+s.title+'</span></div>'
+      + '<div class="sg-acts"><button class="sg-b" onclick="restore(\''+s.id+'\')">恢复</button></div>'
+      + '</div>').join('');
+  }
+
+  if (!act.length && !ign.length){
+    h = '<div class="empty">三条建议都处理完了。<br>采纳的都变成了图层，随时能关掉。</div>';
+  }
+  box.innerHTML = h;
+  document.getElementById('sgPend').textContent = act.length + ' 条待确认';
+}
+
+/* ================= 图层渲染 ================= */
+function renderLayers(){
+  const box = document.getElementById('lyList');
+  if (!LAYERS.length){
+    box.innerHTML = '<div class="empty">还没有图层。<br>采纳一条建议，它就会变成这里的图层 ——<br>可以关掉、可以删掉，不影响原图。</div>';
+  } else {
+    box.innerHTML = LAYERS.map((l,i)=>
+      '<div class="ly '+(l.on?'':'off')+'">'
+      + '<button class="ly-eye '+(l.on?'on':'')+'" onclick="toggleLayer('+i+')">'+(l.on?'◉':'○')+'</button>'
+      + '<span class="ly-n">'+l.name+'</span>'
+      + '<span class="ly-r">'+l.region+'</span>'
+      + '<button class="ly-x" onclick="delLayer('+i+')">✕</button>'
+      + '</div>').join('');
+  }
+  document.getElementById('lyN').textContent = LAYERS.length;
+}
+
+/* ================= 采纳 / 忽略 ================= */
+function adopt(id){
+  const s = SUGG.find(x=>x.id===id);
+  if (!s) return;
+  s.state = 'adopted';
+  LAYERS.push({
+    id: s.id, name: s.title, on:true, region: s.region,
+    params: s.params, levels: s.levels, crop: s.crop
+  });
+  renderSugg(); renderLayers(); preview();
+}
+function ignore(id){
+  const s = SUGG.find(x=>x.id===id);
+  if (!s) return;
+  s.state = 'ignored';
+  LAYERS = LAYERS.filter(l=>l.id!==id);
+  renderSugg(); renderLayers(); preview();
+}
+function restore(id){
+  const s = SUGG.find(x=>x.id===id);
+  if (!s) return;
+  s.state = 'pending';
+  renderSugg();
+}
+function toggleLayer(i){
+  LAYERS[i].on = !LAYERS[i].on;
+  renderLayers(); preview();
+}
+function delLayer(i){
+  const l = LAYERS[i];
+  const s = SUGG.find(x=>x.id===l.id);
+  if (s) s.state = 'ignored';
+  LAYERS.splice(i,1);
+  renderSugg(); renderLayers(); preview();
+}
+function clearLayers(){
+  LAYERS = [];
+  SUGG.forEach(s=>{ if(s.state==='adopted') s.state='pending'; });
+  renderSugg(); renderLayers(); preview();
+}
+
+/* ================= 合成参数：图层叠加 + 手动 ================= */
+function compose(){
+  let e = MAN.exposure, c = MAN.contrast, sat = MAN.saturation, temp = MAN.temp;
+  let levels = {...MAN.levels};
+  let hasCrop = null;
+  LAYERS.forEach(l=>{
+    if (!l.on) return;
+    if (l.params){
+      if (l.params.exposure != null) e += l.params.exposure;
+      if (l.params.contrast != null) c *= l.params.contrast;
+      if (l.params.saturation != null) sat *= l.params.saturation;
+      if (l.params.temp != null) temp = l.params.temp;
+    }
+    if (l.levels) levels = {...l.levels};
+    if (l.crop) hasCrop = l.crop;
+  });
+  return { e, c, sat, temp, levels, crop: hasCrop };
+}
+
+/* ================= SVG 曲线 filter ================= */
+function curveSample(pts, x){
+  if (x <= pts[0][0]) return pts[0][1];
+  const last = pts[pts.length-1];
+  if (x >= last[0]) return last[1];
+  let k=0;
+  while (k < pts.length-2 && x > pts[k+1][0]) k++;
+  const x0=pts[k][0], x1=pts[k+1][0], y0=pts[k][1], y1=pts[k+1][1];
+  const t = x1===x0 ? 0 : (x-x0)/(x1-x0);
+  return Math.max(0, Math.min(1, y0 + (y1-y0)*t));
+}
+function chSample(ch, x, L){
+  const span = Math.max(1e-6, L.white - L.black);
+  let v = Math.max(0, Math.min(1, (x - L.black)/span));
+  if (L.gamma !== 1) v = Math.pow(v, 1/L.gamma);
+  v = curveSample(MAN.curves.rgb, v);
+  if (ch !== 'rgb') v = curveSample(MAN.curves[ch], v);
+  return Math.max(0, Math.min(1, v));
+}
+function ensureFilter(L){
+  let svg = document.getElementById('fSvg');
+  if (!svg){
+    svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.id='fSvg'; svg.setAttribute('width','0'); svg.setAttribute('height','0');
+    svg.style.position='absolute'; svg.style.pointerEvents='none';
+    document.body.appendChild(svg);
+  }
+  const N=64, mk = ch => {
+    const a=[]; for(let i=0;i<N;i++) a.push(chSample(ch, i/(N-1), L).toFixed(4));
+    return a.join(' ');
+  };
+  svg.innerHTML = '<defs><filter id="adjFilter" color-interpolation-filters="sRGB">'
+    + '<feComponentTransfer>'
+    + '<feFuncR type="table" tableValues="'+mk('r')+'"/>'
+    + '<feFuncG type="table" tableValues="'+mk('g')+'"/>'
+    + '<feFuncB type="table" tableValues="'+mk('b')+'"/>'
+    + '</feComponentTransfer></filter></defs>';
+}
+
+/* ================= 预览 ================= */
+function preview(){
+  if (COMPARING){
+    document.getElementById('img').style.filter = 'none';
+    return;
+  }
+  const C = compose();
+  ensureFilter(C.levels);
+  const p = ['url(#adjFilter)',
+    'brightness('+(1 + C.e*0.35).toFixed(3)+')',
+    'contrast('+C.c.toFixed(3)+')',
+    'saturate('+C.sat.toFixed(3)+')'];
+  const t = (C.temp - 6100)/2000;
+  if (Math.abs(t) > 0.02){
+    p.push('sepia('+Math.max(0,t*0.28).toFixed(3)+')');
+    p.push('hue-rotate('+(-t*14).toFixed(1)+'deg)');
+  }
+  document.getElementById('img').style.filter = p.join(' ');
+
+  // 裁剪（用 aspect-ratio 模拟）
+  const wrap = document.getElementById('img');
+  if (C.crop === '3:4'){ wrap.style.aspectRatio = '3/4'; }
+  else { wrap.style.aspectRatio = '2/3'; }
+
+  // 局部遮罩提示
+  const mask = document.getElementById('mask');
+  const localLayer = LAYERS.find(l=>l.on && l.region && l.region!=='全图');
+  if (localLayer){
+    mask.classList.add('on');
+    if (localLayer.region === '矩形'){
+      mask.style.cssText = 'left:22%;top:14%;width:56%;height:48%;border-radius:8px';
+    } else if (localLayer.region === '线性渐变'){
+      mask.style.cssText = 'left:0;top:0;width:100%;height:46%;border-radius:0;'
+        + 'border:none;background:linear-gradient(180deg,rgba(251,191,36,.16),transparent)';
+    } else {
+      mask.style.cssText = 'left:20%;top:12%;width:60%;height:52%;border-radius:50%';
+    }
+  } else {
+    mask.classList.remove('on');
+  }
+}
+
+/* ================= 手动参数交互 ================= */
+function setV(k, v){
+  MAN[k] = Number(v);
+  const map = { exposure:['vExposure', x=>(x>=0?'+':'')+x.toFixed(2)+'EV'],
+                contrast:['vContrast', x=>x.toFixed(2)],
+                saturation:['vSaturation', x=>x.toFixed(2)],
+                temp:['vTemp', x=>Math.round(x)+'K'] };
+  document.getElementById(map[k][0]).textContent = map[k][1](Number(v));
+  preview();
+}
+function setLevel(k, v){
+  MAN.levels[k] = Number(v);
+  const el = document.getElementById('v'+k.charAt(0).toUpperCase()+k.slice(1));
+  if (el) el.textContent = k==='gamma' ? Number(v).toFixed(2) : Math.round(Number(v)*255);
+  preview();
+}
+function setRegion(btn, r){
+  document.querySelectorAll('.rg').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  REGION = r;
+  const notes = {
+    '全图':'全图 —— 现在改的是整张。',
+    '矩形':'矩形 —— 只影响框住的地方，框外一点都不动。',
+    '椭圆':'椭圆 —— 带羽化，边缘是渐变过去的，不是硬边。',
+    '线性渐变':'线性渐变 —— 一头深一头浅，适合压天空或者拉暗角。',
+    '画笔':'画笔 —— 想刷哪就刷哪，可以擦掉。'
+  };
+  document.getElementById('regNote').textContent = notes[r] || '';
+}
+function resetLevels(){ MAN.levels={black:0,white:1,gamma:1}; renderManual(); preview(); }
+function resetCurve(){
+  MAN.curves[MAN.channel] = [[0,0],[1,1]];
+  drawCurve(); preview();
+}
+function resetAll(){
+  const lin=()=>[[0,0],[1,1]];
+  MAN.exposure=0; MAN.contrast=1; MAN.saturation=1; MAN.temp=6100;
+  MAN.levels={black:0,white:1,gamma:1}; MAN.channel='rgb';
+  MAN.curves={rgb:lin(),r:lin(),g:lin(),b:lin()};
+  LAYERS=[]; SUGG.forEach(s=>{ if(s.state==='adopted') s.state='pending'; });
+  renderManual(); renderSugg(); renderLayers(); preview();
+}
+function setCh(ch){ MAN.channel = ch; drawCurve(); }
+
+function drawCurve(){
+  const pts = MAN.curves[MAN.channel];
+  const col = {rgb:'var(--ac)', r:'#f87171', g:'#34d399', b:'#60a5fa'}[MAN.channel];
+  let d='';
+  for (let i=0;i<=60;i++){
+    const x=i/60, y=curveSample(pts,x);
+    d += (i===0?'M':'L') + (x*200).toFixed(1)+','+((1-y)*200).toFixed(1)+' ';
+  }
+  const pe = document.getElementById('curvePath');
+  if (pe){ pe.setAttribute('d',d); pe.style.stroke = col; }
+  const g = document.getElementById('curvePts');
+  if (g) g.innerHTML = pts.map((p,i)=>
+    '<circle cx="'+(p[0]*200)+'" cy="'+((1-p[1])*200)+'" r="5" class="dot '+(i===DRAG?'on':'')+'" style="fill:'+col+'"/>'
+  ).join('');
+  document.querySelectorAll('.ch').forEach(b=>b.classList.toggle('on', b.dataset.ch===MAN.channel));
+}
+
+function cXY(e){
+  const svg = document.getElementById('curveSvg');
+  const r = svg.getBoundingClientRect();
+  return [Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),
+          Math.max(0,Math.min(1,1-(e.clientY-r.top)/r.height))];
+}
+function cDown(e){
+  const [x,y]=cXY(e);
+  const pts=MAN.curves[MAN.channel];
+  let best=-1, bd=1e9;
+  pts.forEach((p,i)=>{ const d=Math.hypot(p[0]-x,p[1]-y); if(d<bd){bd=d;best=i;} });
+  if (bd>0.12 && pts.length<8){
+    pts.push([x,y]); pts.sort((a,b)=>a[0]-b[0]);
+    best = pts.findIndex(p=>Math.abs(p[0]-x)<1e-9 && Math.abs(p[1]-y)<1e-9);
+  }
+  DRAG=best; cMove(e);
+}
+function cMove(e){
+  if (DRAG<0) return;
+  const pts=MAN.curves[MAN.channel];
+  let [x,y]=cXY(e);
+  if (DRAG===0) x=0;
+  else if (DRAG===pts.length-1) x=1;
+  else x=Math.max(pts[DRAG-1][0]+0.03, Math.min(pts[DRAG+1][0]-0.03, x));
+  pts[DRAG]=[x,y];
+  drawCurve(); preview();
+}
+function cUp(){ DRAG=-1; drawCurve(); }
+
+function renderManual(){
+  document.querySelectorAll('.right input[type=range]').forEach(inp=>{
+    const m = inp.getAttribute('oninput')||'';
+    if (m.includes("'exposure'")){ inp.value=MAN.exposure; document.getElementById('vExposure').textContent=(MAN.exposure>=0?'+':'')+MAN.exposure.toFixed(2)+'EV'; }
+    if (m.includes("'contrast'")){ inp.value=MAN.contrast; document.getElementById('vContrast').textContent=MAN.contrast.toFixed(2); }
+    if (m.includes("'saturation'")){ inp.value=MAN.saturation; document.getElementById('vSaturation').textContent=MAN.saturation.toFixed(2); }
+    if (m.includes("'temp'")){ inp.value=MAN.temp; document.getElementById('vTemp').textContent=Math.round(MAN.temp)+'K'; }
+    if (m.includes("'black'")){ inp.value=MAN.levels.black; document.getElementById('vBlack').textContent=Math.round(MAN.levels.black*255); }
+    if (m.includes("'white'")){ inp.value=MAN.levels.white; document.getElementById('vWhite').textContent=Math.round(MAN.levels.white*255); }
+    if (m.includes("'gamma'")){ inp.value=MAN.levels.gamma; document.getElementById('vGamma').textContent=MAN.levels.gamma.toFixed(2); }
+  });
+  drawCurve();
+}
+
+/* ================= 按住对比原图 ================= */
+function setCompare(on){
+  COMPARING = on;
+  document.getElementById('cmpBar').classList.toggle('on', on);
+  preview();
+}
+document.addEventListener('keydown', e=>{
+  if (e.key === '\\' && !e.repeat){ e.preventDefault(); setCompare(true); }
+});
+document.addEventListener('keyup', e=>{
+  if (e.key === '\\'){ e.preventDefault(); setCompare(false); }
+});
+
+/* ================= 应用 ================= */
+function applyIt(){
+  const C = compose();
+  const parts = [];
+  if (Math.abs(C.e) > 0.01) parts.push('曝光 '+((C.e>=0?'+':'')+C.e.toFixed(2))+'EV');
+  if (Math.abs(C.c-1) > 0.01) parts.push('对比度 '+C.c.toFixed(2));
+  if (Math.abs(C.sat-1) > 0.01) parts.push('饱和度 '+C.sat.toFixed(2));
+  if (Math.abs(C.temp-6100) > 30) parts.push('色温 '+Math.round(C.temp)+'K');
+  if (C.levels.black>0.005 || C.levels.white<0.995) parts.push('色阶');
+  if (C.crop) parts.push('裁剪 '+C.crop);
+  const onLayers = LAYERS.filter(l=>l.on);
+  alert(
+    'POST /api/v1/images/adjust\n\n'
+    + '图层：' + (onLayers.length ? onLayers.map(l=>l.name).join(' / ') : '（无）') + '\n'
+    + '参数：' + (parts.length ? parts.join(' · ') : '没改任何参数') + '\n\n'
+    + '花费：0（本地像素运算）\n\n'
+    + '🔴 这个接口画布里的「调色节点」也是调同一个。\n'
+    + '🔴 参数留着 —— 关掉图层、改小一点都随时能来。'
+  );
+}
+
+/* ================= 初始化 ================= */
+renderSugg();
+renderLayers();
+renderManual();
+preview();
+</script>
+</body>
+</html>
