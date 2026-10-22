@@ -2105,6 +2105,51 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
 .pz-chip.off{opacity:.38;text-decoration:line-through}
 .pz-ki.el-off{opacity:.45}
 .pz-ki.el-off span{text-decoration:line-through}
+
+/* ===== 修图前清单 ===== */
+.rc{position:fixed;inset:0;z-index:96;display:none;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.62);backdrop-filter:blur(4px);padding:24px}
+.rc.on{display:flex}
+.rc-box{width:min(680px,96vw);max-height:86vh;display:flex;flex-direction:column;
+  background:var(--bgElev);border:1px solid var(--bd2);border-radius:var(--radiusLG);
+  box-shadow:var(--shadowModal);overflow:hidden}
+.rc-hd{display:flex;align-items:flex-start;gap:12px;padding:20px 24px;
+  border-bottom:1px solid var(--bd)}
+.rc-title{font-size:20px;color:var(--tx1);font-weight:600;margin-bottom:3px}
+.rc-sub{font-size:13px;color:var(--tx3);line-height:1.5}
+.rc-x{margin-left:auto;font-size:16px;color:var(--tx3);background:none;border:none;
+  cursor:pointer;padding:2px 6px;font-family:inherit}
+.rc-x:hover{color:var(--tx1)}
+.rc-body{padding:20px 24px;overflow-y:auto;flex:1}
+.rc-sec{margin-bottom:20px}
+.rc-sec:last-child{margin-bottom:0}
+.rc-h{font-size:15px;color:var(--photo);font-weight:600;margin-bottom:10px}
+.rc-list{display:flex;flex-direction:column;gap:5px}
+.rc-i{display:flex;align-items:flex-start;gap:9px;padding:8px 12px;border-radius:6px;
+  background:var(--bgInput);cursor:pointer;transition:.16s}
+.rc-i:hover{background:var(--bgHover)}
+.rc-i.done{background:color-mix(in srgb,var(--ok) 8%,var(--bgInput))}
+.rc-c{font-size:12px;color:var(--tx3);flex-shrink:0;margin-top:1px}
+.rc-i.done .rc-c{color:var(--ok)}
+.rc-t{flex:1;font-size:14px;color:var(--tx2);line-height:1.5}
+.rc-d{display:block;font-size:12.5px;color:var(--tx3);margin-top:1px}
+.rc-order{display:flex;flex-direction:column;gap:5px}
+.rc-o{display:flex;align-items:center;gap:10px;padding:9px 13px;border-radius:6px;
+  background:var(--bgInput);font-size:13.5px;color:var(--tx2)}
+.rc-o b{color:var(--photo)}
+.rc-oi{width:19px;height:19px;border-radius:50%;background:var(--bd2);color:var(--tx3);
+  font-size:11px;font-family:var(--fm);display:flex;align-items:center;
+  justify-content:center;flex-shrink:0}
+.rc-pit{display:flex;flex-direction:column;gap:7px}
+.rc-p{font-size:13.5px;color:var(--tx2);line-height:1.6;padding:10px 13px;border-radius:6px;
+  background:color-mix(in srgb,var(--warn) 7%,var(--bgInput));border:1px solid color-mix(in srgb,var(--warn) 20%,transparent)}
+.rc-p b{color:var(--warn);display:block;margin-bottom:2px}
+.rc-ho{font-size:13px;color:var(--tx2);line-height:1.65;padding:11px 14px;
+  border-radius:6px;background:var(--bgInput)}
+.rc-ho-t{font-size:14px;color:var(--tx1);margin-bottom:5px}
+.rc-ho-l{font-size:12.5px;color:var(--tx3);margin-top:3px}
+.rc-ft{display:flex;align-items:center;gap:10px;padding:14px 24px;
+  border-top:1px solid var(--bd)}
 </style>
 </head>
 <body data-t="deep">
@@ -3198,6 +3243,53 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
   </div>
 </div><!-- /pagePlan -->
 
+
+<!-- ===== 修图前清单 ===== -->
+<div class="rc" id="retouchChecklist">
+  <div class="rc-box">
+    <div class="rc-hd">
+      <div>
+        <div class="rc-title">修图前先过一遍</div>
+        <div class="rc-sub">这组拍的时候是什么情况、哪些地方一定要动、哪些千万别动过。</div>
+      </div>
+      <button class="rc-x" onclick="closeRetouchChecklist()">✕</button>
+    </div>
+    <div class="rc-body">
+      <div class="rc-sec">
+        <div class="rc-h">① 先把图看一遍（术前分析）</div>
+        <div class="rc-list" id="rcPre"></div>
+      </div>
+      <div class="rc-sec">
+        <div class="rc-h">② 修图顺序（顺序错了等于白做）</div>
+        <div class="rc-order">
+          <div class="rc-o"><span class="rc-oi">1</span>修瑕疵 —— 痘 / 纹 / 不要的东西先清干净</div>
+          <div class="rc-o"><span class="rc-oi">2</span>限动态范围 —— 曲线保留最亮最黑</div>
+          <div class="rc-o"><span class="rc-oi">3</span>磨皮 —— 高低频，<b>不能破坏光</b></div>
+          <div class="rc-o"><span class="rc-oi">4</span>肤色调整 —— 别偏蓝偏绿</div>
+          <div class="rc-o"><span class="rc-oi">5</span>调色 / 风格化 —— 最后做</div>
+        </div>
+      </div>
+      <div class="rc-sec">
+        <div class="rc-h">③ 这组的历史翻车点</div>
+        <div class="rc-pit">
+          <div class="rc-p"><b>别磨过头</b>客户说过「不要太磨皮」——皮肤有质感是好事</div>
+          <div class="rc-p"><b>逆光别只提暗部</b>高光一拉，天空就死了；先压高光再提暗部</div>
+          <div class="rc-p"><b>不要照抄参考色</b>参考图的色是那个场景的色，搬到这组会脏</div>
+        </div>
+      </div>
+      <div class="rc-sec">
+        <div class="rc-h">④ 交接单里怎么说的</div>
+        <div class="rc-ho" id="rcHandoff">还没存过交接单</div>
+      </div>
+    </div>
+    <div class="rc-ft">
+      <button class="btn" onclick="closeRetouchChecklist()">知道了</button>
+      <div class="spacer"></div>
+      <button class="btn pri" onclick="closeRetouchChecklist();openRetouchFromWork()">直接去修图</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== 用到分镜（选择器） ===== -->
 <div class="pk" id="pickShotSheet">
   <div class="pk-box">
@@ -3905,7 +3997,7 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
             <div class="fx-i"><span class="fx-t">背景</span><span class="fx-b">「把后面人修掉」· 4 次</span></div>
           </div>
           <button class="btn" style="width:100%;margin-top:10px"
-            onclick="fake('打开修图前检查：列出这类问题的处理规范和历史上翻车点')">看修图前清单</button>
+            onclick="openRetouchChecklist()">看修图前清单</button>
         </div>
 
         <div class="pf-card tip">
@@ -4097,7 +4189,7 @@ kbd{display:inline-block;min-width:22px;padding:2px 7px;border-radius:4px;text-a
           <b>作品能直接进修图。</b>
           修图的调整记在文档层，不破坏原图；修完的版本回到这里，能看「修前 / 修后」。
         </div>
-        <button class="btn pri" onclick="fake('打开图片编辑器：裁剪/旋转/滤镜/调色/曲线，修完存回这个作品')">去修图</button>
+        <button class="btn pri" onclick="openRetouchFromWork()">去修图</button>
       </div>
     </div>
   </div>
@@ -5098,6 +5190,78 @@ document.addEventListener('DOMContentLoaded', function(){
     if (btn) pickWho(btn, currentWho);
   }
 });
+
+
+/* ==========================================================================
+   ⭐ 2026-10-22 修图流程真接通
+   之前：「去修图」「看修图前清单」都只是 fake() 弹一条 toast。
+   现在：真打开画布修图面板 + 真有一份修图前清单。
+   ========================================================================== */
+
+const RC_PRE = [
+  { k:'头发', d:'碎发、出戏的刘海、边缘有没有收好' },
+  { k:'皮肤', d:'痘、斑、油光、防晒霜反光' },
+  { k:'衣服', d:'褶皱、走形、露出来的内衣/肩带' },
+  { k:'环境', d:'路人、垃圾桶、电线、背景杂物' },
+  { k:'光',   d:'哪里过曝、哪里死黑、光斑要不要留' },
+  { k:'色彩', d:'有没有不协调的杂色' },
+  { k:'重点', d:'哪几张是这次主推的，主推那张多花时间' }
+];
+let RC_DONE = {};
+
+function openRetouchChecklist(){
+  const host = document.getElementById('rcPre');
+  if (host && !host.dataset.filled){
+    host.dataset.filled = '1';
+    host.innerHTML = RC_PRE.map(function(x, i){
+      return '<div class="rc-i" onclick="rcToggle(this,\'' + x.k + '\')">'
+        + '<span class="rc-c">○</span><span class="rc-t">' + x.k
+        + '<span class="rc-d">' + x.d + '</span></span></div>';
+    }).join('');
+  }
+  /* 交接单有就带出来 */
+  const ho = document.getElementById('rcHandoff');
+  if (ho){
+    try {
+      const raw = localStorage.getItem('ylcraft_project_handoff');
+      if (raw){
+        const h = JSON.parse(raw);
+        ho.innerHTML = (h.what ? '<div class="rc-ho-t">' + h.what + '</div>' : '')
+          + (h.cond ? '<div class="rc-ho-l">' + h.cond + '</div>' : '')
+          + (h.fixes && h.fixes.length
+              ? '<div class="rc-ho-l">已知要修：<br>· ' + h.fixes.join('<br>· ') + '</div>' : '')
+          + (h.ask ? '<div class="rc-ho-l">客户说：' + h.ask + '</div>' : '');
+      } else {
+        ho.innerHTML = '还没存过交接单 —— 在「脚本策划 → 交接」里填完点「发给后期」就有';
+      }
+    } catch(e){}
+  }
+  document.getElementById('retouchChecklist').classList.add('on');
+}
+function closeRetouchChecklist(){
+  document.getElementById('retouchChecklist').classList.remove('on');
+}
+function rcToggle(el, k){
+  RC_DONE[k] = !RC_DONE[k];
+  el.classList.toggle('done', !!RC_DONE[k]);
+  el.querySelector('.rc-c').textContent = RC_DONE[k] ? '✓' : '○';
+}
+
+/* 作品 → 修图：真打开画布，并把这张的信息带过去 */
+function openRetouchFromWork(){
+  const id = (typeof ORDER !== 'undefined' && typeof dtCur !== 'undefined')
+    ? ORDER[dtCur] : null;
+  const title = document.getElementById('dtTitle');
+  try {
+    localStorage.setItem('ylcraft_retouch_work', JSON.stringify({
+      refId: id,
+      title: title ? title.textContent : '参考图',
+      at: Date.now()
+    }));
+  } catch(e){}
+  window.open('../canvas/index.html?openEdit=1', '_blank');
+  fake('打开修图面板 · 修完的版本回来能看「修前 / 修后」');
+}
 
 function pickWho(el, key){
   document.querySelectorAll('.who-btn').forEach(x=>x.classList.remove('on'));
