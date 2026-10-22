@@ -449,7 +449,7 @@ openLocalEdit = function(id){
           </div>
 
           <div class="le-stage">
-            <div class="le-img${pic?' has-pic':''}" id="leImg"${pic?` style="width:100%;height:min(58vh,440px);aspect-ratio:auto;background-image:url('${pic}');background-size:contain;background-position:center;background-repeat:no-repeat;background-color:#0b0b0f"`:''}>
+            <div class="le-img${pic?' has-pic':' le-demo'}" id="leImg"${pic?` style="width:100%;height:min(58vh,440px);aspect-ratio:auto;background-image:url('${pic}');background-size:contain;background-position:center;background-repeat:no-repeat;background-color:#0b0b0f"`:''}>
               ${pic?'':'<div class="le-fig"></div>'}
             </div>
             <div class="le-tag">${pic ? '真实图片预览 · ' + dims : '演示图预览 · 导入图片后这里显示你自己的图'} · 参数渲染，不是烘焙进图里</div>
