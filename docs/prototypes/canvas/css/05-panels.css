@@ -1302,3 +1302,53 @@
 /* 三栏时图片放大一点，别在中间缩着 */
 .le-body3 .le-img{height:min(62vh,520px) !important}
 .le-body3 .le-stage{justify-content:flex-start}
+
+/* ==========================================================================
+   ⭐ 2026-10-22：编辑面板改全屏（用户：弹窗太小了 要不铺满）
+   ========================================================================== */
+.le{padding:58px 12px 12px}   /* 顶部给「本地调整」Tab 栏让位 */
+
+.lew{width:100% !important;max-width:none !important;
+  flex:1 1 auto;min-height:0;height:auto !important;max-height:none !important;
+  border-radius:11px}
+
+/* 三栏铺满：左固定 / 中自适应 / 右固定 */
+.le-body3{display:grid !important;
+  grid-template-columns:300px minmax(0,1fr) 344px !important;
+  gap:0;align-items:stretch !important;
+  flex:1;min-height:0;overflow:hidden}
+
+/* 左栏：整列自己滚 */
+.le-left{border-right:1px solid var(--ln);background:var(--s1);
+  padding:14px 13px;overflow-y:auto;height:100%;max-height:none}
+
+/* 中间画布：吃满剩余空间 */
+.le-body3 .le-stage{padding:16px;gap:9px;justify-content:flex-start !important;
+  min-width:0;height:100%;overflow:hidden}
+.le-body3 .le-img{
+  width:100% !important;max-width:none !important;
+  height:auto !important;flex:1 1 auto;min-height:0;
+  aspect-ratio:auto !important;
+  border-radius:7px}
+.le-body3 .le-img.le-demo{max-width:min(88vh,640px) !important;flex:0 0 auto;
+  aspect-ratio:2/3 !important;align-self:center}
+.le-body3 .le-tag{flex:0 0 auto;text-align:center}
+
+/* 右栏：整列自己滚，宽一点好读数 */
+.le-body3 .le-panel{width:auto !important;flex:none !important;
+  border-left:1px solid var(--ln);padding:14px 16px;
+  overflow-y:auto;height:100%;max-height:none}
+
+/* 曲线在满屏时可以大一点 */
+.le-body3 .le-curvewrap{padding:5px}
+
+/* 底栏固定 */
+.le-foot{flex:0 0 auto}
+
+/* 画布区给个中性底，图和周围分得开（照片软件都这样） */
+.le-body3 .le-stage{background:#0d0d10}
+.le-body3 .le-img{box-shadow:0 10px 40px -14px rgba(0,0,0,.9)}
+
+/* 全屏的 flex 方向：竖着排，弹窗吃掉剩余高度 */
+.le{flex-direction:column !important;align-items:stretch !important;
+  justify-content:flex-start !important}

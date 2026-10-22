@@ -3889,3 +3889,74 @@ leComposeTone()     // 影调：高光/阴影/清晰度相加后夹在 -1~1
 | 2 | 撤销 / 重做 |
 | 3 | 区域限定真的生效（图层里标了「椭圆/线性渐变」，但遮罩还没裁到参数上） |
 | 4 | 裁剪框（只有拉直） |
+---
+
+# 四十五、v38：编辑面板改全屏
+
+> 用户：「弹窗太小了 重新设计下 要不铺满」
+
+## 45.1 之前多大
+
+| | 之前 | 现在 |
+|---|---|---|
+| 弹窗宽度 | `min(860px, 95vw)` ≈ **860px** | **1876px**（视口减 24） |
+| 弹窗高度 | `max-height:90vh` | **980px**（视口减 70） |
+| 图片宽度 | **240px** | **640px** |
+| 视口 | 1900×1050 | 1900×1050 |
+
+**之前弹窗只占屏幕宽度 45%，图片只有 240px 宽** —— 修图根本看不清细节。
+
+## 45.2 改法
+
+```css
+.le{padding:58px 12px 12px; flex-direction:column}
+   ↑ 顶部 58px 给「本地调整」Tab 栏让位，不被压住
+
+.lew{width:100%; max-width:none; flex:1 1 auto; min-height:0; border-radius:11px}
+
+.le-body3{display:grid;
+  grid-template-columns:300px minmax(0,1fr) 344px;
+  flex:1; min-height:0}
+
+.le-left{overflow-y:auto; height:100%}       /* 左栏自己滚 */
+.le-body3 .le-panel{overflow-y:auto; height:100%}  /* 右栏自己滚 */
+.le-body3 .le-stage{background:#0d0d10}       /* 画布区中性底 */
+
+.le-body3 .le-img.le-demo{max-width:min(88vh,640px)}  /* 演示图放大 */
+```
+
+**三栏各自滚动，互不影响。** 中间图片吃满剩余空间。
+
+## 45.3 过程中踩的两个坑
+
+### 坑 1：`flex:1` 在 row 方向只影响宽度
+
+`.le` 原本是 `display:flex`（默认 row），`.lew{flex:1}` 只撑宽不撑高。
+**必须加 `flex-direction:column`**，`.lew` 才会吃掉剩余高度。
+
+### 坑 2：截图里的「暗块」不是我们的 UI
+
+改完全屏后截图，右栏「基础/影调/直方图/色阶/曲线」几个标题上有暗色圆角块，
+看着像被遮挡。
+
+**排查**：
+- 查 `.le-panel` 里绝对定位元素 → **0 个**
+- 查各 `.le-sec` 的 rect → top 122/264/359/484/581，h=15，**没有重叠**
+- 查 DOM 文本 → 完整正确
+- 查页面注入元素 → **发现 `BROWSER-SKILL-OVERLAY`**
+
+**结论：是截图工具（bsk）注入的遮罩，不是我们的 UI 问题。**
+
+**教训**：截图看到怪异现象时，先用 `getBoundingClientRect` 和 `elementsFromPoint` 验证，
+不要急着改 CSS。
+
+## 45.4 实测
+
+| 项 | 值 |
+|---|---|
+| 视口 | 1900 × 1050 |
+| 弹窗 | **1876 × 980**（top 58，bottom 1038）|
+| 图片 | **640 × 960** |
+| 三栏宽度 | 300 / auto / 344 |
+| 右栏绝对定位元素 | 0（无重叠）|
+| DOM 内容 | 基础→曝光…→影调→高光…→直方图→过曝→色阶→曲线，完整 |
