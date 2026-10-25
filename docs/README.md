@@ -22,7 +22,7 @@
 
 | 目录 | 放什么 | 规则 |
 | --- | --- | --- |
-| `docs/agent/` | Agent 工作台、Skill Runtime、工具调用、记忆、上下文。 | Agent 相关实现变化必须更新这里或对应 OpenSpec。 |
+| `docs/agent/` | Agent 工作台、Skill Runtime、工具调用、记忆、上下文。工具明细查询见 `docs/agent/TOOL_CATALOG.md`（266 个工具 / 19 类，**按需 rg，别整篇读**）。 | Agent 相关实现变化必须更新这里或对应 OpenSpec。 |
 | `docs/architecture/` | 子系统架构设计，如资产中枢、AI 服务层、播放器、规则助手。 | 讲长期设计，不写当天流水账。 |
 | `docs/guides/` | 可执行工作流说明，如创作项目闭环。 | 面向“怎么用/怎么串起来”。 |
 | `docs/guides/quickstart.md` | 面向 fork 开发者的快速上手指南：启动、配模型密钥、首次使用路径。 | 新人开箱必读。 |

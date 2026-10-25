@@ -35,6 +35,42 @@ This repository is developed by multiple AI agents across multiple machines. Bef
 - Use `docs/devlog/` for historical handoff notes only; it is not the default source of truth.
 - For YLCraft-specific takeover or handoff work, use the `.agents/skills/ylcraft-ai-handoff` skill.
 
+## Context Budget Rules（2026-10-26 加）
+
+> 来源：调研一个外部「AI 工作台」项目（luanyujia-workbench）的记忆机制。
+> 它把「上下文预算」当工程问题管，而不是靠感觉。我们吃过亏：某份文档涨到没人读。
+
+**三条体量红线。写文档前先看这张表，超了就拆。**
+
+| 对象 | 红线 | 到线动作 |
+| --- | --- | --- |
+| 接手必读文档（`docs/README.md`、架构、本文件） | **≤ 25 KB** | 拆「主文件（索引+规则）+ reference 子文件（明细）」 |
+| 交接记录（`docs/devlog/`、`AI_HANDOFF_PROTOCOL` 的进度段） | **≤ 4 KB** | 只留最新一份，**覆盖写不追加** |
+| 单篇 skill / 单篇领域文档 | **≤ 12 KB** | 拆主文件 + reference |
+
+**reference 子文件的例外**：如果它是**被 grep 的查询表**（如工具目录、接口清单），
+可以超 12 KB —— 但要显式标注「这是查询表，按需 grep，不要整篇读」。
+
+**已经拆过的**（不要拆回去）：
+- `docs/agent/agent-center.md`（24.7 K → 7.9 K），工具明细移到 `docs/agent/TOOL_CATALOG.md`
+- `docs/prototypes/PHOTO_REFERENCE_LIBRARY_REQUIREMENTS.md` 仍在 113 K 以上，**待拆**，别当范例
+
+**拆分必须可证明**（只搬不丢）：
+1. 先 `git show HEAD:<file>` 留一份拆分前快照
+2. 拆
+3. 跑核对：对比拆分前后的**关键词/标识符集合**，必须完全一致
+4. 把对比结果写进提交说明
+
+## 验证规则：判据只能是画面（2026-10-26 加）
+
+> 外部调研里最值得抄的一条纪律。我们踩过两次：
+> 改 `?openEdit=1` 以为写进去就行（修图页没打开）；CSS 插进 JS 字符串里（`node --check` 过了但白屏）。
+
+- **凡是「我改了配置、指望别的层去读」的地方，都必须找到画面上的落点。**
+- ❌ 不要拿「我写进去的那个值」当成功证据 —— 那只能证明你写了，不能证明界面读了。
+- ✅ 验收标准必须是**用户能看见的东西**：DOM 里有这个元素 / 页面显示这个字 / 截图对得上。
+- 原型改完必须用 bsk 打开实测，并加 `?nc=<随机>` 防缓存假阴性。
+
 ## Reporting Rules
 
 - **每次给用户的回复，结尾必须用大白话讲清两件事：「现在到哪了」和「下一步做什么」。**
