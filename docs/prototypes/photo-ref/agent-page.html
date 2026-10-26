@@ -414,6 +414,129 @@ brand{}
   backdrop-filter:blur(8px);z-index:99;
 }
 .mark b{color:var(--photo)}
+
+/* ============ 素材库（右栏） ============ */
+.libfill{padding:9px 12px 0;flex:0 0 auto;border-bottom:1px solid var(--ln)}
+.lib-tabs{display:flex;gap:4px;margin-bottom:8px}
+.libTab{
+  font-size:11.5px;padding:3px 10px;border-radius:5px;border:1px solid transparent;
+  background:transparent;color:var(--tx3);cursor:pointer;transition:.15s;font-family:inherit;
+}
+.libTab:hover{color:var(--tx2);background:var(--s2)}
+.libTab.on{background:rgba(34,211,238,.12);color:var(--ac);
+  border-color:rgba(34,211,238,.26)}
+.lib-search{
+  display:flex;align-items:center;gap:6px;background:var(--s2);
+  border:1px solid var(--ln2);border-radius:var(--r2);padding:5px 9px;
+  margin-bottom:9px;
+}
+.ls-ico{font-size:11px;color:var(--tx3);flex-shrink:0}
+.ls-in{
+  flex:1;background:0;border:0;color:var(--tx);font-size:11.5px;
+  font-family:inherit;outline:none;
+}
+.ls-in::placeholder{color:var(--tx3)}
+
+/* 素材网格 */
+.lib-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:8px;
+  padding:11px 12px;align-content:start;
+}
+.li{
+  position:relative;border-radius:var(--r2);overflow:hidden;cursor:pointer;
+  border:1px solid var(--ln);background:var(--s2);transition:.16s;
+}
+.li:hover{border-color:var(--ln3);transform:translateY(-1px)}
+.li.sel{border-color:var(--ac);box-shadow:0 0 0 1px var(--ac)}
+.li.fresh{border-color:rgba(251,191,36,.5)}
+.li-img{
+  width:100%;aspect-ratio:1;display:block;
+  background:linear-gradient(150deg,#222736,#14161d);
+}
+.li-img.v2{background:linear-gradient(150deg,#2b2436,#171420)}
+.li-img.v3{background:linear-gradient(150deg,#1e2a2e,#121819)}
+.li-img.char{
+  display:flex;align-items:center;justify-content:center;
+  font-size:20px;color:var(--tx3);
+  background:linear-gradient(150deg,#2a2340,#141020);
+}
+.li-img.vid{
+  display:flex;align-items:center;justify-content:center;
+  font-size:15px;color:var(--tx3);
+  background:linear-gradient(150deg,#262230,#16141c);
+}
+.li-badge{
+  position:absolute;top:4px;right:4px;font-size:9px;
+  padding:1px 5px;border-radius:3px;font-family:var(--fm);
+  background:rgba(0,0,0,.7);color:var(--tx3);
+}
+.li-badge.new{background:rgba(251,191,36,.9);color:#1a1205;font-weight:600}
+.li-meta{
+  position:absolute;bottom:20px;left:4px;font-size:8.5px;
+  color:rgba(255,255,255,.62);font-family:var(--fm);
+  text-shadow:0 1px 3px rgba(0,0,0,.8);
+}
+.li-n{
+  font-size:10px;color:var(--tx2);padding:3px 5px 4px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  background:var(--s2);
+}
+
+.libft{
+  flex:0 0 auto;border-top:1px solid var(--ln);padding:9px 12px;
+  min-height:40px;display:flex;align-items:center;
+}
+.lf-tip{font-size:11px;color:var(--tx3);line-height:1.5}
+.lf-acts{display:flex;gap:6px;flex-wrap:wrap}
+.lf-b{
+  font-size:11px;padding:4px 10px;border-radius:5px;border:1px solid var(--ln2);
+  background:transparent;color:var(--tx2);cursor:pointer;font-family:inherit;
+  transition:.15s;
+}
+.lf-b:hover{border-color:var(--ln3);color:var(--tx)}
+.lf-b.pri{border-color:rgba(34,211,238,.35);color:var(--ac);
+  background:rgba(34,211,238,.08)}
+
+/* ============ 权限四档 ============ */
+.perm{
+  margin:0 15px 13px;padding:12px 14px;border-radius:var(--r3);
+  background:rgba(0,0,0,.25);border:1px solid var(--ln2);
+}
+.perm-t{font-size:10.5px;color:var(--tx3);margin-bottom:8px;font-family:var(--fm)}
+.po{
+  display:flex;align-items:flex-start;gap:9px;padding:7px 9px;
+  border-radius:6px;cursor:pointer;transition:.15s;margin-bottom:3px;
+  border:1px solid transparent;
+}
+.po:hover{background:rgba(255,255,255,.03)}
+.po.on{background:rgba(34,211,238,.07);border-color:rgba(34,211,238,.22)}
+.po-r{
+  width:13px;height:13px;border-radius:50%;border:1.5px solid var(--ln3);
+  flex-shrink:0;margin-top:2px;position:relative;transition:.15s;
+}
+.po.on .po-r{border-color:var(--ac)}
+.po.on .po-r::after{
+  content:"";position:absolute;inset:2.5px;border-radius:50%;background:var(--ac);
+}
+.po-k{font-size:12px;color:var(--tx2);line-height:1.5}
+.po.on .po-k{color:var(--tx)}
+.po-d{
+  display:block;font-size:10.5px;color:var(--tx3);margin-top:1px;
+  line-height:1.45;
+}
+
+/* 已授权提示条（顶部） */
+.granted{
+  display:none;align-items:center;gap:8px;padding:8px 14px;
+  background:rgba(52,211,153,.07);border-bottom:1px solid rgba(52,211,153,.18);
+  font-size:11.5px;color:var(--tx2);
+}
+.granted.on{display:flex}
+.granted b{color:var(--ok)}
+.granted .gx{
+  margin-left:auto;font-size:11px;color:var(--tx3);background:none;border:none;
+  cursor:pointer;font-family:inherit;text-decoration:underline;
+}
 </style>
 </head>
 <body>
@@ -489,6 +612,7 @@ brand{}
       <span class="chat-sub">9 步 · 2 工具 · 107,082 tok</span>
     </div>
 
+    <div class="granted" id="grantedBar"></div>
     <div class="chat-body">
       <div class="chat-inner">
 
@@ -646,6 +770,31 @@ brand{}
                 </div>
               </div>
 
+              <!-- ⭐ 以后这类操作怎么办 -->
+              <div class="perm">
+                <div class="perm-t">以后这类操作</div>
+                <label class="po on" onclick="pickPerm(this)">
+                  <span class="po-r"></span>
+                  <span class="po-k">本次对话不再问</span>
+                  <span class="po-d">这一轮里再花钱不打断你</span>
+                </label>
+                <label class="po" onclick="pickPerm(this)">
+                  <span class="po-r"></span>
+                  <span class="po-k">这个工具永远不问</span>
+                  <span class="po-d">换对话也生效 · 能在设置里撤销</span>
+                </label>
+                <label class="po" onclick="pickPerm(this)">
+                  <span class="po-r"></span>
+                  <span class="po-k">低于 ⚡50 自动过</span>
+                  <span class="po-d">超过这个额度才问你</span>
+                </label>
+                <label class="po" onclick="pickPerm(this)">
+                  <span class="po-r"></span>
+                  <span class="po-k">每次都问</span>
+                  <span class="po-d">最安全，但会很烦</span>
+                </label>
+              </div>
+
               <div class="confirm-ft">
                 <button class="cbtn pri" onclick="doConfirm(this)">确认生成 ⚡14</button>
                 <button class="cbtn">取消</button>
@@ -687,73 +836,94 @@ brand{}
     </div>
   </div>
 
-  <!-- ================= 右：Agent 面板（抄画布） ================= -->
+  <!-- ================= 右：素材库 ================= -->
   <aside class="ag">
     <div class="agh">
       <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 12a8 8 0 0 1-8 8H7l-4 3V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z"/>
+        <path d="M4 7h6l2 2h8v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z"/>
       </svg>
-      <span class="t">智能体</span>
-      <span class="m">qwen3.8-27b</span>
+      <span class="t">素材库</span>
+      <span class="m" id="libCount">28 项</span>
     </div>
 
-    <div class="agb">
-      <div class="msg ai">
-        <div class="who2">智能体</div>
-        <div class="bubble">
-          我在。<b>左边是大对话</b>，我在这儿管具体动作 ——
-          调工具、看结果、要你确认，都在这儿说。<br><br>
-          想问「这次花了多少」「刚才那步为什么失败」，直接问我。
-        </div>
+    <!-- 筛选条 -->
+    <div class="libfill">
+      <div class="lib-tabs">
+        <button class="libTab on" onclick="libFilter(this,'all')">全部</button>
+        <button class="libTab" onclick="libFilter(this,'image')">图片</button>
+        <button class="libTab" onclick="libFilter(this,'video')">视频</button>
+        <button class="libTab" onclick="libFilter(this,'character')">角色</button>
       </div>
-
-      <div class="msg me">
-        <div class="bubble">这次总共花多少？</div>
-      </div>
-
-      <div class="msg ai">
-        <div class="who2">智能体</div>
-        <div class="bubble">
-          这轮 <b>⚡14</b>，会话累计 <b>⚡42</b>。
-          <div class="minicard">
-            <div class="mh"><span class="dot"></span>用量明细</div>
-            <div class="mv">
-              生成 ×3 &nbsp;<b>⚡42</b><br>
-              扫描/检索 ×6 &nbsp;<b>免费</b><br>
-              取消 ×1 &nbsp;<b>不扣</b>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="msg ai">
-        <div class="who2">智能体</div>
-        <div class="bubble">
-          另外提醒一句：上一张图你还没存素材库。<b>要我现在存吗？</b>
-        </div>
+      <div class="lib-search">
+        <span class="ls-ico">⌕</span>
+        <input class="ls-in" placeholder="搜素材名 / 标签">
       </div>
     </div>
 
-    <div class="cmp">
-      <div class="bx">
-        <div class="row1">
-          <textarea rows="1" placeholder="问动作进度、用量，或让它做具体的事"></textarea>
-          <button class="snd">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-                 stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-              <path d="M12 19V5M6 11l6-6 6 6"/>
-            </svg>
-          </button>
-        </div>
-        <div class="prow">
-          <span class="op">2:3 <span class="cv2">▾</span></span>
-          <span class="op">GPT Image 2 <span class="cv2">▾</span></span>
-          <span class="op">@ 引用</span>
-          <span class="sp"></span>
-          <span class="cost">⚡14</span>
-        </div>
+    <!-- 素材网格 -->
+    <div class="agb lib-grid" id="libGrid">
+      <!-- 刚生成的（高亮） -->
+      <div class="li fresh" data-type="image" data-name="坐姿全身 横图">
+        <div class="li-img"></div>
+        <div class="li-badge new">刚生成</div>
+        <div class="li-meta">2048×3072</div>
+        <div class="li-n">坐姿全身 · 横图</div>
       </div>
+
+      <div class="li" data-type="image" data-name="坐姿全身 竖图">
+        <div class="li-img"></div>
+        <div class="li-badge">已存</div>
+        <div class="li-meta">1536×2304</div>
+        <div class="li-n">坐姿全身 · 竖图</div>
+      </div>
+
+      <div class="li" data-type="image" data-name="秋天颐和园 逆光">
+        <div class="li-img v2"></div>
+        <div class="li-meta">2048×1365</div>
+        <div class="li-n">秋天颐和园 · 逆光</div>
+      </div>
+
+      <div class="li" data-type="image" data-name="银杏树荫 特写">
+        <div class="li-img v2"></div>
+        <div class="li-meta">2048×1365</div>
+        <div class="li-n">银杏树荫 · 特写</div>
+      </div>
+
+      <div class="li" data-type="character" data-name="小林 角色卡">
+        <div class="li-img char">林</div>
+        <div class="li-meta">角色卡</div>
+        <div class="li-n">小林</div>
+      </div>
+
+      <div class="li" data-type="character" data-name="阿芸 角色卡">
+        <div class="li-img char">芸</div>
+        <div class="li-meta">角色卡</div>
+        <div class="li-n">阿芸</div>
+      </div>
+
+      <div class="li" data-type="video" data-name="参考片段 08s">
+        <div class="li-img vid">▶</div>
+        <div class="li-meta">0:08</div>
+        <div class="li-n">参考片段 · 光走动</div>
+      </div>
+
+      <div class="li" data-type="image" data-name="桥洞前景">
+        <div class="li-img v3"></div>
+        <div class="li-meta">2048×1365</div>
+        <div class="li-n">桥洞 · 前景框</div>
+      </div>
+
+      <div class="li" data-type="image" data-name="走廊侧逆光">
+        <div class="li-img v3"></div>
+        <div class="li-meta">2048×1365</div>
+        <div class="li-n">长廊 · 侧逆光</div>
+      </div>
+    </div>
+
+    <!-- 底部：选中项操作 -->
+    <div class="libft">
+      <div class="lf-tip" id="libTip">点一张看能做什么 · 或直接拖进对话</div>
     </div>
   </aside>
 
@@ -792,6 +962,95 @@ document.querySelectorAll('textarea').forEach(ta => {
 
 // 默认展开第一个执行过程
 document.getElementById('proc1').classList.add('open');
+
+// ================= 素材库 =================
+let libCur = 'all';
+
+function libFilter(btn, type){
+  document.querySelectorAll('.libTab').forEach(x => x.classList.remove('on'));
+  btn.classList.add('on');
+  libCur = type;
+  let shown = 0;
+  document.querySelectorAll('.li').forEach(li => {
+    const ok = (type === 'all') || (li.dataset.type === type);
+    li.style.display = ok ? '' : 'none';
+    if (ok) shown++;
+  });
+  const c = document.getElementById('libCount');
+  if (c) c.textContent = shown + ' 项';
+}
+
+// 点素材 → 底部出现操作
+document.querySelectorAll('.li').forEach(li => {
+  li.addEventListener('click', function(){
+    const was = this.classList.contains('sel');
+    document.querySelectorAll('.li').forEach(x => x.classList.remove('sel'));
+    if (was){ renderLibTip(); return; }
+    this.classList.add('sel');
+    const name = this.dataset.name || '素材';
+    const ft = document.querySelector('.libft');
+    ft.innerHTML = '<div class="lf-acts">'
+      + '<span class="lf-name" style="font-size:11.5px;color:var(--tx2);'
+      + 'align-self:center;margin-right:6px">' + name + '</span>'
+      + '<button class="lf-b pri" onclick="useInChat(\'' + name + '\')">@ 加进对话</button>'
+      + '<button class="lf-b">拿去除理</button>'
+      + '<button class="lf-b">重命名</button>'
+      + '</div>';
+  });
+});
+
+function renderLibTip(){
+  const ft = document.querySelector('.libft');
+  ft.innerHTML = '<div class="lf-tip">点一张看能做什么 · 或直接拖进对话</div>';
+}
+
+function useInChat(name){
+  const ta = document.querySelector('.chat-ft textarea');
+  if (ta){
+    ta.value = (ta.value ? ta.value + ' ' : '') + '@' + name + ' ';
+    ta.focus();
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 150) + 'px';
+  }
+  renderLibTip();
+  document.querySelectorAll('.li').forEach(x => x.classList.remove('sel'));
+}
+
+// ================= 权限四档 =================
+let permChoice = 'session';
+
+function pickPerm(el){
+  document.querySelectorAll('.po').forEach(x => x.classList.remove('on'));
+  el.classList.add('on');
+  const k = el.querySelector('.po-k').textContent;
+  permChoice = k;
+
+  // 按钮文案跟着变
+  const btn = document.querySelector('.confirm .cbtn.pri');
+  if (btn){
+    btn.textContent = (k === '本次对话不再问' || k === '这个工具永远不问'
+      || k === '低于 ⚡50 自动过') ? '确认生成 ⚡14' : '确认生成 ⚡14';
+  }
+
+  // 提示条
+  const note = document.getElementById('grantedBar');
+  if (note){
+    if (k !== '每次都问'){
+      note.classList.add('on');
+      note.innerHTML = '<span>✓</span><span>本会话已授权：<b>' + k + '</b></span>'
+        + '<button class="gx" onclick="revokePerm()">撤销</button>';
+    } else {
+      note.classList.remove('on');
+    }
+  }
+}
+
+function revokePerm(){
+  const note = document.getElementById('grantedBar');
+  if (note) note.classList.remove('on');
+  if (typeof toast === 'function') toast('已撤销授权');
+}
+
 </script>
 </body>
 </html>
