@@ -537,6 +537,179 @@ brand{}
   margin-left:auto;font-size:11px;color:var(--tx3);background:none;border:none;
   cursor:pointer;font-family:inherit;text-decoration:underline;
 }
+
+/* ============ 结果：横向排列 ============ */
+.gallery{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:13px;
+}
+.gal-item{
+  position:relative;border-radius:var(--r3);overflow:hidden;cursor:pointer;
+  border:1px solid var(--ln2);transition:.16s;background:var(--s1);
+}
+.gal-item:hover{border-color:var(--ln3)}
+.gal-item.on{border-color:var(--ac);box-shadow:0 0 0 1px var(--ac)}
+.gal-img{
+  width:100%;aspect-ratio:3/4;display:block;
+  background:
+    radial-gradient(circle at 45% 32%,#2c3243 0%,transparent 58%),
+    linear-gradient(155deg,#1c202b,#101218);
+}
+.gal-img.v2{background:
+  radial-gradient(circle at 55% 38%,#33302a 0%,transparent 55%),
+  linear-gradient(155deg,#22201c,#111013)}
+.gal-img.v3{background:
+  radial-gradient(circle at 48% 40%,#2a2f33 0%,transparent 55%),
+  linear-gradient(155deg,#1d2124,#0e1113)}
+.gal-img.v4{background:
+  radial-gradient(circle at 52% 34%,#2f2a34 0%,transparent 56%),
+  linear-gradient(155deg,#201c26,#100e14)}
+.gal-op{
+  position:absolute;inset:auto 0 0 0;display:flex;gap:4px;
+  justify-content:center;padding:6px 4px;opacity:0;transition:.16s;
+  background:linear-gradient(180deg,transparent,rgba(0,0,0,.8) 40%);
+}
+.gal-item:hover .gal-op{opacity:1}
+.go{
+  width:20px;height:20px;border-radius:4px;display:flex;
+  align-items:center;justify-content:center;font-size:10px;
+  background:rgba(255,255,255,.13);color:#fff;transition:.15s;
+  backdrop-filter:blur(4px);
+}
+.go:hover{background:rgba(255,255,255,.26)}
+
+.gal-meta{
+  display:flex;align-items:center;gap:8px;margin-top:9px;
+  font-size:11.5px;color:var(--tx3);font-family:var(--fm);
+}
+.gm-sp{flex:1}
+.gm-cost{color:var(--photo)}
+
+/* ============ 试试这样改 ============ */
+.tryrow{
+  display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:14px;
+}
+.try-k{font-size:11.5px;color:var(--tx3)}
+.try-b{
+  font-size:11.5px;padding:4px 11px;border-radius:14px;
+  border:1px solid var(--ln2);background:transparent;color:var(--tx2);
+  cursor:pointer;transition:.15s;font-family:inherit;
+}
+.try-b:hover{border-color:rgba(34,211,238,.4);color:var(--ac);
+  background:rgba(34,211,238,.06)}
+
+/* ============ 主操作 ============ */
+.acts{display:flex;gap:7px;margin-top:13px}
+.ab{
+  font-size:12px;padding:6px 14px;border-radius:var(--r2);
+  border:1px solid var(--ln2);background:transparent;color:var(--tx2);
+  cursor:pointer;transition:.15s;font-family:inherit;
+}
+.ab:hover{border-color:var(--ln3);color:var(--tx)}
+
+/* ============ 上下文面板：切换器 ============ */
+.ctxSw{
+  margin-left:auto;font-size:10.5px;padding:2px 8px;border-radius:4px;
+  border:1px solid var(--ln2);background:transparent;color:var(--tx3);
+  cursor:pointer;font-family:inherit;transition:.15s;display:flex;
+  align-items:center;gap:4px;
+}
+.ctxSw:hover{border-color:var(--ln3);color:var(--tx2)}
+.agh .m{margin-left:0}
+
+/* 面板切换菜单 */
+.ctxmenu{
+  display:none;position:absolute;right:10px;top:40px;z-index:50;
+  background:var(--s2);border:1px solid var(--ln2);border-radius:var(--r3);
+  padding:6px;min-width:196px;box-shadow:var(--sh);
+}
+.ctxmenu.on{display:block}
+.cm-h{font-size:10px;color:var(--tx3);padding:5px 9px;font-family:var(--fm)}
+.cm-i{
+  display:block;width:100%;text-align:left;padding:7px 9px;border-radius:5px;
+  border:none;background:transparent;cursor:pointer;font-family:inherit;
+  transition:.15s;
+}
+.cm-i:hover{background:var(--s3)}
+.cm-i.on{background:rgba(34,211,238,.1)}
+.cm-k{display:block;font-size:12px;color:var(--tx2)}
+.cm-i.on .cm-k{color:var(--ac)}
+.cm-d{display:block;font-size:10px;color:var(--tx3);margin-top:1px}
+.cm-sep{height:1px;background:var(--ln);margin:5px 0}
+
+/* 面板容器 */
+.ag{position:relative}
+.ctxpane{display:none;flex:1;flex-direction:column;min-height:0}
+.ctxpane.on{display:flex}
+
+/* 创作项目面板 */
+.pj-hd{margin-bottom:14px}
+.pj-n{font-size:14px;font-weight:600;margin-bottom:2px}
+.pj-s{font-size:11px;color:var(--tx3)}
+.pj-sec-t{font-size:10.5px;color:var(--tx3);margin-bottom:7px;font-family:var(--fm)}
+.pj-item{
+  display:flex;align-items:center;gap:8px;padding:7px 9px;
+  border-radius:5px;font-size:12px;color:var(--tx2);cursor:pointer;
+  transition:.15s;
+}
+.pj-item:hover{background:var(--s2)}
+.pj-item.on{background:var(--s3);color:var(--tx)}
+.pj-i{
+  width:16px;height:16px;border-radius:3px;background:var(--s3);
+  font-size:9px;font-family:var(--fm);display:flex;align-items:center;
+  justify-content:center;color:var(--tx3);flex-shrink:0;
+}
+.pj-item.on .pj-i{background:rgba(34,211,238,.16);color:var(--ac)}
+.pj-chips{display:flex;gap:5px;flex-wrap:wrap}
+.pj-c{
+  font-size:11px;padding:2px 9px;border-radius:11px;
+  background:var(--s3);color:var(--tx2);
+}
+
+/* 任务队列 */
+.tk-item{
+  padding:10px 12px;border-radius:7px;background:var(--s2);
+  border:1px solid var(--ln);margin-bottom:8px;
+}
+.tk-hd{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--tx2);
+  margin-bottom:4px}
+.tk-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.tk-item.run .tk-dot{background:var(--ac);animation:pulse 1.4s infinite}
+.tk-item.ok .tk-dot{background:var(--ok)}
+.tk-item.err .tk-dot{background:var(--err)}
+.tk-bar{height:3px;border-radius:2px;background:var(--s4);overflow:hidden;margin:6px 0}
+.tk-bar i{display:block;height:100%;background:var(--ac);border-radius:2px}
+.tk-meta{font-size:10.5px;color:var(--tx3);font-family:var(--fm)}
+
+/* 世界观 */
+.wd-map{
+  height:110px;border-radius:7px;background:var(--s2);
+  border:1px solid var(--ln);position:relative;overflow:hidden;
+}
+.wd-dot{
+  position:absolute;width:7px;height:7px;border-radius:50%;
+  background:var(--ac);box-shadow:0 0 8px rgba(34,211,238,.6);
+}
+.wd-line{
+  position:absolute;height:1px;background:rgba(34,211,238,.28);
+  transform-origin:left center;
+}
+
+/* 底座：这次在做什么 */
+.ctxfoot{
+  flex:0 0 auto;border-top:1px solid var(--ln);padding:11px 13px;
+  background:rgba(8,8,10,.5);display:flex;align-items:center;gap:10px;
+}
+.cf-l{flex:1;min-width:0}
+.cf-k{font-size:9.5px;color:var(--tx3);font-family:var(--fm);margin-bottom:2px}
+.cf-v{font-size:12px;color:var(--tx);margin-bottom:1px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cf-sub{font-size:10.5px;color:var(--tx3)}
+.cf-b{
+  font-size:11px;padding:4px 11px;border-radius:5px;
+  border:1px solid var(--ln2);background:transparent;color:var(--tx2);
+  cursor:pointer;font-family:inherit;flex-shrink:0;transition:.15s;
+}
+.cf-b:hover{border-color:var(--ac);color:var(--ac)}
 </style>
 </head>
 <body>
@@ -696,16 +869,62 @@ brand{}
             <p>已经生成好了。<b>坐姿、全身、留白在上方</b>，按你说的「只露坐姿」处理了脚部裁切。</p>
           </div>
 
-          <!-- 结果：直接给图 -->
-          <div class="result">
-            <div class="result-img">1536 × 2304</div>
-            <div class="result-ft">
-              <span>2048×3072 · 2.4 MB · png</span>
-              <span class="sp"></span>
-              <button class="rbtn">下载</button>
-              <button class="rbtn">存为素材</button>
-              <button class="rbtn pri">拿去编辑</button>
+          <!-- ⭐ 结果：横向排列（照即梦） -->
+          <div class="gallery">
+            <div class="gal-item" onclick="openImg(this,'竖图 · 靠窗侧坐')">
+              <div class="gal-img"></div>
+              <div class="gal-op">
+                <span class="go" title="下载">↓</span>
+                <span class="go" title="存为素材">＋</span>
+                <span class="go" title="去画布编辑">✎</span>
+              </div>
             </div>
+            <div class="gal-item on" onclick="openImg(this,'竖图 · 收下巴')">
+              <div class="gal-img v2"></div>
+              <div class="gal-op">
+                <span class="go" title="下载">↓</span>
+                <span class="go" title="存为素材">＋</span>
+                <span class="go" title="去画布编辑">✎</span>
+              </div>
+            </div>
+            <div class="gal-item" onclick="openImg(this,'竖图 · 手扶脸颊')">
+              <div class="gal-img v3"></div>
+              <div class="gal-op">
+                <span class="go" title="下载">↓</span>
+                <span class="go" title="存为素材">＋</span>
+                <span class="go" title="去画布编辑">✎</span>
+              </div>
+            </div>
+            <div class="gal-item" onclick="openImg(this,'竖图 · 侧身回望')">
+              <div class="gal-img v4"></div>
+              <div class="gal-op">
+                <span class="go" title="下载">↓</span>
+                <span class="go" title="存为素材">＋</span>
+                <span class="go" title="去画布编辑">✎</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 一排元信息 -->
+          <div class="gal-meta">
+            <span>一次生成 4 张 · 2048×3072 · png</span>
+            <span class="gm-sp"></span>
+            <span class="gm-cost">⚡14</span>
+          </div>
+
+          <!-- ⭐ 试试这样改（照即梦） -->
+          <div class="tryrow">
+            <span class="try-k">你可以试试这样改：</span>
+            <button class="try-b" onclick="fillChat('把背景换成海边日落')">把背景换成海边日落 ↗</button>
+            <button class="try-b" onclick="fillChat('再生成一版古风造型的')">再生成一版古风造型的 ↗</button>
+            <button class="try-b" onclick="fillChat('试试赛博朋克风格')">试试赛博朋克风格 ↗</button>
+          </div>
+
+          <!-- 主操作 -->
+          <div class="acts">
+            <button class="ab">↻ 重新编辑</button>
+            <button class="ab">⟳ 再次生成</button>
+            <button class="ab" onclick="openDetail()">展开详情 ›</button>
           </div>
 
           <div class="ans" style="margin-top:12px">
@@ -836,94 +1055,168 @@ brand{}
     </div>
   </div>
 
-  <!-- ================= 右：素材库 ================= -->
+  <!-- ================= 右：上下文面板（跟着任务变） ================= -->
   <aside class="ag">
     <div class="agh">
       <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <path d="M4 7h6l2 2h8v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z"/>
       </svg>
-      <span class="t">素材库</span>
+      <span class="t" id="ctxTitle">素材库</span>
+      <button class="ctxSw" onclick="ctxToggleMenu()" title="换面板">
+        <span id="ctxMode">自动</span> ▾
+      </button>
       <span class="m" id="libCount">28 项</span>
     </div>
 
-    <!-- 筛选条 -->
-    <div class="libfill">
-      <div class="lib-tabs">
-        <button class="libTab on" onclick="libFilter(this,'all')">全部</button>
-        <button class="libTab" onclick="libFilter(this,'image')">图片</button>
-        <button class="libTab" onclick="libFilter(this,'video')">视频</button>
-        <button class="libTab" onclick="libFilter(this,'character')">角色</button>
+    <!-- 面板切换菜单 -->
+    <div class="ctxmenu" id="ctxMenu">
+      <div class="cm-h">显示什么</div>
+      <button class="cm-i on" onclick="ctxSet('auto',this)">
+        <span class="cm-k">自动跟随</span>
+        <span class="cm-d">Agent 在做什么就显示什么</span>
+      </button>
+      <div class="cm-sep"></div>
+      <button class="cm-i" onclick="ctxSet('assets',this)">
+        <span class="cm-k">素材库</span><span class="cm-d">图片 · 视频 · 角色</span>
+      </button>
+      <button class="cm-i" onclick="ctxSet('project',this)">
+        <span class="cm-k">创作项目</span><span class="cm-d">项目 · 章节 · 分镜</span>
+      </button>
+      <button class="cm-i" onclick="ctxSet('tasks',this)">
+        <span class="cm-k">任务队列</span><span class="cm-d">生成中 · 等待中 · 失败</span>
+      </button>
+      <button class="cm-i" onclick="ctxSet('world',this)">
+        <span class="cm-k">世界观</span><span class="cm-d">地图 · 实体 · 设定</span>
+      </button>
+    </div>
+
+    <!-- ===== 面板：素材库 ===== -->
+    <div class="ctxpane on" id="pane-assets">
+      <div class="libfill">
+        <div class="lib-tabs">
+          <button class="libTab on" onclick="libFilter(this,'all')">全部</button>
+          <button class="libTab" onclick="libFilter(this,'image')">图片</button>
+          <button class="libTab" onclick="libFilter(this,'video')">视频</button>
+          <button class="libTab" onclick="libFilter(this,'character')">角色</button>
+        </div>
+        <div class="lib-search">
+          <span class="ls-ico">⌕</span>
+          <input class="ls-in" placeholder="搜素材名 / 标签">
+        </div>
       </div>
-      <div class="lib-search">
-        <span class="ls-ico">⌕</span>
-        <input class="ls-in" placeholder="搜素材名 / 标签">
+      <div class="agb lib-grid" id="libGrid">
+        <div class="li fresh" data-type="image" data-name="坐姿全身 横图">
+          <div class="li-img"></div><div class="li-badge new">刚生成</div>
+          <div class="li-meta">2048×3072</div><div class="li-n">坐姿全身 · 横图</div>
+        </div>
+        <div class="li" data-type="image" data-name="坐姿全身 竖图">
+          <div class="li-img"></div><div class="li-badge">已存</div>
+          <div class="li-meta">1536×2304</div><div class="li-n">坐姿全身 · 竖图</div>
+        </div>
+        <div class="li" data-type="image" data-name="秋天颐和园 逆光">
+          <div class="li-img v2"></div><div class="li-meta">2048×1365</div>
+          <div class="li-n">秋天颐和园 · 逆光</div>
+        </div>
+        <div class="li" data-type="image" data-name="银杏树荫 特写">
+          <div class="li-img v2"></div><div class="li-meta">2048×1365</div>
+          <div class="li-n">银杏树荫 · 特写</div>
+        </div>
+        <div class="li" data-type="character" data-name="小林 角色卡">
+          <div class="li-img char">林</div><div class="li-meta">角色卡</div>
+          <div class="li-n">小林</div>
+        </div>
+        <div class="li" data-type="character" data-name="阿芸 角色卡">
+          <div class="li-img char">芸</div><div class="li-meta">角色卡</div>
+          <div class="li-n">阿芸</div>
+        </div>
+        <div class="li" data-type="video" data-name="参考片段 08s">
+          <div class="li-img vid">▶</div><div class="li-meta">0:08</div>
+          <div class="li-n">参考片段 · 光走动</div>
+        </div>
+        <div class="li" data-type="image" data-name="桥洞前景">
+          <div class="li-img v3"></div><div class="li-meta">2048×1365</div>
+          <div class="li-n">桥洞 · 前景框</div>
+        </div>
+        <div class="li" data-type="image" data-name="走廊侧逆光">
+          <div class="li-img v3"></div><div class="li-meta">2048×1365</div>
+          <div class="li-n">长廊 · 侧逆光</div>
+        </div>
+      </div>
+      <div class="libft">
+        <div class="lf-tip">点一张看能做什么 · 或直接拖进对话</div>
       </div>
     </div>
 
-    <!-- 素材网格 -->
-    <div class="agb lib-grid" id="libGrid">
-      <!-- 刚生成的（高亮） -->
-      <div class="li fresh" data-type="image" data-name="坐姿全身 横图">
-        <div class="li-img"></div>
-        <div class="li-badge new">刚生成</div>
-        <div class="li-meta">2048×3072</div>
-        <div class="li-n">坐姿全身 · 横图</div>
-      </div>
-
-      <div class="li" data-type="image" data-name="坐姿全身 竖图">
-        <div class="li-img"></div>
-        <div class="li-badge">已存</div>
-        <div class="li-meta">1536×2304</div>
-        <div class="li-n">坐姿全身 · 竖图</div>
-      </div>
-
-      <div class="li" data-type="image" data-name="秋天颐和园 逆光">
-        <div class="li-img v2"></div>
-        <div class="li-meta">2048×1365</div>
-        <div class="li-n">秋天颐和园 · 逆光</div>
-      </div>
-
-      <div class="li" data-type="image" data-name="银杏树荫 特写">
-        <div class="li-img v2"></div>
-        <div class="li-meta">2048×1365</div>
-        <div class="li-n">银杏树荫 · 特写</div>
-      </div>
-
-      <div class="li" data-type="character" data-name="小林 角色卡">
-        <div class="li-img char">林</div>
-        <div class="li-meta">角色卡</div>
-        <div class="li-n">小林</div>
-      </div>
-
-      <div class="li" data-type="character" data-name="阿芸 角色卡">
-        <div class="li-img char">芸</div>
-        <div class="li-meta">角色卡</div>
-        <div class="li-n">阿芸</div>
-      </div>
-
-      <div class="li" data-type="video" data-name="参考片段 08s">
-        <div class="li-img vid">▶</div>
-        <div class="li-meta">0:08</div>
-        <div class="li-n">参考片段 · 光走动</div>
-      </div>
-
-      <div class="li" data-type="image" data-name="桥洞前景">
-        <div class="li-img v3"></div>
-        <div class="li-meta">2048×1365</div>
-        <div class="li-n">桥洞 · 前景框</div>
-      </div>
-
-      <div class="li" data-type="image" data-name="走廊侧逆光">
-        <div class="li-img v3"></div>
-        <div class="li-meta">2048×1365</div>
-        <div class="li-n">长廊 · 侧逆光</div>
+    <!-- ===== 面板：创作项目 ===== -->
+    <div class="ctxpane" id="pane-project">
+      <div class="agb" style="padding:13px">
+        <div class="pj-hd">
+          <div class="pj-n">秋天颐和园</div>
+          <div class="pj-s">进行中 · 11 月待定</div>
+        </div>
+        <div class="pj-sec-t">章节 / 分镜</div>
+        <div class="pj-item on"><span class="pj-i">1</span>外景 · 桥洞里逆光</div>
+        <div class="pj-item"><span class="pj-i">2</span>长廊 · 侧逆光</div>
+        <div class="pj-item"><span class="pj-i">3</span>银杏 · 树荫柔光</div>
+        <div class="pj-item"><span class="pj-i">4</span>回眸 · 半身</div>
+        <div class="pj-sec-t" style="margin-top:14px">这组用到的</div>
+        <div class="pj-chips">
+          <span class="pj-c">小林</span><span class="pj-c">桥洞</span>
+          <span class="pj-c">银杏</span><span class="pj-c">逆光</span>
+        </div>
       </div>
     </div>
 
-    <!-- 底部：选中项操作 -->
-    <div class="libft">
-      <div class="lf-tip" id="libTip">点一张看能做什么 · 或直接拖进对话</div>
+    <!-- ===== 面板：任务队列 ===== -->
+    <div class="ctxpane" id="pane-tasks">
+      <div class="agb" style="padding:13px">
+        <div class="tk-item run">
+          <div class="tk-hd"><span class="tk-dot"></span>生成图片 · 横图</div>
+          <div class="tk-bar"><i style="width:62%"></i></div>
+          <div class="tk-meta">预计 18 秒 · 还剩 ~7 秒</div>
+        </div>
+        <div class="tk-item ok">
+          <div class="tk-hd"><span class="tk-dot"></span>生成图片 · 竖图</div>
+          <div class="tk-meta">完成 · 用了 16 秒</div>
+        </div>
+        <div class="tk-item ok">
+          <div class="tk-hd"><span class="tk-dot"></span>素材检索</div>
+          <div class="tk-meta">完成 · 6 张命中</div>
+        </div>
+        <div class="tk-item err">
+          <div class="tk-hd"><span class="tk-dot"></span>生成视频</div>
+          <div class="tk-meta">失败 · 模型超时，可以重试</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 面板：世界观 ===== -->
+    <div class="ctxpane" id="pane-world">
+      <div class="agb" style="padding:13px">
+        <div class="wd-map">
+          <div class="wd-dot" style="left:28%;top:38%"></div>
+          <div class="wd-dot" style="left:56%;top:26%"></div>
+          <div class="wd-dot" style="left:44%;top:62%"></div>
+          <div class="wd-line" style="left:28%;top:38%;width:31%;transform:rotate(-19deg)"></div>
+          <div class="wd-line" style="left:44%;top:62%;width:17%;transform:rotate(-38deg)"></div>
+        </div>
+        <div class="pj-sec-t" style="margin-top:12px">实体</div>
+        <div class="pj-item"><span class="pj-i">◆</span>颐和园 · 十七孔桥</div>
+        <div class="pj-item"><span class="pj-i">◆</span>颐和园 · 长廊</div>
+        <div class="pj-item"><span class="pj-i">◆</span>银杏林</div>
+        <div class="pj-item"><span class="pj-i">◇</span>日落时刻 16:26</div>
+      </div>
+    </div>
+
+    <!-- ===== 底座：这次在做什么（常驻） ===== -->
+    <div class="ctxfoot">
+      <div class="cf-l">
+        <div class="cf-k">这次在做什么</div>
+        <div class="cf-v">秋天颐和园 · 第 2 组片</div>
+        <div class="cf-sub">已生成 6 张 · 用了 ⚡84</div>
+      </div>
+      <button class="cf-b">查看项目</button>
     </div>
   </aside>
 
@@ -1050,6 +1343,133 @@ function revokePerm(){
   if (note) note.classList.remove('on');
   if (typeof toast === 'function') toast('已撤销授权');
 }
+
+
+// ================= 上下文面板 =================
+let ctxManual = false;
+
+function ctxToggleMenu(){
+  document.getElementById('ctxMenu').classList.toggle('on');
+}
+document.addEventListener('click', function(e){
+  const m = document.getElementById('ctxMenu');
+  if (m && !m.contains(e.target) && !e.target.closest('.ctxSw')) m.classList.remove('on');
+});
+
+const PANE_NAMES = {
+  assets:'素材库', project:'创作项目', tasks:'任务队列', world:'世界观'
+};
+
+function ctxSet(key, btn){
+  document.getElementById('ctxMenu').classList.remove('on');
+
+  if (key === 'auto'){
+    ctxManual = false;
+    document.querySelectorAll('.cm-i').forEach(x => x.classList.remove('on'));
+    btn.classList.add('on');
+    document.getElementById('ctxMode').textContent = '自动';
+    // 回到自动：按当前任务
+    ctxShow(currentTaskPane);
+    return;
+  }
+
+  ctxManual = true;
+  document.querySelectorAll('.cm-i').forEach(x => x.classList.remove('on'));
+  btn.classList.add('on');
+  document.getElementById('ctxMode').textContent = '手动';
+  ctxShow(key);
+}
+
+function ctxShow(key){
+  document.querySelectorAll('.ctxpane').forEach(p => p.classList.remove('on'));
+  const p = document.getElementById('pane-' + key);
+  if (p) p.classList.add('on');
+  document.getElementById('ctxTitle').textContent = PANE_NAMES[key] || '面板';
+}
+
+// 当前任务对应哪个面板（自动模式用）
+let currentTaskPane = 'assets';
+
+function ctxAuto(paneKey){
+  currentTaskPane = paneKey;
+  if (!ctxManual){
+    ctxShow(paneKey);
+    document.getElementById('ctxMode').textContent = '自动';
+  }
+}
+
+// ================= 图片廊 =================
+function openImg(el, name){
+  document.querySelectorAll('.gal-item').forEach(x => x.classList.remove('on'));
+  el.classList.add('on');
+  ctxAuto('assets');
+}
+
+// ================= 详情（即梦式：右栏换面板） =================
+function openDetail(){
+  ctxManual = true;
+  const t = document.getElementById('ctxTitle');
+  if (t) t.textContent = '图片详情';
+  document.querySelectorAll('.ctxpane').forEach(p => p.classList.remove('on'));
+  let d = document.getElementById('pane-detail');
+  if (!d){
+    d = document.createElement('div');
+    d.className = 'ctxpane';
+    d.id = 'pane-detail';
+    d.innerHTML = `
+      <div class="agb" style="padding:13px">
+        <div style="display:flex;gap:5px;margin-bottom:12px">
+          <div style="flex:1;aspect-ratio:3/4;border-radius:5px;background:linear-gradient(150deg,#20242f,#101218)"></div>
+          <div style="flex:1;aspect-ratio:3/4;border-radius:5px;background:linear-gradient(150deg,#33302a,#111013);outline:1px solid var(--ac)"></div>
+          <div style="flex:1;aspect-ratio:3/4;border-radius:5px;background:linear-gradient(150deg,#2a2f33,#0e1113)"></div>
+          <div style="flex:1;aspect-ratio:3/4;border-radius:5px;background:linear-gradient(150deg,#2f2a34,#100e14)"></div>
+        </div>
+        <div class="pj-sec-t">图片提示词</div>
+        <div style="font-size:12px;color:var(--tx2);line-height:1.65;margin-bottom:10px">
+          秋天颐和园，靠窗侧坐，浅色毛呢大衣，自然光，皮肤真实
+        </div>
+        <div style="font-size:10.5px;color:var(--tx3);font-family:var(--fm);margin-bottom:14px">
+          GPT Image 2 · 3:4 · 2048×3072
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px">
+          <button class="ab" style="width:100%;justify-content:center">生成视频</button>
+          <button class="ab" style="width:100%;justify-content:center;border-color:rgba(34,211,238,.35);color:var(--ac)">去画布编辑 ›</button>
+          <button class="ab" style="width:100%;justify-content:center">用作参考图</button>
+          <button class="ab" style="width:100%;justify-content:center">存为素材</button>
+        </div>
+        <div class="pj-sec-t">编辑（专业操作去画布）</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          <button class="ab" style="width:100%;justify-content:center">局部重绘</button>
+          <button class="ab" style="width:100%;justify-content:center">扩图</button>
+          <button class="ab" style="width:100%;justify-content:center">消除笔</button>
+          <button class="ab" style="width:100%;justify-content:center">智能超清</button>
+        </div>
+      </div>
+      <div class="libft">
+        <div class="lf-acts">
+          <button class="lf-b pri" onclick="ctxSet('auto',document.querySelector('.cm-i'))">↩ 回到自动</button>
+          <button class="lf-b">重新编辑</button>
+          <button class="lf-b">再次生成</button>
+        </div>
+      </div>`;
+    document.querySelector('.ag').insertBefore(d, document.querySelector('.ctxfoot'));
+  }
+  d.classList.add('on');
+}
+
+// ================= 试试这样改 =================
+function fillChat(text){
+  const ta = document.querySelector('.chat-ft textarea');
+  if (ta){
+    ta.value = text;
+    ta.focus();
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 150) + 'px';
+  }
+}
+
+// 启动：默认自动 + 素材库
+ctxAuto('assets');
 
 </script>
 </body>
