@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>多角度编辑 · 原型</title>
+<style>
+:root{
+  --bg:#08080a; --bg2:#0b0b0e; --s1:#101013; --s2:#16161a; --s3:#1c1c21;
+  --ln:rgba(255,255,255,.065); --ln2:rgba(255,255,255,.11); --ln3:rgba(255,255,255,.18);
+  --tx:#f0f0f3; --tx2:#9c9ca8; --tx3:#63636e;
+  --ac:#22d3ee; --acs:rgba(34,211,238,.13); --acl:rgba(34,211,238,.4);
+  --ok:#34d399; --oks:rgba(52,211,153,.12); --okl:rgba(52,211,153,.4);
+  --wn:#fbbf24; --wns:rgba(251,191,36,.11); --wnl:rgba(251,191,36,.45);
+  --dg:#f87171; --dgs:rgba(248,113,113,.1);
+  --r1:5px;--r2:8px;--r3:12px;--r4:16px;
+  --sh2:0 6px 22px -8px rgba(0,0,0,.85);
+  --sh3:0 24px 70px -20px rgba(0,0,0,.95),0 0 0 1px rgba(255,255,255,.07);
+  --ez:cubic-bezier(.16,1,.3,1);
+  --fs:'Inter',-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
+  --fm:'JetBrains Mono',Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg);color:var(--tx);font-family:var(--fs);font-size:13px;
+  line-height:1.55;-webkit-font-smoothing:antialiased;overflow:hidden;
+}
+button{font-family:inherit}
+
+/* ============ 顶栏 ============ */
+.top{
+  position:fixed;top:0;left:0;right:0;height:52px;z-index:60;display:flex;
+  align-items:center;gap:9px;padding:0 14px;border-bottom:1px solid var(--ln);
+  background:linear-gradient(to bottom,rgba(8,8,10,.99),rgba(8,8,10,.86));
+  backdrop-filter:blur(18px);
+}
+.brand{
+  display:flex;align-items:center;gap:7px;padding:5px 9px 5px 6px;border-radius:var(--r2);
+  background:var(--s1);border:1px solid var(--ln);flex:0 0 auto;
+}
+.brand .mk{
+  width:20px;height:20px;border-radius:var(--r1);background:var(--ac);
+  display:flex;align-items:center;justify-content:center;color:#04222a;
+  font-weight:800;font-size:11px;
+}
+.crumb{font-size:12px;color:var(--tx3)}
+.crumb b{color:var(--tx2);font-weight:500}
+.saved{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--tx3)}
+.saved i{width:5px;height:5px;border-radius:50%;background:var(--ok)}
+.sp{flex:1}
+
+/* ============ 画布区 ============ */
+.stage{
+  position:absolute;top:52px;left:0;right:0;bottom:0;overflow:hidden;
+  background:
+    radial-gradient(circle at 1px 1px,rgba(255,255,255,.055) 1px,transparent 0)
+    0 0/26px 26px,var(--bg);
+}
+
+/* 节点 */
+.nd{
+  position:absolute;border-radius:var(--r3);border:1px solid var(--ln2);
+  background:var(--s1);box-shadow:var(--sh2);transition:border-color .18s,box-shadow .18s;
+  cursor:grab;
+}
+.nd:hover{border-color:var(--ln3)}
+.nd.sel{border-color:var(--ac);box-shadow:0 0 0 1px var(--ac),var(--sh2)}
+.nd-hd{
+  display:flex;align-items:center;gap:6px;padding:7px 9px 6px;
+  font-size:10.5px;color:var(--tx3);border-bottom:1px solid var(--ln);
+}
+.nd-hd .ic{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:1.7}
+.nd-hd .nm{color:var(--tx2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nd-hd .pin{font-size:9px;opacity:.5}
+.nd-img{
+  display:block;width:100%;aspect-ratio:3/4;border-radius:0 0 var(--r3) var(--r3);
+  background:
+    radial-gradient(circle at 46% 34%,#2d3344 0%,transparent 56%),
+    linear-gradient(155deg,#1c2029,#0f1116);
+}
+.nd-img.b{
+  background:
+    radial-gradient(circle at 55% 30%,#33302a 0%,transparent 55%),
+    linear-gradient(155deg,#221f1a,#0f0f0d);
+}
+.nd-img.c{
+  background:
+    radial-gradient(circle at 40% 42%,#2a2f34 0%,transparent 55%),
+    linear-gradient(155deg,#1b1f22,#0c0f10);
+}
+/* 节点上的操作浮条 */
+.nd-op{
+  position:absolute;left:50%;bottom:-13px;transform:translateX(-50%);
+  display:flex;gap:3px;padding:3px;border-radius:var(--r2);
+  background:var(--s2);border:1px solid var(--ln2);box-shadow:var(--sh2);
+  opacity:0;transition:opacity .16s;pointer-events:none;z-index:5;
+}
+.nd:hover .nd-op{opacity:1;pointer-events:auto}
+.nd-op b{
+  width:22px;height:22px;border-radius:var(--r1);display:flex;align-items:center;
+  justify-content:center;font-size:10px;color:var(--tx2);cursor:pointer;
+  transition:.15s;font-weight:400;
+}
+.nd-op b:hover{background:var(--s3);color:var(--tx)}
+.nd-op b.hl{color:var(--wn)}
+.nd-op b.hl:hover{background:var(--wns);color:var(--wn)}
+
+/* 连线 */
+.links{position:absolute;inset:0;pointer-events:none;z-index:1}
+.link{
+  position:absolute;height:1.5px;transform-origin:left center;
+  background:linear-gradient(90deg,var(--acl),rgba(34,211,238,.16));
+}
+.link-ic{
+  position:absolute;width:19px;height:19px;border-radius:50%;
+  background:var(--s2);border:1px solid var(--ln2);display:flex;
+  align-items:center;justify-content:center;font-size:9px;color:var(--tx3);
+  pointer-events:auto;cursor:pointer;transition:.15s;z-index:2;
+  transform:translate(-50%,-50%);
+}
+.link-ic:hover{border-color:var(--dg);color:var(--dg);background:var(--dgs)}
+
+/* ============ 多角度编辑面板 ============ */
+.ma{
+  position:absolute;left:50%;bottom:24px;transform:translateX(-50%) translateY(16px);
+  width:min(700px,calc(100vw - 80px));background:var(--s2);
+  border:1px solid var(--ln2);border-radius:var(--r4);box-shadow:var(--sh3);
+  z-index:40;display:none;overflow:hidden;
+}
+.ma.on{display:block;animation:up .24s var(--ez)}
+@keyframes up{from{opacity:0;transform:translateX(-50%) translateY(26px)}
+  to{opacity:1;transform:translateX(-50%) translateY(0)}}
+
+.ma-hd{
+  display:flex;align-items:center;gap:9px;padding:13px 16px 11px;
+  border-bottom:1px solid var(--ln);
+}
+.ma-t{font-size:14px;font-weight:600}
+.ma-sub{font-size:11px;color:var(--tx3)}
+.ma-x{
+  margin-left:auto;width:24px;height:24px;border-radius:var(--r1);
+  border:none;background:transparent;color:var(--tx3);cursor:pointer;
+  font-size:14px;transition:.15s;
+}
+.ma-x:hover{background:var(--s3);color:var(--tx)}
+
+.ma-body{display:grid;grid-template-columns:236px 1fr;gap:18px;padding:16px}
+
+/* 左：球体 */
+.sphere{
+  position:relative;aspect-ratio:1;border-radius:var(--r3);
+  background:radial-gradient(circle at 50% 50%,#15161b,#0c0d11 70%);
+  border:1px solid var(--ln);overflow:hidden;
+}
+.sphere svg{position:absolute;inset:0;width:100%;height:100%}
+.sphere-in{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:44%;aspect-ratio:3/4;border-radius:4px;overflow:hidden;
+  border:1px solid var(--ln3);
+  background:
+    radial-gradient(circle at 46% 34%,#2d3344 0%,transparent 56%),
+    linear-gradient(155deg,#1c2029,#0f1116);
+}
+/* 相机小球 */
+.cam{
+  position:absolute;width:30px;height:30px;border-radius:4px;
+  transform:translate(-50%,-50%);transition:left .28s var(--ez),top .28s var(--ez);
+  background:rgba(22,22,26,.9);border:1px solid var(--awn,var(--wnl));
+  box-shadow:0 0 14px rgba(251,191,36,.24);cursor:grab;
+  display:flex;align-items:center;justify-content:center;font-size:10px;
+  color:var(--wn);z-index:3;
+}
+/* 相机射出的视锥 */
+.frustum{
+  position:absolute;transform-origin:left center;height:1px;
+  background:linear-gradient(90deg,rgba(251,191,36,.5),transparent);
+  z-index:1;transition:.28s var(--ez);pointer-events:none;
+}
+
+/* 右：控制 */
+.ma-ctl{display:flex;flex-direction:column;gap:15px}
+.ctl-t{
+  font-size:11px;color:var(--tx3);margin-bottom:7px;
+  display:flex;align-items:center;gap:7px;
+}
+.ctl-t .reset{margin-left:auto;font-size:10px;color:var(--tx3);cursor:pointer}
+.ctl-t .reset:hover{color:var(--ac)}
+
+/* 9 方位 */
+.dirs{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+.dir{
+  padding:7px 4px;border-radius:var(--r1);border:1px solid var(--ln2);
+  background:transparent;color:var(--tx2);font-size:11.5px;cursor:pointer;
+  transition:.15s;
+}
+.dir:hover{border-color:var(--ln3);color:var(--tx)}
+.dir.on{
+  border-color:var(--wn);color:var(--wn);background:var(--wns);font-weight:500;
+}
+
+/* 滑块 */
+.sld{margin-bottom:2px}
+.sld-t{
+  display:flex;align-items:center;font-size:11px;color:var(--tx3);
+  margin-bottom:5px;
+}
+.sld-t .v{margin-left:auto;color:var(--tx2);font-family:var(--fm);font-size:10.5px}
+input[type=range]{
+  -webkit-appearance:none;width:100%;height:3px;border-radius:2px;
+  background:rgba(255,255,255,.11);outline:none;cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:11px;height:11px;border-radius:50%;
+  background:var(--tx);border:2px solid var(--s2);cursor:grab;
+  box-shadow:0 0 0 1px rgba(255,255,255,.3);
+}
+.sld-marks{
+  display:flex;justify-content:space-between;margin-top:3px;
+  font-size:9px;color:var(--tx3);font-family:var(--fm);
+}
+
+/* 底部 */
+.ma-ft{
+  display:flex;align-items:center;gap:9px;padding:12px 16px;
+  border-top:1px solid var(--ln);background:rgba(8,8,10,.4);
+}
+.ma-ft .cost{font-size:11px;color:var(--wn);font-family:var(--fm)}
+.ma-ft .hint{font-size:10.5px;color:var(--tx3)}
+.gen{
+  margin-left:auto;padding:8px 22px;border-radius:var(--r2);border:none;
+  background:var(--tx);color:#0a0a0c;font-size:12.5px;font-weight:600;
+  cursor:pointer;transition:.15s;
+}
+.gen:hover{filter:brightness(.92)}
+.gen:disabled{opacity:.5;cursor:not-allowed}
+
+/* 提示 */
+.toast{
+  position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(10px);
+  padding:8px 16px;border-radius:20px;background:var(--s2);
+  border:1px solid var(--ln2);font-size:11.5px;color:var(--tx2);
+  box-shadow:var(--sh2);opacity:0;transition:.2s;pointer-events:none;z-index:90;
+}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* 说明 */
+.note{
+  position:fixed;left:14px;bottom:14px;font-size:10.5px;color:var(--tx3);
+  background:rgba(16,16,19,.92);border:1px solid var(--ln2);
+  padding:6px 12px;border-radius:8px;line-height:1.5;z-index:80;
+  backdrop-filter:blur(8px);
+}
+.note b{color:var(--wn)}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="brand"><span class="mk">YL</span></div>
+  <div class="crumb">创作项目 / <b>秋天颐和园</b> / 画布</div>
+  <div class="saved"><i></i>已保存</div>
+  <div class="sp"></div>
+  <div class="crumb" id="nodeCount">3 个节点</div>
+</div>
+
+<div class="stage" id="stage">
+  <div class="links" id="links"></div>
+
+  <!-- 源节点 -->
+  <div class="nd sel" id="n1" style="left:120px;top:70px;width:170px">
+    <div class="nd-hd">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="1.6"/><path d="M21 15l-5-5L5 21"/></svg>
+      <span class="nm">图片 1</span>
+      <span class="pin">⚲</span>
+    </div>
+    <div class="nd-img" style="cursor:pointer" onclick="openMA('n1')"></div>
+    <div class="nd-op">
+      <b class="hl" onclick="openMA('n1')" title="多角度编辑">◈</b>
+      <b title="扩图">⤢</b>
+      <b title="超清">✦</b>
+      <b title="去画布编辑">✎</b>
+    </div>
+  </div>
+
+  <!-- 已生成的多角度节点 -->
+  <div class="nd" id="n2" style="left:440px;top:190px;width:170px">
+    <div class="nd-hd">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="1.6"/><path d="M21 15l-5-5L5 21"/></svg>
+      <span class="nm">图片 1_多角度</span>
+      <span class="pin">⚲</span>
+    </div>
+    <div class="nd-img b" style="cursor:pointer" onclick="openMA('n2')"></div>
+    <div class="nd-op">
+      <b class="hl" onclick="openMA('n2')" title="多角度编辑">◈</b>
+      <b title="扩图">⤢</b>
+      <b title="超清">✦</b>
+      <b title="去画布编辑">✎</b>
+    </div>
+    <div style="padding:6px 9px;border-top:1px solid var(--ln);font-size:9.5px;
+                color:var(--tx3);font-family:var(--fm)">来自 图片 1 · 左上 315°</div>
+  </div>
+
+  <!-- 多角度编辑面板 -->
+  <div class="ma" id="ma">
+    <div class="ma-hd">
+      <span class="ma-t">多角度编辑</span>
+      <span class="ma-sub" id="maFrom">基于「图片 1」</span>
+      <button class="ma-x" onclick="closeMA()">✕</button>
+    </div>
+    <div class="ma-body">
+      <!-- 球体 -->
+      <div class="sphere" id="sphere">
+        <svg viewBox="0 0 240 240" fill="none" stroke="rgba(255,255,255,.13)" stroke-width=".9">
+          <circle cx="120" cy="120" r="96"/>
+          <ellipse cx="120" cy="120" rx="96" ry="34"/>
+          <ellipse cx="120" cy="120" rx="34" ry="96"/>
+          <ellipse cx="120" cy="120" rx="96" ry="68" opacity=".5"/>
+          <ellipse cx="120" cy="120" rx="68" ry="96" opacity=".5"/>
+          <line x1="24" y1="120" x2="216" y2="120" opacity=".35"/>
+          <line x1="120" y1="24" x2="120" y2="216" opacity=".35"/>
+        </svg>
+        <div class="sphere-in" id="sphereIn"></div>
+        <div class="frustum" id="frustum"></div>
+        <div class="cam" id="cam" title="拖我换机位">📷</div>
+      </div>
+
+      <!-- 控制 -->
+      <div class="ma-ctl">
+        <div>
+          <div class="ctl-t">摄像机方位</div>
+          <div class="dirs" id="dirs"></div>
+        </div>
+
+        <div class="sld">
+          <div class="sld-t">水平 <span class="v" id="vYaw">315°</span></div>
+          <input type="range" id="rYaw" min="0" max="360" value="315" step="15">
+          <div class="sld-marks"><span>0</span><span>90</span><span>180</span><span>270</span><span>360</span></div>
+        </div>
+
+        <div class="sld">
+          <div class="sld-t">垂直 <span class="v" id="vPitch">30°</span></div>
+          <input type="range" id="rPitch" min="-30" max="60" value="30" step="5">
+          <div class="sld-marks"><span>-30</span><span>0</span><span>30</span><span>60</span></div>
+        </div>
+
+        <div class="sld">
+          <div class="sld-t">景别缩放 <span class="v" id="vZoom">标准</span></div>
+          <input type="range" id="rZoom" min="0" max="100" value="50">
+          <div class="sld-marks"><span>近</span><span>标准</span><span>远</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="ma-ft">
+      <span class="cost" id="maCost">✦ 1</span>
+      <span class="hint">会生成一张新图，和原图连线</span>
+      <button class="gen" id="genBtn" onclick="doGenerate()">生成</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="note">
+  <b>原型</b> · 多角度 = 9 方位 + 3 滑块 → 生成新图 → <b>自动连线溯源</b>（线上剪刀可断开）
+</div>
+
+<script>
+/* ================= 方位表 ================= */
+const DIRS = [
+  {k:'tl', n:'左上', yaw:225, pitch:30},
+  {k:'t',  n:'上方', yaw:270, pitch:45},
+  {k:'tr', n:'右上', yaw:315, pitch:30},
+  {k:'l',  n:'左侧', yaw:180, pitch:10},
+  {k:'c',  n:'正面', yaw:270, pitch:0},
+  {k:'r',  n:'右侧', yaw:0,   pitch:10},
+  {k:'bl', n:'左下', yaw:135, pitch:-20},
+  {k:'b',  n:'下方', yaw:270, pitch:-25},
+  {k:'br', n:'右下', yaw:45,  pitch:-20},
+];
+
+let curFrom = 'n1';
+let curYaw = 315, curPitch = 30, curZoom = 50;
+let genCount = 1;
+
+/* ================= 渲染 9 方位 ================= */
+function renderDirs(){
+  const h = document.getElementById('dirs');
+  h.innerHTML = DIRS.map(d =>
+    `<button class="dir" data-k="${d.k}" onclick="pickDir('${d.k}')">${d.n}</button>`
+  ).join('');
+  syncDirActive();
+}
+function pickDir(k){
+  const d = DIRS.find(x => x.k === k);
+  if (!d) return;
+  curYaw = d.yaw; curPitch = d.pitch;
+  document.getElementById('rYaw').value = curYaw;
+  document.getElementById('rPitch').value = curPitch;
+  syncAll();
+}
+function syncDirActive(){
+  const near = DIRS.reduce((a, b) => {
+    const da = Math.abs(a.yaw - curYaw) + Math.abs(a.pitch - curPitch);
+    const db = Math.abs(b.yaw - curYaw) + Math.abs(b.pitch - curPitch);
+    return db < da ? b : a;
+  });
+  const d = Math.abs(near.yaw - curYaw) + Math.abs(near.pitch - curPitch);
+  document.querySelectorAll('.dir').forEach(b => {
+    b.classList.toggle('on', b.dataset.k === near.k && d <= 20);
+  });
+}
+
+/* ================= 球体上的相机位置 ================= */
+function syncCam(){
+  // 把 yaw/pitch 映射成球面上的位置
+  const R = 42;                       // 半径百分比
+  const yawR = (curYaw - 90) * Math.PI / 180;
+  const pitchR = -curPitch * Math.PI / 180;
+  const cx = 50 + R * Math.cos(pitchR) * Math.cos(yawR);
+  const cy = 50 + R * Math.cos(pitchR) * Math.sin(yawR);
+
+  const cam = document.getElementById('cam');
+  cam.style.left = cx + '%';
+  cam.style.top = cy + '%';
+
+  // 视锥：从相机指向中心
+  const fr = document.getElementById('frustum');
+  const dx = 50 - cx, dy = 50 - cy;
+  const len = Math.hypot(dx, dy);
+  const ang = Math.atan2(dy, dx) * 180 / Math.PI;
+  fr.style.left = cx + '%';
+  fr.style.top = cy + '%';
+  fr.style.width = (len * 0.9) + '%';
+  fr.style.transform = `rotate(${ang}deg)`;
+}
+
+function syncLabels(){
+  document.getElementById('vYaw').textContent = curYaw + '°';
+  document.getElementById('vPitch').textContent = curPitch + '°';
+  const z = curZoom < 33 ? '近' : curZoom > 66 ? '远' : '标准';
+  document.getElementById('vZoom').textContent = z;
+}
+
+function syncAll(){
+  syncLabels(); syncCam(); syncDirActive();
+}
+
+/* ================= 开关面板 ================= */
+function openMA(fromId){
+  curFrom = fromId;
+  const name = document.getElementById(fromId).querySelector('.nm').textContent;
+  document.getElementById('maFrom').textContent = '基于「' + name + '」';
+  document.getElementById('ma').classList.add('on');
+
+  // 选中该节点
+  document.querySelectorAll('.nd').forEach(n => n.classList.remove('sel'));
+  document.getElementById(fromId).classList.add('sel');
+
+  syncAll();
+}
+function closeMA(){
+  document.getElementById('ma').classList.remove('on');
+}
+
+/* ================= 生成 ================= */
+function doGenerate(){
+  const btn = document.getElementById('genBtn');
+  btn.disabled = true;
+  btn.textContent = '生成中…';
+
+  setTimeout(() => {
+    btn.disabled = false;
+    btn.textContent = '生成';
+
+    genCount++;
+    const fromNode = document.getElementById(curFrom);
+    const fl = parseInt(fromNode.style.left);
+    const ft = parseInt(fromNode.style.top);
+
+    const id = 'g' + genCount;
+    const node = document.createElement('div');
+    node.className = 'nd';
+    node.id = id;
+    node.style.left = (fl + 320 + (genCount - 2) * 24) + 'px';
+    node.style.top = (ft + 120 + (genCount - 2) * 90) + 'px';
+    node.style.width = '170px';
+    node.innerHTML = `
+      <div class="nd-hd">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/>
+          <circle cx="9" cy="9" r="1.6"/><path d="M21 15l-5-5L5 21"/></svg>
+        <span class="nm">图片 ${genCount}_多角度</span>
+        <span class="pin">⚲</span>
+      </div>
+      <div class="nd-img c" style="cursor:pointer" onclick="openMA('${id}')"></div>
+      <div class="nd-op">
+        <b class="hl" onclick="openMA('${id}')" title="多角度编辑">◈</b>
+        <b title="扩图">⤢</b>
+        <b title="超清">✦</b>
+        <b title="去画布编辑">✎</b>
+      </div>
+      <div style="padding:6px 9px;border-top:1px solid var(--ln);font-size:9.5px;
+                  color:var(--tx3);font-family:var(--fm)">
+        来自 ${fromNode.querySelector('.nm').textContent} · ${labelOf()}
+      </div>`;
+    document.getElementById('stage').appendChild(node);
+    node.animate(
+      [{opacity:0, transform:'scale(.94)'}, {opacity:1, transform:'scale(1)'}],
+      {duration:260, easing:'cubic-bezier(.16,1,.3,1)'}
+    );
+
+    drawLink(curFrom, id);
+    updateCount();
+    closeMA();
+    toast('已生成 · 和原图连上了线');
+  }, 900);
+}
+
+function labelOf(){
+  const d = DIRS.find(x =>
+    x.yaw === curYaw && x.pitch === curPitch);
+  const dirName = d ? d.n : (curYaw + '° / ' + curPitch + '°');
+  return dirName;
+}
+
+/* ================= 连线 ================= */
+function drawLink(fromId, toId){
+  const stage = document.getElementById('stage').getBoundingClientRect();
+  const a = document.getElementById(fromId).getBoundingClientRect();
+  const b = document.getElementById(toId).getBoundingClientRect();
+
+  const ax = a.right - stage.left, ay = a.top + a.height / 2 - stage.top;
+  const bx = b.left - stage.left,  by = b.top + b.height / 2 - stage.top;
+
+  const len = Math.hypot(bx - ax, by - ay);
+  const ang = Math.atan2(by - ay, bx - ax) * 180 / Math.PI;
+
+  const line = document.createElement('div');
+  line.className = 'link';
+  line.style.left = ax + 'px';
+  line.style.top = ay + 'px';
+  line.style.width = len + 'px';
+  line.style.transform = `rotate(${ang}deg)`;
+
+  const ic = document.createElement('div');
+  ic.className = 'link-ic';
+  ic.textContent = '✂';
+  ic.title = '断开溯源关系';
+  ic.style.left = ((ax + bx) / 2) + 'px';
+  ic.style.top = ((ay + by) / 2) + 'px';
+  ic.onclick = () => {
+    line.remove(); ic.remove();
+    toast('已断开 · 这两张不再算上下游');
+  };
+
+  document.getElementById('links').appendChild(line);
+  document.getElementById('links').appendChild(ic);
+}
+
+function updateCount(){
+  const n = document.querySelectorAll('.nd').length;
+  document.getElementById('nodeCount').textContent = n + ' 个节点';
+}
+
+/* ================= 拖拽画布上的节点 ================= */
+document.querySelectorAll('.nd').forEach(initDrag);
+function initDrag(el){
+  let sx = 0, sy = 0, ox = 0, oy = 0, dragging = false;
+
+  el.addEventListener('mousedown', e => {
+    if (e.target.closest('.nd-op') || e.target.classList.contains('nd-img')) return;
+    dragging = true;
+    sx = e.clientX; sy = e.clientY;
+    ox = parseInt(el.style.left) || 0;
+    oy = parseInt(el.style.top) || 0;
+    el.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    el.style.left = (ox + e.clientX - sx) + 'px';
+    el.style.top = (oy + e.clientY - sy) + 'px';
+    redrawAllLinks();
+  });
+  document.addEventListener('mouseup', () => {
+    dragging = false;
+    el.style.cursor = '';
+  });
+}
+
+/* 简化：拖动后重算连线（原型里只有一条，够用） */
+function redrawAllLinks(){
+  const links = document.getElementById('links');
+  const fromN = document.getElementById('n1');
+  const toN = document.getElementById('n2');
+  if (!fromN || !toN) return;
+  const hasLine = links.querySelector('.link');
+  if (!hasLine) return;
+  links.innerHTML = '';
+  drawLink('n1', 'n2');
+}
+
+/* ================= 滑块 ================= */
+document.getElementById('rYaw').addEventListener('input', e => {
+  curYaw = +e.target.value; syncAll();
+});
+document.getElementById('rPitch').addEventListener('input', e => {
+  curPitch = +e.target.value; syncAll();
+});
+document.getElementById('rZoom').addEventListener('input', e => {
+  curZoom = +e.target.value; syncLabels();
+});
+
+/* ================= 拖相机小球 ================= */
+(function initCamDrag(){
+  const cam = document.getElementById('cam');
+  const sp = document.getElementById('sphere');
+  let dragging = false;
+
+  cam.addEventListener('mousedown', e => {
+    dragging = true;
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const r = sp.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width * 100;
+    const py = (e.clientY - r.top) / r.height * 100;
+
+    const dx = px - 50, dy = py - 50;
+    let yaw = Math.atan2(dy, dx) * 180 / Math.PI + 90;
+    if (yaw < 0) yaw += 360;
+    yaw = Math.round(yaw / 15) * 15 % 360;
+
+    const dist = Math.hypot(dx, dy);
+    let pitch = Math.round(-dist * 0.62 / 5) * 5;
+    pitch = Math.max(-30, Math.min(60, pitch));
+
+    curYaw = yaw; curPitch = pitch;
+    document.getElementById('rYaw').value = curYaw;
+    document.getElementById('rPitch').value = curPitch;
+    syncAll();
+  });
+  document.addEventListener('mouseup', () => dragging = false);
+})();
+
+/* ================= toast ================= */
+let toastT = null;
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('on');
+  clearTimeout(toastT);
+  toastT = setTimeout(() => t.classList.remove('on'), 1900);
+}
+
+/* ================= 启动 ================= */
+renderDirs();
+syncAll();
+drawLink('n1', 'n2');
+updateCount();
+</script>
+</body>
+</html>
