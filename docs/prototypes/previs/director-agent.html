@@ -3,35 +3,36 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>3D 导演台 · 预演助手（原型 v2）</title>
+<title>3D 创作工作台 · 预演助手（原型 v3）</title>
 <!--
-  原型 v2：3D 导演台的 Agent 面板，抄画布样式
-  依据：.agents/skills/ylcraft-platform-baseline + ylcraft-interaction-quality
+  原型 v3：照真实 3D 创作工作台重做（v1/v2 是凭空设计的，已废弃）
 
-  v2 相对 v1 的两处改动（用户提的）：
-    1 「效果」和「参数」两者都要
-       每张改动卡顶部先给一句人话效果，下面再给可核对的数字
-    2 用户也能手动操作
-       ① 改动卡里的参数可以直接拖滑块微调（AI 提议 → 你改）
-       ② 视口下方有「手动调整」，不经过 AI 也能改（你自己来）
+  v3 改了什么：
+    1 布局照真界面：左控制栏 + 全宽视口 + 底部时间轴 + 右下按钮
+    2 参数用真实的那套：位置/目标点 X/Y/Z、焦距、T值、对焦、FOV、景深、
+      26 类运镜模板、关节角度、姿势
+    3 助手改成「点右下角浮出来」（用户选的 B），不常驻挤视口
+    4 不新增手动控件 —— 真界面左栏已经够强，再画一套是退步
+    5 改动落进已有的「操作历史」
 
-  六条门禁照旧：
-    界面无引擎术语 / 操作留痕 / 只有一个应用按钮 /
-    状态小圆点 / 空态 3 入口 / 助手汇报四项
+  保留的东西：效果一句话（人话）+ 可核对数字
 
-  真实实现：frontend/src/pages/previs/PrevisAssistantPanel.tsx
+  真实实现：
+    frontend/src/pages/previs/index.tsx (128KB)
+    frontend/src/pages/previs/PrevisAssistantPanel.tsx (12KB)
+    frontend/src/pages/previs/cameraMoves.ts (20KB, 26 类运镜)
+    frontend/src/pages/previs/HumanProxyJointPanel.tsx (12KB, 关节)
 -->
 <style>
 :root{
-  --bg:#08080a; --bg2:#0b0b0e; --s1:#101013; --s2:#16161a; --s3:#1c1c21; --s4:#222228;
-  --ln:rgba(255,255,255,.065); --ln2:rgba(255,255,255,.11); --ln3:rgba(255,255,255,.18);
-  --tx:#f0f0f3; --tx2:#9c9ca8; --tx3:#63636e;
+  --bg:#06070a; --bg2:#0b0d12; --s1:#0e1016; --s2:#141720; --s3:#1b1f2a; --s4:#232836;
+  --ln:rgba(255,255,255,.07); --ln2:rgba(255,255,255,.12); --ln3:rgba(255,255,255,.2);
+  --tx:#eef1f6; --tx2:#9aa3b2; --tx3:#666f7e;
   --ac:#22d3ee; --acs:rgba(34,211,238,.13); --acl:rgba(34,211,238,.4);
   --ok:#34d399; --oks:rgba(52,211,153,.12);
   --wn:#fbbf24; --wns:rgba(251,191,36,.11); --wnl:rgba(251,191,36,.45);
-  --dg:#f87171; --dgs:rgba(248,113,113,.1);
-  --r1:5px;--r2:8px;--r3:12px;--r4:16px;
-  --sh2:0 6px 22px -8px rgba(0,0,0,.85);
+  --r1:5px;--r2:8px;--r3:12px;
+  --sh:0 24px 70px -20px rgba(0,0,0,.95),0 0 0 1px rgba(255,255,255,.07);
   --ez:cubic-bezier(.16,1,.3,1);
   --fs:'Inter',-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
   --fm:'JetBrains Mono',Consolas,monospace;
@@ -39,702 +40,779 @@
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
 body{
-  background:var(--bg);color:var(--tx);font-family:var(--fs);font-size:13px;
+  background:var(--bg);color:var(--tx);font-family:var(--fs);font-size:12.5px;
   line-height:1.55;-webkit-font-smoothing:antialiased;overflow:hidden;
 }
 button{font-family:inherit}
 ::-webkit-scrollbar{width:7px;height:7px}
 ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:4px}
 
-/* ============ 顶栏 ============ */
-.top{
-  position:fixed;top:0;left:0;right:0;height:50px;z-index:60;display:flex;
-  align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid var(--ln);
-  background:linear-gradient(to bottom,rgba(8,8,10,.99),rgba(8,8,10,.86));
-  backdrop-filter:blur(18px);
+/* 页面顶栏 */
+.appbar{
+  height:46px;display:flex;align-items:center;gap:14px;padding:0 16px;
+  background:var(--s1);border-bottom:1px solid var(--ln);
 }
-.brand{
-  display:flex;align-items:center;gap:7px;padding:5px 9px 5px 6px;
-  border-radius:var(--r2);background:var(--s1);border:1px solid var(--ln);
-}
-.brand .mk{
-  width:20px;height:20px;border-radius:var(--r1);background:var(--ac);
-  display:flex;align-items:center;justify-content:center;color:#04222a;
-  font-weight:800;font-size:11px;
-}
-.crumb{font-size:12px;color:var(--tx3)}
-.crumb b{color:var(--tx2);font-weight:500}
-.ver{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--tx3)}
-.ver i{width:5px;height:5px;border-radius:50%;background:var(--ok)}
+.brand{display:flex;align-items:center;gap:7px;font-weight:600;font-size:13.5px}
+.brand i{width:16px;height:16px;border-radius:4px;display:block;
+  background:linear-gradient(135deg,var(--ac),#a78bfa)}
+.nav{display:flex;gap:1px;margin-left:6px}
+.nav a{font-size:12px;color:var(--tx2);text-decoration:none;padding:5px 10px;
+  border-radius:var(--r1);white-space:nowrap}
+.nav a.on{background:rgba(34,211,238,.13);color:var(--ac)}
 .sp{flex:1}
 
-.main{position:absolute;top:50px;left:0;right:0;bottom:0;display:flex}
+/* 工作台标题栏 */
+.wbar{
+  height:50px;display:flex;align-items:center;gap:11px;padding:0 16px;
+  background:var(--bg2);border-bottom:1px solid var(--ln);
+}
+.back{
+  display:flex;align-items:center;gap:6px;font-size:12px;color:var(--tx2);
+  padding:5px 10px;border-radius:var(--r1);cursor:pointer;border:none;
+  background:transparent;
+}
+.back:hover{background:var(--s2);color:var(--tx)}
+.wtitle{font-size:14px;font-weight:600}
+.rev{font-size:10.5px;color:var(--tx3);font-family:var(--fm);
+  padding:1px 8px;border-radius:9px;background:var(--s3)}
+.wacts{margin-left:auto;display:flex;gap:7px}
+.wb{font-size:12px;padding:5px 12px;border-radius:var(--r1);cursor:pointer;
+  border:1px solid var(--ln2);background:transparent;color:var(--tx2);transition:.15s}
+.wb:hover{border-color:var(--ln3);color:var(--tx)}
+.wb.primary{background:var(--ac);border-color:var(--ac);color:#04222a;font-weight:600}
 
-/* ---- 左：场景对象 ---- */
-.objs{
-  width:186px;flex:0 0 186px;background:var(--s1);border-right:1px solid var(--ln);
-  display:flex;flex-direction:column;min-height:0;
-}
-.objs-hd{padding:11px 12px 8px;font-size:10.5px;color:var(--tx3);
-  font-weight:600;letter-spacing:.03em}
-.objs-hd span{font-weight:400;font-family:var(--fm);margin-left:5px}
-.objs-list{flex:1;overflow-y:auto;padding:0 7px 10px;min-height:0}
-.oi{
-  display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:6px;
-  cursor:pointer;transition:.15s;margin-bottom:1px;
-}
-.oi:hover{background:var(--s2)}
-.oi.on{background:var(--s3)}
-.oi-ic{
-  width:16px;height:16px;border-radius:4px;background:var(--s3);flex-shrink:0;
-  display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--tx3);
-}
-.oi.on .oi-ic{background:var(--acs);color:var(--ac)}
-.oi-n{font-size:12px;color:var(--tx2);flex:1;overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap}
-.oi.on .oi-n{color:var(--tx)}
-.oi-lock{font-size:9px;color:var(--tx3)}
+.main{position:absolute;top:96px;left:0;right:0;bottom:0;display:flex}
 
-/* ---- 中：视口 ---- */
-.stage{
-  flex:1;position:relative;min-width:0;overflow:hidden;display:flex;
-  flex-direction:column;
+/* 左控制栏 */
+.left{
+  width:236px;flex:0 0 236px;background:var(--s1);border-right:1px solid var(--ln);
+  overflow-y:auto;padding:10px 11px 20px;
+}
+.sec{margin-bottom:14px}
+.sec-t{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--tx2);
+  font-weight:600;margin-bottom:7px}
+.sec-t .cnt{margin-left:auto;font-size:10px;color:var(--tx3);font-family:var(--fm)}
+.layers{display:flex;flex-wrap:wrap;gap:5px}
+.ly{font-size:11px;padding:4px 9px;border-radius:var(--r1);border:1px solid var(--ln2);
+  background:transparent;color:var(--tx2);cursor:pointer;transition:.15s}
+.ly:hover{border-color:var(--ln3);color:var(--tx)}
+.card{background:var(--s2);border:1px solid var(--ln);border-radius:var(--r2);
+  padding:9px 10px;margin-bottom:8px}
+.card-hd{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.card-t{font-size:11.5px;color:var(--tx);font-weight:500}
+.card-ic{margin-left:auto;display:flex;gap:5px}
+.ci{width:17px;height:17px;border-radius:3px;border:none;background:transparent;
+  color:var(--tx3);cursor:pointer;font-size:10px;display:flex;
+  align-items:center;justify-content:center}
+.ci:hover{background:var(--s3);color:var(--tx2)}
+.fr{display:flex;align-items:center;gap:7px;margin-bottom:7px}
+.fr-k{font-size:10.5px;color:var(--tx3);width:44px;flex-shrink:0}
+.fr-c{flex:1}
+.sel{width:100%;background:var(--s3);border:1px solid var(--ln2);border-radius:var(--r1);
+  color:var(--tx2);font-size:11px;padding:4px 7px;font-family:inherit;outline:none}
+.num{width:100%;background:var(--s3);border:1px solid var(--ln2);border-radius:var(--r1);
+  color:var(--tx);font-size:11px;padding:4px 7px;font-family:var(--fm);outline:none}
+.num:focus{border-color:var(--acl)}
+.xyz{display:flex;gap:4px}
+.xyz label{flex:1;min-width:0}
+.xyz span{font-size:9px;color:var(--tx3);font-family:var(--fm);display:block;margin-bottom:2px}
+.focals{display:flex;gap:3px;margin-top:6px}
+.fb{flex:1;font-size:9.5px;padding:3px 0;border-radius:3px;border:1px solid var(--ln2);
+  background:transparent;color:var(--tx3);cursor:pointer;font-family:var(--fm)}
+.fb:hover{color:var(--tx2);border-color:var(--ln3)}
+.fb.on{border-color:var(--ac);color:var(--ac);background:var(--acs)}
+.opt{font-size:9.5px;color:var(--tx3);font-family:var(--fm);line-height:1.7;
+  margin-top:7px;padding-top:7px;border-top:1px solid var(--ln)}
+.opt b{color:var(--tx2);font-weight:500}
+.lfoot{display:flex;gap:5px;margin-top:10px}
+.lf{flex:1;font-size:11px;padding:6px 0;border-radius:var(--r1);cursor:pointer;
+  border:1px solid var(--ln2);background:transparent;color:var(--tx2);transition:.15s}
+.lf.on{background:var(--ac);border-color:var(--ac);color:#04222a;font-weight:600}
+
+/* 视口 */
+.view{flex:1;position:relative;min-width:0;display:flex;flex-direction:column;
   background:
-    radial-gradient(circle at 1px 1px,rgba(255,255,255,.05) 1px,transparent 0)
-    0 0/24px 24px,var(--bg2);
-}
-.viewport{flex:1;position:relative;display:flex;align-items:center;
-  justify-content:center;min-height:0}
-.vp-figure{
-  position:relative;width:130px;height:290px;
-  display:flex;flex-direction:column;align-items:center;gap:4px;
-  transition:transform .3s var(--ez);
-}
-.vp-head{
-  width:42px;height:42px;border-radius:50%;
-  border:1.5px solid var(--ln3);background:var(--s2);
-}
-.vp-torso{
-  width:64px;height:104px;border-radius:10px 10px 6px 6px;
-  border:1.5px solid var(--ln3);background:var(--s2);
-}
-.vp-legs{display:flex;gap:14px}
-.vp-leg{
-  width:20px;height:110px;border-radius:5px;
-  border:1.5px solid var(--ln3);background:var(--s2);
-}
-.vp-desk{
-  position:absolute;left:-82px;top:150px;width:96px;height:56px;
-  border:1.5px solid var(--ln3);background:var(--s2);border-radius:4px;
-  transition:.3s var(--ez);
-}
-.vp-desk::after{
-  content:"";position:absolute;left:-1px;right:-1px;top:14px;height:1px;
-  background:var(--ln3);
-}
-.vp-desk.hide{opacity:0;transform:scale(.9)}
-.vp-arm{
-  position:absolute;width:14px;height:52px;border-radius:5px;
-  border:1.5px solid var(--ac);background:var(--acs);
-  right:-14px;top:118px;opacity:0;transition:.35s var(--ez);
-  transform-origin:top center;transform:rotate(0deg);
-}
-.vp-arm.on{opacity:1;transform:rotate(-58deg)}
-.vp-cam{
-  position:absolute;right:-150px;top:80px;width:70px;height:46px;
-  border:1.5px solid var(--wnl);border-radius:5px;
-  background:rgba(251,191,36,.06);
-  display:flex;align-items:center;justify-content:center;text-align:center;
-  font-size:9.5px;color:var(--wn);line-height:1.35;
-  transition:.3s var(--ez);
-}
-.vp-label{
-  position:absolute;bottom:-26px;left:50%;transform:translateX(-50%);
-  font-size:10px;color:var(--tx3);white-space:nowrap;
-}
+    linear-gradient(rgba(34,211,238,.055) 1px,transparent 1px) 0 0/100% 46px,
+    linear-gradient(90deg,rgba(34,211,238,.055) 1px,transparent 1px) 0 0/46px 100%,
+    radial-gradient(ellipse at 50% 60%,#0d1420 0%,#06070a 70%)}
+.vp{flex:1;position:relative;overflow:hidden}
+.fig{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);
+  transition:transform .35s var(--ez),left .35s var(--ez);transform-origin:bottom center}
+.fig-h{width:17px;height:19px;border-radius:50%;background:#5a6272;margin:0 auto 1px}
+.fig-b{width:26px;height:44px;border-radius:5px 5px 3px 3px;background:#4d5464;margin:0 auto}
+.fig-ls{display:flex;gap:5px;justify-content:center;margin-top:1px}
+.fig-l{width:8px;height:46px;border-radius:3px;background:#454c5b}
+.fig-a{position:absolute;width:6px;height:22px;border-radius:3px;background:#4d5464;
+  right:-4px;top:24px;opacity:0;transition:.35s var(--ez);
+  transform-origin:top center}
+.fig-a.on{opacity:1;transform:rotate(-64deg)}
+.frustum{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.frustum polygon{fill:rgba(251,191,36,.03);stroke:rgba(251,191,36,.55);stroke-width:1.2}
+.camdot{position:absolute;width:7px;height:7px;border-radius:50%;background:var(--wn);
+  box-shadow:0 0 10px rgba(251,191,36,.7);transform:translate(-50%,-50%)}
+.vp-hint{position:absolute;left:16px;bottom:12px;font-size:10.5px;color:var(--tx3);
+  font-family:var(--fm)}
 
-/* 手动调整条 */
-.manual{
-  flex:0 0 auto;border-top:1px solid var(--ln);
-  background:rgba(8,8,10,.6);padding:10px 16px 12px;
-}
-.mn-hd{
-  display:flex;align-items:center;gap:8px;margin-bottom:9px;
-  font-size:11px;color:var(--tx3);
-}
-.mn-hd b{color:var(--tx2);font-weight:500}
-.mn-hd .tag{
-  font-size:9.5px;padding:1px 7px;border-radius:8px;
-  background:var(--s3);color:var(--tx3);font-family:var(--fm);
-}
-.mn-row{display:flex;gap:18px;align-items:flex-start}
-.mn-c{flex:1;min-width:0}
-.mn-t{
-  display:flex;align-items:center;font-size:10.5px;color:var(--tx3);
-  margin-bottom:5px;
-}
-.mn-t .v{margin-left:auto;color:var(--tx2);font-family:var(--fm);font-size:10.5px}
-input[type=range]{
-  -webkit-appearance:none;width:100%;height:3px;border-radius:2px;
-  background:rgba(255,255,255,.12);outline:none;cursor:pointer;
-}
-input[type=range]::-webkit-slider-thumb{
-  -webkit-appearance:none;width:11px;height:11px;border-radius:50%;
-  background:var(--tx);border:2px solid var(--s1);cursor:grab;
-}
-.mn-dirs{display:flex;gap:3px}
-.mn-d{
-  flex:1;font-size:10.5px;padding:4px 2px;border-radius:4px;
-  border:1px solid var(--ln2);background:transparent;color:var(--tx3);
-  cursor:pointer;transition:.15s;
-}
-.mn-d:hover{color:var(--tx2);border-color:var(--ln3)}
-.mn-d.on{border-color:var(--wn);color:var(--wn);background:var(--wns)}
+/* 时间轴 */
+.tl{flex:0 0 auto;height:38px;display:flex;align-items:center;gap:14px;
+  padding:0 16px;background:var(--bg2);border-top:1px solid var(--ln);
+  font-size:10.5px;color:var(--tx3);font-family:var(--fm)}
+.tl .dot{width:6px;height:6px;border-radius:50%;border:1.5px solid var(--tx3)}
+.tl .sp2{flex:1}
+.tl b{color:var(--tx2);font-weight:500}
 
-/* ============ 右：预演助手 ============ */
-.ag{
-  width:400px;flex:0 0 400px;background:var(--s1);border-left:1px solid var(--ln);
-  display:flex;flex-direction:column;min-height:0;overflow:hidden;
-}
-.agh{
-  display:flex;align-items:center;gap:8px;padding:10px 14px;
-  border-bottom:1px solid var(--ln);flex:0 0 auto;
-}
-.agh .ico{width:15px;height:15px;color:var(--ac);flex-shrink:0}
-.agh .t{font-size:12px;font-weight:600}
-.agh .m{margin-left:auto;font-size:10px;color:var(--tx3);font-family:var(--fm)}
-.agb{flex:1;overflow-y:auto;padding:14px;min-height:0}
+/* 右下按钮 */
+.dock{position:absolute;right:16px;bottom:52px;display:flex;gap:9px;z-index:40}
+.dk{display:flex;align-items:center;gap:6px;font-size:11.5px;padding:7px 14px;
+  border-radius:18px;border:1px solid var(--ln2);background:rgba(20,23,32,.94);
+  color:var(--tx2);cursor:pointer;transition:.15s;backdrop-filter:blur(10px);
+  box-shadow:0 6px 22px -8px rgba(0,0,0,.85)}
+.dk:hover{border-color:var(--ln3);color:var(--tx)}
+.dk.on{border-color:var(--acl);color:var(--ac);background:rgba(34,211,238,.1)}
 
-.empty{padding:22px 8px}
-.empty-t{font-size:12.5px;color:var(--tx2);margin-bottom:4px;line-height:1.65}
-.empty-d{font-size:11px;color:var(--tx3);margin-bottom:14px;line-height:1.6}
-.empty-b{
-  display:block;width:100%;text-align:left;padding:9px 12px;
-  border-radius:7px;border:1px solid var(--ln2);background:transparent;
-  color:var(--tx2);font-size:12px;cursor:pointer;transition:.15s;
-  margin-bottom:6px;font-family:inherit;
-}
-.empty-b:hover{border-color:var(--acl);color:var(--ac);background:rgba(34,211,238,.05)}
-.empty-b .k{color:var(--tx3);font-size:10.5px;display:block;margin-top:2px}
+/* 助手浮层 */
+.panel{position:absolute;right:16px;bottom:96px;width:392px;
+  max-height:calc(100% - 130px);background:var(--s2);border:1px solid var(--ln2);
+  border-radius:var(--r3);box-shadow:var(--sh);display:none;flex-direction:column;
+  z-index:50;overflow:hidden}
+.panel.on{display:flex}
+.ph{display:flex;align-items:center;gap:8px;padding:11px 13px;
+  border-bottom:1px solid var(--ln);flex:0 0 auto}
+.ph .ic{width:14px;height:14px;color:var(--ac);flex-shrink:0}
+.ph .t{font-size:12.5px;font-weight:600}
+.ph .m{margin-left:auto;font-size:10px;color:var(--tx3);font-family:var(--fm)}
+.ph .x{width:20px;height:20px;border-radius:4px;border:none;background:transparent;
+  color:var(--tx3);cursor:pointer;font-size:13px;line-height:1}
+.ph .x:hover{background:var(--s3);color:var(--tx)}
+.pb{flex:1;overflow-y:auto;padding:13px;min-height:0}
 
-.msg{margin-bottom:13px}
+.emp-t{font-size:12.5px;color:var(--tx2);margin-bottom:4px}
+.emp-d{font-size:11px;color:var(--tx3);line-height:1.65;margin-bottom:13px}
+.emp-d b{color:var(--tx2)}
+.eb{display:block;width:100%;text-align:left;padding:8px 11px;margin-bottom:6px;
+  border-radius:var(--r2);border:1px solid var(--ln2);background:transparent;
+  color:var(--tx2);font-size:11.5px;cursor:pointer;transition:.15s;font-family:inherit}
+.eb:hover{border-color:var(--acl);color:var(--ac);background:rgba(34,211,238,.05)}
+.eb .k{display:block;font-size:10px;color:var(--tx3);margin-top:2px}
+
+.msg{margin-bottom:12px}
 .msg.me{display:flex;justify-content:flex-end}
-.msg.me .bubble{
-  background:var(--s3);border:1px solid var(--ln);border-radius:var(--r2) var(--r2) 3px var(--r2);
-  padding:9px 12px;font-size:12.5px;color:var(--tx);line-height:1.65;max-width:290px;
-}
-.msg.ai .who{font-size:10px;color:var(--tx3);margin-bottom:5px}
-.msg.ai .bubble{
-  background:var(--bg2);border:1px solid var(--ln);border-radius:var(--r2) var(--r2) var(--r2) 3px;
-  padding:11px 13px;font-size:12.5px;color:var(--tx2);line-height:1.7;
-}
-.msg.ai .bubble b{color:var(--tx);font-weight:600}
+.msg.me .bb{background:var(--s3);border:1px solid var(--ln);
+  border-radius:var(--r2) var(--r2) 3px var(--r2);padding:8px 11px;font-size:12px;
+  color:var(--tx);max-width:280px;line-height:1.6}
+.msg.ai .who{font-size:9.5px;color:var(--tx3);margin-bottom:4px}
+.msg.ai .bb{background:var(--bg2);border:1px solid var(--ln);
+  border-radius:var(--r2) var(--r2) var(--r2) 3px;padding:10px 12px;font-size:12px;
+  color:var(--tx2);line-height:1.7}
+.msg.ai .bb b{color:var(--tx);font-weight:600}
 
-/* 改动卡 */
-.plan{
-  margin-top:8px;border:1px solid var(--ln2);border-radius:var(--r3);
-  background:var(--s2);overflow:hidden;
-}
-.plan-hd{
-  display:flex;align-items:center;gap:7px;padding:10px 12px 8px;
-  border-bottom:1px solid var(--ln);
-}
-.plan-t{font-size:12px;font-weight:600;color:var(--tx)}
-.plan-n{
-  font-size:10px;font-family:var(--fm);color:var(--ac);
-  background:var(--acs);padding:1px 7px;border-radius:9px;
-}
-
-.effect{
-  padding:10px 12px;border-bottom:1px solid var(--ln);
-  background:rgba(34,211,238,.04);
-}
-.effect-k{font-size:9.5px;color:var(--tx3);font-family:var(--fm);margin-bottom:3px}
-.effect-v{font-size:12.5px;color:var(--tx);line-height:1.65}
-.effect-v b{color:var(--ac);font-weight:600}
-
-.op{padding:10px 12px;border-bottom:1px solid var(--ln)}
+.plan{margin-top:7px;border:1px solid var(--ln2);border-radius:var(--r3);
+  background:var(--s3);overflow:hidden}
+.pl-hd{display:flex;align-items:center;gap:7px;padding:9px 11px;
+  border-bottom:1px solid var(--ln)}
+.pl-t{font-size:11.5px;font-weight:600;color:var(--tx)}
+.pl-n{font-size:9.5px;font-family:var(--fm);color:var(--ac);background:var(--acs);
+  padding:1px 7px;border-radius:9px}
+.eff{padding:9px 11px;border-bottom:1px solid var(--ln);background:rgba(34,211,238,.045)}
+.eff-k{font-size:9px;color:var(--tx3);font-family:var(--fm);margin-bottom:3px}
+.eff-v{font-size:12px;color:var(--tx);line-height:1.6}
+.eff-v b{color:var(--ac);font-weight:600}
+.op{padding:9px 11px;border-bottom:1px solid var(--ln)}
 .op:last-of-type{border-bottom:none}
-.op-hd{display:flex;align-items:center;gap:7px;margin-bottom:7px}
-.op-cb{
-  width:13px;height:13px;border-radius:3px;border:1.5px solid var(--ln3);
-  flex-shrink:0;cursor:pointer;position:relative;transition:.15s;
-}
-.op-cb.on{background:var(--ac);border-color:var(--ac)}
-.op-cb.on::after{
-  content:"✓";position:absolute;inset:0;display:flex;align-items:center;
-  justify-content:center;font-size:9px;color:#04222a;font-weight:700;
-}
-.op-k{font-size:12px;color:var(--tx);font-weight:500}
-.op-badge{font-size:9px;padding:1px 6px;border-radius:8px;
-  font-family:var(--fm);background:var(--s3);color:var(--tx3)}
-.op-badge.new{background:var(--oks);color:var(--ok)}
-
-.op-diff{padding-left:20px}
-.dr{display:flex;align-items:baseline;gap:6px;font-size:11.5px;line-height:1.75}
-.dr-k{color:var(--tx3);flex-shrink:0;min-width:30px}
-.dr-old{color:var(--tx3);text-decoration:line-through;
-  text-decoration-color:rgba(255,255,255,.22)}
-.dr-ar{color:var(--tx3);font-size:10px}
-.dr-new{color:#fbbf24;font-family:var(--fm);font-size:11px}
-
-.adjust{margin-top:7px;padding-left:20px}
-.adj-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-.adj-k{font-size:10.5px;color:var(--tx3);width:44px;flex-shrink:0}
-.adj-r{flex:1}
-.adj-v{
-  font-size:10.5px;color:var(--tx2);font-family:var(--fm);width:52px;
-  text-align:right;flex-shrink:0;
-}
-.adj-v.changed{color:#fbbf24}
-
-.op-note{
-  font-size:10.5px;color:var(--tx3);margin-top:6px;padding-left:20px;
-  display:flex;align-items:flex-start;gap:5px;line-height:1.55;
-}
+.op-hd{display:flex;align-items:center;gap:7px;margin-bottom:6px}
+.cb{width:12px;height:12px;border-radius:3px;border:1.5px solid var(--ln3);
+  flex-shrink:0;cursor:pointer;position:relative;transition:.15s}
+.cb.on{background:var(--ac);border-color:var(--ac)}
+.cb.on::after{content:"✓";position:absolute;inset:0;display:flex;align-items:center;
+  justify-content:center;font-size:8px;color:#04222a;font-weight:700}
+.op-k{font-size:11.5px;color:var(--tx);font-weight:500}
+.dr{display:flex;align-items:baseline;gap:5px;font-size:11px;line-height:1.7;
+  padding-left:19px}
+.dr-k{color:var(--tx3);flex-shrink:0;min-width:38px;font-size:10.5px}
+.dr-o{color:var(--tx3);text-decoration:line-through;
+  text-decoration-color:rgba(255,255,255,.2);font-family:var(--fm);font-size:10.5px}
+.dr-a{color:var(--tx3);font-size:9px}
+.dr-n{color:var(--wn);font-family:var(--fm);font-size:10.5px}
+.op-note{font-size:10px;color:var(--tx3);margin-top:5px;padding-left:19px;
+  display:flex;gap:5px;line-height:1.55}
 .op-note .w{color:var(--wn)}
-
-.cant{
-  padding:9px 12px;border-top:1px solid var(--ln);
-  font-size:11px;color:var(--tx3);line-height:1.6;
-  background:rgba(251,191,36,.04);
-}
+.cant{padding:8px 11px;border-top:1px solid var(--ln);font-size:10.5px;
+  color:var(--tx3);line-height:1.6;background:rgba(251,191,36,.045)}
 .cant b{color:var(--wn);font-weight:500}
+.pl-ft{display:flex;align-items:center;gap:8px;padding:9px 11px;
+  border-top:1px solid var(--ln);background:rgba(0,0,0,.25)}
+.ap{padding:6px 15px;border-radius:var(--r1);border:none;background:var(--tx);
+  color:#0a0a0c;font-size:11.5px;font-weight:600;cursor:pointer;transition:.15s}
+.ap:hover{filter:brightness(.92)}
+.ap:disabled{opacity:.5;cursor:not-allowed}
+.pl-ft .imp{margin-left:auto;font-size:10px;color:var(--tx3)}
 
-.plan-ft{
-  display:flex;align-items:center;gap:9px;padding:10px 12px;
-  border-top:1px solid var(--ln);background:rgba(8,8,10,.4);
-}
-.apply{
-  padding:7px 16px;border-radius:var(--r2);border:none;
-  background:var(--tx);color:#0a0a0c;font-size:12px;font-weight:600;
-  cursor:pointer;transition:.15s;
-}
-.apply:hover{filter:brightness(.92)}
-.apply:disabled{opacity:.5;cursor:not-allowed}
-.plan-ft .impact{margin-left:auto;font-size:10.5px;color:var(--tx3)}
-
-.report{
-  margin-top:9px;border-radius:var(--r3);border:1px solid var(--ln);
-  background:var(--bg2);overflow:hidden;
-}
-.rp-i{
-  display:flex;gap:9px;padding:8px 12px;font-size:11.5px;line-height:1.65;
-  border-bottom:1px solid var(--ln);
-}
-.rp-i:last-child{border-bottom:none}
-.rp-k{flex-shrink:0;width:52px;color:var(--tx3);font-size:10.5px}
+.rep{margin-top:8px;border-radius:var(--r3);border:1px solid var(--ln);
+  background:var(--bg2);overflow:hidden}
+.rp{display:flex;gap:8px;padding:7px 11px;font-size:11px;line-height:1.6;
+  border-bottom:1px solid var(--ln)}
+.rp:last-child{border-bottom:none}
+.rp-k{flex-shrink:0;width:48px;color:var(--tx3);font-size:10px}
 .rp-v{color:var(--tx2);flex:1;min-width:0}
 .rp-v b{color:var(--tx);font-weight:500}
-.rp-v .mute{color:var(--tx3)}
+.rp-v .mu{color:var(--tx3)}
 
-.cmp{border-top:1px solid var(--ln);padding:9px 12px 10px;
-  background:rgba(8,8,10,.5);flex:0 0 auto}
-.cmp .bx{background:var(--bg2);border:1px solid var(--ln2);border-radius:var(--r3);
-  padding:8px 10px}
-.cmp .row1{display:flex;align-items:center;gap:8px}
-.cmp textarea{
-  flex:1;background:0;border:0;color:var(--tx);font-family:inherit;
-  font-size:12.5px;resize:none;outline:none;line-height:1.6;max-height:64px;
-}
-.cmp textarea::placeholder{color:var(--tx3)}
-.snd{
-  width:26px;height:26px;border-radius:var(--r2);background:var(--ac);border:0;
+.pf{flex:0 0 auto;border-top:1px solid var(--ln);padding:9px 11px 10px;
+  background:rgba(0,0,0,.2)}
+.pf .bx{background:var(--bg2);border:1px solid var(--ln2);border-radius:var(--r2);
+  padding:7px 9px}
+.pf .r1{display:flex;align-items:center;gap:7px}
+.pf textarea{flex:1;background:0;border:0;color:var(--tx);font-family:inherit;
+  font-size:12px;resize:none;outline:none;line-height:1.6;max-height:62px}
+.pf textarea::placeholder{color:var(--tx3)}
+.snd{width:24px;height:24px;border-radius:var(--r1);background:var(--ac);border:0;
   color:#04222a;display:flex;align-items:center;justify-content:center;
-  cursor:pointer;flex-shrink:0;
-}
-.cmp .prow{
-  display:flex;align-items:center;gap:4px;margin-top:7px;padding-top:6px;
-  border-top:1px solid var(--ln);font-size:11px;color:var(--tx2);
-}
-.cmp .op2{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;
-  border-radius:var(--r1)}
-.cmp .sp2{margin-left:auto}
-.cmp .hint{font-size:10px;color:var(--tx3)}
+  cursor:pointer;flex-shrink:0}
+.pf .r2{display:flex;align-items:center;gap:5px;margin-top:6px;padding-top:6px;
+  border-top:1px solid var(--ln);font-size:10px;color:var(--tx3)}
+.pf .r2 .sp3{margin-left:auto}
 
-.toast{
-  position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(8px);
-  padding:8px 16px;border-radius:18px;background:var(--s2);
-  border:1px solid var(--ln2);font-size:11.5px;color:var(--tx2);
-  box-shadow:var(--sh2);opacity:0;transition:.2s;pointer-events:none;z-index:99;
-}
+/* 操作历史浮层 */
+.hist{position:absolute;right:16px;bottom:96px;width:340px;
+  max-height:calc(100% - 130px);background:var(--s2);border:1px solid var(--ln2);
+  border-radius:var(--r3);box-shadow:var(--sh);display:none;flex-direction:column;
+  z-index:50;overflow:hidden}
+.hist.on{display:flex}
+.hh{display:flex;align-items:center;gap:8px;padding:11px 13px;
+  border-bottom:1px solid var(--ln)}
+.hh .t{font-size:12.5px;font-weight:600}
+.hh .x{margin-left:auto;width:20px;height:20px;border-radius:4px;border:none;
+  background:transparent;color:var(--tx3);cursor:pointer;font-size:13px}
+.hh .x:hover{background:var(--s3);color:var(--tx)}
+.hb{flex:1;overflow-y:auto;padding:10px;min-height:0}
+.hi{display:flex;gap:9px;padding:8px 9px;border-radius:var(--r2);
+  transition:.15s;margin-bottom:2px}
+.hi:hover{background:var(--s3)}
+.hi-i{width:18px;height:18px;border-radius:50%;flex-shrink:0;background:var(--s3);
+  display:flex;align-items:center;justify-content:center;font-size:8.5px;
+  color:var(--tx3);font-family:var(--fm)}
+.hi-i.ai{background:var(--acs);color:var(--ac)}
+.hi-i.man{background:var(--wns);color:var(--wn)}
+.hi-b{flex:1;min-width:0}
+.hi-t{font-size:11.5px;color:var(--tx2);line-height:1.5}
+.hi-t b{color:var(--tx);font-weight:500}
+.hi-m{font-size:9.5px;color:var(--tx3);font-family:var(--fm);margin-top:1px}
+.hi-u{font-size:9.5px;color:var(--tx3);cursor:pointer;flex-shrink:0;
+  align-self:flex-start;padding:2px 5px;border-radius:3px;border:none;
+  background:transparent}
+.hi-u:hover{background:var(--s4);color:var(--tx2)}
+
+.toast{position:fixed;left:50%;bottom:60px;transform:translateX(-50%) translateY(8px);
+  padding:7px 15px;border-radius:16px;background:var(--s2);border:1px solid var(--ln2);
+  font-size:11px;color:var(--tx2);box-shadow:var(--sh);opacity:0;
+  transition:.2s;pointer-events:none;z-index:99}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
-
-.note{
-  position:fixed;left:14px;bottom:14px;font-size:10.5px;color:var(--tx3);
-  background:rgba(16,16,19,.93);border:1px solid var(--ln2);
-  padding:6px 12px;border-radius:8px;line-height:1.5;z-index:80;
-  backdrop-filter:blur(8px);pointer-events:none;max-width:520px;
-}
-.note b{color:var(--ac)}
 </style>
 </head>
 <body>
 
-<div class="top">
-  <div class="brand"><span class="mk">YL</span></div>
-  <div class="crumb">创作项目 / <b>秋天颐和园</b> / 3D 导演台</div>
-  <div class="ver"><i></i>第 7 版</div>
+<div class="appbar">
+  <div class="brand"><i></i>YLCraft</div>
+  <div class="nav">
+    <a href="#">概览</a><a href="#">创作项目</a><a href="#">素材库</a>
+    <a href="#" class="on">创作工作台</a><a href="#">AI 创作</a><a href="#">编辑制作</a>
+  </div>
   <div class="sp"></div>
-  <div class="crumb">绑在分镜 · 第 2 格</div>
+</div>
+
+<div class="wbar">
+  <button class="back">← 返回 Story</button>
+  <span class="wtitle">E2E 二期验收：全景贴图 + 模型</span>
+  <span class="rev">revision <span id="revNum">1</span></span>
+  <div class="wacts">
+    <button class="wb primary">保存</button>
+    <button class="wb">生成初稿</button>
+    <button class="wb">截图回流</button>
+    <button class="wb">导出</button>
+  </div>
 </div>
 
 <div class="main">
 
-  <!-- 左：场景对象 -->
-  <aside class="objs">
-    <div class="objs-hd">场景对象<span>4</span></div>
-    <div class="objs-list">
-      <div class="oi" onclick="pickObj(this,'char')">
-        <span class="oi-ic">人</span><span class="oi-n">小林</span>
-        <span class="oi-lock">🔒</span>
+  <!-- 左控制栏 -->
+  <aside class="left">
+    <div class="sec">
+      <div class="sec-t">场景图层</div>
+      <div class="layers">
+        <button class="ly">＋ 几何体</button>
+        <button class="ly">＋ 人形占位</button>
+        <button class="ly">＋ 全景背景</button>
+        <button class="ly">＋ 灯光</button>
+        <button class="ly">＋ 从素材库添加模型</button>
       </div>
-      <div class="oi" onclick="pickObj(this,'char2')">
-        <span class="oi-ic">人</span><span class="oi-n">阿芸</span>
+    </div>
+
+    <div class="sec">
+      <div class="sec-t">人物</div>
+      <div class="card">
+        <div class="fr">
+          <span class="fr-k">姿势</span>
+          <select class="sel fr-c">
+            <option>站立</option><option>坐姿</option><option>行走</option>
+          </select>
+          <button class="ci" title="关节微调">⚙</button>
+        </div>
+        <div class="fr">
+          <span class="fr-k">动作</span>
+          <select class="sel fr-c" id="motionSel">
+            <option>无动作</option><option>抬手</option><option>转身</option>
+          </select>
+        </div>
+        <div class="fr">
+          <span class="fr-k">身高</span>
+          <input class="num fr-c" value="1.72">
+          <span style="font-size:10px;color:var(--tx3)">m</span>
+        </div>
       </div>
-      <div class="oi" onclick="pickObj(this,'desk')">
-        <span class="oi-ic">物</span><span class="oi-n">书桌</span>
+    </div>
+
+    <div class="sec">
+      <div class="sec-t">全景背景</div>
+      <div class="card">
+        <div class="card-hd">
+          <span class="card-t">全景</span>
+          <div class="card-ic">
+            <button class="ci">👁</button><button class="ci">🔓</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:5px;margin-bottom:7px">
+          <button class="ly" style="flex:1;text-align:center">从素材库选贴图</button>
+          <button class="ly" style="flex:1;text-align:center">生成背景</button>
+        </div>
+        <div class="fr" style="margin-bottom:4px">
+          <span class="fr-k">呈现方式</span>
+          <select class="sel fr-c"><option>全景球（2:1 等距）</option><option>图片背板</option></select>
+        </div>
+        <div style="font-size:9.5px;color:var(--tx3);line-height:1.6">
+          当前是纯色背景，选贴图或生成背景后，这里可切换全景球 / 图片背板
+        </div>
       </div>
-      <div class="oi on" onclick="pickObj(this,'cam')">
-        <span class="oi-ic">机</span><span class="oi-n">主视角</span>
+    </div>
+
+    <div class="sec">
+      <div class="sec-t">相机 <span class="cnt">+ 新增</span></div>
+      <div class="card" style="border-color:var(--acl)">
+        <div class="card-hd">
+          <span class="card-t" style="color:var(--ac)">主视角</span>
+          <div class="card-ic"><button class="ci">🗑</button></div>
+        </div>
+
+        <div style="font-size:10px;color:var(--tx3);margin-bottom:6px">位置 / 目标点（X / Y / Z）</div>
+        <div class="fr">
+          <span class="fr-k">位置</span>
+          <div class="xyz fr-c">
+            <label><span>X</span><input class="num" id="posX" value="4.0"></label>
+            <label><span>Y</span><input class="num" id="posY" value="3.0"></label>
+            <label><span>Z</span><input class="num" id="posZ" value="6.0"></label>
+          </div>
+        </div>
+        <div class="fr">
+          <span class="fr-k">目标</span>
+          <div class="xyz fr-c">
+            <label><span>X</span><input class="num" id="tgtX" value="0.0"></label>
+            <label><span>Y</span><input class="num" id="tgtY" value="1.0"></label>
+            <label><span>Z</span><input class="num" id="tgtZ" value="0.0"></label>
+          </div>
+        </div>
+
+        <div class="fr" style="margin-top:9px">
+          <span class="fr-k">运镜模板</span>
+          <select class="sel fr-c">
+            <option>26 类运镜</option><option>推镜</option>
+            <option>拉镜</option><option>摇镜</option>
+          </select>
+          <button class="ci" style="width:auto;padding:0 6px;font-size:10px">套用</button>
+        </div>
+
+        <div class="fr" style="margin-top:9px">
+          <span class="fr-k">画幅</span>
+          <select class="sel fr-c"><option>全画幅 36×24</option><option>Super35</option></select>
+        </div>
+
+        <div class="fr">
+          <span class="fr-k">焦距</span>
+          <input class="num fr-c" id="focalIn" value="49.5">
+          <span style="font-size:10px;color:var(--tx3)">mm</span>
+        </div>
+        <div class="focals" id="focalPresets">
+          <button class="fb">14</button><button class="fb">18</button>
+          <button class="fb">24</button><button class="fb">28</button>
+          <button class="fb">35</button><button class="fb on">50</button>
+          <button class="fb">85</button><button class="fb">135</button>
+        </div>
+
+        <div class="fr" style="margin-top:8px">
+          <span class="fr-k">T/</span>
+          <input class="num fr-c" id="tstopIn" value="2.8">
+          <span class="fr-k" style="width:auto;margin-left:4px">对焦</span>
+          <input class="num fr-c" id="focusIn" value="3.0">
+          <span style="font-size:10px;color:var(--tx3)">m</span>
+        </div>
+
+        <div class="opt">
+          FOV <b id="fovOut">40</b> · 水平视角 <b id="hfovOut">40.0°</b> ·
+          景深 <b id="dofOut">2.73 m – 3.32 m</b><br>（超焦距 <b id="hyperOut">30.39 m</b>）
+        </div>
+      </div>
+
+      <div class="lfoot">
+        <button class="lf on">导演视角</button>
+        <button class="lf">活动机位</button>
       </div>
     </div>
   </aside>
 
-  <!-- 中：视口 + 手动调整 -->
-  <div class="stage">
-    <div class="viewport">
-      <div class="vp-figure" id="vpFig">
-        <div class="vp-head"></div>
-        <div class="vp-torso"></div>
-        <div class="vp-legs">
-          <div class="vp-leg"></div><div class="vp-leg"></div>
-        </div>
-        <div class="vp-desk" id="vpDesk"></div>
-        <div class="vp-arm" id="vpArm"></div>
-        <div class="vp-cam" id="vpCam">正面 · 35mm · 3.2 米</div>
-        <div class="vp-label" id="vpLabel">小林 · 背对镜头 · 站姿</div>
-      </div>
-    </div>
-
-    <div class="manual">
-      <div class="mn-hd">
-        <b>手动调整</b>
-        <span class="tag" id="mnTarget">主视角</span>
-        <span style="margin-left:auto;font-size:10px">
-          你也可以直接改，不用跟它说
-        </span>
-      </div>
-      <div class="mn-row" id="mnRow"></div>
-    </div>
-  </div>
-
-  <!-- 右：预演助手 -->
-  <aside class="ag">
-    <div class="agh">
-      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 12a8 8 0 0 1-8 8H7l-4 3V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z"/>
+  <!-- 视口 -->
+  <div class="view">
+    <div class="vp" id="vp">
+      <svg class="frustum" id="frustum">
+        <polygon id="frustumPoly" points=""></polygon>
       </svg>
-      <span class="t">预演助手</span>
-      <span class="m">第 7 版 · 主视角</span>
-    </div>
+      <div class="camdot" id="camdot"></div>
 
-    <div class="agb" id="agb">
-      <div class="empty" id="emptyState">
-        <div class="empty-t">说你想怎么改，我来摆。</div>
-        <div class="empty-d">
-          我只会提议，<b>动了什么会逐条写给你看，你点应用才生效。
-          不勾的地方我不会碰，你也可以直接拖下面的滑块自己改。</b>
-        </div>
-        <button class="empty-b" onclick="demoAsk('camera')">
-          把机位推近一点，再偏到右前方
-          <span class="k">会改：机位的距离、角度、焦距</span>
-        </button>
-        <button class="empty-b" onclick="demoAsk('pose')">
-          让人物转向镜头，抬起手
-          <span class="k">会改：朝向 + 动作</span>
-        </button>
-        <button class="empty-b" onclick="demoAsk('add')">
-          让书桌出现在画面里
-          <span class="k">会加：一个原来没有的物体</span>
-        </button>
+      <div class="fig" id="fig">
+        <div class="fig-h"></div>
+        <div class="fig-b"></div>
+        <div class="fig-ls"><div class="fig-l"></div><div class="fig-l"></div></div>
+        <div class="fig-a" id="figArm"></div>
       </div>
-      <div id="chat" style="display:none"></div>
+
+      <div class="vp-hint">节点 2 · 拖拽旋转视图，滚轮缩放</div>
     </div>
 
-    <div class="cmp">
-      <div class="bx">
-        <div class="row1">
-          <textarea id="ta" rows="1"
-            placeholder="说一句，例如：把桌子挪到人物右边，机位推近"></textarea>
-          <button class="snd" onclick="sendMsg()">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-                 stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-              <path d="M12 19V5M6 11l6-6 6 6"/>
-            </svg>
+    <div class="tl">
+      <span class="dot"></span>
+      <span>第 <b>0</b> / 24 帧 · 0.00s</span>
+      <span class="sp2"></span>
+      <span>时长 <b>1.0</b> s</span>
+      <span><b>0</b> 关键帧</span>
+    </div>
+
+    <div class="dock">
+      <button class="dk" id="btnHist" onclick="togglePanel('hist')">🕘 操作历史</button>
+      <button class="dk on" id="btnAsk" onclick="togglePanel('ask')">💬 助手</button>
+    </div>
+
+    <!-- 助手浮层 -->
+    <div class="panel on" id="panelAsk">
+      <div class="ph">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12a8 8 0 0 1-8 8H7l-4 3V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z"/>
+        </svg>
+        <span class="t">预演助手</span>
+        <span class="m">revision <span id="revTop">1</span></span>
+        <button class="x" onclick="togglePanel('ask')">✕</button>
+      </div>
+
+      <div class="pb" id="pb">
+        <div id="emptyState">
+          <div class="emp-t">说你想怎么改，我来摆。</div>
+          <div class="emp-d">
+            我只会提议 —— <b>改了什么会逐条列出来，你点应用才进场景</b>，
+            并且会记进下面「操作历史」。
+          </div>
+          <button class="eb" onclick="demoAsk('cam')">
+            机位推近一点，偏到右前方
+            <span class="k">会改：位置 / 目标点 / 焦距 / 对焦</span>
+          </button>
+          <button class="eb" onclick="demoAsk('pose')">
+            让人物抬起右手
+            <span class="k">会改：动作 + 关节角度</span>
+          </button>
+          <button class="eb" onclick="demoAsk('lens')">
+            换成 35mm 广一点，景深深一点
+            <span class="k">会改：焦距 / T值</span>
           </button>
         </div>
-        <div class="prow">
-          <span class="op2">选中的：<span id="pickedName">主视角</span></span>
-          <span class="op2">✨ 只提议，不直接改</span>
-          <span class="sp2"></span>
-          <span class="hint">Enter 发送</span>
+        <div id="chat" style="display:none"></div>
+      </div>
+
+      <div class="pf">
+        <div class="bx">
+          <div class="r1">
+            <textarea id="ta" rows="1"
+              placeholder="说一句，例如：机位推近，人物转到画面左边"></textarea>
+            <button class="snd" onclick="sendMsg()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+                <path d="M12 19V5M6 11l6-6 6 6"/>
+              </svg>
+            </button>
+          </div>
+          <div class="r2">
+            <span>选中的：主视角</span><span class="sp3"></span>
+            <span>✨ 只提议 · Enter 发送</span>
+          </div>
         </div>
       </div>
     </div>
-  </aside>
 
+    <!-- 操作历史浮层 -->
+    <div class="hist" id="panelHist">
+      <div class="hh">
+        <span class="t">操作历史</span>
+        <button class="x" onclick="togglePanel('hist')">✕</button>
+      </div>
+      <div class="hb" id="histBody">
+        <div class="hi">
+          <span class="hi-i man">手</span>
+          <div class="hi-b">
+            <div class="hi-t">位置 Z 改成 <b>6.0</b></div>
+            <div class="hi-m">3 分钟前 · 手动</div>
+          </div>
+        </div>
+        <div class="hi">
+          <span class="hi-i man">手</span>
+          <div class="hi-b">
+            <div class="hi-t">姿势改成 <b>站立</b></div>
+            <div class="hi-m">5 分钟前 · 手动</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
 
-
 <script>
 /* =========================================================
-   场景状态（唯一真相）：手动调整和 AI 提议都改这一份
+   场景状态（照真界面的参数）
    ========================================================= */
 const scene = {
-  cam:  { angle:'front', focal:35, distance:3.2 },
-  char: { facing:'away', motion:null },
-  desk: { visible:true }
+  cam: {
+    pos: {x:4.0, y:3.0, z:6.0},
+    tgt: {x:0.0, y:1.0, z:0.0},
+    focal: 49.5, tstop: 2.8, focus: 3.0
+  },
+  char: { pose:'站立', motion:null, height:1.72 }
 };
 
-const ANGLES = [
-  {k:'left',  n:'左侧'},
-  {k:'front', n:'正面'},
-  {k:'right', n:'右前方'}
-];
-function angleName(k){ return (ANGLES.find(a => a.k === k) || ANGLES[1]).n; }
+function dist(a, b){
+  return Math.sqrt(Math.pow(a.x-b.x,2)+Math.pow(a.y-b.y,2)+Math.pow(a.z-b.z,2));
+}
+function fmtXYZ(o){ return o.x.toFixed(1)+' / '+o.y.toFixed(1)+' / '+o.z.toFixed(1); }
 
 /* =========================================================
-   ⭐ 效果一句话：从参数算出来的，不是写死的
+   视口渲染
    ========================================================= */
-function buildEffect(from, to){
-  const parts = [];
-  const ratio = from.distance / to.distance;
-  if (ratio > 1.35) parts.push('人物在画面里<b>大了一点</b>');
-  else if (ratio > 1.12) parts.push('人物在画面里<b>稍大</b>');
-  else if (ratio < 0.75) parts.push('人物在画面里<b>小了一些</b>');
-  else if (ratio < 0.9) parts.push('人物在画面里<b>稍小</b>');
+function renderScene(){
+  const c = scene.cam;
+  setVal('posX', c.pos.x.toFixed(1));
+  setVal('posY', c.pos.y.toFixed(1));
+  setVal('posZ', c.pos.z.toFixed(1));
+  setVal('tgtX', c.tgt.x.toFixed(1));
+  setVal('tgtY', c.tgt.y.toFixed(1));
+  setVal('tgtZ', c.tgt.z.toFixed(1));
+  setVal('focalIn', c.focal);
+  setVal('tstopIn', c.tstop);
+  setVal('focusIn', c.focus.toFixed(1));
 
-  if (to.focal > from.focal + 8) parts.push('背景<b>压得更平</b>，没那么乱');
-  else if (to.focal < from.focal - 8) parts.push('背景<b>更开阔</b>');
+  document.querySelectorAll('.fb').forEach(b => {
+    b.classList.toggle('on', Math.abs(parseFloat(b.textContent) - c.focal) < 1);
+  });
 
-  if (from.angle !== to.angle){
-    parts.push('机位从' + angleName(from.angle) + '转到了<b>' + angleName(to.angle) + '</b>');
+  // FOV（全画幅宽 36mm）
+  const fov = 2*Math.atan(36/(2*c.focal))*180/Math.PI;
+  const e1 = document.getElementById('fovOut');
+  if (e1) e1.textContent = fov.toFixed(0);
+  const e2 = document.getElementById('hfovOut');
+  if (e2) e2.textContent = fov.toFixed(1) + '°';
+
+  // 景深 + 超焦距（近似）
+  const d = c.focus;   // 景深围绕「对焦距离」算，不是相机到人物的距离
+  const hyper = (c.focal*c.focal)/(c.tstop*0.0288)/1000;  // 全画幅弥散圆 0.0288mm（对角线的 1/1500）
+  const near = (d*(hyper - c.focal/1000))/(hyper + d - 2*c.focal/1000);
+  const far  = (d*(hyper - c.focal/1000))/(hyper - d);
+  const dofEl = document.getElementById('dofOut');
+  if (dofEl){
+    const farTxt = (far > 0 && isFinite(far)) ? far.toFixed(2)+' m' : '∞';
+    dofEl.textContent = Math.max(0.1,near).toFixed(2)+' m – '+farTxt;
   }
-  if (parts.length === 0) return '看起来<b>没什么变化</b>';
-  return parts.join('，') + '。';
+  const hEl = document.getElementById('hyperOut');
+  if (hEl) hEl.textContent = hyper.toFixed(2) + ' m';
+
+  // 人物大小跟距离走
+  const fig = document.getElementById('fig');
+  if (fig){
+    const s = Math.max(.45, Math.min(2.0, 7.5/camDistance()));
+    fig.style.transform = 'translate(-50%,-50%) scale('+s.toFixed(3)+')';
+    fig.style.left = (50 + c.tgt.x*10) + '%';
+  }
+  const arm = document.getElementById('figArm');
+  if (arm) arm.classList.toggle('on', scene.char.motion === 'raise');
+
+  drawFrustum();
 }
 
-function buildEffectChar(from, to){
+function camDistance(){ return dist(scene.cam.pos, scene.cam.tgt) || 1; }
+
+function drawFrustum(){
+  const vp = document.getElementById('vp');
+  const poly = document.getElementById('frustumPoly');
+  const dot = document.getElementById('camdot');
+  if (!vp || !poly) return;
+
+  const w = vp.clientWidth, h = vp.clientHeight;
+  const c = scene.cam;
+  const d = camDistance();
+
+  const sx = 50 + (c.pos.x - c.tgt.x)/d*34;
+  const sy = 46 - (c.pos.y - c.tgt.y)/d*30;
+  const tx = 50 + c.tgt.x*10;
+  const ty = 46 - (c.tgt.y - 1)*8;
+
+  const cx = sx/100*w, cy = sy/100*h;
+  const gx = tx/100*w, gy = ty/100*h;
+
+  const fov = 2*Math.atan(36/(2*c.focal))*180/Math.PI;
+  const half = Math.min(46, fov*0.55)/100*w;
+
+  // 取景框按全画幅 3:2 画
+  const hh = half * 2 / 3;
+  poly.setAttribute('points',
+    cx+','+cy+' '+
+    (gx-half)+','+(gy-hh)+' '+
+    (gx+half)+','+(gy-hh)+' '+
+    (gx+half)+','+(gy+hh)+' '+
+    (gx-half)+','+(gy+hh));
+
+  if (dot){ dot.style.left = sx+'%'; dot.style.top = sy+'%'; }
+}
+
+function setVal(id, v){
+  const el = document.getElementById(id);
+  if (el && el.value !== String(v)) el.value = v;
+}
+
+/* =========================================================
+   效果一句话：从真实参数算
+   ========================================================= */
+function buildEffectCam(from, to){
   const p = [];
-  if (from.facing !== to.facing) p.push('人物<b>转过来看着镜头</b>了');
-  if (!from.motion && to.motion) p.push('加了<b>抬起手</b>的动作');
+  const dFrom = dist(from.pos, from.tgt);
+  const dTo = dist(to.pos, to.tgt);
+
+  if (dTo < dFrom*0.8) p.push('人物在画面里<b>明显大了一圈</b>');
+  else if (dTo < dFrom*0.93) p.push('人物在画面里<b>大了一点</b>');
+  else if (dTo > dFrom*1.2) p.push('人物<b>退远了</b>，能带进更多环境');
+  else if (dTo > dFrom*1.07) p.push('人物<b>稍远了一些</b>');
+
+  const dxFrom = from.pos.x - from.tgt.x;
+  const dxTo = to.pos.x - to.tgt.x;
+  if (Math.abs(dxTo - dxFrom) > 0.8){
+    p.push(dxTo > dxFrom ? '机位<b>往右挪了</b>' : '机位<b>往左挪了</b>');
+  }
+  if (to.focal > from.focal + 8) p.push('视角收窄，<b>背景压得更平</b>');
+  else if (to.focal < from.focal - 8) p.push('视角变广，<b>环境进得更多</b>');
+  if (to.tstop < from.tstop - 0.5) p.push('光圈开大，<b>背景更虚</b>');
+  else if (to.tstop > from.tstop + 0.5) p.push('光圈收小，<b>前后都更清楚</b>');
+
+  return p.length ? p.join('，') + '。' : '看起来<b>没什么变化</b>';
+}
+
+function buildEffectPose(from, to){
+  const p = [];
+  if (to.motion === 'raise') p.push('右手<b>抬起来了</b>，大概到肩膀高度');
+  if (from.pose !== to.pose) p.push('姿势改成<b>' + to.pose + '</b>');
   return p.length ? p.join('，') + '。' : '看起来<b>没什么变化</b>';
 }
 
 /* =========================================================
-   视口（判据只能是画面）
+   面板开关
    ========================================================= */
-function renderScene(){
-  const c = scene.cam;
-  const cam = document.getElementById('vpCam');
-  if (cam) cam.innerHTML =
-    angleName(c.angle) + ' · ' + c.focal + 'mm<br>' + c.distance.toFixed(1) + ' 米';
+function togglePanel(which){
+  const ask = document.getElementById('panelAsk');
+  const hist = document.getElementById('panelHist');
+  const bAsk = document.getElementById('btnAsk');
+  const bHist = document.getElementById('btnHist');
 
-  const fig = document.getElementById('vpFig');
-  if (fig){
-    const s = Math.max(.55, Math.min(1.25, 3.2 / c.distance));
-    fig.style.transform = 'scale(' + s.toFixed(3) + ')';
-  }
-
-  const label = document.getElementById('vpLabel');
-  if (label){
-    const facing = scene.char.facing === 'camera' ? '转向镜头' : '背对镜头';
-    const motion = scene.char.motion ? ' · 抬手' : ' · 站姿';
-    label.textContent = '小林 · ' + facing + motion;
-  }
-
-  const arm = document.getElementById('vpArm');
-  if (arm) arm.classList.toggle('on', !!scene.char.motion);
-
-  const desk = document.getElementById('vpDesk');
-  if (desk) desk.classList.toggle('hide', !scene.desk.visible);
-
-  syncManualLabels();
-}
-
-/* =========================================================
-   ⭐ 手动调整（不经过 AI）
-   ========================================================= */
-let picked = 'cam';
-
-function pickObj(el, key){
-  document.querySelectorAll('.oi').forEach(x => x.classList.remove('on'));
-  el.classList.add('on');
-  picked = key;
-  const name = el.querySelector('.oi-n').textContent;
-  document.getElementById('mnTarget').textContent = name;
-  const pn = document.getElementById('pickedName');
-  if (pn) pn.textContent = name;
-  renderManual();
-}
-
-function renderManual(){
-  const row = document.getElementById('mnRow');
-  if (!row) return;
-
-  if (picked === 'cam'){
-    row.innerHTML =
-      '<div class="mn-c">'
-      + '<div class="mn-t">角度<span class="v" id="mnAngleV">' + angleName(scene.cam.angle) + '</span></div>'
-      + '<div class="mn-dirs">'
-      + ANGLES.map(a => '<button class="mn-d ' + (scene.cam.angle===a.k?'on':'') + '"'
-          + ' onclick="setAngle(\'' + a.k + '\')">' + a.n + '</button>').join('')
-      + '</div></div>'
-      + '<div class="mn-c">'
-      + '<div class="mn-t">焦距<span class="v" id="mnFocalV">' + scene.cam.focal + 'mm</span></div>'
-      + '<input type="range" min="24" max="85" step="1" value="' + scene.cam.focal + '"'
-      + ' oninput="setFocal(this.value)">'
-      + '</div>'
-      + '<div class="mn-c">'
-      + '<div class="mn-t">距离<span class="v" id="mnDistV">' + scene.cam.distance.toFixed(1) + ' 米</span></div>'
-      + '<input type="range" min="10" max="60" step="1" value="' + Math.round(scene.cam.distance*10) + '"'
-      + ' oninput="setDistance(this.value)">'
-      + '</div>';
-  } else if (picked === 'char' || picked === 'char2'){
-    row.innerHTML =
-      '<div class="mn-c">'
-      + '<div class="mn-t">朝向<span class="v" id="mnFaceV">'
-      + (scene.char.facing==='camera'?'转向镜头':'背对镜头') + '</span></div>'
-      + '<div class="mn-dirs">'
-      + '<button class="mn-d ' + (scene.char.facing==='away'?'on':'') + '" onclick="setFacing(\'away\')">背对镜头</button>'
-      + '<button class="mn-d ' + (scene.char.facing==='camera'?'on':'') + '" onclick="setFacing(\'camera\')">转向镜头</button>'
-      + '</div></div>'
-      + '<div class="mn-c">'
-      + '<div class="mn-t">动作<span class="v" id="mnMoV">' + (scene.char.motion?'抬手':'无') + '</span></div>'
-      + '<div class="mn-dirs">'
-      + '<button class="mn-d ' + (!scene.char.motion?'on':'') + '" onclick="setMotion(false)">无</button>'
-      + '<button class="mn-d ' + (scene.char.motion?'on':'') + '" onclick="setMotion(true)">抬手</button>'
-      + '</div></div><div class="mn-c"></div>';
+  if (which === 'ask'){
+    const on = !ask.classList.contains('on');
+    ask.classList.toggle('on', on);
+    bAsk.classList.toggle('on', on);
+    if (on){ hist.classList.remove('on'); bHist.classList.remove('on'); }
   } else {
-    row.innerHTML =
-      '<div class="mn-c">'
-      + '<div class="mn-t">书桌<span class="v">' + (scene.desk.visible?'在画面里':'已移走') + '</span></div>'
-      + '<div class="mn-dirs">'
-      + '<button class="mn-d ' + (scene.desk.visible?'on':'') + '" onclick="setDesk(true)">在画面里</button>'
-      + '<button class="mn-d ' + (!scene.desk.visible?'on':'') + '" onclick="setDesk(false)">移走</button>'
-      + '</div></div><div class="mn-c"></div><div class="mn-c"></div>';
+    const on = !hist.classList.contains('on');
+    hist.classList.toggle('on', on);
+    bHist.classList.toggle('on', on);
+    if (on){ ask.classList.remove('on'); bAsk.classList.remove('on'); }
   }
-}
-
-function syncManualLabels(){
-  const a = document.getElementById('mnAngleV');
-  if (a) a.textContent = angleName(scene.cam.angle);
-  const f = document.getElementById('mnFocalV');
-  if (f) f.textContent = scene.cam.focal + 'mm';
-  const d = document.getElementById('mnDistV');
-  if (d) d.textContent = scene.cam.distance.toFixed(1) + ' 米';
-  const fa = document.getElementById('mnFaceV');
-  if (fa) fa.textContent = scene.char.facing === 'camera' ? '转向镜头' : '背对镜头';
-}
-
-function setAngle(k){ scene.cam.angle = k; renderScene(); renderManual(); manualChanged('机位角度'); }
-function setFocal(v){ scene.cam.focal = +v; renderScene(); renderManual(); }
-function setDistance(v){ scene.cam.distance = +v / 10; renderScene(); renderManual(); }
-function setFacing(v){ scene.char.facing = v; renderScene(); renderManual(); manualChanged('人物朝向'); }
-function setMotion(v){ scene.char.motion = v ? 'raise' : null; renderScene(); renderManual(); manualChanged('人物动作'); }
-function setDesk(v){ scene.desk.visible = v; renderScene(); renderManual(); manualChanged('书桌'); }
-
-let mcT = null;
-function manualChanged(what){
-  clearTimeout(mcT);
-  mcT = setTimeout(() => toast('已手动改：' + what + '（没经过助手）'), 450);
 }
 
 /* =========================================================
    助手提议
    ========================================================= */
-let planKey = 'camera';
+let planKey = 'cam';
 
 const PLANS = {
-  camera: {
-    title: '我想这么改',
-    kind: 'cam',
-    impact: '影响 2 个镜头',
-    cant: '它改不了：<b>灯光</b>不在我的能力里 —— 机位能动，但要加补光得去「打光」面板。',
+  cam: {
+    title:'我想这么改', kind:'cam', impact:'影响 2 个镜头',
+    cant:'它改不了：<b>灯光</b>不在我的能力里 —— 机位能动，但要加补光得去左侧「＋灯光」。',
     ops: [{
-      k: '机位 主视角',
-      warn: true,
-      note: '会动到镜头 3、镜头 5 这两个用到主视角的地方',
-      target: {angle:'right', focal:50, distance:2.1},
-      rows: [
-        {k:'角度', key:'angle', from:()=>scene.cam.angle, to:'right', fmt:angleName},
-        {k:'焦距', key:'focal', from:()=>scene.cam.focal, to:50, fmt:v=>v+'mm',
-         slide:{min:24,max:85,step:1}},
-        {k:'距离', key:'distance', from:()=>scene.cam.distance, to:2.1,
-         fmt:v=>v.toFixed(1)+' 米', slide:{min:1.2,max:5,step:0.1}}
+      k:'相机 主视角', warn:true,
+      note:'会动到镜头 3、镜头 5 这两个用到主视角的地方',
+      target:{
+        pos:{x:4.8,y:2.4,z:3.6}, tgt:{x:0.0,y:1.2,z:0.0},
+        focal:50, tstop:2.8, focus:2.4
+      },
+      rows:[
+        {k:'位置', from:()=>fmtXYZ(scene.cam.pos), to:'4.8 / 2.4 / 3.6'},
+        {k:'目标', from:()=>fmtXYZ(scene.cam.tgt), to:'0.0 / 1.2 / 0.0'},
+        {k:'焦距', from:()=>scene.cam.focal+' mm', to:'50 mm'},
+        {k:'对焦', from:()=>scene.cam.focus.toFixed(1)+' m', to:'2.4 m'}
       ]
     }]
   },
   pose: {
-    title: '我想这么改',
-    kind: 'char',
-    impact: '影响 1 个镜头',
-    cant: '',
-    ops: [
-      {
-        k: '小林 朝向',
-        note: '只影响当前这一镜',
-        target: {facing:'camera'},
-        rows: [{k:'朝向', key:'facing', from:()=>scene.char.facing, to:'camera',
-                fmt:v=>v==='camera'?'转向镜头':'背对镜头'}]
-      },
-      {
-        k: '小林 动作：抬手',
-        badge: 'new',
-        note: '动作库里有现成的，直接用',
-        target: {motion:'raise'},
-        rows: [{k:'动作', key:'motion', from:()=>scene.char.motion, to:'raise',
-                fmt:v=>v?'抬手':'站姿（无动作）'}]
-      }
-    ]
-  },
-  add: {
-    title: '我想这么加',
-    kind: 'desk',
-    impact: '只影响当前镜头',
-    cant: '',
+    title:'我想这么改', kind:'pose', impact:'影响 1 个镜头', cant:'',
     ops: [{
-      k: '让书桌出现在画面里',
-      badge: 'new',
-      note: '原来 4 个对象不动，只是让它「上」',
-      target: {visible:true},
-      rows: [{k:'书桌', key:'visible', from:()=>scene.desk.visible, to:true,
-              fmt:v=>v?'在画面里':'移走'}]
+      k:'人物 右手',
+      note:'用关节角度表达，不走动作库（库里没有单独的抬手）',
+      target:{motion:'raise'},
+      rows:[
+        {k:'动作', from:()=>scene.char.motion==='raise'?'已抬手':'无动作', to:'抬手'},
+        {k:'右肩', from:()=>'−55° / 0° / 6°', to:'−95° / 0° / 12°'},
+        {k:'右肘', from:()=>'−78°', to:'−6°'}
+      ]
+    }]
+  },
+  lens: {
+    title:'我想这么改', kind:'lens', impact:'影响 1 个镜头', cant:'',
+    ops: [{
+      k:'相机 主视角 · 光学',
+      note:'只改镜头，机位不动',
+      target:{focal:35, tstop:2.0},
+      rows:[
+        {k:'焦距', from:()=>scene.cam.focal+' mm', to:'35 mm'},
+        {k:'T/', from:()=>'T/'+scene.cam.tstop.toFixed(1), to:'T/2.0'},
+        {k:'景深', from:()=>document.getElementById('dofOut').textContent, to:'更浅'}
+      ]
     }]
   }
 };
 
 function demoAsk(k){
   planKey = k;
-  const preset = {camera:'把机位推近一点，再偏到右前方',
-                  pose:'让人物转向镜头，抬起手',
-                  add:'让书桌出现在画面里'};
+  const preset = {cam:'机位推近一点，偏到右前方',
+                  pose:'让人物抬起右手',
+                  lens:'换成 35mm 广一点'};
   doSend(preset[k]);
 }
 
 function sendMsg(){
   const ta = document.getElementById('ta');
-  const msg = ta ? ta.value.trim() : '';
+  const msg = ta.value.trim();
   if (!msg) return;
   ta.value = '';
-  // 猜一个最像的方案
-  planKey = /桌|加|物体/.test(msg) ? 'add'
-          : /动作|抬手|转身|朝向/.test(msg) ? 'pose'
-          : 'camera';
+  planKey = /35mm|焦距|景深|光圈|广/.test(msg) ? 'lens'
+          : /手|动作|姿势|转身|抬/.test(msg) ? 'pose' : 'cam';
   doSend(msg);
 }
 
@@ -742,209 +820,187 @@ function doSend(text){
   document.getElementById('emptyState').style.display = 'none';
   document.getElementById('chat').style.display = 'block';
   addMe(text);
-
   setTimeout(() => {
-    const reply = planKey === 'add'
-      ? '好，让书桌出现在画面里。位置按「不挡住人物」放 —— 你看位置对不对。'
+    const reply = planKey === 'lens'
+      ? '好，换成 35mm。机位不动，只改镜头。'
       : planKey === 'pose'
-      ? '行，两处：把小林的朝向转过来，再给他一个抬手的动作。'
-      : '好，机位推近并偏到右前方。我把效果和具体数字都列出来了。';
+      ? '行，让他抬右手 —— 我用关节角度做，因为这个动作库里没有单独的抬手。'
+      : '好，机位推近并偏到右前方。位置和目标点我都算好了。';
     addAi(reply);
     addPlan(PLANS[planKey]);
-    scrollBottom();
-  }, 440);
-  scrollBottom();
+    scrollB();
+  }, 420);
+  scrollB();
 }
 
 function addMe(t){
   const d = document.createElement('div');
   d.className = 'msg me';
-  d.innerHTML = '<div class="bubble">' + esc(t) + '</div>';
+  d.innerHTML = '<div class="bb">' + esc(t) + '</div>';
   document.getElementById('chat').appendChild(d);
 }
-
 function addAi(h){
   const d = document.createElement('div');
   d.className = 'msg ai';
-  d.innerHTML = '<div class="who">预演助手</div><div class="bubble">' + h + '</div>';
+  d.innerHTML = '<div class="who">预演助手</div><div class="bb">' + h + '</div>';
   document.getElementById('chat').appendChild(d);
-  return d;
 }
 
 /* =========================================================
-   ⭐ 改动卡：效果 + 参数 + 可微调
+   改动卡
    ========================================================= */
 function addPlan(plan){
   const wrap = document.createElement('div');
   wrap.className = 'msg ai';
 
-  let opsHtml = '';
+  let ops = '';
   plan.ops.forEach((op, i) => {
-    const rows = op.rows.map((r, j) =>
-      '<div class="dr">'
-      + '<span class="dr-k">' + r.k + '</span>'
-      + '<span class="dr-old">' + r.fmt(r.from()) + '</span>'
-      + '<span class="dr-ar">→</span>'
-      + '<span class="dr-new" id="nv-' + i + '-' + j + '">' + r.fmt(r.to) + '</span>'
-      + '</div>').join('');
+    const rows = op.rows.map(r =>
+      '<div class="dr"><span class="dr-k">' + r.k + '</span>'
+      + '<span class="dr-o">' + r.from() + '</span>'
+      + '<span class="dr-a">→</span>'
+      + '<span class="dr-n">' + r.to + '</span></div>').join('');
 
-    const slideRows = op.rows.filter(r => r.slide);
-    const slides = slideRows.map((r, j) =>
-      '<div class="adj-row">'
-      + '<span class="adj-k">' + r.k + '</span>'
-      + '<input class="adj-r" type="range" min="' + r.slide.min + '" max="' + r.slide.max
-      + '" step="' + (r.slide.step || 1) + '" value="' + r.to + '"'
-      + ' oninput="tune(this,' + i + ',' + j + ')">'
-      + '<span class="adj-v changed" id="av-' + i + '-' + j + '">' + r.fmt(r.to) + '</span>'
-      + '</div>').join('');
-
-    opsHtml += '<div class="op" data-i="' + i + '">'
+    ops += '<div class="op" data-i="' + i + '">'
       + '<div class="op-hd">'
-      + '<span class="op-cb on" onclick="toggleOp(this)"></span>'
-      + '<span class="op-k">' + op.k + '</span>'
-      + (op.badge ? '<span class="op-badge ' + op.badge + '">新增</span>' : '')
-      + '</div>'
-      + '<div class="op-diff">' + rows + '</div>'
-      + (slides ? '<div class="adjust">'
-          + '<div class="op-note" style="padding-left:0;margin:0 0 6px">'
-          + '<span class="w">✎</span> 这几个数字你可以直接拖'
-          + '</div>' + slides + '</div>' : '')
+      + '<span class="cb on" onclick="this.classList.toggle(\'on\')"></span>'
+      + '<span class="op-k">' + op.k + '</span></div>'
+      + rows
       + (op.note ? '<div class="op-note">'
           + (op.warn ? '<span class="w">⚠</span>' : '') + ' ' + op.note + '</div>' : '')
       + '</div>';
   });
 
-  const effectHtml = plan.kind === 'cam'
-    ? buildEffect(scene.cam, plan.ops[0].target)
-    : plan.kind === 'char'
-    ? buildEffectChar(scene.char, {facing:'camera', motion:'raise'})
-    : '让书桌<b>出现在画面里</b>，位置在画面左侧。';
+  let eff;
+  if (plan.kind === 'cam'){
+    eff = buildEffectCam(scene.cam, plan.ops[0].target);
+  } else if (plan.kind === 'pose'){
+    eff = buildEffectPose(scene.char, plan.ops[0].target);
+  } else {
+    eff = buildEffectCam(scene.cam,
+      {pos:scene.cam.pos, tgt:scene.cam.tgt, focal:35, tstop:2.0});
+  }
 
   wrap.innerHTML = '<div class="who">预演助手</div>'
     + '<div class="plan" id="planCard">'
-    + '<div class="plan-hd">'
-    + '<span class="plan-t">' + plan.title + '</span>'
-    + '<span class="plan-n">' + plan.ops.length + ' 处</span>'
-    + '</div>'
-    + '<div class="effect"><div class="effect-k">看起来会变成</div>'
-    + '<div class="effect-v" id="effectV">' + effectHtml + '</div></div>'
-    + opsHtml
+    + '<div class="pl-hd"><span class="pl-t">' + plan.title + '</span>'
+    + '<span class="pl-n">' + plan.ops.length + ' 处</span></div>'
+    + '<div class="eff"><div class="eff-k">看起来会变成</div>'
+    + '<div class="eff-v" id="effV">' + eff + '</div></div>'
+    + ops
     + (plan.cant ? '<div class="cant">' + plan.cant + '</div>' : '')
-    + '<div class="plan-ft">'
-    + '<button class="apply" onclick="applyPlan()">应用这 ' + plan.ops.length + ' 处改动</button>'
-    + '<span class="impact">' + plan.impact + '</span>'
-    + '</div></div>';
+    + '<div class="pl-ft">'
+    + '<button class="ap" onclick="applyPlan()">应用这 ' + plan.ops.length + ' 处改动</button>'
+    + '<span class="imp">' + plan.impact + '</span></div></div>';
 
   document.getElementById('chat').appendChild(wrap);
 }
 
-/* 拖滑块微调：改数字 + 实时重算效果一句话 */
-function tune(rangeEl, i, j){
-  const plan = PLANS[planKey];
-  const op = plan.ops[i];
-  const slideRows = op.rows.filter(r => r.slide);
-  const r = slideRows[j];
-  const v = parseFloat(rangeEl.value);
-
-  const nv = document.getElementById('nv-' + i + '-' + j);
-  if (nv) nv.textContent = r.fmt(v);
-  const av = document.getElementById('av-' + i + '-' + j);
-  if (av) av.textContent = r.fmt(v);
-
-  if (op.target && (r.key in op.target)) op.target[r.key] = v;
-
-  const ev = document.getElementById('effectV');
-  if (ev && plan.kind === 'cam') ev.innerHTML = buildEffect(scene.cam, op.target);
-}
-
-function toggleOp(el){ el.classList.toggle('on'); }
-
 /* =========================================================
-   应用
+   应用 → 写场景 + 进操作历史
    ========================================================= */
 function applyPlan(){
   const card = document.getElementById('planCard');
   if (!card) return;
+  const onOps = Array.prototype.slice.call(card.querySelectorAll('.cb.on'));
+  if (!onOps.length){ toast('一处都没勾，那就不动'); return; }
 
-  const onOps = [...card.querySelectorAll('.op-cb.on')];
-  if (onOps.length === 0){ toast('一处都没勾，那就不动'); return; }
-
-  const btn = card.querySelector('.apply');
+  const btn = card.querySelector('.ap');
   btn.disabled = true;
   btn.textContent = '正在应用…';
 
-  setTimeout(() => {
+  setTimeout(function(){
     const plan = PLANS[planKey];
-    let applied = 0;
-    onOps.forEach(cb => {
+    let summary = '';
+
+    onOps.forEach(function(cb){
       const i = +cb.closest('.op').dataset.i;
       const t = plan.ops[i].target;
       if (!t) return;
-      if ('angle' in t) scene.cam.angle = t.angle;
-      if ('focal' in t) scene.cam.focal = t.focal;
-      if ('distance' in t) scene.cam.distance = t.distance;
-      if ('facing' in t) scene.char.facing = t.facing;
-      if ('motion' in t) scene.char.motion = t.motion;
-      if ('visible' in t) scene.desk.visible = t.visible;
-      applied++;
+
+      if (plan.kind === 'cam'){
+        scene.cam.pos.x = t.pos.x; scene.cam.pos.y = t.pos.y; scene.cam.pos.z = t.pos.z;
+        scene.cam.tgt.x = t.tgt.x; scene.cam.tgt.y = t.tgt.y; scene.cam.tgt.z = t.tgt.z;
+        scene.cam.focal = t.focal;
+        scene.cam.tstop = t.tstop;
+        scene.cam.focus = t.focus;
+        summary = 'AI 改了 <b>机位</b>：位置 ' + fmtXYZ(scene.cam.pos)
+                + '，焦距 ' + scene.cam.focal + 'mm';
+      } else if (plan.kind === 'pose'){
+        scene.char.motion = t.motion;
+        summary = 'AI 改了 <b>动作：抬手</b>（右肩 −95°/0°/12°，右肘 −6°）';
+      } else {
+        scene.cam.focal = t.focal;
+        scene.cam.tstop = t.tstop;
+        summary = 'AI 改了 <b>光学</b>：' + scene.cam.focal + 'mm / T/'
+                + scene.cam.tstop.toFixed(1);
+      }
     });
 
     renderScene();
-    renderManual();
 
-    card.querySelector('.plan-hd').innerHTML =
-      '<span class="plan-t" style="color:var(--ok)">已应用</span>'
-      + '<span class="plan-n" style="background:var(--oks);color:var(--ok)">第 7 版 → 第 8 版</span>';
-    card.querySelector('.plan-ft').innerHTML =
-      '<span class="impact">改动已经存进这个场景了</span>'
-      + '<button style="margin-left:auto;font-size:10.5px;padding:3px 10px;border-radius:5px;'
-      + 'border:1px solid var(--ln2);background:transparent;color:var(--tx3);cursor:pointer;'
-      + 'font-family:inherit" onclick="toast(\'已撤销这次改动\')">撤销这次</button>';
-    card.querySelectorAll('.op-cb').forEach(x => { x.style.cursor='default'; x.onclick=null; });
-    card.querySelectorAll('.adjust input').forEach(inp => {
-      inp.disabled = true; inp.style.opacity = .4;
-    });
+    const r = (+document.getElementById('revNum').textContent) + 1;
+    document.getElementById('revNum').textContent = r;
+    document.getElementById('revTop').textContent = r;
 
-    document.querySelector('.ver').innerHTML = '<i></i>第 8 版';
-    const m = document.querySelector('.agh .m');
-    if (m) m.textContent = '第 8 版 · 主视角';
+    card.querySelector('.pl-hd').innerHTML =
+      '<span class="pl-t" style="color:var(--ok)">已应用</span>'
+      + '<span class="pl-n" style="background:var(--oks);color:var(--ok)">'
+      + 'revision ' + (r-1) + ' → ' + r + '</span>';
+    card.querySelector('.pl-ft').innerHTML =
+      '<span class="imp">已存进场景 · 也进了操作历史</span>'
+      + '<button style="margin-left:auto;font-size:10px;padding:3px 9px;border-radius:4px;'
+      + 'border:1px solid var(--ln2);background:transparent;color:var(--tx3);'
+      + 'cursor:pointer;font-family:inherit" onclick="toast(\'已撤销这次改动\')">撤销</button>';
+    card.querySelectorAll('.cb').forEach(function(x){ x.style.cursor='default'; x.onclick=null; });
 
-    addReport(plan, applied);
-    scrollBottom();
-  }, 580);
+    addHistory(summary, 'ai');
+    addReport(plan, onOps.length);
+    scrollB();
+  }, 540);
 }
 
-function addReport(plan, applied){
+/* ⭐ 改动进操作历史（AI 和手动用同一个列表） */
+function addHistory(summary, who){
+  const body = document.getElementById('histBody');
+  const d = document.createElement('div');
+  d.className = 'hi';
+  d.innerHTML = '<span class="hi-i ' + who + '">' + (who === 'ai' ? 'AI' : '手') + '</span>'
+    + '<div class="hi-b"><div class="hi-t">' + summary + '</div>'
+    + '<div class="hi-m">刚刚 · ' + (who === 'ai' ? '助手' : '手动') + '</div></div>'
+    + '<button class="hi-u" onclick="toast(\'已撤回这一步\')">撤回</button>';
+  body.insertBefore(d, body.firstChild);
+}
+
+function addReport(plan, n){
   const d = document.createElement('div');
   d.className = 'msg ai';
   let did, notDid, check;
   if (plan.kind === 'cam'){
-    did = '<b>机位 主视角</b>：' + angleName(scene.cam.angle) + ' '
-        + scene.cam.focal + 'mm ' + scene.cam.distance.toFixed(1) + ' 米';
-    notDid = '没动小林的朝向和动作；没动书桌；没改另外两个镜头（它们用的是别的机位）';
-    check = '机位没穿进人物身体、没有对象跑出画面 —— <b>3 项都过了</b>';
-  } else if (plan.kind === 'char'){
-    did = '<b>小林</b>：' + (scene.char.facing==='camera'?'转向镜头':'背对镜头')
-        + (scene.char.motion?'，加了抬手的动作':'');
-    notDid = '没动机位；没动书桌；没改别的镜头里的小林';
-    check = '朝向和动作没冲突、没有对象重叠 —— <b>2 项都过了</b>';
+    did = '<b>相机 主视角</b>：位置 ' + fmtXYZ(scene.cam.pos) + '，焦距 '
+        + scene.cam.focal + 'mm，对焦 ' + scene.cam.focus.toFixed(1) + 'm';
+    notDid = '没动人物姿势和动作；没动全景背景；没改另外两个镜头';
+    check = '机位没穿进人物身体、目标点在画面内 —— <b>3 项都过了</b>';
+  } else if (plan.kind === 'pose'){
+    did = '<b>人物</b>：动作改成抬手（右肩 −95°/0°/12°，右肘 −6°）';
+    notDid = '没动机位；没动身高；没改全景背景';
+    check = '关节没超出限位、手没穿进身体 —— <b>2 项都过了</b>';
   } else {
-    did = '<b>书桌</b>：' + (scene.desk.visible?'出现在画面里':'移走');
-    notDid = '没动机位；没动人物的姿势和动作';
-    check = '书桌没挡住人物、没跑出画面 —— <b>2 项都过了</b>';
+    did = '<b>相机 · 光学</b>：焦距 ' + scene.cam.focal + 'mm，T/'
+        + scene.cam.tstop.toFixed(1);
+    notDid = '没动机位位置和目标点；没动人物';
+    check = '景深覆盖人物、没有穿模 —— <b>2 项都过了</b>';
   }
 
-  d.innerHTML = '<div class="who">预演助手</div><div class="report">'
-    + '<div class="rp-i"><span class="rp-k">做了</span><span class="rp-v">'
-    + did + '；场景从<b>第 7 版</b>存成<b>第 8 版</b></span></div>'
-    + '<div class="rp-i"><span class="rp-k">没做</span><span class="rp-v">'
-    + '<span class="mute">' + notDid + '</span></span></div>'
-    + '<div class="rp-i"><span class="rp-k">自检</span><span class="rp-v">'
-    + check + '</span></div>'
-    + '<div class="rp-i"><span class="rp-k">规模</span><span class="rp-v">'
-    + '<b>' + applied + ' 处</b>改动 · ' + plan.impact + ' · 用时 0.6 秒</span></div>'
-    + '<div class="rp-i"><span class="rp-k">你来改</span><span class="rp-v">'
-    + '觉得哪不对，<b>视口下面的滑块你可以直接拖</b>，不用再跟我说。</span></div>'
+  d.innerHTML = '<div class="who">预演助手</div><div class="rep">'
+    + '<div class="rp"><span class="rp-k">做了</span><span class="rp-v">'
+    + did + '；revision 已 +1</span></div>'
+    + '<div class="rp"><span class="rp-k">没做</span><span class="rp-v">'
+    + '<span class="mu">' + notDid + '</span></span></div>'
+    + '<div class="rp"><span class="rp-k">自检</span><span class="rp-v">' + check
+    + '</span></div>'
+    + '<div class="rp"><span class="rp-k">规模</span><span class="rp-v">'
+    + '<b>' + n + ' 处</b>改动 · ' + plan.impact + ' · 已记进操作历史</span></div>'
     + '</div>';
   document.getElementById('chat').appendChild(d);
 }
@@ -953,29 +1009,84 @@ function addReport(plan, applied){
    工具
    ========================================================= */
 function esc(s){
-  return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  return s.replace(/[&<>"]/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
+  });
 }
-function scrollBottom(){
-  const b = document.getElementById('agb');
+function scrollB(){
+  const b = document.getElementById('pb');
   if (b) b.scrollTop = b.scrollHeight;
 }
 let tt = null;
-function toast(msg){
+function toast(m){
   const t = document.getElementById('toast');
-  t.textContent = msg; t.classList.add('on');
-  clearTimeout(tt); tt = setTimeout(() => t.classList.remove('on'), 1900);
+  t.textContent = m; t.classList.add('on');
+  clearTimeout(tt); tt = setTimeout(function(){ t.classList.remove('on'); }, 1800);
 }
-document.getElementById('ta').addEventListener('keydown', e => {
+
+/* 左栏手动改动 → 也进操作历史（同一个列表） */
+['posX','posY','posZ','tgtX','tgtY','tgtZ'].forEach(function(id){
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('change', function(){
+    scene.cam.pos.x = parseFloat(document.getElementById('posX').value) || 0;
+    scene.cam.pos.y = parseFloat(document.getElementById('posY').value) || 0;
+    scene.cam.pos.z = parseFloat(document.getElementById('posZ').value) || 0;
+    scene.cam.tgt.x = parseFloat(document.getElementById('tgtX').value) || 0;
+    scene.cam.tgt.y = parseFloat(document.getElementById('tgtY').value) || 0;
+    scene.cam.tgt.z = parseFloat(document.getElementById('tgtZ').value) || 0;
+    renderScene();
+    addHistory('手动改了 <b>机位位置</b>（' + fmtXYZ(scene.cam.pos) + '）', 'man');
+    toast('已手动改 · 也记进操作历史了');
+  });
+});
+
+const focalIn = document.getElementById('focalIn');
+if (focalIn) focalIn.addEventListener('change', function(){
+  scene.cam.focal = parseFloat(focalIn.value) || 50;
+  renderScene();
+  addHistory('手动改了 <b>焦距 ' + scene.cam.focal + 'mm</b>', 'man');
+});
+
+document.querySelectorAll('.fb').forEach(function(b){
+  b.addEventListener('click', function(){
+    scene.cam.focal = parseFloat(b.textContent);
+    renderScene();
+    addHistory('手动改成 <b>' + b.textContent + 'mm</b>', 'man');
+  });
+});
+
+const tstopIn = document.getElementById('tstopIn');
+if (tstopIn) tstopIn.addEventListener('change', function(){
+  scene.cam.tstop = parseFloat(tstopIn.value) || 2.8;
+  renderScene();
+  addHistory('手动改了 <b>T/' + scene.cam.tstop.toFixed(1) + '</b>', 'man');
+});
+
+const focusIn = document.getElementById('focusIn');
+if (focusIn) focusIn.addEventListener('change', function(){
+  scene.cam.focus = parseFloat(focusIn.value) || 3.0;
+  renderScene();
+  addHistory('手动改了 <b>对焦 ' + scene.cam.focus.toFixed(1) + ' m</b>', 'man');
+});
+
+const motionSel = document.getElementById('motionSel');
+if (motionSel) motionSel.addEventListener('change', function(){
+  scene.char.motion = motionSel.value === '抬手' ? 'raise' : null;
+  renderScene();
+  addHistory('手动改了 <b>动作：' + motionSel.value + '</b>', 'man');
+});
+
+document.getElementById('ta').addEventListener('keydown', function(e){
   if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); sendMsg(); }
 });
 document.getElementById('ta').addEventListener('input', function(){
   this.style.height = 'auto';
-  this.style.height = Math.min(this.scrollHeight, 64) + 'px';
+  this.style.height = Math.min(this.scrollHeight, 62) + 'px';
 });
 
-/* 启动 */
 renderScene();
-renderManual();
+window.addEventListener('resize', drawFrustum);
 </script>
 </body>
 </html>
