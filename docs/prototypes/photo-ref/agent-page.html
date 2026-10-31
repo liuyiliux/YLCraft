@@ -810,70 +810,47 @@ brand{}
 }
 .cv-ft .sp{flex:1}
 
-/* ============ 后台任务条（全双工） ============ */
-.bgbar{
+/* ============ 一条状态条 ============ */
+.statbar{
   flex:0 0 auto;display:flex;align-items:center;gap:9px;
   margin:0 26px 8px;padding:8px 14px;border-radius:8px;
   background:rgba(34,211,238,.06);border:1px solid rgba(34,211,238,.2);
-  font-size:11.5px;color:var(--tx2);
+  font-size:11.5px;color:var(--tx2);transition:.2s;
 }
-.bg-ico{
-  color:var(--ac);font-size:11px;
-  animation:spin 2.4s linear infinite;display:inline-block;
-}
-@keyframes spin{to{transform:rotate(360deg)}}
-.bg-t b{color:var(--tx);font-weight:600}
-.bg-i{
-  font-size:10.5px;color:var(--tx3);font-family:var(--fm);
-  padding:1px 8px;border-radius:9px;background:rgba(255,255,255,.04);
-}
-.bg-p{color:var(--ac)}
-.bg-hint{margin-left:auto;font-size:10.5px;color:var(--tx3)}
+/* 状态分级：正常=青，注意=黄，出错=红（不用大色块，只换边框和图标色） */
+.statbar.info{background:rgba(34,211,238,.06);border-color:rgba(34,211,238,.2)}
+.statbar.warn{background:rgba(245,165,36,.07);border-color:rgba(245,165,36,.28)}
+.statbar.err{background:rgba(248,113,113,.07);border-color:rgba(248,113,113,.3)}
+.statbar.ready{background:rgba(167,139,250,.07);border-color:rgba(167,139,250,.26)}
 
-/* ============ Watchdog 条 ============ */
-.wdbar{
-  flex:0 0 auto;display:flex;align-items:center;gap:9px;
-  margin:0 26px 8px;padding:9px 14px;border-radius:8px;
-  background:rgba(245,165,36,.07);border:1px solid rgba(245,165,36,.28);
-  font-size:11.5px;color:var(--tx2);
-}
-.wd-ico{color:var(--warn);font-size:11px}
-.wd-t b{color:var(--warn);font-weight:600}
-.wd-b{
+.sb-ico{font-size:11px;flex-shrink:0}
+.statbar.info .sb-ico{color:var(--ac);animation:spin 2.4s linear infinite;display:inline-block}
+.statbar.warn .sb-ico{color:var(--warn)}
+.statbar.err .sb-ico{color:var(--err)}
+.statbar.ready .sb-ico{color:var(--purple)}
+
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.sb-t b{color:var(--tx);font-weight:600}
+.statbar.warn .sb-t b{color:var(--warn)}
+.statbar.err .sb-t b{color:var(--err)}
+.statbar.ready .sb-t b{color:var(--purple)}
+.sb-sub{display:block;font-size:10px;color:var(--tx3);margin-top:1px}
+
+.sb-acts{margin-left:auto;display:flex;gap:6px;flex-shrink:0}
+.sb-b{
   font-size:11px;padding:3px 10px;border-radius:5px;border:1px solid var(--ln2);
   background:transparent;color:var(--tx2);cursor:pointer;font-family:inherit;
   transition:.15s;
 }
-.wd-b:hover{border-color:var(--wn);color:var(--wn)}
-.wd-acts{margin-left:auto;display:flex;gap:6px;flex-shrink:0}
-.wd-cycle{
+.sb-b:hover{border-color:var(--ln3);color:var(--tx)}
+.sb-more{
   width:20px;height:20px;border-radius:5px;border:1px solid var(--ln2);
   background:transparent;color:var(--tx3);font-size:11px;cursor:pointer;
   flex-shrink:0;transition:.15s;line-height:1;font-family:inherit;
   display:flex;align-items:center;justify-content:center;
 }
-.wd-cycle:hover{border-color:var(--wn);color:var(--wn)}
-.wd-sub{display:block;font-size:10px;color:var(--tx3);margin-top:2px}
-/* 连接失败：更红一点 */
-.wdbar.err{background:rgba(248,113,113,.07);border-color:rgba(248,113,113,.3)}
-.wdbar.err .wd-ico,.wdbar.err .wd-t b{color:var(--err)}
-
-/* ============ 投机执行条 ============ */
-.spbar{
-  flex:0 0 auto;display:flex;align-items:center;gap:9px;
-  margin:0 26px 8px;padding:9px 14px;border-radius:8px;
-  background:rgba(167,139,250,.07);border:1px solid rgba(167,139,250,.26);
-  font-size:11.5px;color:var(--tx2);
-}
-.sp-ico{color:var(--purple);font-size:11px}
-.sp-t b{color:var(--purple);font-weight:600}
-.sp-b{
-  font-size:11px;padding:3px 10px;border-radius:5px;border:1px solid var(--ln2);
-  background:transparent;color:var(--tx2);cursor:pointer;font-family:inherit;
-  transition:.15s;
-}
-.sp-b:first-of-type{margin-left:auto}
-.sp-b:hover{border-color:var(--purple);color:var(--purple)}
+.sb-more:hover{border-color:var(--ln3);color:var(--tx2)}
 
 /* toast2 */
 .toast2{
@@ -884,6 +861,111 @@ brand{}
   transition:.2s;pointer-events:none;z-index:120;
 }
 .toast2.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ============ 多角度弹窗（点图片弹出） ============ */
+.maWrap{
+  position:fixed;inset:0;z-index:200;display:none;
+  align-items:center;justify-content:center;
+  background:rgba(0,0,0,.62);backdrop-filter:blur(3px);
+}
+.maWrap.on{display:flex}
+.maBox{
+  width:min(720px,calc(100vw - 60px));background:var(--s1);
+  border:1px solid var(--ln2);border-radius:14px;
+  box-shadow:0 30px 90px -20px rgba(0,0,0,.95);
+  overflow:hidden;animation:maIn .22s cubic-bezier(.16,1,.3,1);
+}
+@keyframes maIn{
+  from{opacity:0;transform:translateY(14px) scale(.98)}
+  to{opacity:1;transform:translateY(0) scale(1)}
+}
+.maHd{
+  display:flex;align-items:center;gap:9px;padding:13px 16px;
+  border-bottom:1px solid var(--ln);
+}
+.maT{font-size:14px;font-weight:600}
+.maSub{font-size:11px;color:var(--tx3)}
+.maX{
+  margin-left:auto;width:24px;height:24px;border-radius:6px;border:none;
+  background:transparent;color:var(--tx3);cursor:pointer;font-size:14px;
+}
+.maX:hover{background:var(--s3);color:var(--tx)}
+
+.maBody{display:grid;grid-template-columns:250px 1fr;gap:18px;padding:16px}
+
+/* 球体 */
+.sphere{
+  position:relative;aspect-ratio:1;border-radius:10px;
+  background:radial-gradient(circle at 50% 50%,#15161b,#0a0b0f 70%);
+  border:1px solid var(--ln);overflow:hidden;
+}
+.sphere svg{position:absolute;inset:0;width:100%;height:100%}
+.sphereIn{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:44%;aspect-ratio:3/4;border-radius:4px;overflow:hidden;
+  border:1px solid var(--ln3);
+  background:radial-gradient(circle at 46% 34%,#2d3344 0%,transparent 56%),
+    linear-gradient(155deg,#1c2029,#0f1116);
+}
+.maCam{
+  position:absolute;width:28px;height:28px;border-radius:5px;
+  transform:translate(-50%,-50%);transition:left .26s var(--ez),top .26s var(--ez);
+  background:rgba(22,22,26,.92);border:1px solid rgba(251,191,36,.5);
+  box-shadow:0 0 14px rgba(251,191,36,.28);cursor:grab;
+  display:flex;align-items:center;justify-content:center;font-size:11px;
+  color:var(--wn);z-index:3;
+}
+.maFrustum{
+  position:absolute;height:1px;transform-origin:left center;
+  background:linear-gradient(90deg,rgba(251,191,36,.5),transparent);
+  z-index:1;transition:.26s var(--ez);pointer-events:none;
+}
+
+/* 控制 */
+.maCtl{display:flex;flex-direction:column;gap:14px}
+.maCtl input[type=range]{
+  -webkit-appearance:none;appearance:none;width:100%;height:3px;border-radius:2px;
+  background:rgba(255,255,255,.14);outline:none;cursor:pointer;
+}
+.maCtl input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:11px;height:11px;border-radius:50%;
+  background:var(--tx);border:2px solid var(--s1);cursor:grab;
+}
+.maCtl input[type=range]::-moz-range-thumb{
+  width:11px;height:11px;border-radius:50%;background:var(--tx);
+  border:2px solid var(--s1);cursor:grab;
+}
+.maCT{font-size:11px;color:var(--tx3);margin-bottom:7px}
+.dirs{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+.dir{
+  padding:7px 4px;border-radius:5px;border:1px solid var(--ln2);
+  background:transparent;color:var(--tx2);font-size:11.5px;cursor:pointer;
+  transition:.15s;font-family:inherit;
+}
+.dir:hover{border-color:var(--ln3);color:var(--tx)}
+.dir.on{border-color:var(--wn);color:var(--wn);background:var(--wns);font-weight:500}
+
+.sld{display:flex;flex-direction:column;gap:5px}
+.sldT{display:flex;align-items:center;font-size:11px;color:var(--tx3)}
+.sldT .v{margin-left:auto;color:var(--tx2);font-family:var(--fm);font-size:10.5px}
+.sldMarks{
+  display:flex;justify-content:space-between;font-size:9px;
+  color:var(--tx3);font-family:var(--fm);
+}
+
+.maFt{
+  display:flex;align-items:center;gap:9px;padding:12px 16px;
+  border-top:1px solid var(--ln);background:rgba(8,8,10,.4);
+}
+.maCost{font-size:11px;color:var(--photo);font-family:var(--fm)}
+.maHint{font-size:10.5px;color:var(--tx3)}
+.maGo{
+  margin-left:auto;padding:8px 22px;border-radius:6px;border:none;
+  background:var(--tx);color:#0a0a0c;font-size:12.5px;font-weight:600;
+  cursor:pointer;transition:.15s;font-family:inherit;
+}
+.maGo:hover{filter:brightness(.92)}
+.maGo:disabled{opacity:.5;cursor:not-allowed}
 </style>
 </head>
 <body>
@@ -1255,29 +1337,12 @@ brand{}
       </div>
     </div>
 
-    <!-- ⭐ 后台任务条：全双工的可见证据 -->
-    <div class="bgbar" id="bgBar">
-      <span class="bg-ico">⚙</span>
-      <span class="bg-t">后台 <b>2</b> 个任务在跑</span>
-      <span class="bg-i">图片生成 <span class="bg-p">62%</span></span>
-      <span class="bg-i">素材检索 <span class="bg-p">快要完成</span></span>
-      <span class="bg-hint">你可以继续说，不用等</span>
-    </div>
-
-    <!-- ⭐ Watchdog：三类异常都能主动说 -->
-    <div class="wdbar" id="wdBar">
-      <span class="wd-ico" id="wdIco">⚠</span>
-      <span class="wd-t" id="wdT"></span>
-      <div class="wd-acts" id="wdActs"></div>
-      <button class="wd-cycle" onclick="cycleWd()" title="换一种异常看">⟳</button>
-    </div>
-
-    <!-- ⭐ 投机执行：已经先做好了 -->
-    <div class="spbar" id="spBar">
-      <span class="sp-ico">✦</span>
-      <span class="sp-t">你还在挑图的时候，Agent 已经先把<b>两个改写方案</b>备好了</span>
-      <button class="sp-b" onclick="fillChat('用第一个方案，继续')">用方案一</button>
-      <button class="sp-b" onclick="fillChat('用第二个方案，继续')">用方案二</button>
+        <!-- ⭐ 只有一条状态条：同时有几件事时，只说最该说的那一件 -->
+    <div class="statbar" id="statBar">
+      <span class="sb-ico" id="sbIco">⚙</span>
+      <span class="sb-t" id="sbT"></span>
+      <div class="sb-acts" id="sbActs"></div>
+      <button class="sb-more" id="sbMore" onclick="statCycle()" title="换一件事看">⟳</button>
     </div>
 
     <!-- 输入 -->
@@ -1663,6 +1728,8 @@ function openImg(el, name){
   document.querySelectorAll('.gal-item').forEach(x => x.classList.remove('on'));
   el.classList.add('on');
   ctxAuto('assets');
+  // ⭐ 点图 → 弹出多角度圆球（照即梦）
+  openMA(name);
 }
 
 // ================= 详情（即梦式：右栏换面板） =================
@@ -1772,68 +1839,279 @@ function toast2(msg){
 }
 
 
-// ================= Watchdog 三类异常 =================
-const WD_STATES = [
+// ================= 状态条：一条，只说最该说的 =================
+const STATS = [
   {
-    ico: '⚠',
-    cls: '',
-    html: '图片生成已经 <b>4 分钟</b>没新进展，看起来卡住了',
-    acts: [
-      ['让它去查', "toast2('已让 Agent 检查这个任务')"],
-      ['先不管', "hideWd()"]
-    ]
+    // 优先级 1：任务出问题了 —— 最该说
+    k:'wd', cls:'err', ico:'⊘',
+    html:'供应商那边说<b>「模型不存在」</b> —— GPT Image 2 可能已经下线了'
+        + '<span class="sb-sub">上次 Agnes Video 2.0 下线就是这么发现的</span>',
+    acts:[['换个模型',"toast2('已列出还能用的模型')"],
+          ['去检查连接器',"toast2('打开连接器设置')"]]
   },
   {
-    ico: '⊘',
-    cls: 'err',
-    html: '供应商那边说<b>「模型不存在」</b> —— 这次用的 GPT Image 2 可能已经下线了'
-        + '<span class="wd-sub">上次 Agnes Video 2.0 下线就是这么发现的</span>',
-    acts: [
-      ['换个模型', "toast2('已列出还能用的模型')"],
-      ['去检查连接器', "toast2('打开连接器设置')"]
-    ]
+    // 优先级 2：任务卡住
+    k:'stuck', cls:'warn', ico:'⚠',
+    html:'图片生成已经 <b>4 分钟</b>没新进展，看起来卡住了',
+    acts:[['让它去查',"toast2('已让 Agent 检查这个任务')"],['先不管',"hideStat()"]]
   },
   {
-    ico: '⚡',
-    cls: 'err',
-    html: '连不上默认连接器 <b>127.0.0.1:8317</b> —— 这个地址上没有服务在跑'
-        + '<span class="wd-sub">不是模型坏了，是本地反代没启动</span>',
-    acts: [
-      ['改用其他连接器', "toast2('切到云端连接器')"],
-      ['去设置', "toast2('打开连接器设置')"]
-    ]
+    // 优先级 3：正常在跑 —— 全双工的可见证据
+    k:'bg', cls:'info', ico:'⚙',
+    html:'后台 <b>2</b> 个任务在跑 · 图片生成 62% · 素材检索快好了'
+        + '<span class="sb-sub">你可以继续说，不用等它们</span>',
+    acts:[]
+  },
+  {
+    // 优先级 4：提前备好了方案 —— 用户停下来才提
+    k:'ready', cls:'ready', ico:'✦',
+    html:'你还在挑图的时候，Agent 已经先把<b>两个改写方案</b>备好了',
+    acts:[['用方案一',"fillChat('用第一个方案，继续')"],
+          ['用方案二',"fillChat('用第二个方案，继续')"]]
   }
 ];
 
-let wdIdx = 0;
+let statIdx = 0;
 
-function renderWd(){
-  const s = WD_STATES[wdIdx];
-  const bar = document.getElementById('wdBar');
+function renderStat(){
+  const s = STATS[statIdx];
+  const bar = document.getElementById('statBar');
   if (!bar) return;
-  bar.className = 'wdbar' + (s.cls ? ' ' + s.cls : '');
+  bar.className = 'statbar ' + s.cls;
   bar.style.display = '';
-  document.getElementById('wdIco').textContent = s.ico;
-  document.getElementById('wdT').innerHTML = s.html;
-  document.getElementById('wdActs').innerHTML = s.acts.map(a =>
-    `<button class="wd-b" onclick="${a[1]}">${a[0]}</button>`).join('');
+  document.getElementById('sbIco').textContent = s.ico;
+  document.getElementById('sbT').innerHTML = s.html;
+  document.getElementById('sbActs').innerHTML = s.acts.map(function(a){
+    return '<button class="sb-b" onclick="' + a[1] + '">' + a[0] + '</button>';
+  }).join('');
 }
 
-function cycleWd(){
-  wdIdx = (wdIdx + 1) % WD_STATES.length;
-  renderWd();
-  toast2('Watchdog 第 ' + (wdIdx + 1) + ' / ' + WD_STATES.length + ' 类异常');
+function statCycle(){
+  statIdx = (statIdx + 1) % STATS.length;
+  renderStat();
+  toast2('状态条 ' + (statIdx+1) + ' / ' + STATS.length
+         + ' —— 同时有几件事时只说最重要的一件');
 }
 
-function hideWd(){
-  const bar = document.getElementById('wdBar');
+function hideStat(){
+  const bar = document.getElementById('statBar');
   if (bar) bar.style.display = 'none';
 }
 
-
-
 // ============ 启动：渲染 Watchdog 初始状态 ============
-renderWd();
+renderStat();
+
+// ================= 多角度弹窗 =================
+const MA_DIRS = [
+  {k:'tl',n:'左上',yaw:225,pitch:30},
+  {k:'t', n:'上方',yaw:270,pitch:45},
+  {k:'tr',n:'右上',yaw:315,pitch:30},
+  {k:'l', n:'左侧',yaw:180,pitch:10},
+  {k:'c', n:'正面',yaw:270,pitch:0},
+  {k:'r', n:'右侧',yaw:0,  pitch:10},
+  {k:'bl',n:'左下',yaw:135,pitch:-20},
+  {k:'b', n:'下方',yaw:270,pitch:-25},
+  {k:'br',n:'右下',yaw:45, pitch:-20}
+];
+let maYaw = 315, maPitch = 30, maZoom = 50;
+
+function maRenderDirs(){
+  const h = document.getElementById('maDirs');
+  if (!h) return;
+  h.innerHTML = MA_DIRS.map(function(d){
+    return '<button class="dir" data-k="' + d.k + '" onclick="maPick(\'' + d.k + '\')">'
+      + d.n + '</button>';
+  }).join('');
+}
+
+function maPick(k){
+  const d = MA_DIRS.filter(function(x){ return x.k === k; })[0];
+  if (!d) return;
+  maYaw = d.yaw; maPitch = d.pitch;
+  document.getElementById('maYaw').value = maYaw;
+  document.getElementById('maPitch').value = maPitch;
+  maSync();
+}
+
+function maSync(){
+  document.getElementById('maYawV').textContent = maYaw + '°';
+  document.getElementById('maPitchV').textContent = maPitch + '°';
+  document.getElementById('maZoomV').textContent =
+    maZoom < 33 ? '近' : maZoom > 66 ? '远' : '标准';
+
+  // 亮度映射球面位置
+  const R = 42;
+  const yawR = (maYaw - 90) * Math.PI / 180;
+  const pitchR = -maPitch * Math.PI / 180;
+  const cx = 50 + R * Math.cos(pitchR) * Math.cos(yawR);
+  const cy = 50 + R * Math.cos(pitchR) * Math.sin(yawR);
+
+  const cam = document.getElementById('maCam');
+  cam.style.left = cx + '%';
+  cam.style.top = cy + '%';
+
+  // 视锥
+  const fr = document.getElementById('maFrustum');
+  const dx = 50 - cx, dy = 50 - cy;
+  const len = Math.sqrt(dx*dx + dy*dy);
+  const ang = Math.atan2(dy, dx) * 180 / Math.PI;
+  fr.style.left = cx + '%';
+  fr.style.top = cy + '%';
+  fr.style.width = (len * 0.9) + '%';
+  fr.style.transform = 'rotate(' + ang + 'deg)';
+
+  // 高亮最近的方位
+  const near = MA_DIRS.reduce(function(a, b){
+    const da = Math.abs(a.yaw-maYaw) + Math.abs(a.pitch-maPitch);
+    const db = Math.abs(b.yaw-maYaw) + Math.abs(b.pitch-maPitch);
+    return db < da ? b : a;
+  });
+  const dd = Math.abs(near.yaw-maYaw) + Math.abs(near.pitch-maPitch);
+  document.querySelectorAll('.dir').forEach(function(b){
+    b.classList.toggle('on', b.dataset.k === near.k && dd <= 20);
+  });
+}
+
+function openMA(name){
+  document.getElementById('maFrom').textContent =
+    name ? ('基于「' + name + '」') : '基于这张图';
+  // 脚本可能先于弹窗 DOM 执行，这里兜底渲染一次
+  var dirsBox = document.getElementById('maDirs');
+  if (dirsBox && !dirsBox.children.length) maRenderDirs();
+  document.getElementById('maWrap').classList.add('on');
+  maSync();
+}
+function closeMA(){
+  document.getElementById('maWrap').classList.remove('on');
+}
+
+function maGenerate(){
+  const btn = document.getElementById('maGo');
+  btn.disabled = true;
+  btn.textContent = '生成中…';
+  setTimeout(function(){
+    btn.disabled = false;
+    btn.textContent = '生成';
+    closeMA();
+    toast2('已生成一张「' + maDirName() + '」视角的图 · 和原图连上了线');
+  }, 900);
+}
+
+function maDirName(){
+  const near = MA_DIRS.reduce(function(a, b){
+    const da = Math.abs(a.yaw-maYaw) + Math.abs(a.pitch-maPitch);
+    const db = Math.abs(b.yaw-maYaw) + Math.abs(b.pitch-maPitch);
+    return db < da ? b : a;
+  });
+  const dd = Math.abs(near.yaw-maYaw) + Math.abs(near.pitch-maPitch);
+  return dd <= 20 ? near.n : (maYaw + '° / ' + maPitch + '°');
+}
+
+// 滑块
+['maYaw','maPitch','maZoom'].forEach(function(id){
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('input', function(){
+    if (id === 'maYaw') maYaw = +el.value;
+    if (id === 'maPitch') maPitch = +el.value;
+    if (id === 'maZoom') maZoom = +el.value;
+    maSync();
+  });
+});
+
+// 拖相机小球
+(function(){
+  const cam = document.getElementById('maCam');
+  const sp = document.getElementById('maSphere');
+  if (!cam || !sp) return;
+  let dragging = false;
+  cam.addEventListener('mousedown', function(e){
+    dragging = true; e.preventDefault(); e.stopPropagation();
+  });
+  document.addEventListener('mousemove', function(e){
+    if (!dragging) return;
+    const r = sp.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width * 100;
+    const py = (e.clientY - r.top) / r.height * 100;
+    const dx = px - 50, dy = py - 50;
+    let yaw = Math.atan2(dy, dx) * 180 / Math.PI + 90;
+    if (yaw < 0) yaw += 360;
+    yaw = Math.round(yaw / 15) * 15 % 360;
+    const dist2 = Math.sqrt(dx*dx + dy*dy);
+    let pitch = Math.round(-dist2 * 0.62 / 5) * 5;
+    pitch = Math.max(-30, Math.min(60, pitch));
+    maYaw = yaw; maPitch = pitch;
+    document.getElementById('maYaw').value = maYaw;
+    document.getElementById('maPitch').value = maPitch;
+    maSync();
+  });
+  document.addEventListener('mouseup', function(){ dragging = false; });
+})();
+
+document.addEventListener('keydown', function(e){
+  if (e.key === 'Escape') closeMA();
+});
+
+maRenderDirs();
+
 </script>
+
+<!-- ============ 多角度弹窗 ============ -->
+<div class="maWrap" id="maWrap" onclick="if(event.target===this)closeMA()">
+  <div class="maBox">
+    <div class="maHd">
+      <span class="maT">多角度</span>
+      <span class="maSub" id="maFrom">基于这张图</span>
+      <button class="maX" onclick="closeMA()">✕</button>
+    </div>
+    <div class="maBody">
+      <div class="sphere" id="maSphere">
+        <svg viewBox="0 0 240 240" fill="none" stroke="rgba(255,255,255,.13)" stroke-width=".9">
+          <circle cx="120" cy="120" r="96"/>
+          <ellipse cx="120" cy="120" rx="96" ry="34"/>
+          <ellipse cx="120" cy="120" rx="34" ry="96"/>
+          <ellipse cx="120" cy="120" rx="96" ry="68" opacity=".5"/>
+          <ellipse cx="120" cy="120" rx="68" ry="96" opacity=".5"/>
+          <line x1="24" y1="120" x2="216" y2="120" opacity=".3"/>
+          <line x1="120" y1="24" x2="120" y2="216" opacity=".3"/>
+        </svg>
+        <div class="sphereIn"></div>
+        <div class="maFrustum" id="maFrustum"></div>
+        <div class="maCam" id="maCam" title="拖我换机位">📷</div>
+      </div>
+
+      <div class="maCtl">
+        <div>
+          <div class="maCT">转向哪边看</div>
+          <div class="dirs" id="maDirs"></div>
+        </div>
+
+        <div class="sld">
+          <div class="sldT">水平 <span class="v" id="maYawV">315°</span></div>
+          <input type="range" id="maYaw" min="0" max="360" value="315" step="15">
+          <div class="sldMarks"><span>0</span><span>90</span><span>180</span><span>270</span><span>360</span></div>
+        </div>
+
+        <div class="sld">
+          <div class="sldT">俯仰 <span class="v" id="maPitchV">30°</span></div>
+          <input type="range" id="maPitch" min="-30" max="60" value="30" step="5">
+          <div class="sldMarks"><span>-30</span><span>0</span><span>30</span><span>60</span></div>
+        </div>
+
+        <div class="sld">
+          <div class="sldT">远近 <span class="v" id="maZoomV">标准</span></div>
+          <input type="range" id="maZoom" min="0" max="100" value="50">
+          <div class="sldMarks"><span>近</span><span>标准</span><span>远</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="maFt">
+      <span class="maCost" id="maCost">✦ 1</span>
+      <span class="maHint">会生成一张新图，和原图连线</span>
+      <button class="maGo" id="maGo" onclick="maGenerate()">生成</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
