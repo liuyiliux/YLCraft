@@ -4,6 +4,22 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AI 创作 · Agent 页面原型</title>
+<!--
+  原型版本：v4（按 DeepSeek《Super-agent 设计探索》的指导思想优化）
+  说明文档：docs/prototypes/AGENT_PAGE_SA.md
+  依据：docs/research/SUPER_AGENT_RESEARCH.md
+
+  六条落地：
+    1 去掉「会话」概念，按项目组织
+    2 全双工：后台任务条
+    3 Router/Worker：对话项显示任务数
+    4 视图切换：创作 / 画布 是同一对话的两个视图
+    5 Watchdog：三类异常（卡住 / 模型下线 / 连接失败）
+    6 投机执行：先备好方案让用户选
+
+  ⚠️ 真实现前必读 docs/architecture/FRONTEND_SHARED_COMPONENTS.md
+     （模型选择有统一实现，不许手写第三份）
+-->
 <style>
 /* =========================================================
    基座：和画布原型同一套变量与字号
@@ -828,8 +844,19 @@ brand{}
   background:transparent;color:var(--tx2);cursor:pointer;font-family:inherit;
   transition:.15s;
 }
-.wd-b:first-of-type{margin-left:auto}
 .wd-b:hover{border-color:var(--wn);color:var(--wn)}
+.wd-acts{margin-left:auto;display:flex;gap:6px;flex-shrink:0}
+.wd-cycle{
+  width:20px;height:20px;border-radius:5px;border:1px solid var(--ln2);
+  background:transparent;color:var(--tx3);font-size:11px;cursor:pointer;
+  flex-shrink:0;transition:.15s;line-height:1;font-family:inherit;
+  display:flex;align-items:center;justify-content:center;
+}
+.wd-cycle:hover{border-color:var(--wn);color:var(--wn)}
+.wd-sub{display:block;font-size:10px;color:var(--tx3);margin-top:2px}
+/* 连接失败：更红一点 */
+.wdbar.err{background:rgba(248,113,113,.07);border-color:rgba(248,113,113,.3)}
+.wdbar.err .wd-ico,.wdbar.err .wd-t b{color:var(--err)}
 
 /* ============ 投机执行条 ============ */
 .spbar{
@@ -1237,12 +1264,12 @@ brand{}
       <span class="bg-hint">你可以继续说，不用等</span>
     </div>
 
-    <!-- ⭐ Watchdog：任务卡住时主动说 -->
+    <!-- ⭐ Watchdog：三类异常都能主动说 -->
     <div class="wdbar" id="wdBar">
-      <span class="wd-ico">⚠</span>
-      <span class="wd-t">图片生成已经 <b>4 分钟</b>没新进展，看起来卡住了</span>
-      <button class="wd-b" onclick="toast2('已让 Agent 检查这个任务')">让它去查</button>
-      <button class="wd-b" onclick="document.getElementById('wdBar').style.display='none'">先不管</button>
+      <span class="wd-ico" id="wdIco">⚠</span>
+      <span class="wd-t" id="wdT"></span>
+      <div class="wd-acts" id="wdActs"></div>
+      <button class="wd-cycle" onclick="cycleWd()" title="换一种异常看">⟳</button>
     </div>
 
     <!-- ⭐ 投机执行：已经先做好了 -->
@@ -1266,6 +1293,16 @@ brand{}
               </svg>
             </button>
           </div>
+          <!--
+            ⚠️ 真实现警告（2026-11-01）
+            这里的两个下拉（助手 / 模型）**绝对不能手写第三份**。
+            必须先读 docs/architecture/FRONTEND_SHARED_COMPONENTS.md，
+            复用 frontend/src/utils/modelSelection.ts：
+              pickDefaultConnector()   —— 默认连接器（不能取 items[0]）
+              resolveModelSelection()  —— 默认模型（model 优先，其次 default_model）
+              resolveModelCandidates() —— 下拉候选
+            历史教训：角色详情手写两套 Select，六周后才被发现。
+          -->
           <div class="comp-row2">
             <span class="cop">AI 总控助手 <span class="cv">▾</span></span>
             <span class="cop">qwen3.8-27b <span class="cv">▾</span></span>
@@ -1734,6 +1771,69 @@ function toast2(msg){
   t2 = setTimeout(() => el.classList.remove('on'), 1800);
 }
 
+
+// ================= Watchdog 三类异常 =================
+const WD_STATES = [
+  {
+    ico: '⚠',
+    cls: '',
+    html: '图片生成已经 <b>4 分钟</b>没新进展，看起来卡住了',
+    acts: [
+      ['让它去查', "toast2('已让 Agent 检查这个任务')"],
+      ['先不管', "hideWd()"]
+    ]
+  },
+  {
+    ico: '⊘',
+    cls: 'err',
+    html: '供应商那边说<b>「模型不存在」</b> —— 这次用的 GPT Image 2 可能已经下线了'
+        + '<span class="wd-sub">上次 Agnes Video 2.0 下线就是这么发现的</span>',
+    acts: [
+      ['换个模型', "toast2('已列出还能用的模型')"],
+      ['去检查连接器', "toast2('打开连接器设置')"]
+    ]
+  },
+  {
+    ico: '⚡',
+    cls: 'err',
+    html: '连不上默认连接器 <b>127.0.0.1:8317</b> —— 这个地址上没有服务在跑'
+        + '<span class="wd-sub">不是模型坏了，是本地反代没启动</span>',
+    acts: [
+      ['改用其他连接器', "toast2('切到云端连接器')"],
+      ['去设置', "toast2('打开连接器设置')"]
+    ]
+  }
+];
+
+let wdIdx = 0;
+
+function renderWd(){
+  const s = WD_STATES[wdIdx];
+  const bar = document.getElementById('wdBar');
+  if (!bar) return;
+  bar.className = 'wdbar' + (s.cls ? ' ' + s.cls : '');
+  bar.style.display = '';
+  document.getElementById('wdIco').textContent = s.ico;
+  document.getElementById('wdT').innerHTML = s.html;
+  document.getElementById('wdActs').innerHTML = s.acts.map(a =>
+    `<button class="wd-b" onclick="${a[1]}">${a[0]}</button>`).join('');
+}
+
+function cycleWd(){
+  wdIdx = (wdIdx + 1) % WD_STATES.length;
+  renderWd();
+  toast2('Watchdog 第 ' + (wdIdx + 1) + ' / ' + WD_STATES.length + ' 类异常');
+}
+
+function hideWd(){
+  const bar = document.getElementById('wdBar');
+  if (bar) bar.style.display = 'none';
+}
+
+
+
+// ============ 启动：渲染 Watchdog 初始状态 ============
+renderWd();
 </script>
 </body>
 </html>
