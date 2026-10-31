@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>3D 导演台 · 预演助手（原型）</title>
+<!--
+  原型：3D 导演台的 Agent 面板，抄画布的样式
+  依据：.agents/skills/ylcraft-platform-baseline + ylcraft-interaction-quality
+
+  六条落地：
+    1 界面不出现引擎术语（set_camera → 机位 / revision → 第 N 版）
+    2 操作留痕：每条显示「现在 → 改成」，应用后永久留在对话里
+    3 同一动作只有一个按钮（「应用这 3 处改动」）
+    4 状态用小圆点，不用彩色块
+    5 空态给 3 个入口，不是「暂无数据」
+    6 助手汇报四项：做了什么 / 没做什么 / 自检 / 规模
+
+  真实实现位置：frontend/src/pages/previs/PrevisAssistantPanel.tsx（现在是 antd 行内样式）
+-->
+<style>
+:root{
+  --bg:#08080a; --bg2:#0b0b0e; --s1:#101013; --s2:#16161a; --s3:#1c1c21; --s4:#222228;
+  --ln:rgba(255,255,255,.065); --ln2:rgba(255,255,255,.11); --ln3:rgba(255,255,255,.18);
+  --tx:#f0f0f3; --tx2:#9c9ca8; --tx3:#63636e;
+  --ac:#22d3ee; --acs:rgba(34,211,238,.13); --acl:rgba(34,211,238,.4);
+  --ok:#34d399; --oks:rgba(52,211,153,.12);
+  --wn:#fbbf24; --wns:rgba(251,191,36,.11); --wnl:rgba(251,191,36,.45);
+  --dg:#f87171; --dgs:rgba(248,113,113,.1);
+  --r1:5px;--r2:8px;--r3:12px;--r4:16px;
+  --sh2:0 6px 22px -8px rgba(0,0,0,.85);
+  --ez:cubic-bezier(.16,1,.3,1);
+  --fs:'Inter',-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
+  --fm:'JetBrains Mono',Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg);color:var(--tx);font-family:var(--fs);font-size:13px;
+  line-height:1.55;-webkit-font-smoothing:antialiased;overflow:hidden;
+}
+button{font-family:inherit}
+::-webkit-scrollbar{width:7px;height:7px}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.18)}
+
+/* ============ 顶栏 ============ */
+.top{
+  position:fixed;top:0;left:0;right:0;height:50px;z-index:60;display:flex;
+  align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid var(--ln);
+  background:linear-gradient(to bottom,rgba(8,8,10,.99),rgba(8,8,10,.86));
+  backdrop-filter:blur(18px);
+}
+.brand{
+  display:flex;align-items:center;gap:7px;padding:5px 9px 5px 6px;
+  border-radius:var(--r2);background:var(--s1);border:1px solid var(--ln);
+}
+.brand .mk{
+  width:20px;height:20px;border-radius:var(--r1);background:var(--ac);
+  display:flex;align-items:center;justify-content:center;color:#04222a;
+  font-weight:800;font-size:11px;
+}
+.crumb{font-size:12px;color:var(--tx3)}
+.crumb b{color:var(--tx2);font-weight:500}
+.ver{
+  display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--tx3);
+}
+.ver i{width:5px;height:5px;border-radius:50%;background:var(--ok)}
+.sp{flex:1}
+
+/* ============ 主体三栏 ============ */
+.main{position:absolute;top:50px;left:0;right:0;bottom:0;display:flex}
+
+/* ---- 左：场景对象 ---- */
+.objs{
+  width:190px;flex:0 0 190px;background:var(--s1);border-right:1px solid var(--ln);
+  display:flex;flex-direction:column;min-height:0;
+}
+.objs-hd{
+  padding:11px 12px 8px;font-size:10.5px;color:var(--tx3);
+  font-weight:600;letter-spacing:.03em;
+}
+.objs-hd span{color:var(--tx3);font-weight:400;font-family:var(--fm);margin-left:5px}
+.objs-list{flex:1;overflow-y:auto;padding:0 7px 10px;min-height:0}
+.oi{
+  display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:6px;
+  cursor:pointer;transition:.15s;margin-bottom:1px;
+}
+.oi:hover{background:var(--s2)}
+.oi.on{background:var(--s3)}
+.oi-ic{
+  width:16px;height:16px;border-radius:4px;background:var(--s3);flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--tx3);
+}
+.oi.on .oi-ic{background:var(--acs);color:var(--ac)}
+.oi-n{font-size:12px;color:var(--tx2);flex:1;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.oi.on .oi-n{color:var(--tx)}
+.oi-lock{font-size:9px;color:var(--tx3)}
+
+/* ---- 中：3D 视口 ---- */
+.stage{
+  flex:1;position:relative;min-width:0;overflow:hidden;
+  background:
+    radial-gradient(circle at 1px 1px,rgba(255,255,255,.05) 1px,transparent 0)
+    0 0/24px 24px,var(--bg2);
+}
+.viewport{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+}
+.vp-figure{
+  position:relative;width:130px;height:290px;
+  display:flex;flex-direction:column;align-items:center;gap:4px;
+}
+/* 人形占位 */
+.vp-head{
+  width:42px;height:42px;border-radius:50%;
+  border:1.5px solid var(--ln3);background:var(--s2);
+}
+.vp-torso{
+  width:64px;height:104px;border-radius:10px 10px 6px 6px;
+  border:1.5px solid var(--ln3);background:var(--s2);
+}
+.vp-legs{display:flex;gap:14px}
+.vp-leg{
+  width:20px;height:110px;border-radius:5px;
+  border:1.5px solid var(--ln3);background:var(--s2);
+}
+/* 桌子 */
+.vp-desk{
+  position:absolute;left:-82px;top:150px;width:96px;height:56px;
+  border:1.5px solid var(--ln3);background:var(--s2);border-radius:4px;
+}
+.vp-desk::after{
+  content:"";position:absolute;left:-1px;right:-1px;top:14px;height:1px;
+  background:var(--ln3);
+}
+/* 机位框 */
+.vp-cam{
+  position:absolute;right:-150px;top:80px;width:66px;height:46px;
+  border:1.5px solid var(--wnl);border-radius:5px;
+  background:rgba(251,191,36,.06);
+  display:flex;align-items:center;justify-content:center;
+  font-size:9.5px;color:var(--wn);
+}
+.vp-label{
+  position:absolute;bottom:-26px;left:50%;transform:translateX(-50%);
+  font-size:10px;color:var(--tx3);white-space:nowrap;
+}
+.vp-foot{
+  position:absolute;left:16px;bottom:14px;display:flex;gap:6px;
+}
+.vpc{
+  font-size:10.5px;padding:3px 9px;border-radius:5px;
+  background:var(--s2);border:1px solid var(--ln2);color:var(--tx2);
+  font-family:var(--fm);
+}
+.vpc b{color:var(--wn);font-weight:500}
+
+/* ============ 右：预演助手（抄画布） ============ */
+.ag{
+  width:392px;flex:0 0 392px;background:var(--s1);border-left:1px solid var(--ln);
+  display:flex;flex-direction:column;min-height:0;overflow:hidden;
+}
+.agh{
+  display:flex;align-items:center;gap:8px;padding:10px 14px;
+  border-bottom:1px solid var(--ln);flex:0 0 auto;
+}
+.agh .ico{width:15px;height:15px;color:var(--ac);flex-shrink:0}
+.agh .t{font-size:12px;font-weight:600}
+.agh .m{margin-left:auto;font-size:10px;color:var(--tx3);font-family:var(--fm)}
+
+.agb{flex:1;overflow-y:auto;padding:14px;min-height:0}
+
+/* 空白态：三个入口，不是「暂无数据」 */
+.empty{
+  padding:22px 8px;
+}
+.empty-t{font-size:12.5px;color:var(--tx2);margin-bottom:4px;line-height:1.65}
+.empty-d{font-size:11px;color:var(--tx3);margin-bottom:14px;line-height:1.6}
+.empty-b{
+  display:block;width:100%;text-align:left;padding:9px 12px;
+  border-radius:7px;border:1px solid var(--ln2);background:transparent;
+  color:var(--tx2);font-size:12px;cursor:pointer;transition:.15s;
+  margin-bottom:6px;font-family:inherit;
+}
+.empty-b:hover{border-color:var(--acl);color:var(--ac);background:rgba(34,211,238,.05)}
+.empty-b .k{color:var(--tx3);font-size:10.5px;display:block;margin-top:2px}
+
+/* 气泡 */
+.msg{margin-bottom:13px}
+.msg.me{display:flex;justify-content:flex-end}
+.msg.me .bubble{
+  background:var(--s3);border:1px solid var(--ln);border-radius:var(--r2) var(--r2) 3px var(--r2);
+  padding:9px 12px;font-size:12.5px;color:var(--tx);line-height:1.65;max-width:290px;
+}
+.msg.ai .who{font-size:10px;color:var(--tx3);margin-bottom:5px}
+.msg.ai .bubble{
+  background:var(--bg2);border:1px solid var(--ln);border-radius:var(--r2) var(--r2) var(--r2) 3px;
+  padding:11px 13px;font-size:12.5px;color:var(--tx2);line-height:1.7;
+}
+.msg.ai .bubble b{color:var(--tx);font-weight:600}
+
+/* ============ ⭐ 改动卡（操作留痕） ============ */
+.plan{
+  margin-top:8px;border:1px solid var(--ln2);border-radius:var(--r3);
+  background:var(--s2);overflow:hidden;
+}
+.plan-hd{
+  display:flex;align-items:center;gap:7px;padding:10px 12px 8px;
+  border-bottom:1px solid var(--ln);
+}
+.plan-t{font-size:12px;font-weight:600;color:var(--tx)}
+.plan-n{
+  font-size:10px;font-family:var(--fm);color:var(--ac);
+  background:var(--acs);padding:1px 7px;border-radius:9px;
+}
+
+/* 单条改动 */
+.op{padding:10px 12px;border-bottom:1px solid var(--ln)}
+.op:last-of-type{border-bottom:none}
+.op-hd{display:flex;align-items:center;gap:7px;margin-bottom:6px}
+.op-cb{
+  width:13px;height:13px;border-radius:3px;border:1.5px solid var(--ln3);
+  flex-shrink:0;cursor:pointer;position:relative;transition:.15s;
+}
+.op-cb.on{background:var(--ac);border-color:var(--ac)}
+.op-cb.on::after{
+  content:"✓";position:absolute;inset:0;display:flex;align-items:center;
+  justify-content:center;font-size:9px;color:#04222a;font-weight:700;
+}
+.op-k{font-size:12px;color:var(--tx);font-weight:500}
+.op-badge{
+  font-size:9px;padding:1px 6px;border-radius:8px;font-family:var(--fm);
+  background:var(--s3);color:var(--tx3);
+}
+.op-badge.new{background:var(--oks);color:var(--ok)}
+
+/* 现在 → 改成 */
+.op-diff{padding-left:20px}
+.dr{
+  display:flex;align-items:baseline;gap:6px;font-size:11.5px;
+  line-height:1.75;
+}
+.dr-k{color:var(--tx3);flex-shrink:0;min-width:28px}
+.dr-old{color:var(--tx3);text-decoration:line-through;text-decoration-color:rgba(255,255,255,.22)}
+.dr-ar{color:var(--tx3);font-size:10px}
+.dr-new{color:var(--photo,#fbbf24);font-family:var(--fm);font-size:11px}
+.op-note{
+  font-size:10.5px;color:var(--tx3);margin-top:5px;
+  display:flex;align-items:center;gap:5px;
+}
+.op-note .w{color:var(--wn)}
+
+/* 它改不了的 */
+.cant{
+  padding:9px 12px;border-top:1px solid var(--ln);
+  font-size:11px;color:var(--tx3);line-height:1.6;
+  background:rgba(251,191,36,.04);
+}
+.cant b{color:var(--wn);font-weight:500}
+
+/* 卡片底部：唯一按钮 */
+.plan-ft{
+  display:flex;align-items:center;gap:9px;padding:10px 12px;
+  border-top:1px solid var(--ln);background:rgba(8,8,10,.4);
+}
+.apply{
+  padding:7px 16px;border-radius:var(--r2);border:none;
+  background:var(--tx);color:#0a0a0c;font-size:12px;font-weight:600;
+  cursor:pointer;transition:.15s;
+}
+.apply:hover{filter:brightness(.92)}
+.apply:disabled{opacity:.5;cursor:not-allowed}
+.plan-ft .impact{margin-left:auto;font-size:10.5px;color:var(--tx3)}
+
+/* ============ ⭐ 已应用留痕 ============ */
+.applied{
+  margin-top:8px;border:1px solid rgba(52,211,153,.24);border-radius:var(--r3);
+  background:rgba(52,211,153,.045);overflow:hidden;
+}
+.ap-hd{
+  display:flex;align-items:center;gap:7px;padding:9px 12px;
+  font-size:11.5px;color:var(--tx2);
+}
+.ap-hd .dot{width:5px;height:5px;border-radius:50%;background:var(--ok);flex-shrink:0}
+.ap-hd b{color:var(--ok);font-weight:600}
+.ap-hd .time{margin-left:auto;font-size:10px;color:var(--tx3);font-family:var(--fm)}
+.ap-list{padding:0 12px 10px}
+.ap-i{
+  display:flex;gap:7px;font-size:11px;color:var(--tx3);line-height:1.7;
+  padding-left:12px;position:relative;
+}
+.ap-i::before{
+  content:"·";position:absolute;left:2px;color:var(--tx3);
+}
+.ap-i b{color:var(--tx2);font-weight:500}
+.ap-ft{
+  padding:0 12px 10px;display:flex;gap:8px;
+}
+.ap-b{
+  font-size:10.5px;padding:3px 10px;border-radius:5px;
+  border:1px solid var(--ln2);background:transparent;color:var(--tx3);
+  cursor:pointer;transition:.15s;font-family:inherit;
+}
+.ap-b:hover{border-color:var(--ln3);color:var(--tx2)}
+
+/* ============ Agent 汇报四项 ============ */
+.report{
+  margin-top:9px;border-radius:var(--r3);border:1px solid var(--ln);
+  background:var(--bg2);overflow:hidden;
+}
+.rp-i{
+  display:flex;gap:9px;padding:8px 12px;font-size:11.5px;line-height:1.65;
+  border-bottom:1px solid var(--ln);
+}
+.rp-i:last-child{border-bottom:none}
+.rp-k{
+  flex-shrink:0;width:52px;color:var(--tx3);font-size:10.5px;
+}
+.rp-v{color:var(--tx2);flex:1;min-width:0}
+.rp-v b{color:var(--tx);font-weight:500}
+.rp-v .mute{color:var(--tx3)}
+
+/* ============ 输入 ============ */
+.cmp{border-top:1px solid var(--ln);padding:9px 12px 10px;
+  background:rgba(8,8,10,.5);flex:0 0 auto}
+.cmp .bx{background:var(--bg2);border:1px solid var(--ln2);border-radius:var(--r3);
+  padding:8px 10px}
+.cmp .row1{display:flex;align-items:center;gap:8px}
+.cmp textarea{
+  flex:1;background:0;border:0;color:var(--tx);font-family:inherit;
+  font-size:12.5px;resize:none;outline:none;line-height:1.6;max-height:64px;
+}
+.cmp textarea::placeholder{color:var(--tx3)}
+.snd{
+  width:26px;height:26px;border-radius:var(--r2);background:var(--ac);border:0;
+  color:#04222a;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;flex-shrink:0;
+}
+.cmp .prow{
+  display:flex;align-items:center;gap:4px;margin-top:7px;padding-top:6px;
+  border-top:1px solid var(--ln);font-size:11px;color:var(--tx2);
+}
+.cmp .op2{
+  display:inline-flex;align-items:center;gap:3px;padding:2px 6px;
+  border-radius:var(--r1);cursor:pointer;
+}
+.cmp .op2:hover{background:var(--s3)}
+.cmp .sp2{margin-left:auto}
+.cmp .hint{font-size:10px;color:var(--tx3)}
+
+/* toast */
+.toast{
+  position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(8px);
+  padding:8px 16px;border-radius:18px;background:var(--s2);
+  border:1px solid var(--ln2);font-size:11.5px;color:var(--tx2);
+  box-shadow:var(--sh2);opacity:0;transition:.2s;pointer-events:none;z-index:99;
+}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* 说明 */
+.note{
+  position:fixed;left:14px;bottom:14px;font-size:10.5px;color:var(--tx3);
+  background:rgba(16,16,19,.93);border:1px solid var(--ln2);
+  padding:6px 12px;border-radius:8px;line-height:1.5;z-index:80;
+  backdrop-filter:blur(8px);pointer-events:none;
+}
+.note b{color:var(--ac)}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="brand"><span class="mk">YL</span></div>
+  <div class="crumb">创作项目 / <b>秋天颐和园</b> / 3D 导演台</div>
+  <div class="ver"><i></i>第 7 版</div>
+  <div class="sp"></div>
+  <div class="crumb">绑在分镜 · 第 2 格</div>
+</div>
+
+<div class="main">
+
+  <!-- 左：场景对象 -->
+  <aside class="objs">
+    <div class="objs-hd">场景对象<span>4</span></div>
+    <div class="objs-list">
+      <div class="oi on" onclick="pickObj(this)">
+        <span class="oi-ic">人</span>
+        <span class="oi-n">小林</span>
+        <span class="oi-lock">🔒</span>
+      </div>
+      <div class="oi" onclick="pickObj(this)">
+        <span class="oi-ic">人</span>
+        <span class="oi-n">阿芸</span>
+      </div>
+      <div class="oi" onclick="pickObj(this)">
+        <span class="oi-ic">物</span>
+        <span class="oi-n">书桌</span>
+      </div>
+      <div class="oi" onclick="pickObj(this)">
+        <span class="oi-ic">机</span>
+        <span class="oi-n">主视角</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- 中：3D 视口 -->
+  <div class="stage">
+    <div class="viewport">
+      <div class="vp-figure">
+        <div class="vp-head"></div>
+        <div class="vp-torso"></div>
+        <div class="vp-legs">
+          <div class="vp-leg"></div>
+          <div class="vp-leg"></div>
+        </div>
+        <div class="vp-desk"></div>
+        <div class="vp-cam" id="vpCam">正面 · 35mm</div>
+        <div class="vp-label">小林 · 站姿</div>
+      </div>
+    </div>
+    <div class="vp-foot">
+      <span class="vpc">时长 <b>4.0 秒</b></span>
+      <span class="vpc">24 fps</span>
+      <span class="vpc" id="vpcCam">机位 <b>正面</b></span>
+    </div>
+  </div>
+
+  <!-- 右：预演助手 -->
+  <aside class="ag">
+    <div class="agh">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12a8 8 0 0 1-8 8H7l-4 3V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z"/>
+      </svg>
+      <span class="t">预演助手</span>
+      <span class="m">第 7 版 · 主视角</span>
+    </div>
+
+    <div class="agb" id="agb">
+
+      <!-- 空白态 -->
+      <div class="empty" id="emptyState">
+        <div class="empty-t">说你想怎么改，我来摆。</div>
+        <div class="empty-d">
+          我只会提议，<b>动了什么会逐条写给你看，你点应用才生效。</b>
+        </div>
+        <button class="empty-b" onclick="demoAsk('把机位推近一点，再偏到右前方')">
+          把机位推近一点，再偏到右前方
+          <span class="k">会改：机位的距离和角度</span>
+        </button>
+        <button class="empty-b" onclick="demoAsk('让人物转向镜头，加一个抬起手的动作')">
+          让人物转向镜头，抬起手
+          <span class="k">会改：朝向 + 动作</span>
+        </button>
+        <button class="empty-b" onclick="demoAsk('在画面左边加一张桌子')">
+          在画面左边加一张桌子
+          <span class="k">会加：一个新的物体</span>
+        </button>
+      </div>
+
+      <!-- 对话内容 -->
+      <div id="chat" style="display:none"></div>
+
+    </div>
+
+    <div class="cmp">
+      <div class="bx">
+        <div class="row1">
+          <textarea id="ta" rows="1"
+            placeholder="说一句，例如：把桌子挪到人物右边，机位推近"></textarea>
+          <button class="snd" onclick="sendMsg()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+              <path d="M12 19V5M6 11l6-6 6 6"/>
+            </svg>
+          </button>
+        </div>
+        <div class="prow">
+          <span class="op2">选中的：小林</span>
+          <span class="op2">✨ 只提议，不直接改</span>
+          <span class="sp2"></span>
+          <span class="hint">Enter 发送</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="note">
+  <b>原型</b> · 抄画布样式 · 改动逐条留痕 · 只有<b>一个</b>应用按钮
+</div>
+
+<script>
+/* =========================================================
+   改动卡数据
+   注意：界面上不出现引擎术语
+     set_camera  → 机位
+     assign_motion → 动作
+     revision    → 第 N 版
+     poseJoints  → 姿势角度
+   ========================================================= */
+const PLANS = {
+  camera: {
+    title: '我想这么改',
+    ops: [
+      {
+        k: '机位 主视角',
+        badge: '',
+        rows: [
+          {k: '角度', old: '正面', new: '右前方'},
+          {k: '焦距', old: '35mm', new: '50mm'},
+          {k: '距离', old: '3.2 米', new: '2.1 米'},
+        ],
+        note: '会动到镜头 3、镜头 5 这两个用到主视角的地方',
+        warn: true,
+      }
+    ],
+    cant: '它改不了：<b>灯光</b>不在我的能力里 —— 机位能动，但要加补光得去「打光」面板。',
+    impact: '影响 2 个镜头'
+  },
+  pose: {
+    title: '我想这么改',
+    ops: [
+      {
+        k: '小林 朝向',
+        badge: '',
+        rows: [{k: '朝向', old: '背对镜头', new: '转向镜头'}],
+        note: '只影响当前这一镜'
+      },
+      {
+        k: '小林 动作：抬手',
+        badge: 'new',
+        rows: [{k: '动作', old: '站姿（无动作）', new: '动作库里的「抬手」'}],
+        note: '动作库里有现成的，直接用'
+      }
+    ],
+    cant: '',
+    impact: '影响 1 个镜头'
+  },
+  add: {
+    title: '我想这么加',
+    ops: [
+      {
+        k: '加一个物体：书桌',
+        badge: 'new',
+        rows: [
+          {k: '位置', old: '—', new: '画面左侧，离人物 1.4 米'},
+          {k: '高度', old: '—', new: '0.75 米（按桌面标准）'},
+        ],
+        note: '会新加一个对象，原来 4 个不动'
+      }
+    ],
+    cant: '',
+    impact: '只影响当前镜头'
+  }
+};
+
+/* =========================================================
+   一、用户提问 → 助手给方案
+   ========================================================= */
+let planKey = 'camera';
+
+function demoAsk(text){
+  planKey = text.includes('桌子') ? 'add'
+          : text.includes('动作') ? 'pose'
+          : 'camera';
+  sendMsg(text);
+}
+
+function sendMsg(text){
+  const ta = document.getElementById('ta');
+  const msg = text || (ta ? ta.value.trim() : '');
+  if (!msg) return;
+  if (ta) ta.value = '';
+
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('chat').style.display = 'block';
+
+  addMe(msg);
+
+  setTimeout(() => {
+    const reply = planKey === 'add'
+      ? '好，我加一张桌子。位置按「不挡住人物」放的 —— 你看下位置对不对。'
+      : planKey === 'pose'
+      ? '行，两处：把小林的朝向转过来，再给他一个抬手的动作。'
+      : '好，机位推近并偏到右前方。我把具体数字列出来了。';
+    addAi(reply);
+    addPlan(PLANS[planKey]);
+    scrollBottom();
+  }, 480);
+
+  scrollBottom();
+}
+
+function addMe(text){
+  const d = document.createElement('div');
+  d.className = 'msg me';
+  d.innerHTML = `<div class="bubble">${esc(text)}</div>`;
+  document.getElementById('chat').appendChild(d);
+}
+
+function addAi(html){
+  const d = document.createElement('div');
+  d.className = 'msg ai';
+  d.innerHTML = `<div class="who">预演助手</div><div class="bubble">${html}</div>`;
+  document.getElementById('chat').appendChild(d);
+  return d;
+}
+
+/* =========================================================
+   二、改动卡：逐条留痕
+   ========================================================= */
+function addPlan(plan){
+  const wrap = document.createElement('div');
+  wrap.className = 'msg ai';
+
+  let opsHtml = '';
+  plan.ops.forEach((op, i) => {
+    const rows = op.rows.map(r => `
+      <div class="dr">
+        <span class="dr-k">${r.k}</span>
+        <span class="dr-old">${r.old}</span>
+        <span class="dr-ar">→</span>
+        <span class="dr-new">${r.new}</span>
+      </div>`).join('');
+    opsHtml += `
+      <div class="op">
+        <div class="op-hd">
+          <span class="op-cb on" data-i="${i}" onclick="toggleOp(this)"></span>
+          <span class="op-k">${op.k}</span>
+          ${op.badge ? `<span class="op-badge ${op.badge}">新增</span>` : ''}
+        </div>
+        <div class="op-diff">${rows}</div>
+        ${op.note ? `<div class="op-note">${op.warn ? '<span class="w">⚠</span>' : ''} ${op.note}</div>` : ''}
+      </div>`;
+  });
+
+  wrap.innerHTML = `
+    <div class="who">预演助手</div>
+    <div class="plan" id="planCard">
+      <div class="plan-hd">
+        <span class="plan-t">${plan.title}</span>
+        <span class="plan-n">${plan.ops.length} 处</span>
+      </div>
+      ${opsHtml}
+      ${plan.cant ? `<div class="cant">${plan.cant}</div>` : ''}
+      <div class="plan-ft">
+        <button class="apply" onclick="applyPlan()">应用这 ${plan.ops.length} 处改动</button>
+        <span class="impact">${plan.impact}</span>
+      </div>
+    </div>`;
+
+  document.getElementById('chat').appendChild(wrap);
+}
+
+function toggleOp(el){
+  el.classList.toggle('on');
+}
+
+/* =========================================================
+   三、应用 → 永久留痕 + 助手汇报四项
+   ========================================================= */
+function applyPlan(){
+  const card = document.getElementById('planCard');
+  if (!card) return;
+
+  // 只算勾上的
+  const checked = [...card.querySelectorAll('.op-cb.on')].length;
+  if (checked === 0){
+    toast('一处都没勾，那就不动');
+    return;
+  }
+
+  const btn = card.querySelector('.apply');
+  btn.disabled = true;
+  btn.textContent = '正在应用…';
+
+  setTimeout(() => {
+    // 1) 卡片变成「已应用」状态，永久保留
+    card.querySelector('.plan-hd').innerHTML =
+      `<span class="plan-t" style="color:var(--ok)">已应用</span>
+       <span class="plan-n" style="background:var(--oks);color:var(--ok)">第 7 版 → 第 8 版</span>`;
+    card.querySelector('.plan-ft').innerHTML =
+      `<span class="impact">改动已经存进这个场景了</span>
+       <button class="ap-b" style="margin-left:auto" onclick="toast('已撤销这次改动')">撤销这次</button>`;
+    // 去掉勾选框的交互
+    card.querySelectorAll('.op-cb').forEach(x => {
+      x.style.cursor = 'default';
+      x.onclick = null;
+    });
+
+    // 2) 更新顶栏版本号
+    document.querySelector('.ver').innerHTML = '<i></i>第 8 版';
+    const m = document.querySelector('.agh .m');
+    if (m) m.textContent = '第 8 版 · 主视角';
+
+    // 3) 视口跟着变（判据只能是画面）
+    const vc = document.getElementById('vpCam');
+    if (vc && planKey === 'camera') vc.textContent = '右前方 · 50mm';
+    const vpc = document.getElementById('vpcCam');
+    if (vpc && planKey === 'camera') vpc.innerHTML = '机位 <b>右前方</b>';
+
+    // 4) 助手的汇报：四项
+    addReport();
+    scrollBottom();
+  }, 620);
+}
+
+function addReport(){
+  const d = document.createElement('div');
+  d.className = 'msg ai';
+  d.innerHTML = `
+    <div class="who">预演助手</div>
+    <div class="report">
+      <div class="rp-i">
+        <span class="rp-k">做了</span>
+        <span class="rp-v">
+          <b>机位 主视角</b>改成右前方 50mm 2.1 米；
+          场景从<b>第 7 版</b>存成<b>第 8 版</b>
+        </span>
+      </div>
+      <div class="rp-i">
+        <span class="rp-k">没做</span>
+        <span class="rp-v">
+          <span class="mute">没动小林的姿势和动作；没动书桌；
+          没改另外两个镜头（它们用的是别的机位）</span>
+        </span>
+      </div>
+      <div class="rp-i">
+        <span class="rp-k">自检</span>
+        <span class="rp-v">
+          机位没穿进人物身体、没有对象跑出画面 —— <b>3 项都过了</b>
+        </span>
+      </div>
+      <div class="rp-i">
+        <span class="rp-k">规模</span>
+        <span class="rp-v">
+          <b>1 处</b>改动 · 影响 <b>2 个镜头</b> · 用时 0.6 秒
+        </span>
+      </div>
+    </div>`;
+  document.getElementById('chat').appendChild(d);
+}
+
+/* =========================================================
+   工具
+   ========================================================= */
+function esc(s){
+  return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+function scrollBottom(){
+  const b = document.getElementById('agb');
+  if (b) b.scrollTop = b.scrollHeight;
+}
+function pickObj(el){
+  document.querySelectorAll('.oi').forEach(x => x.classList.remove('on'));
+  el.classList.add('on');
+}
+let tt = null;
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('on');
+  clearTimeout(tt);
+  tt = setTimeout(() => t.classList.remove('on'), 1900);
+}
+document.getElementById('ta').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); sendMsg(); }
+});
+document.getElementById('ta').addEventListener('input', function(){
+  this.style.height = 'auto';
+  this.style.height = Math.min(this.scrollHeight, 64) + 'px';
+});
+</script>
+</body>
+</html>
