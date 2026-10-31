@@ -710,6 +710,153 @@ brand{}
   cursor:pointer;font-family:inherit;flex-shrink:0;transition:.15s;
 }
 .cf-b:hover{border-color:var(--ac);color:var(--ac)}
+
+/* ============ 左栏：按项目组织的对话 ============ */
+.side-hd{align-items:center}
+.side-new{
+  margin-left:auto;width:20px;height:20px;border-radius:5px;
+  border:1px solid var(--ln2);background:transparent;color:var(--tx3);
+  font-size:12px;cursor:pointer;transition:.15s;line-height:1;
+  display:flex;align-items:center;justify-content:center;
+}
+.side-new:hover{border-color:var(--ac);color:var(--ac)}
+.sproj{
+  display:flex;align-items:center;gap:7px;padding:11px 8px 5px;
+}
+.sproj-n{
+  font-size:10.5px;color:var(--tx3);font-weight:600;letter-spacing:.02em;
+}
+.sproj-c{
+  font-size:9px;padding:1px 6px;border-radius:8px;
+  background:rgba(34,211,238,.12);color:var(--ac);font-family:var(--fm);
+}
+.sitem-row{display:flex;align-items:center;gap:7px;margin-bottom:2px}
+.sitem-dot{
+  width:5px;height:5px;border-radius:50%;background:var(--ln3);flex-shrink:0;
+}
+.sitem-dot.run{background:var(--ac);animation:pulse 1.6s infinite}
+.sitem-m{padding-left:12px}
+.side-ft{
+  flex:0 0 auto;border-top:1px solid var(--ln);padding:9px 13px;
+  font-size:10.5px;color:var(--tx3);line-height:1.5;
+}
+
+/* ============ 视图切换 ============ */
+.vtabs{display:flex;gap:2px;background:var(--s2);padding:2px;border-radius:7px}
+.vtab{
+  font-size:11.5px;padding:4px 12px;border-radius:5px;border:none;
+  background:transparent;color:var(--tx3);cursor:pointer;transition:.15s;
+  font-family:inherit;
+}
+.vtab:hover{color:var(--tx2)}
+.vtab.on{background:var(--s3);color:var(--tx)}
+
+/* 画布视图 */
+.canvasview{
+  flex:1;display:none;flex-direction:column;min-height:0;
+  background:
+    radial-gradient(circle at 1px 1px,rgba(255,255,255,.05) 1px,transparent 0)
+    0 0/24px 24px;
+}
+.canvasview.on{display:flex}
+.chat.cv .chat-body,.chat.cv .bgbar,.chat.cv .wdbar,.chat.cv .spbar{display:none}
+.cv-note{
+  flex:0 0 auto;margin:12px 20px 0;padding:11px 15px;border-radius:8px;
+  background:rgba(34,211,238,.07);border:1px solid rgba(34,211,238,.24);
+  font-size:11.5px;color:var(--tx2);line-height:1.6;
+}
+.cv-note b{color:var(--ac)}
+.cv-stage{flex:1;position:relative;min-height:0}
+.cv-node{
+  position:absolute;width:150px;border-radius:9px;border:1px solid var(--ln2);
+  background:var(--s1);overflow:hidden;
+}
+.cv-nh{
+  padding:6px 9px;font-size:10px;color:var(--tx3);border-bottom:1px solid var(--ln);
+}
+.cv-img{
+  aspect-ratio:3/4;
+  background:radial-gradient(circle at 46% 34%,#2d3344 0%,transparent 56%),
+    linear-gradient(155deg,#1c2029,#0f1116);
+}
+.cv-img.b{
+  background:radial-gradient(circle at 55% 30%,#33302a 0%,transparent 55%),
+    linear-gradient(155deg,#221f1a,#0f0f0d);
+}
+.cv-link{
+  position:absolute;height:1.5px;transform-origin:left center;
+  background:linear-gradient(90deg,var(--acl),rgba(34,211,238,.16));
+}
+.cv-ft{
+  flex:0 0 auto;display:flex;align-items:center;gap:10px;
+  padding:10px 20px;border-top:1px solid var(--ln);
+  font-size:11px;color:var(--tx3);
+}
+.cv-ft .sp{flex:1}
+
+/* ============ 后台任务条（全双工） ============ */
+.bgbar{
+  flex:0 0 auto;display:flex;align-items:center;gap:9px;
+  margin:0 26px 8px;padding:8px 14px;border-radius:8px;
+  background:rgba(34,211,238,.06);border:1px solid rgba(34,211,238,.2);
+  font-size:11.5px;color:var(--tx2);
+}
+.bg-ico{
+  color:var(--ac);font-size:11px;
+  animation:spin 2.4s linear infinite;display:inline-block;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.bg-t b{color:var(--tx);font-weight:600}
+.bg-i{
+  font-size:10.5px;color:var(--tx3);font-family:var(--fm);
+  padding:1px 8px;border-radius:9px;background:rgba(255,255,255,.04);
+}
+.bg-p{color:var(--ac)}
+.bg-hint{margin-left:auto;font-size:10.5px;color:var(--tx3)}
+
+/* ============ Watchdog 条 ============ */
+.wdbar{
+  flex:0 0 auto;display:flex;align-items:center;gap:9px;
+  margin:0 26px 8px;padding:9px 14px;border-radius:8px;
+  background:rgba(245,165,36,.07);border:1px solid rgba(245,165,36,.28);
+  font-size:11.5px;color:var(--tx2);
+}
+.wd-ico{color:var(--warn);font-size:11px}
+.wd-t b{color:var(--warn);font-weight:600}
+.wd-b{
+  font-size:11px;padding:3px 10px;border-radius:5px;border:1px solid var(--ln2);
+  background:transparent;color:var(--tx2);cursor:pointer;font-family:inherit;
+  transition:.15s;
+}
+.wd-b:first-of-type{margin-left:auto}
+.wd-b:hover{border-color:var(--wn);color:var(--wn)}
+
+/* ============ 投机执行条 ============ */
+.spbar{
+  flex:0 0 auto;display:flex;align-items:center;gap:9px;
+  margin:0 26px 8px;padding:9px 14px;border-radius:8px;
+  background:rgba(167,139,250,.07);border:1px solid rgba(167,139,250,.26);
+  font-size:11.5px;color:var(--tx2);
+}
+.sp-ico{color:var(--purple);font-size:11px}
+.sp-t b{color:var(--purple);font-weight:600}
+.sp-b{
+  font-size:11px;padding:3px 10px;border-radius:5px;border:1px solid var(--ln2);
+  background:transparent;color:var(--tx2);cursor:pointer;font-family:inherit;
+  transition:.15s;
+}
+.sp-b:first-of-type{margin-left:auto}
+.sp-b:hover{border-color:var(--purple);color:var(--purple)}
+
+/* toast2 */
+.toast2{
+  position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(8px);
+  padding:8px 16px;border-radius:18px;background:var(--s2);
+  border:1px solid var(--ln2);font-size:11.5px;color:var(--tx2);
+  box-shadow:0 6px 22px -8px rgba(0,0,0,.85);opacity:0;
+  transition:.2s;pointer-events:none;z-index:120;
+}
+.toast2.on{opacity:1;transform:translateX(-50%) translateY(0)}
 </style>
 </head>
 <body>
@@ -737,52 +884,103 @@ brand{}
   <!-- ================= 左：会话 ================= -->
   <aside class="side">
     <div class="side-hd">
-      <span class="side-t">会话</span>
-      <span class="side-n">60</span>
+      <span class="side-t">对话</span>
+      <button class="side-new" onclick="toast2('开一个新对话')">＋</button>
     </div>
-    <button class="newbtn">＋ 新对话</button>
+
+    <!-- 按项目组织，不暴露 session 这种底层概念 -->
     <div class="sessions">
-      <div class="sgrp">今天</div>
+      <div class="sproj">
+        <span class="sproj-n">秋天颐和园</span>
+        <span class="sproj-c">2 在跑</span>
+      </div>
       <div class="sitem on">
-        <div class="sitem-t">生成一张只露坐姿的全身照</div>
-        <div class="sitem-m">17:23 · 9 步</div>
+        <div class="sitem-row">
+          <span class="sitem-dot run"></span>
+          <span class="sitem-t">生成一张只露坐姿的全身照</span>
+        </div>
+        <div class="sitem-m">后台 1 个任务在跑</div>
       </div>
       <div class="sitem">
-        <div class="sitem-t">给素材 asset-verify 加确认卡</div>
-        <div class="sitem-m">17:18 · 12 步</div>
+        <div class="sitem-row">
+          <span class="sitem-dot"></span>
+          <span class="sitem-t">再来一张横构图</span>
+        </div>
+        <div class="sitem-m">等你要不要确认</div>
       </div>
-      <div class="sgrp">昨天</div>
-      <div class="sitem">
-        <div class="sitem-t">把桌子向右移动 0.25 米</div>
-        <div class="sitem-m">08:02 · 3 步</div>
-      </div>
-      <div class="sitem">
-        <div class="sitem-t">将桌子移至人物右侧并推近机位</div>
-        <div class="sitem-m">08:01 · 5 步</div>
-      </div>
-      <div class="sitem">
-        <div class="sitem-t">移动桌子至人物右侧推近机位</div>
-        <div class="sitem-m">07:58 · 4 步</div>
-      </div>
-      <div class="sgrp">更早</div>
-      <div class="sitem">
-        <div class="sitem-t">检查当前短剧项目的大纲完成情况</div>
-        <div class="sitem-m">10/14 · 8 步</div>
+
+      <div class="sproj">
+        <span class="sproj-n">短剧 · 第 3 集</span>
+        <span class="sproj-c">1 在跑</span>
       </div>
       <div class="sitem">
-        <div class="sitem-t">列出最近的创作项目</div>
-        <div class="sitem-m">10/14 · 2 步</div>
+        <div class="sitem-row">
+          <span class="sitem-dot run"></span>
+          <span class="sitem-t">检查大纲完成情况</span>
+        </div>
+        <div class="sitem-m">后台 1 个任务在跑</div>
       </div>
+
+      <div class="sproj">
+        <span class="sproj-n">没有项目</span>
+      </div>
+      <div class="sitem">
+        <div class="sitem-row">
+          <span class="sitem-dot"></span>
+          <span class="sitem-t">给素材加确认卡</span>
+        </div>
+        <div class="sitem-m">昨天完成</div>
+      </div>
+      <div class="sitem">
+        <div class="sitem-row">
+          <span class="sitem-dot"></span>
+          <span class="sitem-t">把桌子向右移动 0.25 米</span>
+        </div>
+        <div class="sitem-m">昨天完成</div>
+      </div>
+    </div>
+
+    <div class="side-ft">
+      <span class="sf-t">你在 2 个对话里有 2 个任务在跑</span>
     </div>
   </aside>
 
   <!-- ================= 中：主对话 ================= -->
   <div class="chat">
     <div class="chat-hd">
-      <span class="chat-t">生成一张只露坐姿的全身照</span>
-      <span class="pill live">已完成</span>
+      <!-- 同一对话的两个视图 -->
+      <div class="vtabs">
+        <button class="vtab on" id="vtCreate" onclick="switchView('create')">创作</button>
+        <button class="vtab" id="vtCanvas" onclick="switchView('canvas')">画布</button>
+      </div>
+      <span class="chat-t" id="chatTitle">生成一张只露坐姿的全身照</span>
       <span class="sp" style="margin-left:auto"></span>
-      <span class="chat-sub">9 步 · 2 工具 · 107,082 tok</span>
+      <span class="chat-sub" id="chatMeta">9 步 · 2 工具 · 107,082 tok</span>
+    </div>
+
+    <!-- 画布视图（同一对话的另一面） -->
+    <div class="canvasview" id="canvasView">
+      <div class="cv-note">
+        <b>这里是画布视图</b>
+        ·和上面的创作视图是<b>同一个对话</b>，你在画布上做的每一步，回到创作视图都能接着聊
+      </div>
+      <div class="cv-stage">
+        <div class="cv-grid"></div>
+        <div class="cv-node" style="left:120px;top:80px">
+          <div class="cv-nh">图片 1</div>
+          <div class="cv-img"></div>
+        </div>
+        <div class="cv-node" style="left:430px;top:210px">
+          <div class="cv-nh">图片 2_多角度</div>
+          <div class="cv-img b"></div>
+        </div>
+        <div class="cv-link" style="left:290px;top:150px;width:150px;transform:rotate(26deg)"></div>
+      </div>
+      <div class="cv-ft">
+        <span>画布 · 3 个节点</span>
+        <span class="sp"></span>
+        <button class="ab" onclick="toast2('原型：真实现跳完整画布')">打开完整画布 ›</button>
+      </div>
     </div>
 
     <div class="granted" id="grantedBar"></div>
@@ -1030,12 +1228,37 @@ brand{}
       </div>
     </div>
 
+    <!-- ⭐ 后台任务条：全双工的可见证据 -->
+    <div class="bgbar" id="bgBar">
+      <span class="bg-ico">⚙</span>
+      <span class="bg-t">后台 <b>2</b> 个任务在跑</span>
+      <span class="bg-i">图片生成 <span class="bg-p">62%</span></span>
+      <span class="bg-i">素材检索 <span class="bg-p">快要完成</span></span>
+      <span class="bg-hint">你可以继续说，不用等</span>
+    </div>
+
+    <!-- ⭐ Watchdog：任务卡住时主动说 -->
+    <div class="wdbar" id="wdBar">
+      <span class="wd-ico">⚠</span>
+      <span class="wd-t">图片生成已经 <b>4 分钟</b>没新进展，看起来卡住了</span>
+      <button class="wd-b" onclick="toast2('已让 Agent 检查这个任务')">让它去查</button>
+      <button class="wd-b" onclick="document.getElementById('wdBar').style.display='none'">先不管</button>
+    </div>
+
+    <!-- ⭐ 投机执行：已经先做好了 -->
+    <div class="spbar" id="spBar">
+      <span class="sp-ico">✦</span>
+      <span class="sp-t">你还在挑图的时候，Agent 已经先把<b>两个改写方案</b>备好了</span>
+      <button class="sp-b" onclick="fillChat('用第一个方案，继续')">用方案一</button>
+      <button class="sp-b" onclick="fillChat('用第二个方案，继续')">用方案二</button>
+    </div>
+
     <!-- 输入 -->
     <div class="chat-ft">
       <div class="comp">
         <div class="comp-bx">
           <div class="comp-row1">
-            <textarea rows="1" placeholder="说你想做什么…  Enter 发送 / Shift+Enter 换行"></textarea>
+            <textarea rows="1" placeholder="继续说… 后台任务跑着也能发 · Enter 发送"></textarea>
             <button class="snd">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
                    stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
@@ -1470,6 +1693,46 @@ function fillChat(text){
 
 // 启动：默认自动 + 素材库
 ctxAuto('assets');
+
+
+// ================= 视图切换（同一对话两个视图） =================
+function switchView(v){
+  const chat = document.querySelector('.chat');
+  const cv = document.getElementById('canvasView');
+  const tCreate = document.getElementById('vtCreate');
+  const tCanvas = document.getElementById('vtCanvas');
+  const title = document.getElementById('chatTitle');
+  const meta = document.getElementById('chatMeta');
+
+  if (v === 'canvas'){
+    chat.classList.add('cv');
+    cv.classList.add('on');
+    tCanvas.classList.add('on'); tCreate.classList.remove('on');
+    title.textContent = '画布 · 秋天颐和园';
+    meta.textContent = '和创作视图是同一个对话';
+  } else {
+    chat.classList.remove('cv');
+    cv.classList.remove('on');
+    tCreate.classList.add('on'); tCanvas.classList.remove('on');
+    title.textContent = '生成一张只露坐姿的全身照';
+    meta.textContent = '9 步 · 2 工具 · 107,082 tok';
+  }
+}
+
+// ================= toast2 =================
+let t2 = null;
+function toast2(msg){
+  let el = document.querySelector('.toast2');
+  if (!el){
+    el = document.createElement('div');
+    el.className = 'toast2';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.add('on');
+  clearTimeout(t2);
+  t2 = setTimeout(() => el.classList.remove('on'), 1800);
+}
 
 </script>
 </body>
