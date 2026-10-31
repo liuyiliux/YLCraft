@@ -156,3 +156,75 @@
 | 2 | Worker 展开看每个的进度 | 可以让用户点开任务条看，下一轮 |
 | 3 | 长程记忆的界面呈现 | 文章自己说是开放问题 |
 | 4 | 真实并发（真跑多任务） | 原型只做静态展示 |
+
+---
+
+## 8. 补充（2026-11-01 复查仓库时发现的两件事）
+
+### 8.1 Watchdog 从 1 类扩到 3 类
+
+复查时发现仓库里有另一个 AI 正在做「连接器 → 模型」重构，
+`docs/architecture/FRONTEND_SHARED_COMPONENTS.md` 里记了**这一周发生的两起真实事故**：
+
+| 时间 | 事故 | 后果 |
+|---|---|---|
+| **2026-10-31** | Agnes Video 2.0 下线，视频页写死默认选 `available_models[0]` | 把下线模型发给供应商 → `model_not_found` |
+| **2026-11-01** | 默认连接器取 `items[0]` | 第一个是没启动的本地反代 → `All connection attempts failed` |
+
+**这两条正是 Super-agent 第 6 节说的**：
+> 「许多异常并非进程崩溃，而是模型在执行中陷入无效循环或**偏离目标**。」
+
+**所以 Watchdog 不能只管「任务卡住」，要能区分三类异常**：
+
+| # | 类型 | 文案 | 动作 |
+|---|---|---|---|
+| 1 | **任务卡住** | 图片生成已经 4 分钟没新进展 | 让它去查 / 先不管 |
+| 2 | **模型下线** | 供应商说「模型不存在」——GPT Image 2 可能下线了<br><small>上次 Agnes Video 2.0 下线就是这么发现的</small> | 换个模型 / 去检查连接器 |
+| 3 | **连接失败** | 连不上 `127.0.0.1:8317`——这个地址上没有服务在跑<br><small>不是模型坏了，是本地反代没启动</small> | 改用其他连接器 / 去设置 |
+
+**关键差别**：
+- 「模型下线」是**供应商那边**的问题 → 换模型
+- 「连不上」是**我们这边**的问题 → 去设置
+- **两者给的动作完全不同，不能混成一句「出错了」**
+
+原型里右上角 `⟳` 可以切换看三种状态。
+
+### 8.2 ⚠️ 模型下拉必须复用公共组件，不许再手写第三份
+
+**原型的 Agent 页里有这些下拉**（目前是静态的）：
+
+```
+AI 总控助手 ▾    qwen3.8-27b ▾    @ 引用素材
+2:3 ▾            GPT Image 2 ▾
+```
+
+**真实现时，这些绝对不能手写。**
+
+`docs/architecture/FRONTEND_SHARED_COMPONENTS.md` 开篇就是血泪教训：
+
+> 「六周后角色详情仍是**手写两套 Select**，`useLlmConnectors` 只有 2 个使用者」
+
+**必须用的东西**（`frontend/src/utils/modelSelection.ts`，别再写第二份）：
+
+| 函数 | 规则 |
+|---|---|
+| `pickDefaultConnector(backends)` | 默认连接器 = `is_default === true` 优先，**不能取 `items[0]`** |
+| `resolveModelSelection(backend)` | 默认模型 = 权威默认（`model` 优先，其次 `default_model`）|
+| `resolveModelCandidates(backend)` | 候选 = 默认模型 + `available_models`，去空去重，默认排第一 |
+
+**三个坑（都真实踩过）**：
+1. **默认连接器不能取 `items[0]`** —— 可能是没启动的本地反代
+2. **默认模型有两个字段名** —— `/videos/backends`、`/images/backends` 用 `model`；
+   `/ai/connectors` 用 `default_model`，**两个都得认**
+3. **`available_models` 可能过期**，永远不能覆盖默认模型
+
+**所以在实现 Agent 页之前，先读 `docs/architecture/FRONTEND_SHARED_COMPONENTS.md`。**
+
+### 8.3 这批改动和我们没有冲突（已核）
+
+| 我们的活 | 他们的活 | 重叠 |
+|---|---|---|
+| `docs/prototypes/` | `frontend/src/`、`backend/app/` | **0** |
+| `docs/research/` | `backend/tests/` | **0** |
+
+两个交叉文档（`docs/README.md`、`docs/agent/TOOL_CATALOG.md`）**都是新增，没互相覆盖**。
