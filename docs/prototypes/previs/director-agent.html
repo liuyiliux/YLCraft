@@ -3,20 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>3D 导演台 · 预演助手（原型）</title>
+<title>3D 导演台 · 预演助手（原型 v2）</title>
 <!--
-  原型：3D 导演台的 Agent 面板，抄画布的样式
+  原型 v2：3D 导演台的 Agent 面板，抄画布样式
   依据：.agents/skills/ylcraft-platform-baseline + ylcraft-interaction-quality
 
-  六条落地：
-    1 界面不出现引擎术语（set_camera → 机位 / revision → 第 N 版）
-    2 操作留痕：每条显示「现在 → 改成」，应用后永久留在对话里
-    3 同一动作只有一个按钮（「应用这 3 处改动」）
-    4 状态用小圆点，不用彩色块
-    5 空态给 3 个入口，不是「暂无数据」
-    6 助手汇报四项：做了什么 / 没做什么 / 自检 / 规模
+  v2 相对 v1 的两处改动（用户提的）：
+    1 「效果」和「参数」两者都要
+       每张改动卡顶部先给一句人话效果，下面再给可核对的数字
+    2 用户也能手动操作
+       ① 改动卡里的参数可以直接拖滑块微调（AI 提议 → 你改）
+       ② 视口下方有「手动调整」，不经过 AI 也能改（你自己来）
 
-  真实实现位置：frontend/src/pages/previs/PrevisAssistantPanel.tsx（现在是 antd 行内样式）
+  六条门禁照旧：
+    界面无引擎术语 / 操作留痕 / 只有一个应用按钮 /
+    状态小圆点 / 空态 3 入口 / 助手汇报四项
+
+  真实实现：frontend/src/pages/previs/PrevisAssistantPanel.tsx
 -->
 <style>
 :root{
@@ -42,7 +45,6 @@ body{
 button{font-family:inherit}
 ::-webkit-scrollbar{width:7px;height:7px}
 ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:4px}
-::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.18)}
 
 /* ============ 顶栏 ============ */
 .top{
@@ -62,25 +64,20 @@ button{font-family:inherit}
 }
 .crumb{font-size:12px;color:var(--tx3)}
 .crumb b{color:var(--tx2);font-weight:500}
-.ver{
-  display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--tx3);
-}
+.ver{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--tx3)}
 .ver i{width:5px;height:5px;border-radius:50%;background:var(--ok)}
 .sp{flex:1}
 
-/* ============ 主体三栏 ============ */
 .main{position:absolute;top:50px;left:0;right:0;bottom:0;display:flex}
 
 /* ---- 左：场景对象 ---- */
 .objs{
-  width:190px;flex:0 0 190px;background:var(--s1);border-right:1px solid var(--ln);
+  width:186px;flex:0 0 186px;background:var(--s1);border-right:1px solid var(--ln);
   display:flex;flex-direction:column;min-height:0;
 }
-.objs-hd{
-  padding:11px 12px 8px;font-size:10.5px;color:var(--tx3);
-  font-weight:600;letter-spacing:.03em;
-}
-.objs-hd span{color:var(--tx3);font-weight:400;font-family:var(--fm);margin-left:5px}
+.objs-hd{padding:11px 12px 8px;font-size:10.5px;color:var(--tx3);
+  font-weight:600;letter-spacing:.03em}
+.objs-hd span{font-weight:400;font-family:var(--fm);margin-left:5px}
 .objs-list{flex:1;overflow-y:auto;padding:0 7px 10px;min-height:0}
 .oi{
   display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:6px;
@@ -98,21 +95,21 @@ button{font-family:inherit}
 .oi.on .oi-n{color:var(--tx)}
 .oi-lock{font-size:9px;color:var(--tx3)}
 
-/* ---- 中：3D 视口 ---- */
+/* ---- 中：视口 ---- */
 .stage{
-  flex:1;position:relative;min-width:0;overflow:hidden;
+  flex:1;position:relative;min-width:0;overflow:hidden;display:flex;
+  flex-direction:column;
   background:
     radial-gradient(circle at 1px 1px,rgba(255,255,255,.05) 1px,transparent 0)
     0 0/24px 24px,var(--bg2);
 }
-.viewport{
-  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-}
+.viewport{flex:1;position:relative;display:flex;align-items:center;
+  justify-content:center;min-height:0}
 .vp-figure{
   position:relative;width:130px;height:290px;
   display:flex;flex-direction:column;align-items:center;gap:4px;
+  transition:transform .3s var(--ez);
 }
-/* 人形占位 */
 .vp-head{
   width:42px;height:42px;border-radius:50%;
   border:1.5px solid var(--ln3);background:var(--s2);
@@ -126,40 +123,77 @@ button{font-family:inherit}
   width:20px;height:110px;border-radius:5px;
   border:1.5px solid var(--ln3);background:var(--s2);
 }
-/* 桌子 */
 .vp-desk{
   position:absolute;left:-82px;top:150px;width:96px;height:56px;
   border:1.5px solid var(--ln3);background:var(--s2);border-radius:4px;
+  transition:.3s var(--ez);
 }
 .vp-desk::after{
   content:"";position:absolute;left:-1px;right:-1px;top:14px;height:1px;
   background:var(--ln3);
 }
-/* 机位框 */
+.vp-desk.hide{opacity:0;transform:scale(.9)}
+.vp-arm{
+  position:absolute;width:14px;height:52px;border-radius:5px;
+  border:1.5px solid var(--ac);background:var(--acs);
+  right:-14px;top:118px;opacity:0;transition:.35s var(--ez);
+  transform-origin:top center;transform:rotate(0deg);
+}
+.vp-arm.on{opacity:1;transform:rotate(-58deg)}
 .vp-cam{
-  position:absolute;right:-150px;top:80px;width:66px;height:46px;
+  position:absolute;right:-150px;top:80px;width:70px;height:46px;
   border:1.5px solid var(--wnl);border-radius:5px;
   background:rgba(251,191,36,.06);
-  display:flex;align-items:center;justify-content:center;
-  font-size:9.5px;color:var(--wn);
+  display:flex;align-items:center;justify-content:center;text-align:center;
+  font-size:9.5px;color:var(--wn);line-height:1.35;
+  transition:.3s var(--ez);
 }
 .vp-label{
   position:absolute;bottom:-26px;left:50%;transform:translateX(-50%);
   font-size:10px;color:var(--tx3);white-space:nowrap;
 }
-.vp-foot{
-  position:absolute;left:16px;bottom:14px;display:flex;gap:6px;
-}
-.vpc{
-  font-size:10.5px;padding:3px 9px;border-radius:5px;
-  background:var(--s2);border:1px solid var(--ln2);color:var(--tx2);
-  font-family:var(--fm);
-}
-.vpc b{color:var(--wn);font-weight:500}
 
-/* ============ 右：预演助手（抄画布） ============ */
+/* 手动调整条 */
+.manual{
+  flex:0 0 auto;border-top:1px solid var(--ln);
+  background:rgba(8,8,10,.6);padding:10px 16px 12px;
+}
+.mn-hd{
+  display:flex;align-items:center;gap:8px;margin-bottom:9px;
+  font-size:11px;color:var(--tx3);
+}
+.mn-hd b{color:var(--tx2);font-weight:500}
+.mn-hd .tag{
+  font-size:9.5px;padding:1px 7px;border-radius:8px;
+  background:var(--s3);color:var(--tx3);font-family:var(--fm);
+}
+.mn-row{display:flex;gap:18px;align-items:flex-start}
+.mn-c{flex:1;min-width:0}
+.mn-t{
+  display:flex;align-items:center;font-size:10.5px;color:var(--tx3);
+  margin-bottom:5px;
+}
+.mn-t .v{margin-left:auto;color:var(--tx2);font-family:var(--fm);font-size:10.5px}
+input[type=range]{
+  -webkit-appearance:none;width:100%;height:3px;border-radius:2px;
+  background:rgba(255,255,255,.12);outline:none;cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:11px;height:11px;border-radius:50%;
+  background:var(--tx);border:2px solid var(--s1);cursor:grab;
+}
+.mn-dirs{display:flex;gap:3px}
+.mn-d{
+  flex:1;font-size:10.5px;padding:4px 2px;border-radius:4px;
+  border:1px solid var(--ln2);background:transparent;color:var(--tx3);
+  cursor:pointer;transition:.15s;
+}
+.mn-d:hover{color:var(--tx2);border-color:var(--ln3)}
+.mn-d.on{border-color:var(--wn);color:var(--wn);background:var(--wns)}
+
+/* ============ 右：预演助手 ============ */
 .ag{
-  width:392px;flex:0 0 392px;background:var(--s1);border-left:1px solid var(--ln);
+  width:400px;flex:0 0 400px;background:var(--s1);border-left:1px solid var(--ln);
   display:flex;flex-direction:column;min-height:0;overflow:hidden;
 }
 .agh{
@@ -169,13 +203,9 @@ button{font-family:inherit}
 .agh .ico{width:15px;height:15px;color:var(--ac);flex-shrink:0}
 .agh .t{font-size:12px;font-weight:600}
 .agh .m{margin-left:auto;font-size:10px;color:var(--tx3);font-family:var(--fm)}
-
 .agb{flex:1;overflow-y:auto;padding:14px;min-height:0}
 
-/* 空白态：三个入口，不是「暂无数据」 */
-.empty{
-  padding:22px 8px;
-}
+.empty{padding:22px 8px}
 .empty-t{font-size:12.5px;color:var(--tx2);margin-bottom:4px;line-height:1.65}
 .empty-d{font-size:11px;color:var(--tx3);margin-bottom:14px;line-height:1.6}
 .empty-b{
@@ -187,7 +217,6 @@ button{font-family:inherit}
 .empty-b:hover{border-color:var(--acl);color:var(--ac);background:rgba(34,211,238,.05)}
 .empty-b .k{color:var(--tx3);font-size:10.5px;display:block;margin-top:2px}
 
-/* 气泡 */
 .msg{margin-bottom:13px}
 .msg.me{display:flex;justify-content:flex-end}
 .msg.me .bubble{
@@ -201,7 +230,7 @@ button{font-family:inherit}
 }
 .msg.ai .bubble b{color:var(--tx);font-weight:600}
 
-/* ============ ⭐ 改动卡（操作留痕） ============ */
+/* 改动卡 */
 .plan{
   margin-top:8px;border:1px solid var(--ln2);border-radius:var(--r3);
   background:var(--s2);overflow:hidden;
@@ -216,10 +245,17 @@ button{font-family:inherit}
   background:var(--acs);padding:1px 7px;border-radius:9px;
 }
 
-/* 单条改动 */
+.effect{
+  padding:10px 12px;border-bottom:1px solid var(--ln);
+  background:rgba(34,211,238,.04);
+}
+.effect-k{font-size:9.5px;color:var(--tx3);font-family:var(--fm);margin-bottom:3px}
+.effect-v{font-size:12.5px;color:var(--tx);line-height:1.65}
+.effect-v b{color:var(--ac);font-weight:600}
+
 .op{padding:10px 12px;border-bottom:1px solid var(--ln)}
 .op:last-of-type{border-bottom:none}
-.op-hd{display:flex;align-items:center;gap:7px;margin-bottom:6px}
+.op-hd{display:flex;align-items:center;gap:7px;margin-bottom:7px}
 .op-cb{
   width:13px;height:13px;border-radius:3px;border:1.5px solid var(--ln3);
   flex-shrink:0;cursor:pointer;position:relative;transition:.15s;
@@ -230,29 +266,34 @@ button{font-family:inherit}
   justify-content:center;font-size:9px;color:#04222a;font-weight:700;
 }
 .op-k{font-size:12px;color:var(--tx);font-weight:500}
-.op-badge{
-  font-size:9px;padding:1px 6px;border-radius:8px;font-family:var(--fm);
-  background:var(--s3);color:var(--tx3);
-}
+.op-badge{font-size:9px;padding:1px 6px;border-radius:8px;
+  font-family:var(--fm);background:var(--s3);color:var(--tx3)}
 .op-badge.new{background:var(--oks);color:var(--ok)}
 
-/* 现在 → 改成 */
 .op-diff{padding-left:20px}
-.dr{
-  display:flex;align-items:baseline;gap:6px;font-size:11.5px;
-  line-height:1.75;
-}
-.dr-k{color:var(--tx3);flex-shrink:0;min-width:28px}
-.dr-old{color:var(--tx3);text-decoration:line-through;text-decoration-color:rgba(255,255,255,.22)}
+.dr{display:flex;align-items:baseline;gap:6px;font-size:11.5px;line-height:1.75}
+.dr-k{color:var(--tx3);flex-shrink:0;min-width:30px}
+.dr-old{color:var(--tx3);text-decoration:line-through;
+  text-decoration-color:rgba(255,255,255,.22)}
 .dr-ar{color:var(--tx3);font-size:10px}
-.dr-new{color:var(--photo,#fbbf24);font-family:var(--fm);font-size:11px}
+.dr-new{color:#fbbf24;font-family:var(--fm);font-size:11px}
+
+.adjust{margin-top:7px;padding-left:20px}
+.adj-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.adj-k{font-size:10.5px;color:var(--tx3);width:44px;flex-shrink:0}
+.adj-r{flex:1}
+.adj-v{
+  font-size:10.5px;color:var(--tx2);font-family:var(--fm);width:52px;
+  text-align:right;flex-shrink:0;
+}
+.adj-v.changed{color:#fbbf24}
+
 .op-note{
-  font-size:10.5px;color:var(--tx3);margin-top:5px;
-  display:flex;align-items:center;gap:5px;
+  font-size:10.5px;color:var(--tx3);margin-top:6px;padding-left:20px;
+  display:flex;align-items:flex-start;gap:5px;line-height:1.55;
 }
 .op-note .w{color:var(--wn)}
 
-/* 它改不了的 */
 .cant{
   padding:9px 12px;border-top:1px solid var(--ln);
   font-size:11px;color:var(--tx3);line-height:1.6;
@@ -260,7 +301,6 @@ button{font-family:inherit}
 }
 .cant b{color:var(--wn);font-weight:500}
 
-/* 卡片底部：唯一按钮 */
 .plan-ft{
   display:flex;align-items:center;gap:9px;padding:10px 12px;
   border-top:1px solid var(--ln);background:rgba(8,8,10,.4);
@@ -274,38 +314,6 @@ button{font-family:inherit}
 .apply:disabled{opacity:.5;cursor:not-allowed}
 .plan-ft .impact{margin-left:auto;font-size:10.5px;color:var(--tx3)}
 
-/* ============ ⭐ 已应用留痕 ============ */
-.applied{
-  margin-top:8px;border:1px solid rgba(52,211,153,.24);border-radius:var(--r3);
-  background:rgba(52,211,153,.045);overflow:hidden;
-}
-.ap-hd{
-  display:flex;align-items:center;gap:7px;padding:9px 12px;
-  font-size:11.5px;color:var(--tx2);
-}
-.ap-hd .dot{width:5px;height:5px;border-radius:50%;background:var(--ok);flex-shrink:0}
-.ap-hd b{color:var(--ok);font-weight:600}
-.ap-hd .time{margin-left:auto;font-size:10px;color:var(--tx3);font-family:var(--fm)}
-.ap-list{padding:0 12px 10px}
-.ap-i{
-  display:flex;gap:7px;font-size:11px;color:var(--tx3);line-height:1.7;
-  padding-left:12px;position:relative;
-}
-.ap-i::before{
-  content:"·";position:absolute;left:2px;color:var(--tx3);
-}
-.ap-i b{color:var(--tx2);font-weight:500}
-.ap-ft{
-  padding:0 12px 10px;display:flex;gap:8px;
-}
-.ap-b{
-  font-size:10.5px;padding:3px 10px;border-radius:5px;
-  border:1px solid var(--ln2);background:transparent;color:var(--tx3);
-  cursor:pointer;transition:.15s;font-family:inherit;
-}
-.ap-b:hover{border-color:var(--ln3);color:var(--tx2)}
-
-/* ============ Agent 汇报四项 ============ */
 .report{
   margin-top:9px;border-radius:var(--r3);border:1px solid var(--ln);
   background:var(--bg2);overflow:hidden;
@@ -315,14 +323,11 @@ button{font-family:inherit}
   border-bottom:1px solid var(--ln);
 }
 .rp-i:last-child{border-bottom:none}
-.rp-k{
-  flex-shrink:0;width:52px;color:var(--tx3);font-size:10.5px;
-}
+.rp-k{flex-shrink:0;width:52px;color:var(--tx3);font-size:10.5px}
 .rp-v{color:var(--tx2);flex:1;min-width:0}
 .rp-v b{color:var(--tx);font-weight:500}
 .rp-v .mute{color:var(--tx3)}
 
-/* ============ 输入 ============ */
 .cmp{border-top:1px solid var(--ln);padding:9px 12px 10px;
   background:rgba(8,8,10,.5);flex:0 0 auto}
 .cmp .bx{background:var(--bg2);border:1px solid var(--ln2);border-radius:var(--r3);
@@ -342,15 +347,11 @@ button{font-family:inherit}
   display:flex;align-items:center;gap:4px;margin-top:7px;padding-top:6px;
   border-top:1px solid var(--ln);font-size:11px;color:var(--tx2);
 }
-.cmp .op2{
-  display:inline-flex;align-items:center;gap:3px;padding:2px 6px;
-  border-radius:var(--r1);cursor:pointer;
-}
-.cmp .op2:hover{background:var(--s3)}
+.cmp .op2{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;
+  border-radius:var(--r1)}
 .cmp .sp2{margin-left:auto}
 .cmp .hint{font-size:10px;color:var(--tx3)}
 
-/* toast */
 .toast{
   position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(8px);
   padding:8px 16px;border-radius:18px;background:var(--s2);
@@ -359,12 +360,11 @@ button{font-family:inherit}
 }
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 
-/* 说明 */
 .note{
   position:fixed;left:14px;bottom:14px;font-size:10.5px;color:var(--tx3);
   background:rgba(16,16,19,.93);border:1px solid var(--ln2);
   padding:6px 12px;border-radius:8px;line-height:1.5;z-index:80;
-  backdrop-filter:blur(8px);pointer-events:none;
+  backdrop-filter:blur(8px);pointer-events:none;max-width:520px;
 }
 .note b{color:var(--ac)}
 </style>
@@ -385,45 +385,47 @@ button{font-family:inherit}
   <aside class="objs">
     <div class="objs-hd">场景对象<span>4</span></div>
     <div class="objs-list">
-      <div class="oi on" onclick="pickObj(this)">
-        <span class="oi-ic">人</span>
-        <span class="oi-n">小林</span>
+      <div class="oi" onclick="pickObj(this,'char')">
+        <span class="oi-ic">人</span><span class="oi-n">小林</span>
         <span class="oi-lock">🔒</span>
       </div>
-      <div class="oi" onclick="pickObj(this)">
-        <span class="oi-ic">人</span>
-        <span class="oi-n">阿芸</span>
+      <div class="oi" onclick="pickObj(this,'char2')">
+        <span class="oi-ic">人</span><span class="oi-n">阿芸</span>
       </div>
-      <div class="oi" onclick="pickObj(this)">
-        <span class="oi-ic">物</span>
-        <span class="oi-n">书桌</span>
+      <div class="oi" onclick="pickObj(this,'desk')">
+        <span class="oi-ic">物</span><span class="oi-n">书桌</span>
       </div>
-      <div class="oi" onclick="pickObj(this)">
-        <span class="oi-ic">机</span>
-        <span class="oi-n">主视角</span>
+      <div class="oi on" onclick="pickObj(this,'cam')">
+        <span class="oi-ic">机</span><span class="oi-n">主视角</span>
       </div>
     </div>
   </aside>
 
-  <!-- 中：3D 视口 -->
+  <!-- 中：视口 + 手动调整 -->
   <div class="stage">
     <div class="viewport">
-      <div class="vp-figure">
+      <div class="vp-figure" id="vpFig">
         <div class="vp-head"></div>
         <div class="vp-torso"></div>
         <div class="vp-legs">
-          <div class="vp-leg"></div>
-          <div class="vp-leg"></div>
+          <div class="vp-leg"></div><div class="vp-leg"></div>
         </div>
-        <div class="vp-desk"></div>
-        <div class="vp-cam" id="vpCam">正面 · 35mm</div>
-        <div class="vp-label">小林 · 站姿</div>
+        <div class="vp-desk" id="vpDesk"></div>
+        <div class="vp-arm" id="vpArm"></div>
+        <div class="vp-cam" id="vpCam">正面 · 35mm · 3.2 米</div>
+        <div class="vp-label" id="vpLabel">小林 · 背对镜头 · 站姿</div>
       </div>
     </div>
-    <div class="vp-foot">
-      <span class="vpc">时长 <b>4.0 秒</b></span>
-      <span class="vpc">24 fps</span>
-      <span class="vpc" id="vpcCam">机位 <b>正面</b></span>
+
+    <div class="manual">
+      <div class="mn-hd">
+        <b>手动调整</b>
+        <span class="tag" id="mnTarget">主视角</span>
+        <span style="margin-left:auto;font-size:10px">
+          你也可以直接改，不用跟它说
+        </span>
+      </div>
+      <div class="mn-row" id="mnRow"></div>
     </div>
   </div>
 
@@ -439,30 +441,26 @@ button{font-family:inherit}
     </div>
 
     <div class="agb" id="agb">
-
-      <!-- 空白态 -->
       <div class="empty" id="emptyState">
         <div class="empty-t">说你想怎么改，我来摆。</div>
         <div class="empty-d">
-          我只会提议，<b>动了什么会逐条写给你看，你点应用才生效。</b>
+          我只会提议，<b>动了什么会逐条写给你看，你点应用才生效。
+          不勾的地方我不会碰，你也可以直接拖下面的滑块自己改。</b>
         </div>
-        <button class="empty-b" onclick="demoAsk('把机位推近一点，再偏到右前方')">
+        <button class="empty-b" onclick="demoAsk('camera')">
           把机位推近一点，再偏到右前方
-          <span class="k">会改：机位的距离和角度</span>
+          <span class="k">会改：机位的距离、角度、焦距</span>
         </button>
-        <button class="empty-b" onclick="demoAsk('让人物转向镜头，加一个抬起手的动作')">
+        <button class="empty-b" onclick="demoAsk('pose')">
           让人物转向镜头，抬起手
           <span class="k">会改：朝向 + 动作</span>
         </button>
-        <button class="empty-b" onclick="demoAsk('在画面左边加一张桌子')">
-          在画面左边加一张桌子
-          <span class="k">会加：一个新的物体</span>
+        <button class="empty-b" onclick="demoAsk('add')">
+          让书桌出现在画面里
+          <span class="k">会加：一个原来没有的物体</span>
         </button>
       </div>
-
-      <!-- 对话内容 -->
       <div id="chat" style="display:none"></div>
-
     </div>
 
     <div class="cmp">
@@ -478,7 +476,7 @@ button{font-family:inherit}
           </button>
         </div>
         <div class="prow">
-          <span class="op2">选中的：小林</span>
+          <span class="op2">选中的：<span id="pickedName">主视角</span></span>
           <span class="op2">✨ 只提议，不直接改</span>
           <span class="sp2"></span>
           <span class="hint">Enter 发送</span>
@@ -490,129 +488,291 @@ button{font-family:inherit}
 </div>
 
 <div class="toast" id="toast"></div>
-<div class="note">
-  <b>原型</b> · 抄画布样式 · 改动逐条留痕 · 只有<b>一个</b>应用按钮
-</div>
+
 
 <script>
 /* =========================================================
-   改动卡数据
-   注意：界面上不出现引擎术语
-     set_camera  → 机位
-     assign_motion → 动作
-     revision    → 第 N 版
-     poseJoints  → 姿势角度
+   场景状态（唯一真相）：手动调整和 AI 提议都改这一份
    ========================================================= */
+const scene = {
+  cam:  { angle:'front', focal:35, distance:3.2 },
+  char: { facing:'away', motion:null },
+  desk: { visible:true }
+};
+
+const ANGLES = [
+  {k:'left',  n:'左侧'},
+  {k:'front', n:'正面'},
+  {k:'right', n:'右前方'}
+];
+function angleName(k){ return (ANGLES.find(a => a.k === k) || ANGLES[1]).n; }
+
+/* =========================================================
+   ⭐ 效果一句话：从参数算出来的，不是写死的
+   ========================================================= */
+function buildEffect(from, to){
+  const parts = [];
+  const ratio = from.distance / to.distance;
+  if (ratio > 1.35) parts.push('人物在画面里<b>大了一点</b>');
+  else if (ratio > 1.12) parts.push('人物在画面里<b>稍大</b>');
+  else if (ratio < 0.75) parts.push('人物在画面里<b>小了一些</b>');
+  else if (ratio < 0.9) parts.push('人物在画面里<b>稍小</b>');
+
+  if (to.focal > from.focal + 8) parts.push('背景<b>压得更平</b>，没那么乱');
+  else if (to.focal < from.focal - 8) parts.push('背景<b>更开阔</b>');
+
+  if (from.angle !== to.angle){
+    parts.push('机位从' + angleName(from.angle) + '转到了<b>' + angleName(to.angle) + '</b>');
+  }
+  if (parts.length === 0) return '看起来<b>没什么变化</b>';
+  return parts.join('，') + '。';
+}
+
+function buildEffectChar(from, to){
+  const p = [];
+  if (from.facing !== to.facing) p.push('人物<b>转过来看着镜头</b>了');
+  if (!from.motion && to.motion) p.push('加了<b>抬起手</b>的动作');
+  return p.length ? p.join('，') + '。' : '看起来<b>没什么变化</b>';
+}
+
+/* =========================================================
+   视口（判据只能是画面）
+   ========================================================= */
+function renderScene(){
+  const c = scene.cam;
+  const cam = document.getElementById('vpCam');
+  if (cam) cam.innerHTML =
+    angleName(c.angle) + ' · ' + c.focal + 'mm<br>' + c.distance.toFixed(1) + ' 米';
+
+  const fig = document.getElementById('vpFig');
+  if (fig){
+    const s = Math.max(.55, Math.min(1.25, 3.2 / c.distance));
+    fig.style.transform = 'scale(' + s.toFixed(3) + ')';
+  }
+
+  const label = document.getElementById('vpLabel');
+  if (label){
+    const facing = scene.char.facing === 'camera' ? '转向镜头' : '背对镜头';
+    const motion = scene.char.motion ? ' · 抬手' : ' · 站姿';
+    label.textContent = '小林 · ' + facing + motion;
+  }
+
+  const arm = document.getElementById('vpArm');
+  if (arm) arm.classList.toggle('on', !!scene.char.motion);
+
+  const desk = document.getElementById('vpDesk');
+  if (desk) desk.classList.toggle('hide', !scene.desk.visible);
+
+  syncManualLabels();
+}
+
+/* =========================================================
+   ⭐ 手动调整（不经过 AI）
+   ========================================================= */
+let picked = 'cam';
+
+function pickObj(el, key){
+  document.querySelectorAll('.oi').forEach(x => x.classList.remove('on'));
+  el.classList.add('on');
+  picked = key;
+  const name = el.querySelector('.oi-n').textContent;
+  document.getElementById('mnTarget').textContent = name;
+  const pn = document.getElementById('pickedName');
+  if (pn) pn.textContent = name;
+  renderManual();
+}
+
+function renderManual(){
+  const row = document.getElementById('mnRow');
+  if (!row) return;
+
+  if (picked === 'cam'){
+    row.innerHTML =
+      '<div class="mn-c">'
+      + '<div class="mn-t">角度<span class="v" id="mnAngleV">' + angleName(scene.cam.angle) + '</span></div>'
+      + '<div class="mn-dirs">'
+      + ANGLES.map(a => '<button class="mn-d ' + (scene.cam.angle===a.k?'on':'') + '"'
+          + ' onclick="setAngle(\'' + a.k + '\')">' + a.n + '</button>').join('')
+      + '</div></div>'
+      + '<div class="mn-c">'
+      + '<div class="mn-t">焦距<span class="v" id="mnFocalV">' + scene.cam.focal + 'mm</span></div>'
+      + '<input type="range" min="24" max="85" step="1" value="' + scene.cam.focal + '"'
+      + ' oninput="setFocal(this.value)">'
+      + '</div>'
+      + '<div class="mn-c">'
+      + '<div class="mn-t">距离<span class="v" id="mnDistV">' + scene.cam.distance.toFixed(1) + ' 米</span></div>'
+      + '<input type="range" min="10" max="60" step="1" value="' + Math.round(scene.cam.distance*10) + '"'
+      + ' oninput="setDistance(this.value)">'
+      + '</div>';
+  } else if (picked === 'char' || picked === 'char2'){
+    row.innerHTML =
+      '<div class="mn-c">'
+      + '<div class="mn-t">朝向<span class="v" id="mnFaceV">'
+      + (scene.char.facing==='camera'?'转向镜头':'背对镜头') + '</span></div>'
+      + '<div class="mn-dirs">'
+      + '<button class="mn-d ' + (scene.char.facing==='away'?'on':'') + '" onclick="setFacing(\'away\')">背对镜头</button>'
+      + '<button class="mn-d ' + (scene.char.facing==='camera'?'on':'') + '" onclick="setFacing(\'camera\')">转向镜头</button>'
+      + '</div></div>'
+      + '<div class="mn-c">'
+      + '<div class="mn-t">动作<span class="v" id="mnMoV">' + (scene.char.motion?'抬手':'无') + '</span></div>'
+      + '<div class="mn-dirs">'
+      + '<button class="mn-d ' + (!scene.char.motion?'on':'') + '" onclick="setMotion(false)">无</button>'
+      + '<button class="mn-d ' + (scene.char.motion?'on':'') + '" onclick="setMotion(true)">抬手</button>'
+      + '</div></div><div class="mn-c"></div>';
+  } else {
+    row.innerHTML =
+      '<div class="mn-c">'
+      + '<div class="mn-t">书桌<span class="v">' + (scene.desk.visible?'在画面里':'已移走') + '</span></div>'
+      + '<div class="mn-dirs">'
+      + '<button class="mn-d ' + (scene.desk.visible?'on':'') + '" onclick="setDesk(true)">在画面里</button>'
+      + '<button class="mn-d ' + (!scene.desk.visible?'on':'') + '" onclick="setDesk(false)">移走</button>'
+      + '</div></div><div class="mn-c"></div><div class="mn-c"></div>';
+  }
+}
+
+function syncManualLabels(){
+  const a = document.getElementById('mnAngleV');
+  if (a) a.textContent = angleName(scene.cam.angle);
+  const f = document.getElementById('mnFocalV');
+  if (f) f.textContent = scene.cam.focal + 'mm';
+  const d = document.getElementById('mnDistV');
+  if (d) d.textContent = scene.cam.distance.toFixed(1) + ' 米';
+  const fa = document.getElementById('mnFaceV');
+  if (fa) fa.textContent = scene.char.facing === 'camera' ? '转向镜头' : '背对镜头';
+}
+
+function setAngle(k){ scene.cam.angle = k; renderScene(); renderManual(); manualChanged('机位角度'); }
+function setFocal(v){ scene.cam.focal = +v; renderScene(); renderManual(); }
+function setDistance(v){ scene.cam.distance = +v / 10; renderScene(); renderManual(); }
+function setFacing(v){ scene.char.facing = v; renderScene(); renderManual(); manualChanged('人物朝向'); }
+function setMotion(v){ scene.char.motion = v ? 'raise' : null; renderScene(); renderManual(); manualChanged('人物动作'); }
+function setDesk(v){ scene.desk.visible = v; renderScene(); renderManual(); manualChanged('书桌'); }
+
+let mcT = null;
+function manualChanged(what){
+  clearTimeout(mcT);
+  mcT = setTimeout(() => toast('已手动改：' + what + '（没经过助手）'), 450);
+}
+
+/* =========================================================
+   助手提议
+   ========================================================= */
+let planKey = 'camera';
+
 const PLANS = {
   camera: {
     title: '我想这么改',
-    ops: [
-      {
-        k: '机位 主视角',
-        badge: '',
-        rows: [
-          {k: '角度', old: '正面', new: '右前方'},
-          {k: '焦距', old: '35mm', new: '50mm'},
-          {k: '距离', old: '3.2 米', new: '2.1 米'},
-        ],
-        note: '会动到镜头 3、镜头 5 这两个用到主视角的地方',
-        warn: true,
-      }
-    ],
+    kind: 'cam',
+    impact: '影响 2 个镜头',
     cant: '它改不了：<b>灯光</b>不在我的能力里 —— 机位能动，但要加补光得去「打光」面板。',
-    impact: '影响 2 个镜头'
+    ops: [{
+      k: '机位 主视角',
+      warn: true,
+      note: '会动到镜头 3、镜头 5 这两个用到主视角的地方',
+      target: {angle:'right', focal:50, distance:2.1},
+      rows: [
+        {k:'角度', key:'angle', from:()=>scene.cam.angle, to:'right', fmt:angleName},
+        {k:'焦距', key:'focal', from:()=>scene.cam.focal, to:50, fmt:v=>v+'mm',
+         slide:{min:24,max:85,step:1}},
+        {k:'距离', key:'distance', from:()=>scene.cam.distance, to:2.1,
+         fmt:v=>v.toFixed(1)+' 米', slide:{min:1.2,max:5,step:0.1}}
+      ]
+    }]
   },
   pose: {
     title: '我想这么改',
+    kind: 'char',
+    impact: '影响 1 个镜头',
+    cant: '',
     ops: [
       {
         k: '小林 朝向',
-        badge: '',
-        rows: [{k: '朝向', old: '背对镜头', new: '转向镜头'}],
-        note: '只影响当前这一镜'
+        note: '只影响当前这一镜',
+        target: {facing:'camera'},
+        rows: [{k:'朝向', key:'facing', from:()=>scene.char.facing, to:'camera',
+                fmt:v=>v==='camera'?'转向镜头':'背对镜头'}]
       },
       {
         k: '小林 动作：抬手',
         badge: 'new',
-        rows: [{k: '动作', old: '站姿（无动作）', new: '动作库里的「抬手」'}],
-        note: '动作库里有现成的，直接用'
+        note: '动作库里有现成的，直接用',
+        target: {motion:'raise'},
+        rows: [{k:'动作', key:'motion', from:()=>scene.char.motion, to:'raise',
+                fmt:v=>v?'抬手':'站姿（无动作）'}]
       }
-    ],
-    cant: '',
-    impact: '影响 1 个镜头'
+    ]
   },
   add: {
     title: '我想这么加',
-    ops: [
-      {
-        k: '加一个物体：书桌',
-        badge: 'new',
-        rows: [
-          {k: '位置', old: '—', new: '画面左侧，离人物 1.4 米'},
-          {k: '高度', old: '—', new: '0.75 米（按桌面标准）'},
-        ],
-        note: '会新加一个对象，原来 4 个不动'
-      }
-    ],
+    kind: 'desk',
+    impact: '只影响当前镜头',
     cant: '',
-    impact: '只影响当前镜头'
+    ops: [{
+      k: '让书桌出现在画面里',
+      badge: 'new',
+      note: '原来 4 个对象不动，只是让它「上」',
+      target: {visible:true},
+      rows: [{k:'书桌', key:'visible', from:()=>scene.desk.visible, to:true,
+              fmt:v=>v?'在画面里':'移走'}]
+    }]
   }
 };
 
-/* =========================================================
-   一、用户提问 → 助手给方案
-   ========================================================= */
-let planKey = 'camera';
-
-function demoAsk(text){
-  planKey = text.includes('桌子') ? 'add'
-          : text.includes('动作') ? 'pose'
-          : 'camera';
-  sendMsg(text);
+function demoAsk(k){
+  planKey = k;
+  const preset = {camera:'把机位推近一点，再偏到右前方',
+                  pose:'让人物转向镜头，抬起手',
+                  add:'让书桌出现在画面里'};
+  doSend(preset[k]);
 }
 
-function sendMsg(text){
+function sendMsg(){
   const ta = document.getElementById('ta');
-  const msg = text || (ta ? ta.value.trim() : '');
+  const msg = ta ? ta.value.trim() : '';
   if (!msg) return;
-  if (ta) ta.value = '';
+  ta.value = '';
+  // 猜一个最像的方案
+  planKey = /桌|加|物体/.test(msg) ? 'add'
+          : /动作|抬手|转身|朝向/.test(msg) ? 'pose'
+          : 'camera';
+  doSend(msg);
+}
 
+function doSend(text){
   document.getElementById('emptyState').style.display = 'none';
   document.getElementById('chat').style.display = 'block';
-
-  addMe(msg);
+  addMe(text);
 
   setTimeout(() => {
     const reply = planKey === 'add'
-      ? '好，我加一张桌子。位置按「不挡住人物」放的 —— 你看下位置对不对。'
+      ? '好，让书桌出现在画面里。位置按「不挡住人物」放 —— 你看位置对不对。'
       : planKey === 'pose'
       ? '行，两处：把小林的朝向转过来，再给他一个抬手的动作。'
-      : '好，机位推近并偏到右前方。我把具体数字列出来了。';
+      : '好，机位推近并偏到右前方。我把效果和具体数字都列出来了。';
     addAi(reply);
     addPlan(PLANS[planKey]);
     scrollBottom();
-  }, 480);
-
+  }, 440);
   scrollBottom();
 }
 
-function addMe(text){
+function addMe(t){
   const d = document.createElement('div');
   d.className = 'msg me';
-  d.innerHTML = `<div class="bubble">${esc(text)}</div>`;
+  d.innerHTML = '<div class="bubble">' + esc(t) + '</div>';
   document.getElementById('chat').appendChild(d);
 }
 
-function addAi(html){
+function addAi(h){
   const d = document.createElement('div');
   d.className = 'msg ai';
-  d.innerHTML = `<div class="who">预演助手</div><div class="bubble">${html}</div>`;
+  d.innerHTML = '<div class="who">预演助手</div><div class="bubble">' + h + '</div>';
   document.getElementById('chat').appendChild(d);
   return d;
 }
 
 /* =========================================================
-   二、改动卡：逐条留痕
+   ⭐ 改动卡：效果 + 参数 + 可微调
    ========================================================= */
 function addPlan(plan){
   const wrap = document.createElement('div');
@@ -620,129 +780,172 @@ function addPlan(plan){
 
   let opsHtml = '';
   plan.ops.forEach((op, i) => {
-    const rows = op.rows.map(r => `
-      <div class="dr">
-        <span class="dr-k">${r.k}</span>
-        <span class="dr-old">${r.old}</span>
-        <span class="dr-ar">→</span>
-        <span class="dr-new">${r.new}</span>
-      </div>`).join('');
-    opsHtml += `
-      <div class="op">
-        <div class="op-hd">
-          <span class="op-cb on" data-i="${i}" onclick="toggleOp(this)"></span>
-          <span class="op-k">${op.k}</span>
-          ${op.badge ? `<span class="op-badge ${op.badge}">新增</span>` : ''}
-        </div>
-        <div class="op-diff">${rows}</div>
-        ${op.note ? `<div class="op-note">${op.warn ? '<span class="w">⚠</span>' : ''} ${op.note}</div>` : ''}
-      </div>`;
+    const rows = op.rows.map((r, j) =>
+      '<div class="dr">'
+      + '<span class="dr-k">' + r.k + '</span>'
+      + '<span class="dr-old">' + r.fmt(r.from()) + '</span>'
+      + '<span class="dr-ar">→</span>'
+      + '<span class="dr-new" id="nv-' + i + '-' + j + '">' + r.fmt(r.to) + '</span>'
+      + '</div>').join('');
+
+    const slideRows = op.rows.filter(r => r.slide);
+    const slides = slideRows.map((r, j) =>
+      '<div class="adj-row">'
+      + '<span class="adj-k">' + r.k + '</span>'
+      + '<input class="adj-r" type="range" min="' + r.slide.min + '" max="' + r.slide.max
+      + '" step="' + (r.slide.step || 1) + '" value="' + r.to + '"'
+      + ' oninput="tune(this,' + i + ',' + j + ')">'
+      + '<span class="adj-v changed" id="av-' + i + '-' + j + '">' + r.fmt(r.to) + '</span>'
+      + '</div>').join('');
+
+    opsHtml += '<div class="op" data-i="' + i + '">'
+      + '<div class="op-hd">'
+      + '<span class="op-cb on" onclick="toggleOp(this)"></span>'
+      + '<span class="op-k">' + op.k + '</span>'
+      + (op.badge ? '<span class="op-badge ' + op.badge + '">新增</span>' : '')
+      + '</div>'
+      + '<div class="op-diff">' + rows + '</div>'
+      + (slides ? '<div class="adjust">'
+          + '<div class="op-note" style="padding-left:0;margin:0 0 6px">'
+          + '<span class="w">✎</span> 这几个数字你可以直接拖'
+          + '</div>' + slides + '</div>' : '')
+      + (op.note ? '<div class="op-note">'
+          + (op.warn ? '<span class="w">⚠</span>' : '') + ' ' + op.note + '</div>' : '')
+      + '</div>';
   });
 
-  wrap.innerHTML = `
-    <div class="who">预演助手</div>
-    <div class="plan" id="planCard">
-      <div class="plan-hd">
-        <span class="plan-t">${plan.title}</span>
-        <span class="plan-n">${plan.ops.length} 处</span>
-      </div>
-      ${opsHtml}
-      ${plan.cant ? `<div class="cant">${plan.cant}</div>` : ''}
-      <div class="plan-ft">
-        <button class="apply" onclick="applyPlan()">应用这 ${plan.ops.length} 处改动</button>
-        <span class="impact">${plan.impact}</span>
-      </div>
-    </div>`;
+  const effectHtml = plan.kind === 'cam'
+    ? buildEffect(scene.cam, plan.ops[0].target)
+    : plan.kind === 'char'
+    ? buildEffectChar(scene.char, {facing:'camera', motion:'raise'})
+    : '让书桌<b>出现在画面里</b>，位置在画面左侧。';
+
+  wrap.innerHTML = '<div class="who">预演助手</div>'
+    + '<div class="plan" id="planCard">'
+    + '<div class="plan-hd">'
+    + '<span class="plan-t">' + plan.title + '</span>'
+    + '<span class="plan-n">' + plan.ops.length + ' 处</span>'
+    + '</div>'
+    + '<div class="effect"><div class="effect-k">看起来会变成</div>'
+    + '<div class="effect-v" id="effectV">' + effectHtml + '</div></div>'
+    + opsHtml
+    + (plan.cant ? '<div class="cant">' + plan.cant + '</div>' : '')
+    + '<div class="plan-ft">'
+    + '<button class="apply" onclick="applyPlan()">应用这 ' + plan.ops.length + ' 处改动</button>'
+    + '<span class="impact">' + plan.impact + '</span>'
+    + '</div></div>';
 
   document.getElementById('chat').appendChild(wrap);
 }
 
-function toggleOp(el){
-  el.classList.toggle('on');
+/* 拖滑块微调：改数字 + 实时重算效果一句话 */
+function tune(rangeEl, i, j){
+  const plan = PLANS[planKey];
+  const op = plan.ops[i];
+  const slideRows = op.rows.filter(r => r.slide);
+  const r = slideRows[j];
+  const v = parseFloat(rangeEl.value);
+
+  const nv = document.getElementById('nv-' + i + '-' + j);
+  if (nv) nv.textContent = r.fmt(v);
+  const av = document.getElementById('av-' + i + '-' + j);
+  if (av) av.textContent = r.fmt(v);
+
+  if (op.target && (r.key in op.target)) op.target[r.key] = v;
+
+  const ev = document.getElementById('effectV');
+  if (ev && plan.kind === 'cam') ev.innerHTML = buildEffect(scene.cam, op.target);
 }
 
+function toggleOp(el){ el.classList.toggle('on'); }
+
 /* =========================================================
-   三、应用 → 永久留痕 + 助手汇报四项
+   应用
    ========================================================= */
 function applyPlan(){
   const card = document.getElementById('planCard');
   if (!card) return;
 
-  // 只算勾上的
-  const checked = [...card.querySelectorAll('.op-cb.on')].length;
-  if (checked === 0){
-    toast('一处都没勾，那就不动');
-    return;
-  }
+  const onOps = [...card.querySelectorAll('.op-cb.on')];
+  if (onOps.length === 0){ toast('一处都没勾，那就不动'); return; }
 
   const btn = card.querySelector('.apply');
   btn.disabled = true;
   btn.textContent = '正在应用…';
 
   setTimeout(() => {
-    // 1) 卡片变成「已应用」状态，永久保留
-    card.querySelector('.plan-hd').innerHTML =
-      `<span class="plan-t" style="color:var(--ok)">已应用</span>
-       <span class="plan-n" style="background:var(--oks);color:var(--ok)">第 7 版 → 第 8 版</span>`;
-    card.querySelector('.plan-ft').innerHTML =
-      `<span class="impact">改动已经存进这个场景了</span>
-       <button class="ap-b" style="margin-left:auto" onclick="toast('已撤销这次改动')">撤销这次</button>`;
-    // 去掉勾选框的交互
-    card.querySelectorAll('.op-cb').forEach(x => {
-      x.style.cursor = 'default';
-      x.onclick = null;
+    const plan = PLANS[planKey];
+    let applied = 0;
+    onOps.forEach(cb => {
+      const i = +cb.closest('.op').dataset.i;
+      const t = plan.ops[i].target;
+      if (!t) return;
+      if ('angle' in t) scene.cam.angle = t.angle;
+      if ('focal' in t) scene.cam.focal = t.focal;
+      if ('distance' in t) scene.cam.distance = t.distance;
+      if ('facing' in t) scene.char.facing = t.facing;
+      if ('motion' in t) scene.char.motion = t.motion;
+      if ('visible' in t) scene.desk.visible = t.visible;
+      applied++;
     });
 
-    // 2) 更新顶栏版本号
+    renderScene();
+    renderManual();
+
+    card.querySelector('.plan-hd').innerHTML =
+      '<span class="plan-t" style="color:var(--ok)">已应用</span>'
+      + '<span class="plan-n" style="background:var(--oks);color:var(--ok)">第 7 版 → 第 8 版</span>';
+    card.querySelector('.plan-ft').innerHTML =
+      '<span class="impact">改动已经存进这个场景了</span>'
+      + '<button style="margin-left:auto;font-size:10.5px;padding:3px 10px;border-radius:5px;'
+      + 'border:1px solid var(--ln2);background:transparent;color:var(--tx3);cursor:pointer;'
+      + 'font-family:inherit" onclick="toast(\'已撤销这次改动\')">撤销这次</button>';
+    card.querySelectorAll('.op-cb').forEach(x => { x.style.cursor='default'; x.onclick=null; });
+    card.querySelectorAll('.adjust input').forEach(inp => {
+      inp.disabled = true; inp.style.opacity = .4;
+    });
+
     document.querySelector('.ver').innerHTML = '<i></i>第 8 版';
     const m = document.querySelector('.agh .m');
     if (m) m.textContent = '第 8 版 · 主视角';
 
-    // 3) 视口跟着变（判据只能是画面）
-    const vc = document.getElementById('vpCam');
-    if (vc && planKey === 'camera') vc.textContent = '右前方 · 50mm';
-    const vpc = document.getElementById('vpcCam');
-    if (vpc && planKey === 'camera') vpc.innerHTML = '机位 <b>右前方</b>';
-
-    // 4) 助手的汇报：四项
-    addReport();
+    addReport(plan, applied);
     scrollBottom();
-  }, 620);
+  }, 580);
 }
 
-function addReport(){
+function addReport(plan, applied){
   const d = document.createElement('div');
   d.className = 'msg ai';
-  d.innerHTML = `
-    <div class="who">预演助手</div>
-    <div class="report">
-      <div class="rp-i">
-        <span class="rp-k">做了</span>
-        <span class="rp-v">
-          <b>机位 主视角</b>改成右前方 50mm 2.1 米；
-          场景从<b>第 7 版</b>存成<b>第 8 版</b>
-        </span>
-      </div>
-      <div class="rp-i">
-        <span class="rp-k">没做</span>
-        <span class="rp-v">
-          <span class="mute">没动小林的姿势和动作；没动书桌；
-          没改另外两个镜头（它们用的是别的机位）</span>
-        </span>
-      </div>
-      <div class="rp-i">
-        <span class="rp-k">自检</span>
-        <span class="rp-v">
-          机位没穿进人物身体、没有对象跑出画面 —— <b>3 项都过了</b>
-        </span>
-      </div>
-      <div class="rp-i">
-        <span class="rp-k">规模</span>
-        <span class="rp-v">
-          <b>1 处</b>改动 · 影响 <b>2 个镜头</b> · 用时 0.6 秒
-        </span>
-      </div>
-    </div>`;
+  let did, notDid, check;
+  if (plan.kind === 'cam'){
+    did = '<b>机位 主视角</b>：' + angleName(scene.cam.angle) + ' '
+        + scene.cam.focal + 'mm ' + scene.cam.distance.toFixed(1) + ' 米';
+    notDid = '没动小林的朝向和动作；没动书桌；没改另外两个镜头（它们用的是别的机位）';
+    check = '机位没穿进人物身体、没有对象跑出画面 —— <b>3 项都过了</b>';
+  } else if (plan.kind === 'char'){
+    did = '<b>小林</b>：' + (scene.char.facing==='camera'?'转向镜头':'背对镜头')
+        + (scene.char.motion?'，加了抬手的动作':'');
+    notDid = '没动机位；没动书桌；没改别的镜头里的小林';
+    check = '朝向和动作没冲突、没有对象重叠 —— <b>2 项都过了</b>';
+  } else {
+    did = '<b>书桌</b>：' + (scene.desk.visible?'出现在画面里':'移走');
+    notDid = '没动机位；没动人物的姿势和动作';
+    check = '书桌没挡住人物、没跑出画面 —— <b>2 项都过了</b>';
+  }
+
+  d.innerHTML = '<div class="who">预演助手</div><div class="report">'
+    + '<div class="rp-i"><span class="rp-k">做了</span><span class="rp-v">'
+    + did + '；场景从<b>第 7 版</b>存成<b>第 8 版</b></span></div>'
+    + '<div class="rp-i"><span class="rp-k">没做</span><span class="rp-v">'
+    + '<span class="mute">' + notDid + '</span></span></div>'
+    + '<div class="rp-i"><span class="rp-k">自检</span><span class="rp-v">'
+    + check + '</span></div>'
+    + '<div class="rp-i"><span class="rp-k">规模</span><span class="rp-v">'
+    + '<b>' + applied + ' 处</b>改动 · ' + plan.impact + ' · 用时 0.6 秒</span></div>'
+    + '<div class="rp-i"><span class="rp-k">你来改</span><span class="rp-v">'
+    + '觉得哪不对，<b>视口下面的滑块你可以直接拖</b>，不用再跟我说。</span></div>'
+    + '</div>';
   document.getElementById('chat').appendChild(d);
 }
 
@@ -756,17 +959,11 @@ function scrollBottom(){
   const b = document.getElementById('agb');
   if (b) b.scrollTop = b.scrollHeight;
 }
-function pickObj(el){
-  document.querySelectorAll('.oi').forEach(x => x.classList.remove('on'));
-  el.classList.add('on');
-}
 let tt = null;
 function toast(msg){
   const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('on');
-  clearTimeout(tt);
-  tt = setTimeout(() => t.classList.remove('on'), 1900);
+  t.textContent = msg; t.classList.add('on');
+  clearTimeout(tt); tt = setTimeout(() => t.classList.remove('on'), 1900);
 }
 document.getElementById('ta').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); sendMsg(); }
@@ -775,6 +972,10 @@ document.getElementById('ta').addEventListener('input', function(){
   this.style.height = 'auto';
   this.style.height = Math.min(this.scrollHeight, 64) + 'px';
 });
+
+/* 启动 */
+renderScene();
+renderManual();
 </script>
 </body>
 </html>
