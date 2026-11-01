@@ -86,6 +86,12 @@ const PLATFORMS = [
   // ⚠️ 快手**需要登录**才能看「我的数据」（搜索不需要）；
   // 且登录态较短命，失效后要重新扫码。
   { value: 'kuaishou', label: '快手', connKeys: ['kuaishou', 'ks'] },
+  // ⚠️ 番茄（2026-10-31 补回）
+  //
+  // 2026-09-29 合并入口时只把 B站 搬进来了：`/my-data` 旧路由还留着（B站+番茄），
+  // 但菜单已指向本页，于是**番茄在菜单里彻底没有入口**，只能靠老书签。
+  // 番茄数据走 `FanqieDataPanel`（嵌在 MyDataPage 里），这里同样直接复用。
+  { value: 'fanqie', label: '番茄小说', connKeys: ['fanqie'] },
 ]
 
 function formatCount(n: number | undefined | null): string {
@@ -228,7 +234,9 @@ export default function MyPlatformDataPage() {
   // ⇒ B站 直接不跑这次注定失败、且无人消费的请求。
   //    （正解是给 B站 实现 self_profile，但那是**加功能**，
   //      不解决"提示"这个用户实际在意的现象，且页面根本用不到它。）
-  const usesGenericPanel = platform !== 'bili'
+  //
+  // 番茄同理（2026-10-31 补回）：它走 `FanqieDataPanel`，也不吃 /users/me。
+  const usesGenericPanel = platform !== 'bili' && platform !== 'fanqie'
 
   useEffect(() => {
     if (conns.length > 0 && usesGenericPanel) { void load() }
@@ -268,13 +276,11 @@ export default function MyPlatformDataPage() {
         </Text>
       </div>
 
-      {/* ⚠️ B站：直接复用原「我的数据」组件（含收藏夹/历史/关注/付费课程
-          等 6 个页签）—— 它是全平台能力最强的，不重写（2026-09-29 合并入口）。 */}
-      {platform === 'bili' ? (
-        <MyDataPage embedded platform="bili" />
-      ) : (
-      <>
-
+      {/* 平台切换**常驻**（包括 B站分支）——
+          ⚠️ 2026-10-31 用户反馈：「我的数据现在只有 B站，之前是好几个平台」。
+          根因：B站分支把整个平台下拉一起排除在外，而所选平台又写进
+          localStorage ⇒ 一旦选过 B站，下次进来仍是 bili、页面上又没有切换入口，
+          就永久困在 B站。切换器必须永远可见。 */}
       <Card style={{ background: THEME.bgCard, border: `1px solid ${THEME.border}`, marginBottom: 16 }}>
         <Row gutter={12} align="middle">
           <Col flex="140px">
@@ -297,17 +303,27 @@ export default function MyPlatformDataPage() {
               </Text>
             )}
           </Col>
-          <Col flex="120px">
-            <Button
-              block icon={<ReloadOutlined />}
-              loading={loading} onClick={load}
-              disabled={conns.length === 0}
-            >
-              刷新
-            </Button>
-          </Col>
+          {/* B站面板自带账号选择与刷新；通用面板才需要这个按钮 */}
+          {usesGenericPanel && (
+            <Col flex="120px">
+              <Button
+                block icon={<ReloadOutlined />}
+                loading={loading} onClick={load}
+                disabled={conns.length === 0}
+              >
+                刷新
+              </Button>
+            </Col>
+          )}
         </Row>
       </Card>
+
+      {/* ⚠️ B站/番茄：直接复用原「我的数据」组件（B站含收藏夹/历史/关注/付费课程
+          6 个页签；番茄走 FanqieDataPanel）—— 不重写（2026-09-29 合并入口）。 */}
+      {platform === 'bili' || platform === 'fanqie' ? (
+        <MyDataPage embedded platform={platform === 'fanqie' ? 'fanqie' : 'bili'} />
+      ) : (
+      <>
 
       <Spin spinning={loading}>
         {profile ? (

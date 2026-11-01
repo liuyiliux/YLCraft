@@ -158,10 +158,16 @@ export default function MyDataPage({
         setSelectedConn(bili[0].id)
       }
       // 默认平台：有 B站先看 B站，否则切到番茄（effect 仅挂载时跑一次，不覆盖用户后续手动切换）
-      if (bili.length > 0) {
-        setDataPlatform('bilibili')
-      } else if (fanqie.length > 0) {
-        setDataPlatform('fanqie')
+      //
+      // ⚠️ **embedded 时不能自动选**（2026-10-31 实测踩到）：嵌在「我的数据」合并页时
+      //    平台由父页 `platform` prop 决定（见上面的同步 effect）。这里再自动选一次
+      //    B站，会把父页选的「番茄小说」覆盖掉 —— 番茄标签下面显示 B站数据。
+      if (!embedded) {
+        if (bili.length > 0) {
+          setDataPlatform('bilibili')
+        } else if (fanqie.length > 0) {
+          setDataPlatform('fanqie')
+        }
       }
     }).catch(() => {})
   }, [])
