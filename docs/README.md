@@ -23,7 +23,7 @@
 | 目录 | 放什么 | 规则 |
 | --- | --- | --- |
 | `docs/agent/` | Agent 工作台、Skill Runtime、工具调用、记忆、上下文。工具明细查询见 `docs/agent/TOOL_CATALOG.md`（266 个工具 / 19 类，**按需 rg，别整篇读**）。 | Agent 相关实现变化必须更新这里或对应 OpenSpec。 |
-| `docs/architecture/` | 子系统架构设计，如资产中枢、AI 服务层、播放器、规则助手。 | 讲长期设计，不写当天流水账。 |
+| `docs/architecture/` | 子系统架构设计，如资产中枢、AI 服务层、播放器、规则助手。**前端公共组件（连接器/模型选择）的规则与迁移清单见 `docs/architecture/FRONTEND_SHARED_COMPONENTS.md`（唯一账本）**。 | 讲长期设计，不写当天流水账。 |
 | `docs/guides/` | 可执行工作流说明，如创作项目闭环。 | 面向“怎么用/怎么串起来”。 |
 | `docs/guides/quickstart.md` | 面向 fork 开发者的快速上手指南：启动、配模型密钥、首次使用路径。 | 新人开箱必读。 |
 | `docs/platform/` | B 站、多平台采集/发布等外部平台能力。 | 平台兼容、登录、限流、接口差异放这里。 |
@@ -32,6 +32,7 @@
 | `docs/devlog/` | 必要的阶段性交接。 | 只在跨电脑/长任务切换时写，文件名用 `YYYY-MM-DD_topic.md`。 |
 | `docs/reference/` | 外部参考资料、客户素材、二进制样例。 | 不作为当前实现事实来源。 |
 | `docs/research/` | 专题调研产出：排查计划与结论报告（如任务/事件记录覆盖梳理）。 | 结论要回写到架构或领域文档，这里保留完整推导过程。 |
+| `docs/prototypes/` | 页面原型（HTML + 说明文档，70+ 份）。**索引见 `docs/prototypes/README.md`**：哪个是当前版、哪个已废弃、端口怎么起。 | **原型不是实现事实**；落地前看真代码。单篇 ≤12KB。 |
 
 平台接入入口：**新增平台先读 `docs/platform/ADDING_A_PLATFORM.md`（含必改清单与自动校验脚本）**；**采集功能整体结构见 `docs/platform/COLLECTION_ARCHITECTURE.md`（搜索/详情/下载走哪条路、为什么、踩坑清单）**；已接入平台：`docs/platform/BILIBILI_GUIDE.md`、`docs/platform/DOUYIN_GUIDE.md`、`docs/platform/XIAOHONGSHU_GUIDE.md`、`docs/platform/FANQIE_GUIDE.md`、`docs/platform/KUAISHOU_GUIDE.md`（快手：签名机制、`profile/user` 借签名、已证伪的六条结论）；其余跨平台对比资料仍在 `docs/platform/MULTI_PLATFORM_REFERENCE.md`。本地历史归属维护见 `docs/guides/owner-backfill.md`。
 
@@ -51,6 +52,20 @@
 **尚未回写到架构文档的部分**：上面三份的结论目前只存在于 research 目录，
 架构文档未同步。落地任何一条前先确认它与现网实现（Postgres + pgvector、
 `platform_event_logs`、yt-dlp 稳定 md5 文件名 + `.partial/` 断点续传）不冲突。
+
+### 2026-11-01 新增
+
+| 文档 | 调研对象 | 核心结论（摘要） |
+| --- | --- | --- |
+| `SUPER_AGENT_RESEARCH.md`（6KB） | DeepSeek 官方《Super-agent 设计探索》 | 单 ReAct Loop 无法同时支持「连续/高效/主动/持久」四个特征。**对我们的三条结论**：① Agent 页面做「领域特化界面」是对的（原文说聊天框是路径依赖）② 我们的 Agent 缺 Router/Worker 分层，现在是「单会话 + 靠提示词分工」而实验证明不可靠 ③ 多租户应按「上下文共享边界」划分实例，不是一人一进程 |
+| `SUPER_AGENT_MODULES.md`（7KB） | 同上，五个模块的细节 | **reference 子文件，按需查**。双层架构 / 事件驱动 / 全双工 / 存算分离 / Watchdog |
+
+⚠️ 原文与开源实现（`github.com/deepseek-ai/dsh-superagent-prototype`，MIT）都明确：
+**研究原型，不是正式产品**，且「文章里的设计有一部分代码里没实现」。
+
+## 阶段性交接
+
+最近的跨会话交接见 `docs/devlog/2026-11-01_prototype-redesign-handoff.md`（3KB）。
 
 ## 当前主线状态
 
