@@ -1757,3 +1757,132 @@ document.addEventListener('keydown', e => {
     wsUpdateComposerChips();
   }
 })();
+
+/* ============================================================
+   / 技能弹层（2026-11-01 加）
+   基线来自即梦：打字时打 / 直接弹技能列表，每个带一句话说明 + 官方标记，
+   顶部有搜索框。截图见 docs/research/jimeng/02_skills.png。
+   · 壳复用 @ 引用的 .atpop（同一套视觉，不再画第三套）
+   · 方向也跟 @ 一致往上开 —— 输入框贴着视口底，往下开会出屏。
+     即梦在下是因为它输入框下面还有 chips 行，我们不是，别照抄。
+   ============================================================ */
+const WS_SKILLS = [
+  { n:'创作分镜',   d:'一句话拆成分镜，标好景别和运镜' },
+  { n:'角色三视图', d:'按 9 个方位出一套立绘，跨镜头不变脸' },
+  { n:'视频反解',   d:'拆解参考视频的镜头语言、光影和节奏' },
+  { n:'电商套图',   d:'按商品信息出一套风格统一的主图' },
+  { n:'海报设计',   d:'给标题和卖点，出一版可直接用的海报' },
+  { n:'剧情短片',   d:'从大纲到分镜再到成片的完整流程' }
+];
+
+let wsSkillIdx = 0;
+let wsSkillQ = '';
+let wsSkillAt = 0;   // 打开时的光标位置，选中后往这儿插
+
+function openSkillPicker(){
+  if (document.getElementById('skillPop')) return;
+  const cmp = document.querySelector('.cmp');
+  if (!cmp) return;
+  const taEl = document.getElementById('ta');
+  wsSkillAt = taEl ? taEl.selectionStart : 0;
+  wsSkillQ = '';
+  wsSkillIdx = 0;
+
+  const d = document.createElement('div');
+  d.id = 'skillPop';
+  d.className = 'atpop skillpop';
+  cmp.appendChild(d);
+
+  // 壳只建一次：搜索框不能被重建，否则每打一个字光标就跳回开头
+  d.innerHTML = `
+    <div class="atpop-h"><b>/ 技能</b>
+      <button class="atpop-x" onclick="wsSkillDone()">✕</button></div>
+    <div class="skillpop-s">
+      <input id="skSearch" placeholder="搜索技能"
+             oninput="wsSkillFilter(this.value)" onkeydown="wsSkillKey(event)">
+    </div>
+    <div class="atpop-list" id="skillList"></div>
+    <div class="atpop-f"><span>↑↓ 选 · Enter 用 · Esc 关</span></div>`;
+
+  wsSkillRender();
+  setTimeout(()=>document.addEventListener('click', wsSkillOutside), 0);
+  const s = document.getElementById('skSearch');
+  if (s) s.focus();
+}
+
+function wsSkillDone(){
+  const p = document.getElementById('skillPop');
+  if (p) p.remove();
+  document.removeEventListener('click', wsSkillOutside);
+  wsSkillQ = '';
+}
+
+function wsSkillOutside(e){
+  if (!(e.target instanceof Element)) return;
+  if (e.target.closest('#skillPop')) return;
+  wsSkillDone();
+}
+
+function wsSkillFilter(v){
+  wsSkillQ = v || '';
+  wsSkillIdx = 0;
+  wsSkillRender();
+}
+
+function wsSkillItems(){
+  const q = wsSkillQ.trim().toLowerCase();
+  if (!q) return WS_SKILLS;
+  return WS_SKILLS.filter(s =>
+    s.n.toLowerCase().includes(q) || s.d.toLowerCase().includes(q));
+}
+
+function wsSkillRender(){
+  const box = document.getElementById('skillList');
+  if (!box) return;
+  const items = wsSkillItems();
+  box.innerHTML = items.length
+    ? items.map((s, i) => `
+        <button class="atpop-i ${i === wsSkillIdx ? 'sel' : ''}" onclick="wsSkillPick('${s.n}')">
+          <span class="sk-k">/</span>
+          <span class="atpop-t"><b>${esc(s.n)}</b><i>${esc(s.d)}</i></span>
+          <span class="sk-tag">官方</span>
+        </button>`).join('')
+    : `<div style="padding:14px 10px;font-size:10px;color:var(--tx3);text-align:center">
+         没有匹配「${esc(wsSkillQ)}」的技能</div>`;
+}
+
+function wsSkillKey(e){
+  const items = wsSkillItems();
+  if (e.key === 'ArrowDown'){
+    e.preventDefault();
+    wsSkillIdx = Math.min(items.length - 1, wsSkillIdx + 1);
+    wsSkillRender();
+  } else if (e.key === 'ArrowUp'){
+    e.preventDefault();
+    wsSkillIdx = Math.max(0, wsSkillIdx - 1);
+    wsSkillRender();
+  } else if (e.key === 'Enter'){
+    e.preventDefault();
+    if (items[wsSkillIdx]) wsSkillPick(items[wsSkillIdx].n);
+  } else if (e.key === 'Escape'){
+    e.preventDefault();
+    wsSkillDone();
+    const taEl = document.getElementById('ta');
+    if (taEl) taEl.focus();
+  }
+}
+
+function wsSkillPick(name){
+  const taEl = document.getElementById('ta');
+  if (taEl){
+    const v = taEl.value;
+    const at = Math.max(0, Math.min(wsSkillAt, v.length));
+    const ins = '/' + name + ' ';
+    taEl.value = v.slice(0, at) + ins + v.slice(at);
+    const pos = at + ins.length;
+    taEl.focus();
+    taEl.setSelectionRange(pos, pos);
+    taEl.rows = Math.min(3, Math.max(1, Math.ceil(taEl.value.length / 34) || 1));
+  }
+  wsSkillDone();
+}

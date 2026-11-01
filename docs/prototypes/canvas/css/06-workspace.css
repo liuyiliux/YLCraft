@@ -452,6 +452,34 @@
   border-top:1px solid var(--ln);font-size:9px;color:var(--tx3)}
 .atpop-f .b{margin-left:auto;font-size:10px;padding:3px 9px}
 
+/* ---------- / 技能弹层（2026-11-01 加，复用 @ 的壳） ----------
+   方向跟 @ 一致：往上开。输入框贴着视口底，往下开会被截掉。
+   即梦是在下方 —— 因为它的输入框下面还有 chips 行，不是最底部。这条别照抄。 */
+/* 6 项 × 约 44px ≈ 264，给到 320 才不会把最后一项切一半（2026-11-01 实测） */
+.skillpop .atpop-list{max-height:320px}
+/* 技能项比 @ 引用项要松一点：每项两行字（名称 + 说明），挤在一起读不了 */
+.skillpop .atpop-i{padding:8px 7px;gap:9px}
+.skillpop .atpop-t b{font-size:11px}
+.skillpop .atpop-t i{font-size:9px}
+.skillpop-s{padding:0 9px 8px;border-bottom:1px solid var(--ln)}
+.skillpop-s input{
+  width:100%;box-sizing:border-box;background:var(--s2);border:1px solid var(--ln2);
+  border-radius:var(--r2);padding:5px 8px;font-family:inherit;font-size:11px;
+  color:var(--tx);outline:none;
+}
+.skillpop-s input::placeholder{color:var(--tx3)}
+.skillpop-s input:focus{border-color:rgba(34,211,238,.4)}
+.sk-k{
+  width:24px;height:24px;border-radius:6px;flex:0 0 auto;display:flex;
+  align-items:center;justify-content:center;font-size:12px;font-weight:600;
+  color:var(--ac);background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.22);
+}
+.sk-tag{
+  font-size:8px;color:var(--ac);border:1px solid rgba(34,211,238,.3);
+  border-radius:99px;padding:0 5px;line-height:1.7;flex:0 0 auto;
+}
+.skillpop .atpop-i.sel{background:var(--s2);border-color:rgba(34,211,238,.3)}
+
 /* 输入框里的已引用条 */
 #wsRefBar{display:none}
 #wsRefBar.has{display:flex;flex-wrap:wrap;gap:4px;align-items:center;

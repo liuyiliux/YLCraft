@@ -365,6 +365,8 @@ brand{}
 .comp-bx{
   background:var(--s1);border:1px solid var(--ln2);border-radius:var(--r4);
   padding:11px 13px;transition:.15s;
+  /* 技能弹层要相对它定位（2026-11-01） */
+  position:relative;
 }
 .comp-bx:focus-within{border-color:rgba(34,211,238,.4);
   box-shadow:0 0 0 3px rgba(34,211,238,.06)}
@@ -380,6 +382,53 @@ brand{}
   cursor:pointer;flex-shrink:0;transition:.15s;
 }
 .snd:hover{filter:brightness(1.1)}
+/* ---------- / 技能弹层（2026-11-01 加，基线即梦：docs/research/jimeng/02_skills.png） ----------
+   往上开：输入框贴视口底，往下开会出屏。即梦在下是因为它输入框下面还有 chips 行。 */
+.skpop{
+  position:absolute;left:0;right:0;bottom:calc(100% + 8px);z-index:80;
+  background:rgba(12,12,16,.985);border:1px solid var(--ln2);border-radius:var(--r3);
+  box-shadow:0 24px 60px -18px rgba(0,0,0,.92);overflow:hidden;
+  animation:skpop .16s ease-out;
+}
+@keyframes skpop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.skpop-h{display:flex;align-items:center;gap:8px;padding:9px 12px 7px}
+.skpop-h b{font-size:11.5px;color:var(--tx);font-weight:600}
+.skpop-h .sk-hint{font-size:10px;color:var(--tx3);margin-left:2px}
+.skpop-x{margin-left:auto;background:0;border:0;color:var(--tx3);cursor:pointer;
+  font-size:11px;font-family:inherit;width:20px;height:20px;border-radius:4px}
+.skpop-x:hover{background:var(--s3);color:var(--tx)}
+.skpop-s{padding:0 12px 9px;border-bottom:1px solid var(--ln)}
+.skpop-s input{
+  width:100%;box-sizing:border-box;background:var(--s2);border:1px solid var(--ln2);
+  border-radius:var(--r2);padding:6px 9px;font-family:inherit;font-size:12px;
+  color:var(--tx);outline:none;
+}
+.skpop-s input::placeholder{color:var(--tx3)}
+.skpop-s input:focus{border-color:rgba(34,211,238,.4)}
+/* 6 项 × 约 42px ≈ 252，给到 320 才不会把最后一项切一半（2026-11-01 实测） */
+.skpop-list{max-height:320px;overflow-y:auto;padding:5px}
+.skpop-i{
+  display:flex;align-items:center;gap:9px;width:100%;text-align:left;
+  padding:8px;background:0;border:1px solid transparent;border-radius:var(--r2);
+  cursor:pointer;font-family:inherit;
+}
+.skpop-i:hover{background:var(--s2)}
+.skpop-i.sel{background:var(--s2);border-color:rgba(34,211,238,.32)}
+.sk-k{
+  width:24px;height:24px;border-radius:6px;flex:0 0 auto;display:flex;
+  align-items:center;justify-content:center;font-size:12px;font-weight:600;
+  color:var(--ac);background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.22);
+}
+.sk-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.sk-txt b{font-size:12px;color:var(--tx);font-weight:500}
+.sk-txt i{font-style:normal;font-size:10.5px;color:var(--tx3);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sk-tag{
+  font-size:9px;color:var(--ac);border:1px solid rgba(34,211,238,.3);
+  border-radius:99px;padding:0 6px;line-height:1.8;flex:0 0 auto;
+}
+.skpop-f{padding:7px 12px;border-top:1px solid var(--ln);font-size:10px;color:var(--tx3)}
+.skpop-empty{padding:16px 10px;font-size:11px;color:var(--tx3);text-align:center}
 /* 跑起来时发送键变红、图标从 ↑ 变方块（照真页面 index.tsx:3166 的做法） */
 .snd.running{background:var(--err);color:#fff}
 .snd .ico-stop{display:none;width:9px;height:9px;background:#fff;border-radius:2px}
@@ -1453,7 +1502,7 @@ brand{}
       <div class="comp">
         <div class="comp-bx">
           <div class="comp-row1">
-            <textarea rows="1" placeholder="继续说… 后台任务跑着也能发 · Enter 发送"></textarea>
+            <textarea rows="1" placeholder="继续说… 打 / 用技能 · Enter 发送"></textarea>
             <button class="snd" id="sndBtn" onclick="toggleRun()" title="发送（Enter）">
               <svg class="ico-send" width="14" height="14" viewBox="0 0 24 24" fill="none"
                    stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
@@ -1899,6 +1948,134 @@ function fillChat(text){
   }
 }
 
+// ================= / 技能（2026-11-01 加，基线即梦） =================
+// 即梦：输入框打 / 就弹技能列表，每个带一句话说明 + 官方标记，顶部可搜。
+// 截图：docs/research/jimeng/02_skills.png
+const SKILLS = [
+  { n:'创作分镜',   d:'一句话拆成分镜，标好景别和运镜' },
+  { n:'角色三视图', d:'按 9 个方位出一套立绘，跨镜头不变脸' },
+  { n:'视频反解',   d:'拆解参考视频的镜头语言、光影和节奏' },
+  { n:'电商套图',   d:'按商品信息出一套风格统一的主图' },
+  { n:'海报设计',   d:'给标题和卖点，出一版可直接用的海报' },
+  { n:'剧情短片',   d:'从大纲到分镜再到成片的完整流程' }
+];
+
+let skIdx = 0, skQ = '', skAt = 0;
+
+function escHtml(s){
+  return String(s).replace(/[&<>"]/g, function(c){
+    return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c];
+  });
+}
+
+function openSkill(){
+  if (document.getElementById('skPop')) return;
+  const box = document.querySelector('.comp-bx');
+  if (!box) return;
+  const ta = document.querySelector('.chat-ft textarea');
+  skAt = ta ? ta.selectionStart : 0;
+  skQ = ''; skIdx = 0;
+
+  const d = document.createElement('div');
+  d.id = 'skPop';
+  d.className = 'skpop';
+  // 壳只建一次：搜索框重建会把光标顶回开头
+  d.innerHTML =
+    '<div class="skpop-h"><b>/ 技能</b>' +
+      '<button class="skpop-x" onclick="skillDone()">✕</button></div>' +
+    '<div class="skpop-s"><input id="skSearch" placeholder="搜索技能" ' +
+      'oninput="skillFilter(this.value)" onkeydown="skillKey(event)"></div>' +
+    '<div class="skpop-list" id="skList"></div>' +
+    '<div class="skpop-f">↑↓ 选 · Enter 用 · Esc 关</div>';
+  box.appendChild(d);
+
+  skillRender();
+  setTimeout(function(){ document.addEventListener('click', skillOutside); }, 0);
+  const s = document.getElementById('skSearch');
+  if (s) s.focus();
+}
+
+function skillDone(){
+  const p = document.getElementById('skPop');
+  if (p) p.remove();
+  document.removeEventListener('click', skillOutside);
+  skQ = '';
+}
+
+function skillOutside(e){
+  if (!(e.target instanceof Element)) return;
+  if (e.target.closest('#skPop')) return;
+  skillDone();
+}
+
+function skillFilter(v){
+  skQ = v || '';
+  skIdx = 0;
+  skillRender();
+}
+
+function skillItems(){
+  const q = skQ.trim().toLowerCase();
+  if (!q) return SKILLS;
+  return SKILLS.filter(function(s){
+    return s.n.toLowerCase().indexOf(q) >= 0 || s.d.toLowerCase().indexOf(q) >= 0;
+  });
+}
+
+function skillRender(){
+  const box = document.getElementById('skList');
+  if (!box) return;
+  const items = skillItems();
+  if (!items.length){
+    box.innerHTML = '<div class="skpop-empty">没有匹配「' + escHtml(skQ) + '」的技能</div>';
+    return;
+  }
+  box.innerHTML = items.map(function(s, i){
+    return '<button class="skpop-i' + (i === skIdx ? ' sel' : '') + '"' +
+      ' onclick="skillPick(\'' + s.n + '\')">' +
+      '<span class="sk-k">/</span>' +
+      '<span class="sk-txt"><b>' + s.n + '</b><i>' + s.d + '</i></span>' +
+      '<span class="sk-tag">官方</span></button>';
+  }).join('');
+}
+
+function skillKey(e){
+  const items = skillItems();
+  if (e.key === 'ArrowDown'){
+    e.preventDefault();
+    skIdx = Math.min(items.length - 1, skIdx + 1);
+    skillRender();
+  } else if (e.key === 'ArrowUp'){
+    e.preventDefault();
+    skIdx = Math.max(0, skIdx - 1);
+    skillRender();
+  } else if (e.key === 'Enter'){
+    e.preventDefault();
+    if (items[skIdx]) skillPick(items[skIdx].n);
+  } else if (e.key === 'Escape'){
+    e.preventDefault();
+    skillDone();
+    const ta = document.querySelector('.chat-ft textarea');
+    if (ta) ta.focus();
+  }
+}
+
+function skillPick(name){
+  const ta = document.querySelector('.chat-ft textarea');
+  if (ta){
+    const v = ta.value;
+    const at = Math.max(0, Math.min(skAt, v.length));
+    const ins = '/' + name + ' ';
+    ta.value = v.slice(0, at) + ins + v.slice(at);
+    const pos = at + ins.length;
+    ta.focus();
+    ta.setSelectionRange(pos, pos);
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 150) + 'px';
+  }
+  skillDone();
+}
+
 // ================= 新对话 / 回到某个对话（空态入口） =================
 function newChat(){
   document.querySelectorAll('.sitem').forEach(function(x){ x.classList.remove('on'); });
@@ -2015,7 +2192,7 @@ function stopRun(){
       + '想接着改就在下面继续说。</p>';
   }
   const ta = document.querySelector('.chat-ft textarea');
-  if (ta) ta.placeholder = '继续说… 后台任务跑着也能发 · Enter 发送';
+  if (ta) ta.placeholder = '继续说… 打 / 用技能 · Enter 发送';
   setSnd(false);
 
   // 结算指标：停了也要让人知道「这次花了多久、多少钱」
@@ -2036,6 +2213,15 @@ document.addEventListener('keydown', function(e){
   if (e.key === 'Enter' && !e.shiftKey){
     e.preventDefault();
     if (!running) startRun();
+    return;
+  }
+  // 打 / 弹技能（2026-11-01 加）。只在空输入或前面是空白时触发，别抢 a/b 这种
+  if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey){
+    const v = ta.value, p = ta.selectionStart;
+    if (v.length === 0 || /\s$/.test(v.slice(0, p))){
+      e.preventDefault();
+      openSkill();
+    }
   }
 });
 
