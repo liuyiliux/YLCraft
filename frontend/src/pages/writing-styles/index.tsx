@@ -24,6 +24,8 @@ import {
   message,
 } from 'antd'
 import { useTheme } from '../../constants/theme'
+// 默认模型规则统一在 utils/modelSelection（2026-10-31 公共组件收编）
+import { resolveModelSelection, pickDefaultConnector } from '../../utils/modelSelection'
 import {
   activateWritingStyleProfile,
   archiveWritingStyleProfile,
@@ -199,14 +201,14 @@ export default function WritingStylesPage() {
       .catch(() => setLlmBackends([]))
   }, [])
 
-  // 打开弹窗时预填第一个可用供应商与其默认模型。
+  // 打开弹窗时预填**默认连接器**（is_default 优先）与其默认模型。
   useEffect(() => {
     if (extractOpen && llmBackends.length && !extractForm.getFieldValue('provider')) {
-      const first = llmBackends[0]
+      const first = pickDefaultConnector(llmBackends)
+      if (!first) return
       extractForm.setFieldsValue({
         provider: first.name || first.provider || '',
-        model:
-          first.default_model || first.model || first.available_models?.[0] || undefined,
+        model: resolveModelSelection(first) || undefined,
       })
     }
   }, [extractOpen, llmBackends, extractForm])
@@ -491,11 +493,7 @@ export default function WritingStylesPage() {
                     (item: any) => (item.name || item.provider) === value
                   )
                   extractForm.setFieldsValue({
-                    model:
-                      backend?.default_model ||
-                      backend?.model ||
-                      backend?.available_models?.[0] ||
-                      undefined,
+                    model: resolveModelSelection(backend) || undefined,
                   })
                 }}
               />

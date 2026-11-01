@@ -59,6 +59,7 @@ import {
 import { listConnectors } from '../../api'
 import EvidenceList from '../../components/world/EvidenceList'
 import { worldDomainLabel } from '../../utils/worldFieldLabels'
+import { resolveModelSelection, pickDefaultConnector } from '../../utils/modelSelection'
 
 const { Title, Text, Paragraph } = Typography
 
@@ -194,10 +195,11 @@ export default function NovelWorldPage() {
       .then((resp: any) => {
         const items = (resp?.connectors || resp?.data || resp?.items || []) as any[]
         setLlmBackends(items)
-        const first = items[0]
+        // 默认连接器 = is_default 优先（列表第一个可能是没启动的本地反代）
+        const first = pickDefaultConnector(items)
         if (first && !provider) {
           setProvider(first.name || first.provider || '')
-          setModel(first.default_model || first.model || first.available_models?.[0] || '')
+          setModel(resolveModelSelection(first))
         }
       })
       .catch(() => setLlmBackends([]))
@@ -626,9 +628,7 @@ export default function NovelWorldPage() {
                 const backend = llmBackends.find(
                   (item: any) => (item.name || item.provider) === value,
                 )
-                setModel(
-                  backend?.default_model || backend?.model || backend?.available_models?.[0] || '',
-                )
+                setModel(resolveModelSelection(backend))
               }}
               options={llmBackends.map((item: any) => ({
                 value: item.name || item.provider,

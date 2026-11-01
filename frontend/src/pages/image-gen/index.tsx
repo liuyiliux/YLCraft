@@ -20,6 +20,9 @@ import {
   rememberMotionSheet,
 } from '../../components/motion-gif/motionDraft'
 import { useMotionGifOptions } from '../../components/motion-gif/useMotionGifOptions'
+// 「供应商 + 模型」公共组件与统一规则（2026-10-31 公共组件收编）
+import ProviderModelSelect from '../../components/ai/ProviderModelSelect'
+import { resolveModelSelection, pickDefaultConnector } from '../../utils/modelSelection'
 import type {
   GridLayoutKey,
   MotionKind,
@@ -763,11 +766,13 @@ function ImageGenSinglePage() {
         })
         setLlmBackends(items)
         if (items.length && !optimizeProvider) {
-          const first = items[0]
-          setOptimizeProvider(first.name || first.provider || '')
-          setOptimizeModel(
-            first.default_model || first.model || first.available_models?.[0] || '',
-          )
+          // 默认连接器 = 用户标记的 is_default，没有才用第一个
+          //（列表第一个可能是没启动的本地反代，2026-11-01 事故）
+          const first = pickDefaultConnector(items)
+          if (first) {
+            setOptimizeProvider(first.name || first.provider || '')
+            setOptimizeModel(resolveModelSelection(first))
+          }
         }
       })
       .catch(() => setLlmBackends([]))
@@ -2274,51 +2279,28 @@ function ImageGenSinglePage() {
             />
           </div>
           <Space wrap>
-            <Select
-              placeholder="选择 LLM"
-              style={{ width: 280 }}
-              value={optimizeProvider || undefined}
-              onChange={(value) => {
-                setOptimizeProvider(value)
-                const backend = llmBackends.find((item: any) => (item.name || item.provider) === value)
-                setOptimizeModel(
-                  backend?.default_model || backend?.model || backend?.available_models?.[0] || '',
-                )
+            {/* 「LLM 供应商 + 模型」走公共组件（2026-10-31 收编）：
+                默认模型优先、候选合并都在 utils/modelSelection 一处维护；
+                供应商标签仍显示**配置名**（同厂商可能有多份配置，见下方说明）。 */}
+            <ProviderModelSelect
+              backends={llmBackends}
+              provider={optimizeProvider}
+              model={optimizeModel}
+              onProviderChange={(value) => setOptimizeProvider(value)}
+              onModelChange={setOptimizeModel}
+              size="middle"
+              providerPlaceholder="选择 LLM"
+              modelPlaceholder="选择模型"
+              providerWidth={280}
+              modelWidth={240}
+              providerOptionLabel={(backend: any) => {
+                const name = backend.name || backend.provider
+                const vendor = backend.provider_label
+                // 显示**配置名**而不是厂商名：模型管理页里「模型 = 用户实际选择的配置项」，
+                // 同厂商可以有多份配置（如「本地反代」与「OpenAi」都属 OpenAI 厂商），
+                // 只显示 provider_label 会让下拉里出现好几个一模一样的「OpenAI」。
+                return vendor && vendor !== name ? `${name}（${vendor}）` : name
               }}
-              // 显示**配置名**而不是厂商名：模型管理页里「模型 = 用户实际选择的配置项」，
-              // 同厂商可以有多份配置（如「本地反代」与「OpenAi」都属 OpenAI 厂商），
-              // 只显示 provider_label 会让下拉里出现好几个一模一样的「OpenAI」，
-              // 用户根本分不清自己选的是哪个。
-              options={llmBackends.map((item: any) => {
-                const name = item.name || item.provider
-                const vendor = item.provider_label
-                return {
-                  value: name,
-                  label: vendor && vendor !== name ? `${name}（${vendor}）` : name,
-                }
-              })}
-              optionFilterProp="label"
-            />
-            <Select
-              placeholder="选择模型"
-              style={{ width: 240 }}
-              value={optimizeModel || undefined}
-              onChange={setOptimizeModel}
-              options={(() => {
-                const backend = llmBackends.find(
-                  (item: any) => (item.name || item.provider) === optimizeProvider,
-                )
-                const models = Array.from(
-                  new Set(
-                    [
-                      ...(backend?.available_models || []),
-                      backend?.default_model,
-                      backend?.model,
-                    ].filter(Boolean),
-                  ),
-                )
-                return models.map((model) => ({ value: model, label: model }))
-              })()}
             />
           </Space>
           {optimizeResult ? (

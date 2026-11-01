@@ -59,6 +59,7 @@ import type { UploadFile } from 'antd/es/upload/interface'
 import { useTheme } from '../../constants/theme'
 import { createPlatformTemplate, getPlatformTemplates } from '../../api'
 import AssetReferencePicker from '../../components/asset-reference-picker/AssetReferencePicker'
+import { resolveModelCandidates, resolveModelSelection } from '../../utils/modelSelection'
 
 const { TextArea } = Input
 const { Dragger } = Upload
@@ -295,11 +296,9 @@ export default function VideoGenPage() {
           setBackends(data.backends)
           setDefaultBackend(data.default)
           setProvider(data.default)
-          // 设置默认模型的第一个
+          // 默认模型 = 连接器的 model（默认模型），available_models 可能过期
           const defaultBackend = data.backends.find((b: BackendInfo) => b.name === data.default)
-          if (defaultBackend?.available_models?.length > 0) {
-            setSelectedModel(defaultBackend.available_models[0])
-          }
+          setSelectedModel(resolveModelSelection(defaultBackend))
         }
       })
       .catch(() => message.error('加载后端列表失败'))
@@ -347,9 +346,7 @@ export default function VideoGenPage() {
   const handleProviderChange = (newProvider: string) => {
     setProvider(newProvider)
     const backend = backends.find(b => b.name === newProvider)
-    if (backend?.available_models?.length > 0) {
-      setSelectedModel(backend.available_models[0])
-    }
+    setSelectedModel(resolveModelSelection(backend))
     const constraints = backend?.constraints || {}
     const capabilities = backend?.capabilities || []
     const resolutions = constraints.supported_resolutions?.length ? constraints.supported_resolutions : ['720p', '1080p', '2k']
@@ -364,6 +361,17 @@ export default function VideoGenPage() {
     if (!capabilities.includes('seed_control')) setSeed(undefined)
     if (!capabilities.includes('generate_audio')) setGenerateAudio(false)
   }
+
+  // 连接器默认模型改了之后，把选择同步到有效候选，避免「显示一个、实际发另一个」
+  // （2026-10-31：界面显示 2.0，请求体发的也是 2.0，但模型下拉实际应跟默认模型走）
+  useEffect(() => {
+    const backend = backends.find(b => b.name === provider)
+    if (!backend) return
+    const candidates = resolveModelCandidates(backend)
+    if (!selectedModel || !candidates.includes(selectedModel)) {
+      setSelectedModel(resolveModelSelection(backend))
+    }
+  }, [backends, provider, selectedModel])
 
   useEffect(() => {
     if (!provider || backends.length === 0) return
@@ -888,11 +896,16 @@ export default function VideoGenPage() {
                   </div>
                   {(() => {
                     const currentBackend = backends.find(b => b.name === provider)
-                    const models = currentBackend?.available_models || [currentBackend?.model].filter(Boolean)
+                    // 默认模型优先，available_models 只作为候选补充
+                    const models = resolveModelCandidates(currentBackend)
+                    const fallbackModel = resolveModelSelection(currentBackend)
+                    const modelValue = selectedModel && models.includes(selectedModel)
+                      ? selectedModel
+                      : fallbackModel
                     if (models.length > 1) {
                       return (
                         <Select
-                          value={selectedModel}
+                          value={modelValue || undefined}
                           onChange={setSelectedModel}
                           style={{ width: '100%' }}
                           options={models.map((m: string) => ({
@@ -904,7 +917,7 @@ export default function VideoGenPage() {
                     }
                     return (
                       <Input
-                        value={selectedModel || currentBackend?.model || ''}
+                        value={modelValue}
                         disabled
                         style={{ background: '#1e1e2e', border: '1px solid #333', color: '#e2e8f0' }}
                       />

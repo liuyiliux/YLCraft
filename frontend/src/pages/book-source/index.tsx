@@ -77,6 +77,7 @@ import type {
   RuleAssistantSuggestion,
 } from '../../api/bookSource'
 import { useTheme } from '../../constants/theme'
+import { resolveModelSelection, pickDefaultConnector } from '../../utils/modelSelection'
 
 const { Title, Text, Paragraph } = Typography
 const { TextArea, Search } = Input
@@ -275,8 +276,10 @@ const BookSourcePage: React.FC = () => {
       .then(data => {
         setLlmBackends(data)
         if (!ruleAssistantModelValue && data.length > 0) {
-          const first = data[0]
-          const model = first.model || first.available_models?.[0] || ''
+          // 默认连接器 = is_default 优先（列表第一个可能是没启动的本地反代）
+          const first = pickDefaultConnector(data)
+          if (!first) return
+          const model = resolveModelSelection(first)
           setRuleAssistantModelValue(`${first.name}::${model}`)
         }
       })
