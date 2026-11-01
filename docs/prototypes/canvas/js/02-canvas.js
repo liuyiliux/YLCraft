@@ -18,7 +18,11 @@ function setMode(m){
   if (m==='free')  renderFree();
   if (m==='flow')  renderFlow();
   const hints = {
-    shots: DOC.items.length? '镜头墙：点镜头选中 · 拖动换顺序，镜号自动重排' : '选一条路开始',
+    shots: DOC.items.length
+      ? (DOC.kind === 'character'
+          ? '角色图：点一张看大图 · 拖动换角度顺序 · 想做视频再拆分镜'
+          : '镜头墙：点镜头选中 · 拖动换顺序，镜号自动重排')
+      : '选一条路开始',
     free:  DOC.items.length? '自由画布：拖动图片摆放 · 点图放大编辑 · 右键更多' : '选一条路开始',
     flow:  '高级：这是流程步骤，不是节点连线 · 改完点「整组重跑」'
   };
@@ -40,9 +44,11 @@ function showHint(html, hold){
 /* ================= 填充演示数据 ================= */
 function demoFill(kind, count){
   // 自由画布模式用紧凑排布（6 列 × 2 行，轻微错落），镜头墙模式不依赖坐标
-  const total = Math.min(count || 12, DEMO.length);
+  // character = 角色图批次（按角度），其余 = 视频分镜（按景别 + 时长）
+  const src = (kind === 'character' && typeof DEMO_CHAR !== 'undefined') ? DEMO_CHAR : DEMO;
+  const total = Math.min(count || 12, src.length);
   const W = 122, H = 168;
-  const base = DEMO.slice(0, total).map((s,i)=>{
+  const base = src.slice(0, total).map((s,i)=>{
     const col = i % 6, row = Math.floor(i / 6);
     return {
       id:'s'+(i+1), order:i, duration:s.d, status:s.st, name:s.n, cls:i%6,
@@ -52,6 +58,7 @@ function demoFill(kind, count){
     };
   });
   DOC.items = base;
+  DOC.kind = kind;   // 记住这批是角色图还是分镜，顶栏统计按它换词
   selId = null;
   emptyEl.classList.add('hidden');
   buildGraph(false);   // 数据变了，连线图重建（丢掉旧的拖动位置和手连的线）
@@ -60,6 +67,7 @@ function demoFill(kind, count){
   const N = total;   // 实际生成的数量
   const openings = {
     script:`收到。我把这段故事拆成了 <b>${N} 个镜头</b>，先按中景/特写/过场分了类。要调整顺序直接拖卡片。`,
+    character:`按你这份设定出了 <b>${N} 张角色图</b>。正面两张先挑一张定妆，其余角度留给后续镜头当参考 —— 哪张不对单独重跑，别整批重来。`,
     upload:`收到参考图。我把它放在了 <b>自由画布</b>里，可以点开放大改。要拆成镜头序列也可以。`,
     tpl:`用了「短剧分镜」模板：<b>${N} 个镜头</b>，其中 ${Math.max(0,N-3)} 个已生成、1 个生成中、1 个失败、1 个待生成。`,
     talk:`好，我按你说的做了。总共 <b>${N} 个镜头</b>，先看看镜头墙的节奏对不对。`
@@ -69,7 +77,8 @@ function demoFill(kind, count){
 
   // 参数不同的场景切到合适模式
   setMode(kind==='upload' ? 'free' : 'shots');
-  toast(`已生成 ${N} 个${kind==='upload'?'对象':'镜头'}`);
+  const unit = kind === 'upload' ? '个对象' : (kind === 'character' ? '张角色图' : '个镜头');
+  toast(`已生成 ${N} ${unit}`);
 }
 
 /* ================= 镜头墙渲染 ================= */
@@ -166,9 +175,19 @@ function renderTimeline(){
 function renderMeta(){
   const items = DOC.items;
   const c = k => items.filter(s=>s.status===k).length;
+  // 角色图批次没有时长，别硬写「总时长 00:00」，也别留着视频时间轴（2026-11-01 修）
+  const isChar = DOC.kind === 'character';
   document.getElementById('metaBar').textContent =
-    `${items.length} 个镜头 · 总时长 ${fmt(items.reduce((a,s)=>a+(s.duration||0),0))} · `
+    (isChar
+      ? `${items.length} 张角色图 · 按角度出 · `
+      : `${items.length} 个镜头 · 总时长 ${fmt(items.reduce((a,s)=>a+(s.duration||0),0))} · `)
     + `${c('ok')} 已生成 / ${c('run')} 生成中 / ${c('err')} 失败 / ${c('todo')} 待生成`;
+
+  // 标题与底部时间轴跟着换：角色图不是视频，不该有播放器和轨道
+  const ttl = document.querySelector('#vShots .ttl');
+  if (ttl) ttl.textContent = isChar ? '角色图' : '镜头墙';
+  const tl = document.querySelector('#vShots .tl');
+  if (tl) tl.style.display = isChar ? 'none' : '';
 }
 function fmt(sec){ const m=Math.floor(sec/60), s=Math.round(sec%60);
   return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0'); }
