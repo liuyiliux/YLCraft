@@ -46,6 +46,7 @@ import {
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
 import { formatNum, formatTime } from '../../utils/format'
+import { openDownloadPage } from '../../utils/download'
 import PlatformMediaView, { resolveMedia } from './PlatformMediaView'
 import CommentPanel from './CommentPanel'
 import { useState, useEffect } from 'react'
@@ -116,18 +117,17 @@ export default function PlatformDetailDrawer({
   const hasMedia = Boolean(media.video) || media.images.length > 0
 
   /**
-   * 「去水印下载」—— **跳到独立下载页**（与查询页**完全一致**）。
+   * 「去水印下载」—— **跳到独立下载页**（与查询页同一入口）。
    *
-   * ⚠️ 用 `window.location.href` 而不是 `navigate()` ——
-   *    查询页就是 `window.location.href`（整页跳转，下载页能干净初始化）。
-   *    这里保持一致，避免两个入口行为不同。
+   * ⚠️ 2026-10-31 用户要求：**新标签页**打开，不要把列表整页跳走
+   *    （跳走再回来，筛选/翻页/滚动全丢）。下载页本身仍是干净初始化。
    */
   const goDownload = () => {
     if (!item.url) {
       message.warning('这条没有原文链接，无法去下载页')
       return
     }
-    window.location.href = `/download?url=${encodeURIComponent(item.url)}`
+    openDownloadPage(item.url)
   }
 
   const copyLink = async () => {

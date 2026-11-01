@@ -50,3 +50,35 @@ export function saveBlobAs(filename: string, blob: Blob): void {
   //    来不及开始下载。让它先跑完这一轮。
   setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
+
+/**
+ * 打开「独立下载页」（`/download?url=<原文链接>`）—— **新标签页**打开。
+ *
+ * ## 为什么是新标签页（2026-10-31 用户要求）
+ *
+ * 之前用 `window.location.href` 整页跳走：列表的筛选、翻页、滚动位置全丢，
+ * 下完一个再回来看，得重新找。用户原话：「列表的去水印下载跳转下载页面，
+ * 打开新页面」。
+ *
+ * 下载页本身仍是**干净初始化**（它是一个新页面），原先"整页跳转才能干净初始化"
+ * 的顾虑因此不受影响。
+ *
+ * ⚠️ 用 `window.open` 后手动清 `opener`，而不是直接传 `noopener` 特性：
+ *    带 `noopener` 时 Chrome 返回 `null`，会让下面的"被拦截就退回整页跳转"
+ *    判断失效、每次都整页跳。
+ */
+export function openDownloadPage(sourceUrl: string): void {
+  if (!sourceUrl) return
+  const target = `/download?url=${encodeURIComponent(sourceUrl)}`
+  const opened = window.open(target, '_blank')
+  if (opened) {
+    try {
+      opened.opener = null
+    } catch {
+      /* 跨域/已被关闭时设不了 —— 不影响已经打开这件事 */
+    }
+    return
+  }
+  // 弹窗被浏览器拦截时退回整页跳转，至少不会"点了没反应"
+  window.location.href = target
+}

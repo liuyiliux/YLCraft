@@ -42,6 +42,7 @@ import {
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import { formatTime } from '../../utils/format'
+import { openDownloadPage } from '../../utils/download'
 
 const { Text } = Typography
 
@@ -571,8 +572,8 @@ export function actionsColumn(
                   return
                 }
                 if (!r.url) return
-                // 与查询页一致：**跳独立下载页**
-                window.location.href = `/download?url=${encodeURIComponent(r.url)}`
+                // 与查询页一致：**跳独立下载页**；用新标签页，列表的筛选/翻页不丢
+                openDownloadPage(r.url)
               }}
               style={{
                 border: 'none', background: 'none', cursor: 'pointer', padding: 0,

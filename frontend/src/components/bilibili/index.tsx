@@ -9,6 +9,7 @@ import {
   HeartOutlined, StarOutlined, FolderOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
+import { openDownloadPage } from '../../utils/download'
 export { VideoDetailDrawer } from './VideoDetailDrawer'
 
 const { Text } = Typography
@@ -190,7 +191,7 @@ export function VideoList({ videos, loading, total, page, pageSize, onPageChange
               size="small"
               icon={<DownloadOutlined />}
               onClick={() => {
-                window.location.href = `/download?url=${encodeURIComponent(record.url)}`
+                openDownloadPage(record.url)
               }}
             />
           </Tooltip>
