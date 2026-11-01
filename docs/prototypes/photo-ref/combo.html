@@ -20,6 +20,8 @@
   --pri:#22d3ee; --priH:#67e8f9; --ok:#4ade80; --warn:#fbbf24; --err:#f87171; --info:#60a5fa;
   --grad:linear-gradient(135deg,#22d3ee 0%,#0891b2 100%);
   --shadow:0 4px 12px rgba(0,0,0,.12); --shadowEl:0 6px 16px rgba(0,0,0,.14);
+  /* 占位斜纹与选中态底色：必须跟主题走 —— 白色透明度的纹理在白底上等于没有 */
+  --phStripe:rgba(255,255,255,.024); --priBg:rgba(34,211,238,.10); --warnBg:rgba(251,191,36,.10);
 }
 [data-t="moonlight"]{
   --bgPage:#0d0b10; --bgCard:#141118; --bgElev:#1d1a24; --bgInput:#100e14; --bgHover:#211d2a;
@@ -28,6 +30,7 @@
   --pri:#a78bfa; --priH:#c4b5fd; --ok:#4ade80; --warn:#fbbf24; --err:#f87171; --info:#60a5fa;
   --grad:linear-gradient(135deg,#a78bfa 0%,#7c3aed 100%);
   --shadow:0 4px 12px rgba(0,0,0,.14); --shadowEl:0 6px 16px rgba(0,0,0,.16);
+  --phStripe:rgba(167,139,250,.05); --priBg:rgba(167,139,250,.12); --warnBg:rgba(251,191,36,.10);
 }
 [data-t="dawn"]{
   --bgPage:#f8f7f4; --bgCard:#ffffff; --bgElev:#fafaf9; --bgInput:#f2f1ee; --bgHover:#f0efec;
@@ -36,6 +39,8 @@
   --pri:#0d9488; --priH:#0f766e; --ok:#16a34a; --warn:#d97706; --err:#dc2626; --info:#2563eb;
   --grad:linear-gradient(135deg,#0d9488 0%,#0f766e 100%);
   --shadow:0 1px 2px rgba(0,0,0,.06); --shadowEl:0 3px 8px rgba(0,0,0,.1);
+  /* 亮色下改成黑色半透明，否则斜纹在 #fafaf9 上完全消失 */
+  --phStripe:rgba(0,0,0,.035); --priBg:rgba(13,148,136,.12); --warnBg:rgba(217,119,6,.13);
 }
 
 *{box-sizing:border-box;margin:0;padding:0}
@@ -85,11 +90,11 @@ h1{font-size:var(--fs-h2);font-weight:600;margin-bottom:5px}
 .src{padding:5px 12px;border-radius:999px;font-size:var(--fs-sm);color:var(--tx2);
   border:1px solid var(--bd2);transition:.15s}
 .src:hover{color:var(--tx1);border-color:var(--bd3)}
-.src.on{border-color:var(--pri);color:var(--pri);background:rgba(34,211,238,.08)}
+.src.on{border-color:var(--pri);color:var(--pri);background:var(--priBg);font-weight:500}
 
 /* 项目条 + 场景光线（这两个字段永远来自项目，不受随机影响） */
 .projbar{border-left:2px solid var(--warn)}
-.projbar .src.on{border-color:var(--warn);color:var(--warn);background:rgba(251,191,36,.08)}
+.projbar .src.on{border-color:var(--warn);color:var(--warn);background:var(--warnBg)}
 .env{margin-bottom:20px;padding:12px 15px;background:var(--bgInput);
   border:1px solid var(--bd);border-radius:var(--radiusMD)}
 .env-hd{display:flex;align-items:center;gap:8px;font-size:var(--fs-sm);color:var(--tx3);
@@ -114,13 +119,13 @@ h1{font-size:var(--fs-h2);font-weight:600;margin-bottom:5px}
 .slot-hd .t{font-weight:500;color:var(--tx1)}
 .slot-hd .lock{margin-left:auto;font-size:11px;padding:1px 7px;border-radius:999px;
   border:1px solid var(--bd2);color:var(--tx3);white-space:nowrap}
-.slot-hd .lock.on{border-color:rgba(34,211,238,.45);color:var(--pri);background:rgba(34,211,238,.08)}
-.slot-hd .lock.fix{border-color:rgba(251,191,36,.45);color:var(--warn);background:rgba(251,191,36,.08)}
+.slot-hd .lock.on{border-color:var(--pri);color:var(--pri);background:var(--priBg)}
+.slot-hd .lock.fix{border-color:var(--warn);color:var(--warn);background:var(--warnBg)}
 
 .ph{height:232px;position:relative;display:flex;flex-direction:column;
   align-items:center;justify-content:center;gap:6px;
   background:
-    repeating-linear-gradient(135deg,rgba(255,255,255,.022) 0 6px,transparent 6px 12px),
+    repeating-linear-gradient(135deg,var(--phStripe) 0 6px,transparent 6px 12px),
     linear-gradient(165deg,var(--bgElev),var(--bgInput))}
 .ph-k{font-size:var(--fs-xs);color:var(--tx3);letter-spacing:.08em}
 .ph-v{font-size:var(--fs-h4);color:var(--tx1);font-weight:600;text-align:center;padding:0 12px}
