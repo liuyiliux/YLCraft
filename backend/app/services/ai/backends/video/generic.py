@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -25,11 +26,24 @@ from app.services.ai.types import (
 
 logger = logging.getLogger("ylcraft.video.generic")
 
+# 供应商「暂时没容量」而不是「拒绝这次请求」的响应：这些可以短重试，
+# 并且要用能给用户看懂的话报出来（2026-10-31 Agnes 返回 503 video_queue_full）。
+_TRANSIENT_SUBMIT_STATUSES = {429, 500, 502, 503, 504}
+_TRANSIENT_SUBMIT_CODES = {
+    "video_queue_full",
+    "queue_full",
+    "rate_limit_exceeded",
+    "server_overloaded",
+    "overloaded",
+}
+_DEFAULT_SUBMIT_ATTEMPTS = 3
+_DEFAULT_SUBMIT_RETRY_DELAYS = [3.0, 8.0]
+
 
 class VideoProviderRequestError(RuntimeError):
-    def __init__(self, diagnostics: dict):
+    def __init__(self, diagnostics: dict, message: str = ""):
         self.diagnostics = diagnostics
-        super().__init__(diagnostics.get("exception_repr") or "Video provider request failed")
+        super().__init__(message or diagnostics.get("exception_repr") or "Video provider request failed")
 
 
 class GenericVideoBackend(BaseVideoBackend):
@@ -324,10 +338,150 @@ class GenericVideoBackend(BaseVideoBackend):
             logger.warning("[%s] COS upload for start image failed: %s", self.name, exc)
             return ""
 
-    async def _generate(self, req: VideoGenerationRequest) -> VideoGenerationResult:
-        template = self.connector.request_template or '{"model":"{{ model }}","input":{"prompt":"{{ prompt }}"},"parameters":{}}'
+    def _template_values(self, req: VideoGenerationRequest, start_image_value: str) -> dict:
         width, height = self._dimensions(req.resolution, req.aspect_ratio)
+        return {
+            "model": req.model or self.model,
+            "prompt": req.prompt,
+            "duration": req.duration,
+            "aspect_ratio": req.aspect_ratio,
+            "resolution": req.resolution,
+            "seed": req.seed,
+            "size": self._size(req.resolution, req.aspect_ratio, str(self.default_params.get("size_separator") or "x")),
+            "width": width,
+            "height": height,
+            "fps": req.fps,
+            "num_frames": self._frame_count(req.duration, req.fps),
+            "generate_audio": req.generate_audio,
+            "start_image": start_image_value,
+            "reference_image_base64": start_image_value,
+            "reference_image_url": start_image_value,
+            "params": self.default_params,
+        }
 
+    def _build_template_params(self, values: dict) -> dict:
+        """Expose ``{{ key }}`` plus ``{{ key_json }}`` / ``{{ key_json_str }}``.
+
+        ``*_json`` renders a complete JSON literal (quotes included, use it
+        unquoted: ``"prompt":{{ prompt_json }}``); ``*_json_str`` renders the
+        escaped content only, for placeholders already inside a quoted string.
+        """
+        template_params = dict(values)
+        for key, value in values.items():
+            template_params[f"{key}_json"] = json.dumps(value, ensure_ascii=False)
+            if isinstance(value, str):
+                template_params[f"{key}_json_str"] = self._json_string_escape(value)
+        return template_params
+
+    @staticmethod
+    def _json_string_escape(value: str) -> str:
+        return json.dumps(value or "", ensure_ascii=False)[1:-1]
+
+    def _render_request_body(self, req: VideoGenerationRequest, start_image_value: str) -> dict:
+        """Render ``request_template`` into the JSON body sent to the provider.
+
+        Connector templates are JSON documents with Jinja placeholders such as
+        ``"prompt":"{{ prompt }}"``. Jinja interpolates values verbatim, so a
+        prompt containing a newline, a tab, a quote or a backslash used to make
+        the rendered document invalid JSON (``Invalid control character at:
+        line 1 column 147``) and the generation failed before any request was
+        sent. Prefer ``{{ prompt_json }}`` in connector templates; when a
+        template interpolates a raw value inside a quoted string, retry once
+        with JSON-escaped strings so the document stays valid and the provider
+        still receives the original text after it decodes the body.
+        """
+        template = self.connector.request_template or '{"model":"{{ model }}","input":{"prompt":"{{ prompt }}"},"parameters":{}}'
+        values = self._template_values(req, start_image_value)
+        template_params = self._build_template_params(values)
+        rendered = Template(template).render(**template_params)
+        try:
+            return json.loads(rendered)
+        except json.JSONDecodeError as exc:
+            safe_params = {
+                **template_params,
+                **{
+                    key: self._json_string_escape(value) if isinstance(value, str) else value
+                    for key, value in values.items()
+                },
+            }
+            try:
+                body = json.loads(Template(template).render(**safe_params))
+            except json.JSONDecodeError:
+                preview = " ".join(rendered.split())[:300]
+                raise ValueError(
+                    "视频连接器「%s」的 request_template 渲染后不是合法 JSON：%s。"
+                    "请在模板里对文本字段使用 {{ prompt_json }}（或 {{ prompt_json_str }}），"
+                    "或修正模板本身。渲染片段：%s" % (self.name, exc, preview)
+                ) from exc
+            logger.warning(
+                "[%s] request_template 直接内插文本导致 JSON 非法，已用 JSON 转义重试；"
+                "建议模板改用 {{ prompt_json }}",
+                self.name,
+            )
+            return body
+
+    def _submit_attempts(self) -> int:
+        """Total submit attempts, including the first one."""
+        try:
+            return max(1, min(5, int(self.default_params.get("submit_retry_attempts", _DEFAULT_SUBMIT_ATTEMPTS))))
+        except (TypeError, ValueError):
+            return _DEFAULT_SUBMIT_ATTEMPTS
+
+    def _submit_retry_delays(self) -> list[float]:
+        raw = self.default_params.get("submit_retry_delays")
+        delays: list[float] = []
+        if isinstance(raw, (list, tuple)):
+            for item in raw:
+                try:
+                    delays.append(max(0.0, float(item)))
+                except (TypeError, ValueError):
+                    continue
+        return delays or list(_DEFAULT_SUBMIT_RETRY_DELAYS)
+
+    @staticmethod
+    def _provider_error_fields(response) -> tuple[str, str]:
+        """Read (code, message) out of the provider's JSON error envelope."""
+        try:
+            payload = response.json()
+        except ValueError:
+            return "", ""
+        if not isinstance(payload, dict):
+            return "", ""
+        code = payload.get("code") or ""
+        message = payload.get("message") or ""
+        error = payload.get("error")
+        if isinstance(error, dict):
+            code = code or error.get("code") or ""
+            message = message or error.get("message") or ""
+        return str(code or ""), str(message or "")
+
+    @classmethod
+    def _transient_submit_reason(cls, response) -> str:
+        """Non-empty when the provider is temporarily out of capacity.
+
+        Such a response must not be reported as a raw ``HTTPStatusError``: the
+        connector is fine, the provider just has no slot for the job.
+        """
+        code, message = cls._provider_error_fields(response)
+        if code.lower() in _TRANSIENT_SUBMIT_CODES:
+            return message or code
+        if response.status_code in _TRANSIENT_SUBMIT_STATUSES:
+            return message or "HTTP %s" % response.status_code
+        return ""
+
+    def _busy_message(self, reason: str) -> str:
+        return (
+            "视频供应商当前繁忙，任务没有创建（%s）。这不是连接器配置问题："
+            "请稍后重试，或先换一个视频模型。" % (reason or "队列已满")
+        )
+
+    def _rejected_message(self, response) -> str:
+        code, message = self._provider_error_fields(response)
+        detail = " ".join(part for part in (code, message) if part)
+        suffix = ("：" + detail) if detail else "，请检查模型名和请求参数。"
+        return "视频供应商拒绝了请求（HTTP %s）%s" % (response.status_code, suffix)
+
+    async def _generate(self, req: VideoGenerationRequest) -> VideoGenerationResult:
         start_image_value = ""
         if req.start_image:
             if isinstance(req.start_image, str) and str(req.start_image).startswith(("http://", "https://")):
@@ -341,18 +495,7 @@ class GenericVideoBackend(BaseVideoBackend):
                     if cos_url:
                         start_image_value = cos_url
 
-        body = json.loads(Template(template).render(
-            model=req.model or self.model, prompt=req.prompt, duration=req.duration,
-            aspect_ratio=req.aspect_ratio, resolution=req.resolution, seed=req.seed,
-            size=self._size(req.resolution, req.aspect_ratio, str(self.default_params.get("size_separator") or "x")),
-            width=width, height=height, fps=req.fps,
-            num_frames=self._frame_count(req.duration, req.fps),
-            generate_audio=req.generate_audio,
-            start_image=start_image_value,
-            reference_image_base64=start_image_value,
-            reference_image_url=start_image_value,
-            params=self.default_params,
-        ))
+        body = self._render_request_body(req, start_image_value)
         headers = self._headers(self.config.get("request_headers") or {})
         endpoint = self._endpoint()
         diagnostics = {
@@ -363,17 +506,53 @@ class GenericVideoBackend(BaseVideoBackend):
             "request_headers": self._redact(headers),
             "request_body": self._redact(body),
         }
-        try:
-            async with httpx.AsyncClient(timeout=self.connector.timeout, trust_env=False) as client:
-                response = await client.post(endpoint, headers=headers, json=body)
-                diagnostics["http_status"] = response.status_code
-                diagnostics["response_excerpt"] = self._excerpt(response.text)
-                response.raise_for_status()
+        attempts = self._submit_attempts()
+        delays = self._submit_retry_delays()
+        payload: dict = {}
+        for attempt in range(1, attempts + 1):
+            diagnostics["submit_attempt"] = attempt
+            try:
+                async with httpx.AsyncClient(timeout=self.connector.timeout, trust_env=False) as client:
+                    response = await client.post(endpoint, headers=headers, json=body)
+            except Exception as exc:
+                diagnostics.update(self._error_details(exc))
+                logger.warning("[%s] video submit failed: %s", self.name, diagnostics)
+                raise VideoProviderRequestError(diagnostics) from exc
+
+            diagnostics["http_status"] = response.status_code
+            diagnostics["response_excerpt"] = self._excerpt(response.text)
+            busy_reason = self._transient_submit_reason(response)
+            if busy_reason and attempt < attempts:
+                delay = delays[min(attempt - 1, len(delays) - 1)]
+                retry_after = str(response.headers.get("retry-after", "") or "").strip()
+                try:
+                    delay = max(delay, min(float(retry_after), 30.0))
+                except ValueError:
+                    pass
+                diagnostics.setdefault("retries", []).append({
+                    "attempt": attempt,
+                    "http_status": response.status_code,
+                    "reason": busy_reason,
+                    "delay_seconds": delay,
+                })
+                logger.warning(
+                    "[%s] 视频供应商繁忙（%s），%.0f 秒后重试（第 %s/%s 次提交）",
+                    self.name, busy_reason, delay, attempt + 1, attempts,
+                )
+                await asyncio.sleep(delay)
+                continue
+            if busy_reason:
+                logger.warning("[%s] 视频供应商繁忙，已重试 %s 次仍无容量: %s", self.name, attempts, busy_reason)
+                raise VideoProviderRequestError(diagnostics, self._busy_message(busy_reason))
+            if response.status_code >= 400:
+                logger.warning("[%s] video submit rejected: %s", self.name, diagnostics)
+                raise VideoProviderRequestError(diagnostics, self._rejected_message(response))
+            try:
                 payload = response.json()
-        except Exception as exc:
-            diagnostics.update(self._error_details(exc))
-            logger.warning("[%s] video submit failed: %s", self.name, diagnostics)
-            raise VideoProviderRequestError(diagnostics) from exc
+            except ValueError as exc:
+                diagnostics.update(self._error_details(exc))
+                raise VideoProviderRequestError(diagnostics) from exc
+            break
         task_id = str(self._find(payload, self.config.get("task_id_path", ""), "") or "")
         if not task_id:
             raise ValueError("视频供应商未返回 task_id；请检查 response_config.task_id_path")
