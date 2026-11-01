@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { resolveModelSelection } from '../../utils/modelSelection'
 import {
   Alert,
   Avatar,
@@ -1603,7 +1604,7 @@ function AgentPageContent() {
         default_workflow: base?.default_workflow || '',
         default_skill_ids: base?.default_skill_ids || [],
         provider: base?.provider || defaultConnector?.name || '',
-        model: base?.model || defaultConnector?.default_model || defaultConnector?.model || normalizeModelList(defaultConnector?.available_models)[0] || '',
+        model: base?.model || resolveModelSelection(defaultConnector) || '',
         max_steps: base?.max_steps || 8,
         can_delegate: base?.can_delegate || false,
         is_default: !base,
@@ -4171,7 +4172,7 @@ function AgentPageContent() {
                             const nextProvider = value || ''
                             setEditingProvider(nextProvider)
                             const connector = llmConnectors.find(item => item.name === nextProvider)
-                            profileForm.setFieldValue('model', connector?.default_model || connector?.model || normalizeModelList(connector?.available_models)[0] || '')
+                            profileForm.setFieldValue('model', resolveModelSelection(connector) || '')
                           }}
                           notFoundContent="暂无可用文本模型，请先到设置里配置 LLM"
                         />

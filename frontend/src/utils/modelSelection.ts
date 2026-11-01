@@ -29,12 +29,34 @@ export interface ModelBackendInfo {
   model?: string
   /** 连接器默认模型（`/ai/connectors` 的字段名）。 */
   default_model?: string
-  /** 该连接器支持的模型列表（可能过期，只作候选）。 */
-  available_models?: string[]
+  /**
+   * 该连接器支持的模型列表（可能过期，只作候选）。
+   *
+   * ⚠️ 两种形态都真实存在：数组，或 **JSON 字符串**（agent 页的 LlmConnector 类型
+   * 就声明成 `string | string[]`）。统一在这里归一，页面不要各自 parse。
+   */
+  available_models?: string[] | string
 }
 
 const isNonEmpty = (value?: string): value is string =>
   typeof value === 'string' && value.trim().length > 0
+
+/** 归一 `available_models`：数组原样、JSON 字符串解析、单值当一项。 */
+export function normalizeAvailableModels(value?: string[] | string | null): string[] {
+  if (!value) return []
+  if (Array.isArray(value)) return value.map((item) => String(item))
+  const text = String(value).trim()
+  if (!text) return []
+  if (text.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(text)
+      if (Array.isArray(parsed)) return parsed.map((item) => String(item))
+    } catch {
+      /* 不是合法 JSON 就当成单个模型名 */
+    }
+  }
+  return [text]
+}
 
 /** 取连接器自己声明的权威默认模型（兼容 `model` / `default_model` 两种字段名）。 */
 export function resolveDefaultModel(backend?: ModelBackendInfo | null): string {
@@ -47,12 +69,15 @@ export function resolveDefaultModel(backend?: ModelBackendInfo | null): string {
 export function resolveModelSelection(backend?: ModelBackendInfo | null): string {
   const preferred = resolveDefaultModel(backend)
   if (preferred) return preferred
-  return (backend?.available_models || []).find(isNonEmpty) || ''
+  return normalizeAvailableModels(backend?.available_models).find(isNonEmpty) || ''
 }
 
 /** 下拉候选：默认模型优先，然后 available_models；去空、去重、保序。 */
 export function resolveModelCandidates(backend?: ModelBackendInfo | null): string[] {
-  const source: Array<string | undefined> = [resolveDefaultModel(backend), ...(backend?.available_models || [])]
+  const source: Array<string | undefined> = [
+    resolveDefaultModel(backend),
+    ...normalizeAvailableModels(backend?.available_models),
+  ]
   const result: string[] = []
   for (const item of source) {
     if (!isNonEmpty(item)) continue

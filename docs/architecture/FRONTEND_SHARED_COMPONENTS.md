@@ -27,6 +27,7 @@ story、canvas、agent 接入上述公共件」写进了**提交说明**里 —�
 | `resolveModelSelection(backend)` | 默认选中 = 权威默认模型；为空才退回 `available_models[0]` |
 | `resolveModelCandidates(backend)` | 下拉候选 = 默认模型 + `available_models`，去空 / 去重 / 默认模型排第一 |
 | `resolveDefaultModel(backend)` | 权威默认模型：`model` 优先，其次 `default_model` |
+| `normalizeAvailableModels(value)` | 归一 `available_models`：数组 / JSON 字符串 / 单个模型名都接 |
 
 ⚠️ **默认连接器不能取 `items[0]`**（2026-11-01 事故）：
 `/ai/connectors?provider_type=llm` 的列表第一个可能是没启动的本地反代
@@ -54,19 +55,20 @@ story、canvas、agent 接入上述公共件」写进了**提交说明**里 —�
 | 页面 | 第一级 | 第二级 | 备注 |
 | --- | --- | --- | --- |
 | `ProviderModelSelect`（公共） | 连接器 | **模型** | 推荐语义 |
-| 视频生成 / 我的数据 / 角色详情 | 连接器 | 模型 | 已迁移或迁移中 |
-| 图片生成「高级设置」 | 厂商 `provider_label` | **连接器（部署配置）** | 标签写「模型」但实际选连接器 —— 待定，见待迁移 #2 |
+| 视频生成 / 我的数据 / 角色详情 | 连接器 | 模型 | 已迁移 |
+| 图片生成「高级设置」 | 厂商 `provider_label` | **连接器（部署配置）** | 语义不同，专用 `VendorConnectorSelect`（2026-11-01） |
 
-新增页面一律用 **连接器 → 模型**；确实需要「厂商 → 连接器」时，先在这里登记再实现。
+新增页面一律用 **连接器 → 模型**；确实需要「厂商 → 连接器」时用 `VendorConnectorSelect`，别再造第三套。
 
 ## 三、公共件
 
 | 文件 | 职责 | 当前使用者 |
 | --- | --- | --- |
 | `components/BackendSelect.tsx` | 连接器单选（`provider_label — name` + 参考图 Tag）；`filterBackendsByCapability` 的唯一实现 | `ProviderModelSelect`、`MultiPlatformGen` |
-| `components/ai/ProviderModelSelect.tsx` | 「连接器 + 模型」双下拉；切换连接器自动带默认模型；支持 `capability` 过滤、`providerOptionLabel` 自定义文案 | 世界地图、视觉抽屉、故事圣经、图片生成（LLM 优化）、角色详情（迁移中） |
-| `hooks/useLlmConnectors.ts` | LLM 连接器拉取 + 默认模型（内部走 `resolveModelSelection`） | 世界地图、故事圣经、角色详情（迁移中） |
-| `utils/modelSelection.ts` | 默认模型 / 候选规则（唯一实现） | 视频生成、图片生成、`MultiPlatformGen`、`ProviderModelSelect`、`useLlmConnectors` |
+| `components/ai/ProviderModelSelect.tsx` | 「连接器 + 模型」双下拉；切换连接器自动带默认模型；支持 `capability` 过滤、`providerOptionLabel` 自定义文案 | 世界地图、视觉抽屉、故事圣经、图片生成（LLM 优化）、角色详情 |
+| `components/ai/VendorConnectorSelect.tsx` | 「厂商 → 连接器（部署配置）」双下拉；分组/取值一份实现，组内顺序由调用方决定；支持 `vendorLabel` / `connectorLabel` / `connectorOptionRender` | 图片生成「高级设置」 |
+| `hooks/useLlmConnectors.ts` | LLM 连接器拉取 + 默认模型（内部走 `resolveModelSelection` / `pickDefaultConnector`） | 世界地图、故事圣经、角色详情 |
+| `utils/modelSelection.ts` | 默认模型 / 候选 / 默认连接器规则（唯一实现） | 视频生成、图片生成、`MultiPlatformGen`、`ProviderModelSelect`、`useLlmConnectors`、agent、story、canvas |
 | `components/content-columns/index.tsx` | 内容列表列库（查询页 / 我的数据 / 点赞共用） | 查询页、我的数据、点赞面板 |
 | `components/platform-detail/` | 详情抽屉 / 媒体预览 / 评论（非 B 站） | 查询页、我的数据、点赞面板 |
 | `utils/download.ts` | 文本/blob 下载；`openDownloadPage()` = 新标签页打开 `/download?url=` | 4 个「去水印下载」入口 |
@@ -76,12 +78,12 @@ story、canvas、agent 接入上述公共件」写进了**提交说明**里 —�
 | # | 位置 | 现状 | 目标 | 优先级 | 状态 |
 | --- | --- | --- | --- | --- | --- |
 | 1 | `character-detail` 立绘 / AI 补全 | 已换成 `ProviderModelSelect` + `useLlmConnectors` | — | P1 | 已完成 2026-11-01（用户截图确认「图像供应商 / 模型」合成一行渲染） |
-| 2 | 图片生成「高级设置」厂商 → 部署配置 | 手写两级，第二级其实是连接器 | 待定：保留厂商分组，内层复用连接器选择；或抽 `VendorConnectorSelect` 变体 | P2 | 待设计 |
+| 2 | 图片生成「高级设置」厂商 → 部署配置 | 已抽 `VendorConnectorSelect` 并接入 | — | P2 | 已完成 2026-11-01（tsc 通过；浏览器实测待补） |
 | 3 | 图片生成「AI 优化」LLM 对 | 已换成 `ProviderModelSelect`（保留「配置名（厂商）」标签） | — | P1 | 已迁移 2026-10-31（tsc 通过；弹窗需先填提示词才能打开，未截图） |
 | 4 | 视频生成 | 已用 `utils/modelSelection`；模型展示逻辑特殊（单模型时只读输入框） | 保持现状即可 | P3 | 规则已完成 2026-10-31（浏览器实测模型显示 2.5-flash） |
 | 5 | `MultiPlatformGen` | 曾 `available_models[0]` 优先（列表优先） | 已改用 `resolveModelSelection` / `resolveModelCandidates` | P1 | 已完成 2026-10-31（浏览器实测 LLM 模型已带默认值） |
 | 6 | `novel-world` / `WorldMapEditor` / `writing-styles` / `book-source` | 各写一份默认模型回退 | 已切到 `resolveModelSelection` | P3 | 已完成 2026-10-31（tsc 通过） |
-| 7 | `agent` / `story` / `canvas` | `default_model \|\| model` 顺序正确，但各自一份；agent 还含组合逻辑 | 评估后切到 `resolveModelSelection` | P3 | 待办 |
+| 7 | `agent` / `story` / `canvas` | 已切到 `resolveModelSelection` / `resolveModelCandidates`（`available_models` 两种形态由 `normalizeAvailableModels` 归一） | — | P3 | 已完成 2026-11-01（tsc 通过） |
 
 > 全仓已无「`available_models[0]` 优先于默认模型」的写法（2026-10-31 扫描确认）。
 
@@ -94,7 +96,15 @@ story、canvas、agent 接入上述公共件」写进了**提交说明**里 —�
 
 ## 六、变更记录
 
-- **2026-11-01**：新增 `pickDefaultConnector`（`is_default` 优先）。起因：角色详情「AI 补全」
+- **2026-11-01（第二批）**：
+  - 新增 `components/ai/VendorConnectorSelect.tsx`（厂商 → 部署配置），图片生成「高级设置」接入 —— 两级语义
+    不再借用 `ProviderModelSelect`，也不再手写在页面里。
+  - `utils/modelSelection` 增加 `normalizeAvailableModels`：`available_models` 可能是数组或 JSON 字符串
+    （agent 页类型就是 `string | string[]`），统一归一，页面不再各自 parse。
+  - `agent` / `story` / `canvas` 的默认模型回退切到统一规则（P3 收尾）。
+  - 验证：`tsc --noEmit` 0 错误；图片生成「高级设置」浏览器实测待补。
+
+- **2026-11-01（第一批）**：新增 `pickDefaultConnector`（`is_default` 优先）。起因：角色详情「AI 补全」
   报 `All connection attempts failed` —— 列表第一个是没启动的本地反代
   `127.0.0.1:8317`，而用户标记的默认连接器「若海-qwen3.8-27b」排第二。
   已接入：`useLlmConnectors`、角色详情、图片生成「AI 优化」、`MultiPlatformGen`、
