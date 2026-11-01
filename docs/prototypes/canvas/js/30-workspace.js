@@ -1769,6 +1769,7 @@ document.addEventListener('keydown', e => {
 const WS_SKILLS = [
   { n:'创作分镜',   d:'一句话拆成分镜，标好景别和运镜' },
   { n:'角色三视图', d:'按 9 个方位出一套立绘，跨镜头不变脸' },
+  { n:'参考组合',   d:'按你说的场景凑服装和姿势，不碰脸' },
   { n:'视频反解',   d:'拆解参考视频的镜头语言、光影和节奏' },
   { n:'电商套图',   d:'按商品信息出一套风格统一的主图' },
   { n:'海报设计',   d:'给标题和卖点，出一版可直接用的海报' },
@@ -1885,4 +1886,101 @@ function wsSkillPick(name){
     taEl.rows = Math.min(3, Math.max(1, Math.ceil(taEl.value.length / 34) || 1));
   }
   wsSkillDone();
+}
+
+/* ============================================================
+   参考组合（2026-11-01）：由对话触发，不做独立页面
+   · 场景**从这句话里解析**，不是让用户在下拉里选
+   · 只推荐服装 + 姿势 —— 脸由角色决定，不参与推荐
+   ============================================================ */
+const REF_SCENES = {
+  yiheyuan: { n:'秋天颐和园', place:'长廊尽头的石阶', light:'下午四点的斜侧逆光，银杏叶透光', tone:'暖调，高对比' },
+  marriage: { n:'民政局门口', place:'红墙前的台阶', light:'阴天散射光，柔和无硬影', tone:'低饱和，冷调' },
+  studio:   { n:'棚拍 · 灰背景', place:'灰色无缝背景纸', light:'一盏柔光箱 45° 侧上，补光打底', tone:'中性，干净' }
+};
+
+const REF_RECS = {
+  yiheyuan: [
+    { o:'羊绒大衣', p:'靠墙站', why:'斜侧逆光里站定比走动更容易吃到边缘光；十月风大，大衣压得住；靠墙不抢长廊纵深。' },
+    { o:'齐胸襦裙', p:'走姿回头', why:'古建配古装；纱质裙摆走动才飘得起来，逆光才看得见轮廓。' },
+    { o:'针织开衫', p:'侧身站', why:'长廊有窗棂，侧身能把窗格光影投在脸上；米白在暖调里不抢银杏。' }
+  ],
+  marriage: [
+    { o:'白衬衫牛仔', p:'侧身站', why:'阴天散射光没有硬影，正适合平淡真实；红墙配白衬衫对比最强。' },
+    { o:'丝质长裙', p:'走姿回头', why:'正式场合裙子比裤子对；柔光对丝绸反光最友好，不会爆高光。' },
+    { o:'针织开衫', p:'抱膝坐', why:'领完证放松的状态，坐台阶比站着自然；低饱和下燕麦色不显脏。' }
+  ],
+  studio: [
+    { o:'白衬衫牛仔', p:'侧身站', why:'灰底配白最干净；45° 侧光能切出肩线。' },
+    { o:'丝质长裙', p:'扶栏杆', why:'侧光专切侧脸轮廓；身体微后仰把下颌线拉开。' },
+    { o:'宽松针织', p:'抱膝坐', why:'俯拍压缩空间，灰背景正好当留白。' }
+  ]
+};
+
+/* 从一句话里读场景 —— 真实现交给模型抽，原型用关键词兜底 */
+function wsParseScene(text){
+  const t = text || '';
+  if (/颐和园|长廊|银杏/.test(t)) return { key:'yiheyuan', ...REF_SCENES.yiheyuan, hit:'颐和园' };
+  if (/民政局|领证|红墙/.test(t))  return { key:'marriage', ...REF_SCENES.marriage, hit:'民政局' };
+  if (/棚|灰背景|背景纸/.test(t))  return { key:'studio',   ...REF_SCENES.studio,   hit:'棚拍' };
+  return { key:'yiheyuan', ...REF_SCENES.yiheyuan, hit:'没读出来，先按颐和园' };
+}
+
+function wsOpenRefCombo(need){
+  const pj = wsParseScene(need);
+  const list = REF_RECS[pj.key] || REF_RECS.yiheyuan;
+
+  const rows = list.map((r, i) => `
+    <button class="refrec" onclick="wsUseRefRec('${pj.key}',${i})">
+      <span class="refrec-no">${i + 1}</span>
+      <span class="refrec-bd">
+        <span class="refrec-t">${esc(r.o)} + ${esc(r.p)}</span>
+        <span class="refrec-w">${esc(r.why)}</span>
+      </span>
+      <span class="refrec-go">用这组</span>
+    </button>`).join('');
+
+  wsPanel(`
+    <div class="wsx" onclick="if(event.target.classList.contains('wsx'))wsClosePanel()">
+      <div class="wsx-w">
+        <div class="inp-hd">
+          <div class="inp-t">凑一组参考</div>
+          <div class="inp-sub">场景从你这句话里读，不用另外选</div>
+          <button class="inp-x" onclick="wsClosePanel()">✕</button>
+        </div>
+        <div class="wsx-body">
+          <div class="refscene">
+            <span class="refscene-lb">读到的场景</span>
+            <b>${esc(pj.n)}</b>
+            <span>${esc(pj.place)}</span>
+            <span>${esc(pj.light)}</span>
+            <span class="refscene-hit">${esc(pj.hit)}</span>
+          </div>
+          <div class="refscene-note">
+            来源：你刚说的那句「${esc((need || '').slice(0, 40))}」。
+            脸按角色档案，不在这里推荐 —— 只推荐服装和姿势。
+          </div>
+          ${rows}
+        </div>
+        <div class="wsx-foot">
+          <span class="ws-note">选一组会写进输入框，你可以再改</span>
+          <button class="b" onclick="wsClosePanel()">取消</button>
+        </div>
+      </div>
+    </div>`);
+}
+
+function wsUseRefRec(key, i){
+  const r = (REF_RECS[key] || [])[i];
+  if (!r) return;
+  const pj = REF_SCENES[key];
+  const taEl = document.getElementById('ta');
+  if (taEl){
+    taEl.value = '按这组出：穿' + r.o + '，' + r.p + '；' + pj.place + '，' + pj.light;
+    taEl.rows = Math.min(3, Math.max(1, Math.ceil(taEl.value.length / 34) || 1));
+    taEl.focus();
+    taEl.setSelectionRange(taEl.value.length, taEl.value.length);
+  }
+  wsClosePanel();
+  toast('参考已写进输入框 · 还能改');
 }
