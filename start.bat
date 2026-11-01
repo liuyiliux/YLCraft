@@ -113,6 +113,22 @@ if not exist frontend\node_modules (
 )
 
 REM ========================================
+REM Tool check: ffmpeg
+REM 2026-10-26 加：下载平台视频时报
+REM     ERROR: You have requested merging of multiple formats but ffmpeg
+REM     is not installed. Aborting due to --abort-on-error
+REM 不是下载器坏了 —— yt-dlp 要把「视频流 + 音频流」合并成一个 MP4，
+REM 合并要靠 ffmpeg；机器上没装就直接失败。启动时先说一句，省得去翻日志。
+REM ========================================
+if not exist "backend\tools\ffmpeg.exe" (
+    where ffmpeg >nul 2>&1
+    if errorlevel 1 (
+        echo [Warn] 未检测到 ffmpeg：下载平台视频时无法合并音视频（yt-dlp 会直接失败）
+        echo [Warn] 安装：scoop install ffmpeg  或  winget install Gyan.FFmpeg
+    )
+)
+
+REM ========================================
 REM Start Services
 REM ========================================
 echo.
@@ -139,16 +155,19 @@ REM       Patchright 起浏览器会挂，于是重启循环一触即发。
 REM
 REM 代价：改后端代码后要**手动重启后端窗口**（Ctrl+C 再重开这个窗口）。
 REM       这点不便是有意的 —— 换来的是后端不再自己重启到死。
-REM       想留着热更新又怕崩，见 start_no_reload.bat 的说明。
+REM       想留着热更新又怕崩，见 start_backend_reload.bat 的说明。
 REM
 REM --loop 仍然保留：它显式给出 ProactorEventLoop，与 --reload 无关，
 REM 也是 Patchright 能起浏览器的硬前提（详见 app/core/win_loop.py）。
 start "YLCraft-Backend" cmd /k "cd /d ""%~dp0backend"" && venv_win\Scripts\activate.bat && python -m uvicorn app.main:app --port 8000 --loop app.core.win_loop:new_loop"
 
-REM 启动后自检：端口起来但 /health 不通 = 又进了死循环，直接告诉你
-REM （以前只能等你在页面上点半天才发现）。失败时给出可复制的排查命令。
+REM 启动后自检：等 /health 通 = 后端真活了
+REM （2026-10-26 改）原来只等 12 秒就判死，冷启动/杀软扫包/连远程库时
+REM 后端经常还没 ready —— 实测日志：21:54:41 开始初始化、21:54:49 才完成，
+REM 而自检在 12 秒时就报了「启动失败」，是**误报**。
+REM 现在每 2 秒重试、最多等 120 秒，真挂了才报红字。
 start "" /b powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "Start-Sleep -Seconds 12; try { $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 8 'http://127.0.0.1:8000/health'; if ($r.StatusCode -eq 200) { Write-Host '  [Backend] OK - http://localhost:8000' -ForegroundColor Green } } catch { Write-Host ''; Write-Host '  [Backend] 启动失败或无响应！' -ForegroundColor Red; Write-Host '  最常见：8000 端口被旧进程占着' -ForegroundColor Yellow; Write-Host '  排查： netstat -ano | findstr :8000   然后 taskkill /PID <PID> /F' -ForegroundColor Yellow; Write-Host '  看崩溃现场： backend\storage\logs\app.log 里搜 Accept failed' -ForegroundColor Yellow }"
+  "$deadline=(Get-Date).AddSeconds(120); $ok=$false; $last=''; while((Get-Date) -lt $deadline){ try { $r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 'http://127.0.0.1:8000/health'; if($r.StatusCode -eq 200){ $ok=$true; break } } catch { $last=$_.Exception.Message }; Start-Sleep -Seconds 2 }; if($ok){ Write-Host '  [Backend] OK - http://localhost:8000' -ForegroundColor Green } else { Write-Host ''; Write-Host '  [Backend] 等了 120 秒仍无响应' -ForegroundColor Red; Write-Host '  最常见：8000 端口被旧进程占着' -ForegroundColor Yellow; Write-Host '  排查： netstat -ano | findstr :8000   然后 taskkill /PID <PID> /F' -ForegroundColor Yellow; Write-Host '  看崩溃现场： backend\storage\logs\app.log 里搜 Accept failed' -ForegroundColor Yellow; if($last){ Write-Host ('  最后一次错误：' + $last) -ForegroundColor DarkGray } }"
 
 timeout /t 4 /nobreak >nul
 
