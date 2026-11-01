@@ -373,6 +373,15 @@ brand{}
   cursor:pointer;flex-shrink:0;transition:.15s;
 }
 .snd:hover{filter:brightness(1.1)}
+/* 跑起来时发送键变红、图标从 ↑ 变方块（照真页面 index.tsx:3166 的做法） */
+.snd.running{background:var(--err);color:#fff}
+.snd .ico-stop{display:none;width:9px;height:9px;background:#fff;border-radius:2px}
+.snd.running .ico-send{display:none}
+.snd.running .ico-stop{display:block}
+/* 「正在想…」的光标 */
+.typing{color:var(--tx3)}
+.typing::after{content:"▍";margin-left:3px;animation:blink 1s step-end infinite}
+@keyframes blink{50%{opacity:0}}
 .comp-row2{
   display:flex;align-items:center;gap:5px;margin-top:9px;padding-top:8px;
   border-top:1px solid var(--ln);font-size:11.5px;color:var(--tx3);
@@ -1435,11 +1444,12 @@ brand{}
         <div class="comp-bx">
           <div class="comp-row1">
             <textarea rows="1" placeholder="继续说… 后台任务跑着也能发 · Enter 发送"></textarea>
-            <button class="snd">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+            <button class="snd" id="sndBtn" onclick="toggleRun()" title="发送（Enter）">
+              <svg class="ico-send" width="14" height="14" viewBox="0 0 24 24" fill="none"
                    stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
                 <path d="M12 19V5M6 11l6-6 6 6"/>
               </svg>
+              <span class="ico-stop"></span>
             </button>
           </div>
           <!--
@@ -1903,6 +1913,83 @@ function openChat(el){
   const bar = document.getElementById('statBar');
   if (bar) bar.style.display = '';
 }
+
+// ================= 发送 / 停止（真页面：loading 时发送键变红变停止） =================
+// 核对表 #7：真页面在跑的时候发送键变红，点了能停；原型原来跑起来停不下。
+let running = false;
+
+function toggleRun(){ running ? stopRun() : startRun(); }
+
+function setSnd(on){
+  const b = document.getElementById('sndBtn');
+  if (!b) return;
+  b.classList.toggle('running', on);
+  b.title = on ? '停下' : '发送（Enter）';
+}
+
+function startRun(){
+  const ta = document.querySelector('.chat-ft textarea');
+  const text = (ta.value || '').trim();
+  if (!text){ ta.focus(); return; }        // 空着就不发，不假装在跑
+
+  running = true;
+
+  // 从空态里出来，追加一轮「用户说的话 + 正在想」
+  const inner = document.querySelector('.chat-inner');
+  const body = document.querySelector('.chat-body');
+  inner.classList.remove('is-empty');
+  body.classList.remove('body-empty');
+
+  const turn = document.createElement('div');
+  turn.className = 'turn';
+  turn.innerHTML =
+    '<div class="msg-u"><div class="bb"></div></div>' +
+    '<div class="msg-a">' +
+      '<div class="who"><div class="who-av">◆</div>' +
+        '<span class="who-n">总控助手</span>' +
+        '<span class="who-t">qwen3.8-27b</span></div>' +
+      '<div class="ans" id="liveAns"><p class="typing">正在想…</p></div>' +
+    '</div>';
+  turn.querySelector('.bb').textContent = text;
+  inner.appendChild(turn);
+
+  ta.value = '';
+  ta.style.height = 'auto';
+  ta.placeholder = '正在跑… 想到什么可以接着说，点方块停下';
+  setSnd(true);
+
+  // 状态条切到「在跑」那一档（第 3 档）
+  statIdx = 2;
+  renderStat();
+  document.getElementById('chatTitle').textContent = text.slice(0, 26);
+  document.getElementById('chatMeta').textContent = '跑着呢';
+  body.scrollTop = body.scrollHeight;
+}
+
+function stopRun(){
+  running = false;
+  const ans = document.getElementById('liveAns');
+  if (ans){
+    ans.innerHTML = '<p>停下了 —— 已经出来的部分保留着，不是白跑。'
+      + '想接着改就在下面继续说。</p>';
+  }
+  const ta = document.querySelector('.chat-ft textarea');
+  if (ta) ta.placeholder = '继续说… 后台任务跑着也能发 · Enter 发送';
+  setSnd(false);
+  // 停了就没有在跑的任务，状态条收起来
+  document.getElementById('statBar').style.display = 'none';
+  document.getElementById('chatMeta').textContent = '已停下';
+}
+
+// Enter 发送 / Shift+Enter 换行（placeholder 里写了就得真做到）
+document.addEventListener('keydown', function(e){
+  const ta = document.querySelector('.chat-ft textarea');
+  if (!ta || e.target !== ta) return;
+  if (e.key === 'Enter' && !e.shiftKey){
+    e.preventDefault();
+    if (!running) startRun();
+  }
+});
 
 // 启动：默认自动 + 素材库
 ctxAuto('assets');
