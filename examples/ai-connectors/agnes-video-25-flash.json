@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "name": "Agnes Video 2.5 Flash",
+  "description": "Agnes Video 2.5 Flash 文生视频 / 首尾帧预设。创建任务 POST /v1/videos，查询任务 GET /agnesapi?video_id=<video_id>&model_name=agnes-video-2.5-flash。Flash 只支持 size=720P，并且不接受 width/height/fps/num_frames 这类字段（原 Video 2.0 的请求模板不能直接复用）。",
+  "connectors": [
+    {
+      "id": "agnes-video-25-flash",
+      "provider": "agnes",
+      "name": "Agnes Video 2.5 Flash",
+      "api_key": "",
+      "provider_type": "video",
+      "base_url": "https://api.agnes-ai.cn",
+      "api_endpoint": "/v1/videos",
+      "default_model": "agnes-video-2.5-flash",
+      "available_models": ["agnes-video-2.5-flash"],
+      "is_active": false,
+      "is_default": false,
+      "priority": 100,
+      "description": "Agnes Video 2.5 Flash（文生视频 / 首尾帧）。接口：创建 POST /v1/videos；查询 GET /agnesapi?video_id=<video_id>&model_name=agnes-video-2.5-flash。Flash 仅支持 size=720P；seconds 为字符串 4-12；首帧需要公网可访问的图片 URL。",
+      "request_template": "{\"model\":\"{{ model }}\",\"prompt\":{{ prompt_json }},\"seconds\":\"{{ duration }}\",\"size\":\"{{ resolution | upper }}\",\"aspect_ratio\":\"{{ aspect_ratio }}\",\"n\":1{% if start_image %},\"mode\":\"keyframe\",\"first_frame\":\"{{ start_image }}\"{% else %},\"mode\":\"text\"{% endif %}{% if seed %},\"seed\":{{ seed }}{% endif %}}",
+      "response_config": {
+        "task_id_path": "$.video_id",
+        "status_path": "$.status",
+        "video_url_path": "$.url",
+        "error_path": "$.error.message",
+        "progress_path": "$.progress",
+        "poll_endpoint": "/agnesapi?video_id={task_id}&model_name=agnes-video-2.5-flash",
+        "done_values": ["completed"],
+        "failed_values": ["failed"]
+      },
+      "default_params": {
+        "video_capabilities": {
+          "text_to_video": true,
+          "image_to_video": true,
+          "seed_control": true,
+          "generate_audio": false,
+          "resolutions": ["720p"],
+          "aspect_ratios": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
+          "durations": [5, 10],
+          "max_duration": 12
+        },
+        "image_requires_public_url": true,
+        "provider_constraints": {
+          "size": "Flash 仅支持 720P（2.5 标准版才支持 1080P/1K/2K）",
+          "seconds": "字符串 4-12，默认 5",
+          "aspect_ratio": "16:9 / 9:16 / 1:1 / 4:3 / 3:4 / 21:9",
+          "forbidden_fields": "width, height, fps, num_frames, quality, num_inference_steps 会返回 400",
+          "poll": "GET /agnesapi?video_id=<video_id>&model_name=agnes-video-2.5-flash"
+        }
+      },
+      "support_reference_image": true,
+      "support_multiple_reference_images": false,
+      "timeout": 900,
+      "test_timeout": 30,
+      "api_format": "custom"
+    }
+  ]
+}
