@@ -69,6 +69,8 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
   color:var(--tx2);line-height:1.65;margin-bottom:20px}
 .note b{color:var(--tx1)}
 .note .ico{flex:0 0 auto;font-size:15px;line-height:1.4}
+/* 两条说明不能长得一样 —— 用左边框区分，三套主题都稳（不依赖颜色透明度） */
+.note.rule{border-left:2px solid var(--pri)}
 
 h1{font-size:var(--fs-h2);font-weight:600;margin-bottom:6px}
 .sub{font-size:var(--fs-cap);color:var(--tx3);margin-bottom:22px}
@@ -84,6 +86,11 @@ h1{font-size:var(--fs-h2);font-weight:600;margin-bottom:6px}
   color:var(--tx3);font-size:var(--fs-xs);font-family:var(--fm);
   display:flex;align-items:center;justify-content:center;flex:0 0 auto}
 .slot-hd .t{font-weight:500;color:var(--tx1)}
+.slot-hd .lock{margin-left:auto;font-size:11px;padding:1px 7px;border-radius:999px;
+  border:1px solid var(--bd2);color:var(--tx3)}
+.slot-hd .lock.on{border-color:rgba(34,211,238,.45);color:var(--pri);background:rgba(34,211,238,.08)}
+.btn-row{display:flex;gap:6px}
+.btn-row .btn{flex:1;text-align:center;padding:6px 0;white-space:nowrap}
 
 /* 占位图：明确是占位，不假装是照片。
    高度固定 240 而不是 3:4 —— 三格并排时竖图会把提示词框挤出首屏。
@@ -164,14 +171,28 @@ h1{font-size:var(--fs-h2);font-weight:600;margin-bottom:6px}
     </div>
   </div>
 
+  <div class="note rule">
+    <span class="ico">🔒</span>
+    <div>
+      <b>什么能随机，什么不能：</b>
+      脸（形象）只能随机<b>一次</b> —— 定了就锁住，后面换姿势换衣服都还是同一个人，
+      否则每条片子都是另一个模特。<br>
+      姿势、服装可以随便抽；<b>光线和场景从来不随机</b>，它们跟项目和地点走。
+    </div>
+  </div>
+
   <div class="combo">
     <div class="slot">
-      <div class="slot-hd"><span class="n">1</span><span class="t">脸</span></div>
+      <div class="slot-hd"><span class="n">1</span><span class="t">脸</span>
+        <span class="lock" id="faceLock">未锁定</span></div>
       <div class="ph"><span class="ph-k">FACE</span><span class="ph-v" id="facePh">—</span></div>
       <div class="slot-bd">
         <div class="slot-t" id="faceT">—</div>
         <div class="slot-d" id="faceD">—</div>
-        <button class="btn" onclick="roll('face')">换一个</button>
+        <div class="btn-row">
+          <button class="btn" id="faceRollBtn" onclick="roll('face')">换一个</button>
+          <button class="btn" id="faceLockBtn" onclick="toggleLock()">就是她</button>
+        </div>
       </div>
     </div>
 
@@ -258,6 +279,10 @@ const POSE = [
 const LIGHT = '自然光，柔和阴影，浅景深，背景虚化';
 
 let cur = { face:null, outfit:null, pose:null };
+/* 形象锁：脸只能随机一次。
+   摄影里模特是固定的 —— 每换一次脸就等于换个人拍，跨镜根本对不上。
+   锁住之后「再来一组」只动服装和姿势。 */
+let faceLocked = false;
 
 function pick(arr){
   return arr[Math.floor(Math.random() * arr.length)];
@@ -271,8 +296,17 @@ function pickOther(arr, current){
   return n;
 }
 
+function toggleLock(){
+  faceLocked = !faceLocked;
+  render();
+  toast(faceLocked ? '形象已锁 · 后面只换姿势和服装' : '已解锁 · 可以重新挑形象');
+}
+
 function roll(which){
-  if (which === 'face')   cur.face   = pickOther(FACE, cur.face);
+  if (which === 'face'){
+    if (faceLocked){ toast('形象已锁 · 要换人先解锁'); return; }
+    cur.face = pickOther(FACE, cur.face);
+  }
   if (which === 'outfit') cur.outfit = pickOther(OUTFIT, cur.outfit);
   if (which === 'pose')   cur.pose   = pickOther(POSE, cur.pose);
   render();
@@ -280,11 +314,12 @@ function roll(which){
 }
 
 function rollAll(){
-  cur.face   = pickOther(FACE, cur.face);
+  // 锁了形象就只换服装和姿势 —— 「再来一组」不该偷偷把模特也换了
+  if (!faceLocked) cur.face = pickOther(FACE, cur.face);
   cur.outfit = pickOther(OUTFIT, cur.outfit);
   cur.pose   = pickOther(POSE, cur.pose);
   render();
-  toast('重新抽了一组');
+  toast(faceLocked ? '换了服装和姿势 · 形象没动' : '重新抽了一组');
 }
 
 function buildPrompt(){
@@ -295,22 +330,32 @@ function buildPrompt(){
   const oParts = o.t.split(' · ');          // [场景, 品类]
   const oColor = o.d.split(' · ')[0];       // 颜色
   const pParts = p.t.split(' · ');          // [体态, 细节]
-  return [
+  const parts = [
     '一位 ' + fMeta[0] + '女性，' + fParts[0] + '，' + fParts[1] + '，' + (fMeta[1] || ''),
     '穿' + oParts[1] + '（' + oColor + '）',
     pParts[1] + '，' + p.d,
     LIGHT
-  ].join('；') + '。';
+  ];
+  // 锁了形象就要把「同一个人」写进提示词，否则模型每次给你换张脸
+  if (faceLocked) parts.push('同一人物，脸型五官与上一张保持一致');
+  return parts.join('；') + '。';
 }
 
 function render(){
   ['face', 'outfit', 'pose'].forEach(function(k){
     const v = cur[k];
-    const cap = k.charAt(0).toUpperCase() + k.slice(1);
     document.getElementById(k + 'Ph').textContent = v ? v.v : '—';
     document.getElementById(k + 'T').textContent  = v ? v.t : '—';
     document.getElementById(k + 'D').textContent  = v ? v.d : '—';
   });
+
+  // 形象锁的界面状态
+  const lk = document.getElementById('faceLock');
+  lk.textContent = faceLocked ? '已锁定 · 同一个人' : '未锁定';
+  lk.classList.toggle('on', faceLocked);
+  document.getElementById('faceRollBtn').disabled = faceLocked;
+  document.getElementById('faceLockBtn').textContent = faceLocked ? '🔓 解锁重抽' : '就是她';
+
   document.getElementById('promptTx').textContent = buildPrompt() || '—';
 }
 
