@@ -63,10 +63,50 @@ class Model3DConnectorBackend:
         matches = jsonpath_parse(path).find(data)
         return matches[0].value if matches else default
 
+    @staticmethod
+    def _json_string_escape(value: str) -> str:
+        return json.dumps(value or "", ensure_ascii=False)[1:-1]
+
     def _render(self, values: dict[str, Any]) -> dict[str, Any]:
+        """Render ``request_template`` into the JSON body sent to the 3D provider.
+
+        Templates are JSON documents with Jinja placeholders such as
+        ``"Prompt":"{{ prompt }}"``. Jinja interpolates verbatim, so a
+        multi-line prompt used to break ``json.loads`` with ``Invalid control
+        character``. ``{{ prompt_json }}`` renders a complete JSON literal for
+        unquoted placeholders; when a template interpolates a raw value inside
+        a quoted string, retry once with JSON-escaped strings.
+        """
         template = self.connector.request_template or '{"model":"{{ model }}","prompt":"{{ prompt }}","image_url":"{{ image_url }}"}'
-        rendered = Template(template).render(**values)
-        parsed = json.loads(rendered)
+        template_values = {
+            **values,
+            **{f"{key}_json": json.dumps(value, ensure_ascii=False) for key, value in values.items()},
+            **{
+                f"{key}_json_str": self._json_string_escape(value)
+                for key, value in values.items()
+                if isinstance(value, str)
+            },
+        }
+        rendered = Template(template).render(**template_values)
+        try:
+            parsed = json.loads(rendered)
+        except json.JSONDecodeError as exc:
+            safe_values = {
+                **template_values,
+                **{
+                    key: self._json_string_escape(value) if isinstance(value, str) else value
+                    for key, value in values.items()
+                },
+            }
+            try:
+                parsed = json.loads(Template(template).render(**safe_values))
+            except json.JSONDecodeError:
+                preview = " ".join(rendered.split())[:300]
+                raise ValueError(
+                    "3D 连接器「%s」的 request_template 渲染后不是合法 JSON：%s。"
+                    "请在模板里对文本字段使用 {{ prompt_json }}（或 {{ prompt_json_str }}），"
+                    "或修正模板本身。渲染片段：%s" % (self.name, exc, preview)
+                ) from exc
         if not isinstance(parsed, dict):
             raise ValueError("3D Request 模板必须渲染为 JSON object")
         return parsed
