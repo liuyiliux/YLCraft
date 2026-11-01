@@ -104,6 +104,13 @@ function send(){
   ta.value=''; ta.rows=1;
   agAdd('me', esc(t));
   if (typeof wsConsumeComposerRefs === 'function') wsConsumeComposerRefs();
+  /* 参考组合由对话触发（2026-11-01）——场景从这句话里读，不另设选择器
+     触发词要宽一点：「凑一组参考」「要一组参考」「帮我找参考」都得认 */
+  if (/(参考组合|凑.{0,4}参考|找.{0,4}参考|要.{0,2}组?参考|来.{0,2}组?参考)/.test(t)
+      && typeof wsOpenRefCombo === 'function'){
+    setTimeout(()=>{ wsOpenRefCombo(t); }, 420);
+    return;
+  }
   if (DOC.items.length===0){
     setTimeout(()=>{ demoFill('talk'); }, 500);
     return;
