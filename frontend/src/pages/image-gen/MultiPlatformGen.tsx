@@ -19,6 +19,7 @@ import { useTheme } from '../../constants/theme'
 import { getImageBackends, getLlmBackends } from '../../api'
 import { calculateAspectRatio } from '../../utils/size'
 import { BackendSelect, type BackendInfo } from '../../components/BackendSelect'
+import { resolveModelCandidates, resolveModelSelection, pickDefaultConnector } from '../../utils/modelSelection'
 import GeneratedMediaThumb from '../../components/content-package/GeneratedMediaThumb'
 
 const { TextArea } = Input
@@ -274,18 +275,20 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
     getImageBackends().then(data => {
       const list: BackendInfo[] = (data.backends || []).filter(supportsTextToImage)
       setBackends(list)
-      if (list.length > 0) {
-        setSelectedBackend(list[0].name)
-        setSelectedModel(list[0].model || list[0].available_models?.[0] || '')
+      const first = pickDefaultConnector(list)
+      if (first) {
+        setSelectedBackend(first.name)
+        setSelectedModel(resolveModelSelection(first))
       }
     }).catch(() => { })
 
     getLlmBackends().then(data => {
       const list: BackendInfo[] = data.backends || []
       setLlmBackends(list)
-      if (list.length > 0) {
-        setSelectedLlmBackend(list[0].name)
-        setSelectedLlmModel(list[0].model || list[0].available_models?.[0] || '')
+      const first = pickDefaultConnector(list)
+      if (first) {
+        setSelectedLlmBackend(first.name)
+        setSelectedLlmModel(resolveModelSelection(first))
       }
     }).catch(() => { })
   }, [])
@@ -321,9 +324,8 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
   // Derived values
   const currentBackendModels = useMemo(() => {
     const b = backends.find(b => b.name === selectedBackend)
-    if (b?.available_models?.length) return b.available_models
-    if (b?.model) return [b.model]
-    return []
+    // 默认模型优先 + 候选合并（规则在 utils/modelSelection，一处维护）
+    return resolveModelCandidates(b)
   }, [backends, selectedBackend])
 
   const currentBackendSizes = useMemo(() => {
@@ -692,7 +694,7 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
               value={selectedLlmBackend}
               onChange={(name, b) => {
                 setSelectedLlmBackend(name)
-                setSelectedLlmModel(b?.available_models?.[0] || b?.model || '')
+                setSelectedLlmModel(resolveModelSelection(b))
               }}
               placeholder="请选择 AI 文本模型"
               notFoundContent={(
@@ -726,7 +728,7 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
                 value={selectedBackend}
                 onChange={(name, b) => {
                   setSelectedBackend(name)
-                  setSelectedModel(b?.available_models?.[0] || b?.model || '')
+                  setSelectedModel(resolveModelSelection(b))
                 }}
                 placeholder="请选择 AI 图像模型"
                 notFoundContent={(
@@ -1078,7 +1080,7 @@ export default function MultiPlatformGen({ initialTopic, initialPlatforms, autoG
               value={selectedBackend}
               onChange={(name, b) => {
                 setSelectedBackend(name)
-                setSelectedModel(b?.available_models?.[0] || b?.model || '')
+                setSelectedModel(resolveModelSelection(b))
                 // 切换供应商后，自动重置所有平台的尺寸为新列表的第一个值
                 const newSizes = b?.supported_sizes?.length
                   ? b.supported_sizes

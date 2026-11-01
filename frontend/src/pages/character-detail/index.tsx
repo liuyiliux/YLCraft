@@ -5,6 +5,9 @@ import type { MenuProps } from 'antd'
 import { ArrowLeftOutlined, ArrowRightOutlined, BranchesOutlined, CopyOutlined, DatabaseOutlined, DeleteOutlined, DownOutlined, EditOutlined, EllipsisOutlined, FullscreenExitOutlined, FullscreenOutlined, GlobalOutlined, PictureOutlined, PlusOutlined, PushpinOutlined, SearchOutlined, SettingOutlined, StarFilled, StarOutlined, UpOutlined, UserOutlined } from '@ant-design/icons'
 import { useTheme } from '../../constants/theme'
 import { useFullscreenWorkspace } from '../../components/layout/AppLayout'
+import ProviderModelSelect, { backendKey } from '../../components/ai/ProviderModelSelect'
+import useLlmConnectors from '../../hooks/useLlmConnectors'
+import { resolveModelSelection, pickDefaultConnector } from '../../utils/modelSelection'
 import { chat } from '../../api'
 import FieldRenderer from './components/FieldRenderer'
 import { browserAssetUrl, displayValue, fieldSourceMeta, mapSourceValues } from './components/utils'
@@ -395,7 +398,8 @@ export default function CharacterDetailPage() {
   const [promptPreviewLoading, setPromptPreviewLoading] = useState(false)
   const [promptOptimizing, setPromptOptimizing] = useState(false)
   const [imageBackends, setImageBackends] = useState<any[]>([])
-  const [llmBackends, setLlmBackends] = useState<any[]>([])
+  // AI 补全 / 提示词优化共用公共 hook 拉取 LLM 连接器（替代页内手写 fetch）。
+  const { backends: llmBackends } = useLlmConnectors()
   const [enrichProvider, setEnrichProvider] = useState('')
   const [enrichModel, setEnrichModel] = useState('')
   const [portraitProvider, setPortraitProvider] = useState('')
@@ -493,25 +497,29 @@ export default function CharacterDetailPage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [workspaceFullscreen, toggleWorkspaceFullscreen])
   useEffect(() => {
-    getJson('/api/v1/images/backends').then((result) => {
-      const items = result.backends || result.data || []
+    getJson('/api/v1/images/backends').then((result: any) => {
+      const items: any[] = result.backends || result.data || []
       setImageBackends(items)
-      if (!portraitProvider && items[0]) {
-        setPortraitProvider(items[0].name || items[0].provider || '')
-        setPortraitModel(items[0].model || items[0].available_models?.[0] || '')
+      const first = pickDefaultConnector(items)
+      if (!portraitProvider && first) {
+        setPortraitProvider(first.name || first.provider || '')
+        setPortraitModel(resolveModelSelection(first))
       }
     }).catch(() => setImageBackends([]))
   }, [portraitProvider])
+
+  // 首次拿到连接器列表时回填**默认连接器**/模型；之后重渲染不覆盖用户已选（模型清空 = 用后端默认）。
+  const enrichSeeded = useRef(false)
   useEffect(() => {
-    getJson('/api/v1/ai/connectors?provider_type=llm&active_only=true').then((result) => {
-      const items = result.connectors || result.data || result.items || []
-      setLlmBackends(items)
-      if (!enrichProvider && items[0]) {
-        setEnrichProvider(items[0].name || items[0].provider || '')
-        setEnrichModel(items[0].default_model || items[0].model || items[0].available_models?.[0] || '')
-      }
-    }).catch(() => setLlmBackends([]))
-  }, [enrichProvider])
+    if (enrichSeeded.current) return
+    // ⚠️ 不能用 llmBackends[0]：列表第一个可能是没启动的本地反代，
+    //    用户标记的默认连接器（is_default）往往排在后面（2026-11-01 事故）。
+    const first = pickDefaultConnector(llmBackends)
+    if (!first) return
+    enrichSeeded.current = true
+    if (!enrichProvider) setEnrichProvider(backendKey(first))
+    if (!enrichModel) setEnrichModel(resolveModelSelection(first))
+  }, [llmBackends, enrichProvider, enrichModel])
 
   // 按生图模式过滤供应商：图生图只显示 image_to_image 能力，文生图只显示 text_to_image
   const portraitBackendOptions = useMemo(() => {
@@ -529,7 +537,8 @@ export default function CharacterDetailPage() {
     if (matched) return
     const first: any = portraitBackendOptions[0]
     setPortraitProvider(first.name || first.provider || '')
-    setPortraitModel(first.model || first.available_models?.[0] || '')
+    // 模型跟着供应商一起回退到该连接器的默认模型（不能用 available_models[0] 猜）
+    setPortraitModel(resolveModelSelection(first))
   }, [portraitBackendOptions, portraitProvider])
 
   const canonicalMainVisualUrl = useMemo(() => {
@@ -1279,10 +1288,17 @@ export default function CharacterDetailPage() {
             placement="bottomRight"
             title="AI 补全配置"
             content={
-              <Space direction="vertical" size={8} style={{ width: 240 }}>
-                <Select size="small" value={enrichProvider || undefined} placeholder="AI 补全供应商" style={{ width: '100%' }} onChange={(value) => { setEnrichProvider(value); const backend = llmBackends.find((item) => (item.name || item.provider) === value); setEnrichModel(backend?.default_model || backend?.model || backend?.available_models?.[0] || '') }} options={llmBackends.map((item) => ({ value: item.name || item.provider, label: item.provider_label || item.name || item.provider }))} />
-                <Select size="small" value={enrichModel || undefined} placeholder="AI 补全模型" style={{ width: '100%' }} onChange={setEnrichModel} options={Array.from(new Set((llmBackends.find((item) => (item.name || item.provider) === enrichProvider)?.available_models || [llmBackends.find((item) => (item.name || item.provider) === enrichProvider)?.default_model]).filter(Boolean))).map((value) => ({ value, label: value }))} />
-              </Space>
+              <ProviderModelSelect
+                backends={llmBackends}
+                provider={enrichProvider}
+                model={enrichModel}
+                onProviderChange={setEnrichProvider}
+                onModelChange={setEnrichModel}
+                providerWidth={150}
+                modelWidth={170}
+                providerPlaceholder="AI 补全供应商"
+                modelPlaceholder="AI 补全模型"
+              />
             }
           >
             <Button icon={<SettingOutlined />} />
@@ -1305,8 +1321,8 @@ export default function CharacterDetailPage() {
         {!portraitControlsCollapsed && (
           <div style={{ marginTop: 10 }} id="portrait-controls-content">
             <div style={{ gridColumn: '1 / -1' }}><Text style={{ display: 'block', color: theme.textSecondary, fontSize: 12, marginBottom: 4 }}>生成模式</Text><Segmented value={portraitMode} onChange={(value) => setPortraitMode(value as 'text2img' | 'img2img')} options={[{ value: 'img2img', label: '图生图（携带参考图）' }, { value: 'text2img', label: '文生图（不携带参考图）' }]} /></div>
-            <div><Text style={{ display: 'block', color: theme.textSecondary, fontSize: 12, marginBottom: 4 }}>图像供应商</Text><Select value={portraitProvider || undefined} onChange={(value) => { setPortraitProvider(value); const backend = portraitBackendOptions.find((item) => (item.name || item.provider) === value); setPortraitModel(backend?.model || backend?.available_models?.[0] || '') }} style={{ width: '100%' }} options={portraitBackendOptions.map((item) => { const value = item.name || item.provider; const providerLabel = item.provider_label || item.provider || '通用供应商'; const connectorLabel = item.name && item.name !== item.provider ? item.name : ''; const modelLabel = item.model || item.available_models?.[0] || ''; return { value, label: connectorLabel ? `${providerLabel} · ${connectorLabel}${modelLabel ? ` · ${modelLabel}` : ''}` : `${providerLabel}${modelLabel ? ` · ${modelLabel}` : ''}` } })} placeholder="默认后端" /></div>
-            <div><Text style={{ display: 'block', color: theme.textSecondary, fontSize: 12, marginBottom: 4 }}>模型</Text><Select value={portraitModel || undefined} onChange={setPortraitModel} style={{ width: '100%' }} options={Array.from(new Set((portraitBackendOptions.find((item) => (item.name || item.provider) === portraitProvider)?.available_models || [portraitBackendOptions.find((item) => (item.name || item.provider) === portraitProvider)?.model]).filter(Boolean))).map((value) => ({ value, label: value }))} placeholder="默认模型" /></div>
+            {/* 供应商 + 模型收成公共双下拉，占两列以保持与其它控件同一行 */}
+            <div style={{ gridColumn: 'span 2' }}><Text style={{ display: 'block', color: theme.textSecondary, fontSize: 12, marginBottom: 4 }}>图像供应商 / 模型</Text><ProviderModelSelect backends={portraitBackendOptions} provider={portraitProvider} model={portraitModel} onProviderChange={setPortraitProvider} onModelChange={setPortraitModel} providerWidth={170} modelWidth={190} providerPlaceholder="默认后端" modelPlaceholder="默认模型" /></div>
             <div><Text style={{ display: 'block', color: theme.textSecondary, fontSize: 12, marginBottom: 4 }}>立绘预设</Text><Select value={portraitPreset} onChange={setPortraitPreset} style={{ width: '100%' }} options={[
               { label: '基础立绘', options: [
                 { value: 'main_portrait', label: '主立绘' },

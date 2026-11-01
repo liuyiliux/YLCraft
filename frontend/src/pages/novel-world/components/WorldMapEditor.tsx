@@ -49,6 +49,7 @@ import {
   type WorldMapVisualResult,
 } from '../../../api/novelSource'
 import ProviderModelSelect, { filterBackendsByCapability } from '../../../components/ai/ProviderModelSelect'
+import { resolveModelSelection } from '../../../utils/modelSelection'
 import { DEFAULT_NODE_KIND, NODE_KINDS } from '../../../utils/nodeKinds'
 import EvidenceList from '../../../components/world/EvidenceList'
 import DataPanel from '../../../components/world/DataPanel'
@@ -183,7 +184,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
         setImageBackends(backends)
         if (!visualProvider && backends.length) {
           setVisualProvider(backends[0].name)
-          setVisualModel(backends[0].available_models?.[0] || backends[0].model || '')
+          setVisualModel(resolveModelSelection(backends[0]))
         }
       })
       .catch(() => setImageBackends([]))
@@ -220,7 +221,7 @@ export default function WorldMapEditor({ projectId, snapshotId }: Props) {
     if (matched) return
     const first: any = visibleImageBackends[0]
     setVisualProvider(first.name || first.provider || '')
-    setVisualModel(first.model || first.available_models?.[0] || '')
+    setVisualModel(resolveModelSelection(first))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleImageBackends])
 
