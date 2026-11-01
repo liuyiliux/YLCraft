@@ -23,6 +23,19 @@ const DEMO = [
   {n:'收尾',     d:0.0, st:'todo'}
 ];
 
+/* 角色图批次（2026-11-01 加）
+   ⚠️ 别再把它和 DEMO 混用：DEMO 是**视频分镜**（一镜有景别和时长），
+   这里是**角色设定图**（按角度出，没有时长）。搜角色参考那条流程必须走这个。
+   角度取自后端 turnaround 的 9 个方位标签（characters.py），是现成能力不是编的。 */
+const DEMO_CHAR = [
+  {n:'正面 · 半身', d:0, st:'ok'},
+  {n:'正面 · 全身', d:0, st:'ok'},
+  {n:'3⁄4 侧',      d:0, st:'ok'},
+  {n:'侧面',        d:0, st:'ok'},
+  {n:'背面',        d:0, st:'ok'},
+  {n:'俯视 · 半身', d:0, st:'ok'}
+];
+
 let DOC = { items: [] };   // {id,order,duration,status,name,x,y,w,h,cls}
 let mode = 'shots';
 let selId = null;

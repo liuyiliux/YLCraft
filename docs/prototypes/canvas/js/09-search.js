@@ -555,19 +555,25 @@ function searchGenerate(){
 
   setTimeout(()=>{
     window.__suppressDemoMsg = true;
-    demoFill('script', 6);
+    // 角色流程出的是**角色图**（按角度），不是视频分镜 —— 2026-11-01 修
+    demoFill('character', 6);
     window.__suppressDemoMsg = false;
+    // 成本要说清楚：输入框那个 ⚡ 是单张价，这里是 6 张
+    const unitPts = (typeof wsModel === 'function' && typeof WS_COMPOSER_MODEL !== 'undefined')
+      ? (wsModel(WS_COMPOSER_MODEL).pts || 0) : 0;
+    const costLine = unitPts ? `<br><br>这 6 张一共 <b>⚡${unitPts * 6}</b>（单张 ⚡${unitPts}）。` : '';
     agb.insertAdjacentHTML('beforeend',
       `<div class="msg ai"><div class="who">智能体</div><div class="bubble">`
-      + `生成了 <b>6 镜</b>。<br><br>`
+      + `出了 <b>6 张角色图</b>，6 个角度。`
       + (edited.length
           ? `你改的那 <b>${edited.length} 项</b>（${edited.map(m=>m.k).join('、')}）都进去了。`
           : (miss.length
               ? `先说清楚：<b>${miss.map(m=>m.k).join('、')}是我猜的</b>，不对说一声我按你那版重出。`
-              : `要素都是从搜到的资料里来的，没靠猜。看完哪镜不对直接说。`))
+              : `要素都是从搜到的资料里来的，没靠猜。看完哪张不对直接说。`))
+      + costLine
       + `</div></div>`);
     agb.scrollTop = agb.scrollHeight;
-    toast('已生成 6 镜');
+    toast('已出 6 张角色图');
   }, 900);
 }
 
