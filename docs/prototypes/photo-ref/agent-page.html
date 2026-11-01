@@ -264,6 +264,13 @@ brand{}
 .proc-meta{font-size:10.5px;color:var(--tx3);font-family:var(--fm)}
 .proc-body{display:none;padding:2px 12px 12px;border-left:2px solid var(--ln2);margin-left:19px}
 .proc.open .proc-body{display:block}
+/* 预算脚注（2026-11-01 补）：真页面轨迹里有「执行预算」，原型原来只能看到 9 个步骤，
+   看不出"它还有多少余量、会不会无限试"。这一行补上这个信息。 */
+.proc-ft{
+  font-size:11px;color:var(--tx3);line-height:1.6;
+  padding:8px 12px 9px;border-top:1px dashed var(--ln);
+  /* 收起时也露一句 —— 预算不是"点开才配知道"的事 */
+}
 
 .step{
   display:flex;gap:10px;padding:6px 0;font-size:12px;line-height:1.6;
@@ -1256,6 +1263,9 @@ brand{}
                 <div class="step-k">生成完成</div>
                 <div class="step-v">已存入素材库</div>
               </div>
+            </div>
+            <div class="proc-ft">
+              预算 9/12 轮 · 2 个工具 · 0 次失败 —— 到 12 轮会停下来问你要不要继续，不会一直试。
             </div>
           </div>
 
