@@ -127,8 +127,9 @@ AI 连接器和供应商规范已经作为 `ai_config` 分类工具接入智能�
 
 - 配置前先调用 `list_provider_metadata` / `list_ai_connectors`；修改已有连接器前先调用 `get_ai_connector`，只改必要字段，空 `api_key` 表示保留已有密钥。
 - 从 API 文档或 curl 中拆出 `base_url`、`api_endpoint`、`provider_type`、`api_format`、`default_model`、`request_template`、`response_config`、`supported_sizes`、`default_params` 和参考图字段。不要把某个供应商的临时错误当成通用规则写死。
+- 只改 `default_model` 时，后端会把新默认模型排到 `available_models` 最前面（旧条目保留），因为视频/图片工作台用这个列表决定下拉默认值；要彻底删掉旧模型，必须显式提交 `available_models`。
 - URL 必须能拼出完整请求端点，不要只停在 `https://host/v1`。OpenAI-compatible 生图通常为 `/v1/images/generations`，图片编辑/图生图通常为 `/v1/images/edits`。
-- `request_template` 是 Jinja2 JSON 模板；字符串字段优先使用 `{{ prompt_json }}`，避免多行 prompt 造成 JSON 控制字符错误。常用变量包括 `model`、`prompt`、`prompt_json`、`size`、`n`、`seed`、`response_format`、`reference_image_url`、`reference_image_base64`、`reference_image_urls`、`images`、`images_json`。
+- `request_template` 是 Jinja2 JSON 模板；字符串字段优先使用 `{{ prompt_json }}`（渲染成带引号的完整 JSON 字面量，写法是 `"prompt":{{ prompt_json }}`，不要自己再加引号），避免多行 prompt 造成 JSON 控制字符错误；占位符本身已经在引号里时用 `{{ prompt_json_str }}`（只渲染转义后的内容）。常用变量包括 `model`、`prompt`、`prompt_json`、`prompt_json_str`、`size`、`n`、`seed`、`response_format`、`reference_image_url`、`reference_image_base64`、`reference_image_urls`、`images`、`images_json`。图片、视频、3D 三类通用后端都支持这套变量；旧模板把原文直接内插进引号时，运行时在 JSON 非法时会用转义值自动重试一次并打 warning 提示改用 `{{ prompt_json }}`。
 - 参考图传递方式必须互斥：JSON 数组模式使用 `images: [{"image_url": "{{ reference_image_url }}"}]`，只设置 `reference_image_array_field=images`、清空 `reference_image_field`；multipart 本地上传模式在 `default_params` 中设置 `{"request_content_type":"multipart","multipart_image_field":"image"}`，只设置 `reference_image_field=image`、清空 `reference_image_array_field`。只有供应商文档明确要求时才使用 `images[].image`。
 - `support_reference_image` 只表示参考图如何传入，不再决定连接器属于文生图还是图生图；Agent 创建或修正图片模型时必须同时检查/写入 `image_capabilities`。
 - OpenAI-compatible base64 图片响应通常配置 `{"response_format":"base64","base64_images_path":"$.data[*].b64_json","error_path":"$.error.message"}`；返回 URL 的接口使用 `images_path`。

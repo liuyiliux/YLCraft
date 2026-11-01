@@ -101,6 +101,20 @@ def normalize_provider_type(value: Optional[str]) -> str:
     }.get(normalized, normalized)
 
 
+def sync_default_model_into_available_models(models: list[str], default_model: str) -> list[str]:
+    """Put the default model first in the 可用模型列表.
+
+    视频/图片工作台拿 ``available_models[0]`` 当模型下拉默认值。只改连接器的
+    「默认模型」时旧列表会继续把已下线的模型放在第一位（2026-10-31: Agnes Video
+    2.0 下线后页面仍在发 ``agnes-video-v2.0``，供应商回 model_not_found）。
+    写入连接器时保持两者一致，避免这类漂移；显式提交 available_models 时以调用方为准。
+    """
+    cleaned = [str(item) for item in (models or []) if str(item).strip()]
+    if not default_model or not cleaned:
+        return cleaned
+    return [default_model, *[item for item in cleaned if item != default_model]]
+
+
 def _parse_json_object(value) -> dict:
     if not value:
         return {}
@@ -430,6 +444,11 @@ class AIConnectorService:
             conn.default_model = data.default_model
         if data.available_models is not None:
             conn.set_available_models(data.available_models)
+        elif data.default_model:
+            # 只改「默认模型」时把列表里的旧模型排到后面，避免前台仍默认选中已下线的模型。
+            conn.set_available_models(
+                sync_default_model_into_available_models(conn.get_available_models(), data.default_model)
+            )
         if data.max_tokens is not None:
             conn.max_tokens = data.max_tokens
         if data.temperature is not None:
@@ -1048,14 +1067,37 @@ class AIConnectorService:
             "files": {image_field: (image_path.name, image_path.read_bytes(), mime_type)},
         }
 
+    @staticmethod
+    def _json_string_escape(value: str) -> str:
+        return json.dumps(value or "", ensure_ascii=False)[1:-1]
+
     def _render_test_template(self, request_template: str, params: dict) -> dict:
         template_params = dict(params)
         for key, value in params.items():
             template_params[f"{key}_json"] = json.dumps(value, ensure_ascii=False)
             if isinstance(value, str):
-                template_params[f"{key}_json_str"] = json.dumps(value or "", ensure_ascii=False)[1:-1]
+                template_params[f"{key}_json_str"] = self._json_string_escape(value)
         rendered = Template(request_template).render(**template_params)
-        data = json.loads(rendered)
+        try:
+            data = json.loads(rendered)
+        except json.JSONDecodeError as exc:
+            # 模板把原文直接内插进 JSON 字符串时，多行「测试提示词」会让渲染
+            # 结果非法（Invalid control character）。用 JSON 转义后的值重试
+            # 一次，仍然失败才当成模板本身有问题。
+            escaped_params = {
+                **template_params,
+                **{
+                    key: self._json_string_escape(value) if isinstance(value, str) else value
+                    for key, value in params.items()
+                },
+            }
+            try:
+                data = json.loads(Template(request_template).render(**escaped_params))
+            except json.JSONDecodeError:
+                raise ValueError(
+                    "Request 模板渲染后不是合法 JSON：%s。"
+                    "请在模板里对文本字段使用 {{ prompt_json }}，或修正模板本身。" % exc
+                ) from exc
         if not isinstance(data, dict):
             raise ValueError("Request 模板必须渲染为 JSON 对象")
         return data

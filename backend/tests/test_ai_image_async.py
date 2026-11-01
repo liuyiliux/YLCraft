@@ -226,6 +226,27 @@ def test_aaccx_edit_connector_builds_json_edit_request():
     }
 
 
+def test_connector_test_template_escapes_multi_line_test_prompt():
+    """回归：设置页「测试提示词」是多行输入，内插进模板曾让连接测试报 JSON 控制字符错误。"""
+    service = object.__new__(AIConnectorService)
+    prompt = '第一行\n第二行："引号" \\ 反斜杠'
+    params = {"model": "gpt-image-1", "prompt": prompt, "size": "1024x1024"}
+
+    data = service._render_test_template(
+        '{"model":"{{ model }}","prompt":"{{ prompt }}","size":"{{ size }}"}', params
+    )
+    assert data["prompt"] == prompt
+
+    data_with_json = service._render_test_template('{"prompt":{{ prompt_json }}}', params)
+    assert data_with_json["prompt"] == prompt
+
+
+def test_connector_test_template_reports_invalid_template():
+    service = object.__new__(AIConnectorService)
+    with pytest.raises(ValueError, match="prompt_json"):
+        service._render_test_template('{"prompt":}', {"prompt": "cat"})
+
+
 def test_generic_image_template_keeps_structured_reference_image_array():
     conn = _aaccx_edit_connector()
     conn.support_reference_image = True

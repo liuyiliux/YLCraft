@@ -212,6 +212,38 @@ def test_model3d_connector_renders_image_or_prompt_request_template():
     }
 
 
+def test_model3d_template_renders_multi_line_prompt_as_valid_json():
+    """回归：3D 提示词里的换行曾让 _render 抛 Invalid control character。"""
+    backend = Model3DConnectorBackend(AIConnector(
+        id="model3d", provider="tencent", name="Tencent 3D",
+        request_template='{"Model":"{{ model }}","Prompt":"{{ prompt }}"}',
+    ))
+    prompt = '一只戴围巾的猫\n风格："低多边形" \\ 暖色'
+    body = backend._render({"model": "3.0", "prompt": prompt, "image_url": "", "image_data": ""})
+
+    assert body["Prompt"] == prompt
+
+
+def test_model3d_template_can_use_prompt_json_placeholder():
+    backend = Model3DConnectorBackend(AIConnector(
+        id="model3d", provider="tencent", name="Tencent 3D",
+        request_template='{"Model":"{{ model }}","Prompt":{{ prompt_json }}}',
+    ))
+    prompt = "多行\n提示词"
+    body = backend._render({"model": "3.0", "prompt": prompt, "image_url": "", "image_data": ""})
+
+    assert body["Prompt"] == prompt
+
+
+def test_model3d_unrepairable_template_reports_actionable_error():
+    backend = Model3DConnectorBackend(AIConnector(
+        id="model3d", provider="tencent", name="Tencent 3D",
+        request_template='{"Model":"{{ model }}","Prompt":}',
+    ))
+    with pytest.raises(ValueError, match="request_template"):
+        backend._render({"model": "3.0", "prompt": "cat", "image_url": "", "image_data": ""})
+
+
 def test_model3d_resolve_model_url_prefers_glb():
     backend = Model3DConnectorBackend(AIConnector(id="t", provider="tencent", name="T", api_key="x"))
     payload = {"Response": {"ResultFile3Ds": [
