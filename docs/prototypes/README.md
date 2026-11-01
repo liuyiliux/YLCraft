@@ -71,6 +71,12 @@ V14 之后的补丁：
 | `GAP_CHECK_VS_PIXCAKE_PS.md` | 对照 Pixcake / PS 的差距 |
 | `EDITOR_GAP_ANALYSIS.md` | 编辑器差距分析 |
 
+**参考组合页（2026-11-01 新增）**：`photo-ref/combo.html`
+—— 脸 / 服装 / 姿势各抽一件，自动拼出提示词。分类法照 `sleepy-zone/ai-ref-library-cn`
+（脸库 / 姿势库 / 服装库 + 随机组合），**条目是本项目自己的示例数据，不含任何第三方图片**，
+所以图位是明确的占位而不是假照片。入口在参考库顶栏「参考组合」。
+许可提醒写在页面底部：那三个库只有脸库是 CC0，姿势/服装库禁止再分发图片本体。
+
 ---
 
 ## 四、平台外壳 / 其他
@@ -106,6 +112,7 @@ python -m http.server 8901 --bind 127.0.0.1 --directory F:\PycharmProjects\YLCra
 | 多角度（独立页） | `http://127.0.0.1:8901/canvas/multi-angle.html` |
 | harness 方案对比 | `http://127.0.0.1:8901/harness_decision.html` |
 | 摄影参考库 | `http://127.0.0.1:8901/photo-ref/index.html` |
+| 参考组合（脸/服装/姿势） | `http://127.0.0.1:8901/photo-ref/combo.html` |
 | 画布 | `http://127.0.0.1:8901/canvas/index.html` |
 
 **改完必须加 `?nc=<随机>` 防缓存假阴性**（`AGENTS.md` 的规定）。
