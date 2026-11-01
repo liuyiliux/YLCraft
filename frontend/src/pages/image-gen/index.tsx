@@ -22,6 +22,7 @@ import {
 import { useMotionGifOptions } from '../../components/motion-gif/useMotionGifOptions'
 // 「供应商 + 模型」公共组件与统一规则（2026-10-31 公共组件收编）
 import ProviderModelSelect from '../../components/ai/ProviderModelSelect'
+import VendorConnectorSelect from '../../components/ai/VendorConnectorSelect'
 import { resolveModelSelection, pickDefaultConnector } from '../../utils/modelSelection'
 import type {
   GridLayoutKey,
@@ -805,7 +806,7 @@ function ImageGenSinglePage() {
 
 
   // 按厂商分组后端（根据 mode 过滤不支持的模型）
-  const { groupedBackends, vendorOptions } = useMemo(() => {
+  const { groupedBackends, filteredBackends, vendorOptions } = useMemo(() => {
     // 按当前模式过滤，避免 /images/edits 这类纯图片编辑连接器出现在文生图里。
     const filteredBackends = mode === 'img2img'
       ? backends.filter(b => supportsBackendCapability(b, 'image_to_image'))
@@ -823,7 +824,7 @@ function ImageGenSinglePage() {
       acc[key].backends.push(b)
       return acc
     }, {} as Record<string, { provider: string, provider_label: string, backends: BackendInfo[] }>)
-    
+
     // 对每个厂商的后端进行排序：有图生图能力的优先
     Object.values(groups).forEach(group => {
       group.backends.sort((a, b) => {
@@ -832,13 +833,14 @@ function ImageGenSinglePage() {
         return aIsImg2Img - bIsImg2Img
       })
     })
-    
-    const options = Object.values(groups).map(g => ({
-      label: g.provider_label,
-      value: g.provider_label,
-    }))
-    
-    return { groupedBackends: groups, vendorOptions: options }
+
+    // 顺序即展示顺序（VendorConnectorSelect 不重排）
+    return {
+      groupedBackends: groups,
+      filteredBackends,
+      // 图片编辑器内部仍用「厂商选项」这一份（与上面的分组同源）
+      vendorOptions: Object.values(groups).map(g => ({ label: g.provider_label, value: g.provider_label })),
+    }
   }, [backends, mode])
 
   // 根据当前模型获取支持的尺寸选项
@@ -2053,59 +2055,34 @@ function ImageGenSinglePage() {
               }}
             >
               <Row gutter={[16, 12]}>
-                <Col span={12}>
-                  <div style={{ marginBottom: 4, fontSize: 12, color: '#8b8ba8' }}>
-                    厂商
-                  </div>
-                  <Select
-                    value={provider}
-                    onChange={handleProviderChange}
-                    style={{ width: '100%' }}
-                    placeholder="选择厂商"
-                    options={vendorOptions}
+                <Col span={24}>
+                  {/* 厂商 → 部署配置：语义是「选哪份连接器」，不是选模型（2026-11-01 公共组件） */}
+                  <VendorConnectorSelect
+                    backends={filteredBackends}
+                    vendor={provider || ''}
+                    connector={selectedModel || ''}
+                    onVendorChange={handleProviderChange}
+                    onConnectorChange={(name, backend) => {
+                      setSelectedModel(name)
+                      // 切换部署配置后自动选中第一个尺寸
+                      if (backend?.supported_sizes?.length) {
+                        setSize(backend.supported_sizes[0])
+                      }
+                    }}
+                    vendorLabel="厂商"
+                    connectorLabel={`模型（${filteredBackends.filter(b => (b.provider_label || b.provider) === provider).length} 个部署配置）`}
+                    labelStyle={{ marginBottom: 4, fontSize: 12, color: '#8b8ba8' }}
+                    connectorOptionRender={(backend) => (
+                      <div>
+                        <div>{backend.name}</div>
+                        {backend.supported_sizes && backend.supported_sizes.length > 0 && (
+                          <div style={{ fontSize: 11, color: '#888' }}>
+                            尺寸: {backend.supported_sizes.length} 种
+                          </div>
+                        )}
+                      </div>
+                    )}
                   />
-                </Col>
-                <Col span={12}>
-                  {(() => {
-                    const vendorGroup = Object.values(groupedBackends).find(g => g.provider_label === provider)
-                    return (
-                      <>
-                        <div style={{ marginBottom: 4, fontSize: 12, color: '#8b8ba8' }}>
-                          模型（{vendorGroup?.backends.length || 0} 个部署配置）
-                        </div>
-                        <Select
-                          value={selectedModel}
-                          onChange={(val) => {
-                            setSelectedModel(val)
-                            // 切换模型后自动选中第一个尺寸
-                            const targetBackend = vendorGroup?.backends.find(b => b.name === val)
-                            if (targetBackend?.supported_sizes?.length > 0) {
-                              setSize(targetBackend.supported_sizes[0])
-                            }
-                          }}
-                          style={{ width: '100%' }}
-                          placeholder="选择模型"
-                          options={vendorGroup?.backends.map(b => ({
-                            label: b.name,
-                            value: b.name,
-                          }))}
-                          optionRender={(option) => {
-                            const backend = vendorGroup?.backends.find(b => b.name === option.data.value)
-                            return (
-                              <div>
-                                <div>{option.label}</div>
-                                {backend?.supported_sizes?.length > 0 && (
-                                  <div style={{ fontSize: 11, color: '#888' }}>
-                                    尺寸: {backend.supported_sizes.length} 种
-                                  </div>
-                                )}
-                              </div>
-                            )
-                          }}
-                        />
-                      </>
-                    )
-                  })()}
                 </Col>
                 <Col span={12}>
                   <div style={{ marginBottom: 4, fontSize: 12, color: '#8b8ba8' }}>
