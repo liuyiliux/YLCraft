@@ -6,6 +6,7 @@
  */
 import { listTasks } from '../../../api'
 import { useTheme } from '../../../constants/theme'
+import { resolveModelCandidates } from '../../../utils/modelSelection'
 import { ChapterPlanItem, StoryOutlineCharacter } from '../../../types/api'
 import { useChapterContentActions } from './useChapterContentActions'
 import { useGraphNarrativeActions } from './useGraphNarrativeActions'
@@ -672,12 +673,8 @@ export function useStoryPageContext() {
   )
 
   const modelOptions = useMemo(() => {
-    const models = activeLlm?.available_models?.length
-      ? activeLlm.available_models
-      : activeLlm?.default_model
-        ? [activeLlm.default_model]
-        : []
-    return Array.from(new Set(models.filter(Boolean))).map((model) => ({
+    // 默认模型优先 + 候选合并（规则统一在 utils/modelSelection）
+    return resolveModelCandidates(activeLlm).map((model) => ({
       label: model,
       value: model,
     }))

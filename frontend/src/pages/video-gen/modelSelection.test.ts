@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  normalizeAvailableModels,
   pickDefaultConnector,
   resolveDefaultModel,
   resolveModelCandidates,
@@ -99,5 +100,34 @@ describe('pickDefaultConnector', () => {
     expect(pickDefaultConnector([])).toBeNull()
     expect(pickDefaultConnector(undefined)).toBeNull()
     expect(pickDefaultConnector(null)).toBeNull()
+  })
+})
+
+describe('normalizeAvailableModels', () => {
+  // agent 页的 LlmConnector 类型声明成 string | string[]，两种形态都真实出现过。
+  it('keeps arrays as-is', () => {
+    expect(normalizeAvailableModels(['a', 'b'])).toEqual(['a', 'b'])
+  })
+
+  it('parses a JSON string array', () => {
+    expect(normalizeAvailableModels('["a","b"]')).toEqual(['a', 'b'])
+  })
+
+  it('treats a bare string as a single model name', () => {
+    expect(normalizeAvailableModels('gpt-5.5')).toEqual(['gpt-5.5'])
+  })
+
+  it('returns an empty list for empty input', () => {
+    expect(normalizeAvailableModels(undefined)).toEqual([])
+    expect(normalizeAvailableModels('')).toEqual([])
+    expect(normalizeAvailableModels([])).toEqual([])
+  })
+
+  it('feeds string-typed lists through the same selection rules', () => {
+    expect(resolveModelSelection({ default_model: 'gpt-5.5', available_models: '["gpt-4o"]' })).toBe('gpt-5.5')
+    expect(resolveModelCandidates({ default_model: 'gpt-5.5', available_models: '["gpt-4o"]' })).toEqual([
+      'gpt-5.5',
+      'gpt-4o',
+    ])
   })
 })

@@ -57,6 +57,7 @@ import {
 } from '../../api'
 import InfiniteCanvasSurface, { type CanvasConnectionDragState } from '../../components/canvas/InfiniteCanvasSurface'
 import PromptReferencePicker, { type PromptReferenceAction } from '../../components/prompt-library/PromptReferencePicker'
+import { resolveModelCandidates } from '../../utils/modelSelection'
 import {
   CANVAS_DOCUMENTS_STORAGE_KEY,
   consumeCanvasImageEditorResults,
@@ -6029,10 +6030,10 @@ function imageBackendSelectOptions(backends: ConnectorOption[], capability?: 'te
   return backends.flatMap((item) => {
     if (!item.name) return []
     if (capability && item.capabilities?.length && !item.capabilities.includes(capability)) return []
-    const models = Array.from(new Set([
-      ...(Array.isArray(item.available_models) ? item.available_models : []),
-      item.model || item.default_model || '',
-    ].map((model) => String(model || '').trim()).filter(Boolean)))
+    // 默认模型优先 + 候选合并（规则统一在 utils/modelSelection）
+    const models = resolveModelCandidates(item)
+      .map((model) => String(model || '').trim())
+      .filter(Boolean)
     const modelOptions = models.length ? models : ['']
     return modelOptions.map((model) => ({
       value: imageBackendOptionValue(item.name || '', model),
