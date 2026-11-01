@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>摄影参考库 · 参考组合</title>
+<style>
+/* ==================== 主题系统（与 index.html 同一套） ==================== */
+:root{
+  --radiusXS:4px; --radiusSM:8px; --radiusMD:12px; --radiusLG:16px; --radiusXL:24px;
+  --fm:'SF Mono',Consolas,monospace;
+  --ff:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  --fs-h1:32px; --fs-h2:24px; --fs-h3:20px; --fs-h4:18px;
+  --fs-body:16px; --fs-cap:14px; --fs-sm:13px; --fs-xs:12px;
+  --lh-h:1.35; --lh-b:1.55;
+}
+[data-t="deep"]{
+  --bgPage:#09090b; --bgCard:#16161a; --bgElev:#1f1f27; --bgInput:#111116; --bgHover:#1c1c22;
+  --tx1:#e4e4e7; --tx2:#a1a1aa; --tx3:#71717a; --tx-dis:rgba(255,255,255,.2);
+  --bd:rgba(255,255,255,.06); --bd2:rgba(255,255,255,.12); --bd3:rgba(255,255,255,.22);
+  --pri:#22d3ee; --priH:#67e8f9; --ok:#4ade80; --warn:#fbbf24; --err:#f87171; --info:#60a5fa;
+  --grad:linear-gradient(135deg,#22d3ee 0%,#0891b2 100%);
+  --shadow:0 4px 12px rgba(0,0,0,.12); --shadowEl:0 6px 16px rgba(0,0,0,.14);
+}
+[data-t="moonlight"]{
+  --bgPage:#0d0b10; --bgCard:#141118; --bgElev:#1d1a24; --bgInput:#100e14; --bgHover:#211d2a;
+  --tx1:#e4e4ec; --tx2:#8884a4; --tx3:#6b6786; --tx-dis:rgba(255,255,255,.2);
+  --bd:rgba(167,139,250,.06); --bd2:rgba(167,139,250,.14); --bd3:rgba(167,139,250,.28);
+  --pri:#a78bfa; --priH:#c4b5fd; --ok:#4ade80; --warn:#fbbf24; --err:#f87171; --info:#60a5fa;
+  --grad:linear-gradient(135deg,#a78bfa 0%,#7c3aed 100%);
+  --shadow:0 4px 12px rgba(0,0,0,.14); --shadowEl:0 6px 16px rgba(0,0,0,.16);
+}
+[data-t="dawn"]{
+  --bgPage:#f8f7f4; --bgCard:#ffffff; --bgElev:#fafaf9; --bgInput:#f2f1ee; --bgHover:#f0efec;
+  --tx1:#1c1917; --tx2:#78716c; --tx3:#a8a29e; --tx-dis:rgba(0,0,0,.2);
+  --bd:#e7e5e4; --bd2:#d6d3d1; --bd3:#a8a29e;
+  --pri:#0d9488; --priH:#0f766e; --ok:#16a34a; --warn:#d97706; --err:#dc2626; --info:#2563eb;
+  --grad:linear-gradient(135deg,#0d9488 0%,#0f766e 100%);
+  --shadow:0 1px 2px rgba(0,0,0,.06); --shadowEl:0 3px 8px rgba(0,0,0,.1);
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bgPage);color:var(--tx1);font-family:var(--ff);
+  font-size:var(--fs-body);line-height:var(--lh-b);-webkit-font-smoothing:antialiased;
+  transition:background .3s,color .3s;padding-bottom:48px}
+button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+
+/* ---------- 顶栏 ---------- */
+.top{display:flex;align-items:center;gap:12px;padding:14px 24px;
+  border-bottom:1px solid var(--bd2);background:var(--bgElev);position:sticky;top:0;z-index:20}
+.logo{display:flex;align-items:center;gap:8px;font-size:var(--fs-h4);font-weight:600}
+.logo .cam{font-size:18px}
+.spacer{flex:1}
+.themes{display:flex;gap:6px}
+.th{display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:999px;
+  font-size:var(--fs-xs);color:var(--tx2);border:1px solid var(--bd2);transition:.15s}
+.th i{width:8px;height:8px;border-radius:50%;display:block}
+.th.on{color:var(--tx1);border-color:var(--bd3);background:var(--bgCard)}
+.btn{padding:7px 13px;border-radius:var(--radiusSM);font-size:var(--fs-cap);
+  color:var(--tx2);border:1px solid var(--bd2);transition:.15s;background:var(--bgCard)}
+.btn:hover{color:var(--tx1);border-color:var(--bd3)}
+.btn.pri{background:var(--grad);color:#04222a;border:none;font-weight:600}
+.btn.pri:hover{filter:brightness(1.08)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* ---------- 主体 ---------- */
+.wrap{max-width:1080px;margin:0 auto;padding:26px 24px}
+.note{display:flex;gap:10px;padding:12px 15px;border-radius:var(--radiusMD);
+  background:var(--bgCard);border:1px solid var(--bd2);font-size:var(--fs-sm);
+  color:var(--tx2);line-height:1.65;margin-bottom:20px}
+.note b{color:var(--tx1)}
+.note .ico{flex:0 0 auto;font-size:15px;line-height:1.4}
+
+h1{font-size:var(--fs-h2);font-weight:600;margin-bottom:6px}
+.sub{font-size:var(--fs-cap);color:var(--tx3);margin-bottom:22px}
+
+/* ---------- 三格 ---------- */
+.combo{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px}
+.slot{background:var(--bgCard);border:1px solid var(--bd2);border-radius:var(--radiusLG);
+  overflow:hidden;transition:.15s}
+.slot:hover{border-color:var(--bd3)}
+.slot-hd{display:flex;align-items:center;gap:7px;padding:10px 13px 8px;
+  font-size:var(--fs-sm);color:var(--tx2)}
+.slot-hd .n{width:18px;height:18px;border-radius:5px;background:var(--bgElev);
+  color:var(--tx3);font-size:var(--fs-xs);font-family:var(--fm);
+  display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.slot-hd .t{font-weight:500;color:var(--tx1)}
+
+/* 占位图：明确是占位，不假装是照片。
+   高度固定 240 而不是 3:4 —— 三格并排时竖图会把提示词框挤出首屏。
+   接上真图库后改回 aspect-ratio:3/4 + object-fit:cover。 */
+.ph{height:240px;position:relative;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:6px;
+  background:
+    repeating-linear-gradient(135deg,rgba(255,255,255,.022) 0 6px,transparent 6px 12px),
+    linear-gradient(165deg,var(--bgElev),var(--bgInput))}
+.ph-k{font-size:var(--fs-xs);color:var(--tx3);letter-spacing:.08em}
+.ph-v{font-size:var(--fs-h4);color:var(--tx1);font-weight:600;text-align:center;padding:0 12px}
+.ph::after{content:"占位 · 真实现接图库";position:absolute;bottom:8px;
+  font-size:10px;color:var(--tx3);opacity:.75}
+
+.slot-bd{padding:11px 13px 13px}
+.slot-t{font-size:var(--fs-cap);color:var(--tx1);margin-bottom:3px}
+.slot-d{font-size:var(--fs-xs);color:var(--tx3);line-height:1.55;margin-bottom:10px;min-height:34px}
+.slot-bd .btn{width:100%;text-align:center;padding:6px 0}
+
+/* ---------- 提示词 ---------- */
+.prompt{background:var(--bgCard);border:1px solid var(--bd2);border-radius:var(--radiusLG);
+  padding:16px 18px;margin-bottom:18px}
+.prompt-hd{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.prompt-hd b{font-size:var(--fs-cap)}
+.prompt-hd .tag{font-size:11px;color:var(--tx3);border:1px solid var(--bd2);
+  border-radius:999px;padding:1px 7px}
+.prompt-tx{font-family:var(--fm);font-size:var(--fs-sm);line-height:1.85;
+  color:var(--tx1);background:var(--bgInput);border-radius:var(--radiusSM);
+  padding:12px 14px;border:1px solid var(--bd);word-break:break-all}
+.prompt-ft{display:flex;gap:9px;margin-top:12px;flex-wrap:wrap}
+.prompt-ft .spacer{flex:1}
+
+/* ---------- 底部数据说明 ---------- */
+.foot{margin-top:26px;padding-top:16px;border-top:1px solid var(--bd2);
+  font-size:var(--fs-xs);color:var(--tx3);line-height:1.8}
+.foot b{color:var(--tx2)}
+.foot code{font-family:var(--fm);font-size:11px;background:var(--bgCard);
+  padding:1px 5px;border-radius:4px;border:1px solid var(--bd)}
+
+/* toast */
+.toast{position:fixed;left:50%;bottom:34px;transform:translate(-50%,14px);
+  background:var(--bgElev);border:1px solid var(--bd3);border-radius:999px;
+  padding:9px 18px;font-size:var(--fs-sm);box-shadow:var(--shadowEl);
+  opacity:0;pointer-events:none;transition:.22s;z-index:99}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+
+@media (max-width:820px){
+  .combo{grid-template-columns:1fr}
+  .wrap{padding:20px 16px}
+}
+</style>
+</head>
+<body data-t="deep">
+
+<div class="top">
+  <div class="logo"><span class="cam">📷</span>摄影参考库 · 参考组合</div>
+  <div class="spacer"></div>
+  <div class="themes">
+    <button class="th on" onclick="setTheme('deep',this)"><i style="background:#22d3ee"></i>深海</button>
+    <button class="th" onclick="setTheme('moonlight',this)"><i style="background:#a78bfa"></i>月光</button>
+    <button class="th" onclick="setTheme('dawn',this)"><i style="background:#0d9488"></i>晨曦</button>
+  </div>
+  <button class="btn" onclick="location.href='index.html'">← 回参考库</button>
+</div>
+
+<div class="wrap">
+
+  <h1>参考组合</h1>
+  <div class="sub">从三个库里各抽一件，拼成一组能直接用的拍摄参考。</div>
+
+  <div class="note">
+    <span class="ico">ⓘ</span>
+    <div>
+      <b>分类法照 ai-ref-library-cn</b>（脸库 / 姿势库 / 服装库，随机组合 + 自动出提示词），
+      这一页的条目是<b>本项目自己的示例数据</b>，没有包含任何第三方图片 ——
+      所以图位是占位，不是假照片。<br>
+      真实现时把 <code>FACE</code> / <code>OUTFIT</code> / <code>POSE</code> 三个数组换成图库查询即可。
+    </div>
+  </div>
+
+  <div class="combo">
+    <div class="slot">
+      <div class="slot-hd"><span class="n">1</span><span class="t">脸</span></div>
+      <div class="ph"><span class="ph-k">FACE</span><span class="ph-v" id="facePh">—</span></div>
+      <div class="slot-bd">
+        <div class="slot-t" id="faceT">—</div>
+        <div class="slot-d" id="faceD">—</div>
+        <button class="btn" onclick="roll('face')">换一个</button>
+      </div>
+    </div>
+
+    <div class="slot">
+      <div class="slot-hd"><span class="n">2</span><span class="t">服装</span></div>
+      <div class="ph"><span class="ph-k">OUTFIT</span><span class="ph-v" id="outfitPh">—</span></div>
+      <div class="slot-bd">
+        <div class="slot-t" id="outfitT">—</div>
+        <div class="slot-d" id="outfitD">—</div>
+        <button class="btn" onclick="roll('outfit')">换一个</button>
+      </div>
+    </div>
+
+    <div class="slot">
+      <div class="slot-hd"><span class="n">3</span><span class="t">姿势</span></div>
+      <div class="ph"><span class="ph-k">POSE</span><span class="ph-v" id="posePh">—</span></div>
+      <div class="slot-bd">
+        <div class="slot-t" id="poseT">—</div>
+        <div class="slot-d" id="poseD">—</div>
+        <button class="btn" onclick="roll('pose')">换一个</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="prompt">
+    <div class="prompt-hd">
+      <b>拼出来的提示词</b>
+      <span class="tag">可以直接粘到生图工具</span>
+    </div>
+    <div class="prompt-tx" id="promptTx">—</div>
+    <div class="prompt-ft">
+      <button class="btn pri" onclick="copyPrompt()">复制提示词</button>
+      <button class="btn" onclick="saveGroup()">存成参考组</button>
+      <span class="spacer"></span>
+      <button class="btn" onclick="rollAll()">🎲 再来一组</button>
+    </div>
+  </div>
+
+  <div class="foot">
+    <b>为什么不做三联图下载：</b>这一版的条目是我们编的示例，拼图下载没有意义。
+    等接上真图库（脸库 CC0 / 自建库）再做，且明确标注来源与许可。<br>
+    <b>许可提醒：</b><code>ai-ref-library-cn</code> 的姿势库与服装库<b>禁止再分发图片本体</b>；
+    脸库是 CC0。要接它的数据，图片只能指向源站，不能打包进产品。
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ==================== 数据（本项目示例，不是第三方数据） ====================
+   字段照 ai-ref-library-cn 的三个库：脸看「角度 + 年龄 + 脸型 + 妆」，
+   姿势看「体态 + 机位 + 景别」，服装看「场景 + 品类 + 颜色」。
+   这样以后换成图库查询时，提示词模板不用改。 */
+
+const FACE = [
+  { v:'正面',   t:'鹅蛋脸 · 正面',   d:'35 岁 · 自然妆 · 冷白皮 · 纯色背景' },
+  { v:'3⁄4 侧', t:'鹅蛋脸 · 3⁄4 侧', d:'35 岁 · 自然妆 · 下颌线清楚' },
+  { v:'正面',   t:'方圆脸 · 正面',   d:'28 岁 · 裸妆 · 暖皮 · 轮廓柔' },
+  { v:'侧脸',   t:'长脸 · 侧脸',     d:'32 岁 · 淡妆 · 侧光下鼻梁明显' },
+  { v:'正面',   t:'圆脸 · 正面',     d:'24 岁 · 素颜感 · 笑起来有卧蚕' },
+  { v:'低头',   t:'瓜子脸 · 低头',   d:'30 岁 · 眼妆稍重 · 睫毛投在脸上' }
+];
+
+const OUTFIT = [
+  { v:'针织开衫', t:'通勤 · 针织开衫',   d:'米白 + 燕麦色 · 宽松 · 领口松垮' },
+  { v:'白衬衫',   t:'日常 · 白衬衫牛仔', d:'白 + 靛蓝 · 袖子挽到小臂' },
+  { v:'丝质长裙', t:'礼服 · 丝质长裙',   d:'墨绿 · 垂坠 · 反光弱' },
+  { v:'齐胸襦裙', t:'古风 · 齐胸襦裙',   d:'月白 · 纱质 · 走动会飘' },
+  { v:'羊绒大衣', t:'冬日 · 羊绒大衣',   d:'驼色 · 过膝 · 腰带不系' },
+  { v:'宽松针织', t:'居家 · 宽松针织',   d:'浅灰 · 落肩 · 袖口盖手背' }
+];
+
+const POSE = [
+  { v:'靠墙站',   t:'站姿 · 靠墙',     d:'平视 · 中景 · 一只手插兜' },
+  { v:'窗边坐',   t:'坐姿 · 窗边',     d:'平视 · 近景 · 侧对窗户' },
+  { v:'走姿回头', t:'走姿 · 回头',     d:'平视 · 全景 · 抓拍感' },
+  { v:'扶栏杆',   t:'站姿 · 扶栏杆',   d:'仰拍 · 中景 · 身体微后仰' },
+  { v:'抱膝坐',   t:'坐姿 · 抱膝',     d:'俯拍 · 全景 · 头顶留白多' },
+  { v:'侧身站',   t:'站姿 · 侧身',     d:'平视 · 特写 · 只看得到半张脸' }
+];
+
+/* 光线不参与随机：它决定整组气质，应该跟着项目定，不该被抽到跟你项目无关的光 */
+const LIGHT = '自然光，柔和阴影，浅景深，背景虚化';
+
+let cur = { face:null, outfit:null, pose:null };
+
+function pick(arr){
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+/* 换一个时避免抽到同一个（用户点了就要看到变化） */
+function pickOther(arr, current){
+  if (arr.length < 2) return arr[0];
+  let n = pick(arr), guard = 0;
+  while (current && n === current && guard++ < 20) n = pick(arr);
+  return n;
+}
+
+function roll(which){
+  if (which === 'face')   cur.face   = pickOther(FACE, cur.face);
+  if (which === 'outfit') cur.outfit = pickOther(OUTFIT, cur.outfit);
+  if (which === 'pose')   cur.pose   = pickOther(POSE, cur.pose);
+  render();
+  if (which !== 'all') toast('换了一个');
+}
+
+function rollAll(){
+  cur.face   = pickOther(FACE, cur.face);
+  cur.outfit = pickOther(OUTFIT, cur.outfit);
+  cur.pose   = pickOther(POSE, cur.pose);
+  render();
+  toast('重新抽了一组');
+}
+
+function buildPrompt(){
+  const f = cur.face, o = cur.outfit, p = cur.pose;
+  if (!f || !o || !p) return '';
+  const fParts = f.t.split(' · ');          // [脸型, 角度]
+  const fMeta  = f.d.split(' · ');          // [年龄, 妆, 肤质, ...]
+  const oParts = o.t.split(' · ');          // [场景, 品类]
+  const oColor = o.d.split(' · ')[0];       // 颜色
+  const pParts = p.t.split(' · ');          // [体态, 细节]
+  return [
+    '一位 ' + fMeta[0] + '女性，' + fParts[0] + '，' + fParts[1] + '，' + (fMeta[1] || ''),
+    '穿' + oParts[1] + '（' + oColor + '）',
+    pParts[1] + '，' + p.d,
+    LIGHT
+  ].join('；') + '。';
+}
+
+function render(){
+  ['face', 'outfit', 'pose'].forEach(function(k){
+    const v = cur[k];
+    const cap = k.charAt(0).toUpperCase() + k.slice(1);
+    document.getElementById(k + 'Ph').textContent = v ? v.v : '—';
+    document.getElementById(k + 'T').textContent  = v ? v.t : '—';
+    document.getElementById(k + 'D').textContent  = v ? v.d : '—';
+  });
+  document.getElementById('promptTx').textContent = buildPrompt() || '—';
+}
+
+function copyPrompt(){
+  const tx = buildPrompt();
+  if (!tx) return;
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(tx).then(
+      function(){ toast('已复制提示词'); },
+      function(){ fallbackCopy(tx); }
+    );
+  } else {
+    fallbackCopy(tx);
+  }
+}
+
+function fallbackCopy(tx){
+  const ta = document.createElement('textarea');
+  ta.value = tx;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); toast('已复制提示词'); }
+  catch(e){ toast('复制失败，手动选中吧'); }
+  ta.remove();
+}
+
+function saveGroup(){
+  const tx = buildPrompt();
+  if (!tx) return;
+  toast('已存成参考组 · 原型demo不落库');
+}
+
+let toastTimer = null;
+function toast(msg){
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ el.classList.remove('on'); }, 1900);
+}
+
+function setTheme(t, btn){
+  document.body.dataset.t = t;
+  document.querySelectorAll('.th').forEach(function(b){ b.classList.remove('on'); });
+  if (btn) btn.classList.add('on');
+}
+
+/* 打开就抽一组 */
+rollAll();
+</script>
+</body>
+</html>
