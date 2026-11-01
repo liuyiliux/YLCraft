@@ -78,6 +78,26 @@ h1{font-size:var(--fs-h2);font-weight:600;margin-bottom:5px}
 .mode:hover{color:var(--tx2)}
 .mode.on{background:var(--bgCard);color:var(--tx1);font-weight:500;
   box-shadow:0 1px 3px rgba(0,0,0,.18)}
+
+/* ---------- 推荐卡（按场景推荐模式） ---------- */
+.recs{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}
+.rec{background:var(--bgCard);border:1px solid var(--bd2);border-radius:var(--radiusLG);
+  padding:13px 14px;transition:.15s;display:flex;flex-direction:column;gap:9px}
+.rec:hover{border-color:var(--bd3)}
+.rec.on{border-color:var(--pri);background:var(--priBg)}
+.rec-hd{display:flex;align-items:center;gap:7px}
+.rec-hd .no{width:17px;height:17px;border-radius:5px;background:var(--bgElev);
+  color:var(--tx3);font-size:11px;font-family:var(--fm);
+  display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.rec-hd .nm{font-size:var(--fs-cap);color:var(--tx1);font-weight:500}
+.rec-tri{display:flex;gap:4px}
+.rec-tri i{flex:1;height:34px;border-radius:6px;background:var(--bgInput);
+  border:1px solid var(--bd);display:flex;align-items:center;justify-content:center;
+  font-size:10px;color:var(--tx3);font-style:normal;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 4px}
+.rec-why{font-size:var(--fs-xs);color:var(--tx3);line-height:1.65;flex:1}
+.rec-why b{color:var(--tx2)}
+.rec .btn{text-align:center;padding:6px 0}
 .mode-note{font-size:var(--fs-sm);color:var(--tx3);line-height:1.75;margin-bottom:18px;
   padding-left:2px;max-width:760px}
 .mode-note b{color:var(--tx2)}
@@ -188,11 +208,12 @@ h1{font-size:var(--fs-h2);font-weight:600;margin-bottom:5px}
 <div class="wrap">
 
   <h1>参考组合</h1>
-  <div class="sub">先决定「这次拍谁」，再决定「怎么拍」。这两件事的自由度完全不同。</div>
+  <div class="sub">先有项目，再谈怎么拍 —— AI 按这个项目的光线和地点给搭配，而不是让你抽盲盒。</div>
 
   <div class="modes">
-    <button class="mode on" id="mSpec" onclick="setMode('spec')">指定角色</button>
-    <button class="mode" id="mRand" onclick="setMode('rand')">随机人设</button>
+    <button class="mode on" id="mRec" onclick="setMode('rec')">按场景推荐</button>
+    <button class="mode" id="mSpec" onclick="setMode('spec')">自己拼</button>
+    <button class="mode" id="mRand" onclick="setMode('rand')">随机探索</button>
   </div>
   <div class="mode-note" id="modeNote"></div>
 
@@ -210,6 +231,8 @@ h1{font-size:var(--fs-h2);font-weight:600;margin-bottom:5px}
     </div>
     <div class="env-kv" id="envKv"></div>
   </div>
+
+  <div class="recs" id="recs"></div>
 
   <div class="srcbar" id="srcBar">
     <span class="lb">角色从哪来</span>
@@ -268,11 +291,13 @@ h1{font-size:var(--fs-h2);font-weight:600;margin-bottom:5px}
   </div>
 
   <div class="foot">
-    <b>指定角色 = 一致性优先；随机人设 = 探索优先。</b>
-    前者的脸一个字段都不会被抽到，后者随便抽、抽到满意再「定成角色」。<br>
-    <b>分类法</b>照 <code>sleepy-zone/ai-ref-library-cn</code>（脸 / 姿势 / 服装三库 + 随机组合）；
-    <b>数据是本项目自己编的示例</b>，不含任何第三方图片，所以图位是占位。<br>
-    <b>许可提醒</b>：那三个库里只有脸库是 CC0，姿势库与服装库禁止再分发图片本体。
+    <b>主流程是「按场景推荐」</b>：先有项目 → 按光线/地点/色调给 3 组搭配 → 每组说清为什么。
+    <b>随机探索只用于没想法时</b>，不是日常路径。<br>
+    <b>同一批库，两种读法</b>：给摄影师看的是构图、机位、搭配；给生图模型读的是
+    脸（IP-Adapter / 人脸一致）、姿势（ControlNet OpenPose）、服装（参考图 / 换装）。<br>
+    <b>分类法</b>照 <code>sleepy-zone/ai-ref-library-cn</code>；<b>数据是本项目自己编的示例</b>，
+    不含任何第三方图片，所以图位是占位。<b>许可</b>：那三个库里只有脸库是 CC0，
+    姿势库与服装库禁止再分发图片本体。
   </div>
 
 </div>
@@ -319,6 +344,36 @@ const ROLES = {
     ],
     outfitFixed: false
   }
+};
+
+/* 按场景推荐（这是主流程）。
+   ⚠️ 推荐里**没有脸** —— 拍哪个项目就拍项目里的人，脸不该被推荐。
+   只推荐「服装 + 姿势」，并给理由：推荐的价值不在组合叠加，在于为什么这么搭。 */
+const RECS = {
+  yiheyuan: [
+    { o:'冬日 · 羊绒大衣', p:'站姿 · 靠墙',
+      why:'项目是斜侧逆光，站定比走动更容易吃到边缘光；十月风大，大衣压得住；靠墙不抢长廊的纵深。' },
+    { o:'古风 · 齐胸襦裙', p:'走姿 · 回头',
+      why:'古建配古装；走动让纱质裙摆飘起来，逆光才看得见轮廓；回头给一个自然的停顿。' },
+    { o:'通勤 · 针织开衫', p:'站姿 · 侧身',
+      why:'长廊有窗棂，侧身能把窗格的光影投在脸上；针织开衫的米白在暖调里不抢银杏。' }
+  ],
+  marriage: [
+    { o:'日常 · 白衬衫牛仔', p:'站姿 · 侧身',
+      why:'阴天是散射光，没有硬影，正适合这种平淡真实的拍法；红墙配白衬衫是这批里对比最强的。' },
+    { o:'礼服 · 丝质长裙', p:'走姿 · 回头',
+      why:'领证这种正式场合，裙子比裤子对；阴天柔光对丝绸的反光最友好，不会爆高光。' },
+    { o:'通勤 · 针织开衫', p:'坐姿 · 抱膝',
+      why:'领完证放松下来的状态，坐台阶上比站着自然；低饱和冷调下，燕麦色不会显脏。' }
+  ],
+  studio: [
+    { o:'日常 · 白衬衫牛仔', p:'站姿 · 侧身',
+      why:'灰底配白最干净；45° 侧光能把肩线切出来；正面站定，拍五官和比例。' },
+    { o:'礼服 · 丝质长裙', p:'站姿 · 扶栏杆',
+      why:'侧光专门用来切侧脸轮廓；身体微后仰把下颌线拉开；丝绸在侧光下有一道高光带。' },
+    { o:'居家 · 宽松针织', p:'坐姿 · 抱膝',
+      why:'俯拍压缩空间，灰背景正好当留白；落肩针织在俯拍下肩线最松。' }
+  ]
 };
 
 /* 随机人设的池子（只在 rand 模式用） */
@@ -373,14 +428,20 @@ const PROJECTS = {
 };
 
 /* ==================== 状态 ==================== */
-let mode = 'spec';        // spec = 指定角色 · rand = 随机人设
-let roleKey = 'model';    // 指定角色时的来源
+let mode = 'rec';         // rec = 按场景推荐（主流程）· spec = 自己拼 · rand = 随机探索
+let roleKey = 'model';    // 拍谁 —— 项目里的人
 let projectKey = 'yiheyuan';   // 给哪个项目拍 —— 场景和光线从它来，永不随机
-let outfitIdx = 0;        // 真人/上传时，她的第几套衣服
+let recIdx = 0;           // 当前用第几条推荐
+let outfitIdx = 0;        // 自己拼时，她的第几套衣服
 let randCur = { face:null, outfit:null, pose:null };
-let pose = null;          // 姿势两种模式共用（姿势本来就能换）
+let pose = null;          // 姿势两种模式共用
 
-/* 场景 + 光线：两个模式都一样，都从项目读 */
+function findItem(arr, t){
+  for (let i = 0; i < arr.length; i++) if (arr[i].t === t) return arr[i];
+  return arr[0];
+}
+
+/* 场景 + 光线：所有模式都一样，都从项目读 */
 function envText(){
   const pj = PROJECTS[projectKey];
   return pj.place + '；' + pj.light + '，' + pj.tone + '，浅景深';
@@ -388,11 +449,12 @@ function envText(){
 
 function setProject(k){
   projectKey = k;
+  recIdx = 0;
   document.querySelectorAll('.projbar .src').forEach(function(b){
     b.classList.toggle('on', b.dataset.p === k);
   });
   render();
-  toast('项目：' + PROJECTS[k].n + ' · 光线和场景跟着它走');
+  toast('项目：' + PROJECTS[k].n + ' · 重新推荐了');
 }
 
 /* ==================== 工具 ==================== */
@@ -407,16 +469,25 @@ function pickOther(arr, cur){
 /* ==================== 模式 / 来源 ==================== */
 function setMode(m){
   mode = m;
+  document.getElementById('mRec').classList.toggle('on', m === 'rec');
   document.getElementById('mSpec').classList.toggle('on', m === 'spec');
   document.getElementById('mRand').classList.toggle('on', m === 'rand');
   document.getElementById('srcBar').style.display = (m === 'spec') ? 'flex' : 'none';
+  document.getElementById('recs').style.display = (m === 'rec') ? 'grid' : 'none';
   if (m === 'rand'){
     randCur.face = randCur.face || pick(FACE);
     randCur.outfit = randCur.outfit || pick(OUTFIT);
   }
   if (!pose) pose = pick(POSE);
   render();
-  toast(m === 'spec' ? '指定角色：形象和造型按设定走' : '随机人设：三样都能抽');
+  toast(m === 'rec' ? '按这个项目推荐了 3 组'
+    : m === 'spec' ? '自己拼：脸按角色锁，造型可以换' : '随机探索：三样都能抽');
+}
+
+function pickRec(i){
+  recIdx = i;
+  render();
+  toast('用了推荐 ' + (i + 1));
 }
 
 function setRole(k){
@@ -433,6 +504,18 @@ function setRole(k){
 
 /* ==================== 当前三格是什么 ==================== */
 function current(){
+  if (mode === 'rec'){
+    const role = ROLES[roleKey];
+    const list = RECS[projectKey] || [];
+    const rec = list[Math.min(recIdx, list.length - 1)] || list[0];
+    if (!rec) return { face: role.face, outfit: null, pose: null, fixed: false, role: role, rec: null };
+    return {
+      face: role.face,                       // 脸 = 项目里的人，推荐不碰它
+      outfit: findItem(OUTFIT, rec.o),
+      pose: findItem(POSE, rec.p),
+      fixed: false, role: role, rec: rec
+    };
+  }
   if (mode === 'spec'){
     const r = ROLES[roleKey];
     const outfit = r.outfitFixed ? r.outfit : r.outfits[Math.min(outfitIdx, r.outfits.length - 1)];
@@ -462,7 +545,14 @@ function roll(which){
 }
 
 function reroll(){
-  // 指定角色只换姿势；随机人设三样都换
+  if (mode === 'rec'){
+    const n = (RECS[projectKey] || []).length;
+    recIdx = (recIdx + 1) % Math.max(1, n);
+    render();
+    toast('换到推荐 ' + (recIdx + 1));
+    return;
+  }
+  // 自己拼：只换姿势；随机探索：三样都换
   if (mode === 'rand'){
     randCur.face = pickOther(FACE, randCur.face);
     randCur.outfit = pickOther(OUTFIT, randCur.outfit);
@@ -480,6 +570,13 @@ function buildPrompt(){
 
   const pParts = p.t.split(' · ');
   const poseTx = pParts[1] + '，' + p.d;
+
+  if (mode === 'rec'){
+    // 推荐模式：脸是项目里的人，服装姿势来自推荐，光线场景来自项目
+    return '同一人物（' + c.role.n + '），' + f.t + '，' + f.d + '；'
+      + '穿' + o.t.split(' · ')[1] + '（' + o.d.split(' · ')[0] + '）；'
+      + poseTx + '；' + envText() + '。脸型五官不要变。';
+  }
 
   if (mode === 'spec'){
     const r = c.role;
@@ -515,6 +612,9 @@ function slotHead(id, text, cls){
 
 function render(){
   const c = current();
+  const spec = (mode === 'spec');
+  const rec  = (mode === 'rec');
+  const r = c.role;
 
   ['face', 'outfit', 'pose'].forEach(function(k){
     const v = c[k];
@@ -523,11 +623,16 @@ function render(){
     document.getElementById(k + 'D').textContent  = v ? v.d : '—';
   });
 
-  const spec = (mode === 'spec');
-  const r = spec ? c.role : null;
+  /* ---- 推荐卡（只有 rec 模式显示） ---- */
+  if (rec) renderRecs();
 
-  /* ---- 脸：指定角色时永远锁 ---- */
-  if (spec){
+  /* ---- 脸 ---- */
+  if (rec){
+    slotHead('faceLock', '项目里的人 · 不参与推荐', 'on');
+    document.getElementById('faceAct').innerHTML =
+      '<div class="lockhint">' + (r ? r.n : '—') + '：按项目档案，推荐不会换人</div>';
+    document.getElementById('slotFace').classList.add('locked');
+  } else if (spec){
     const srcName = roleKey === 'ip' ? '设定' : roleKey === 'upload' ? '参考照' : '档案';
     slotHead('faceLock', '锁定 · 来自' + srcName, 'on');
     document.getElementById('faceAct').innerHTML =
@@ -543,8 +648,13 @@ function render(){
     document.getElementById('slotFace').classList.remove('locked');
   }
 
-  /* ---- 服装：IP 死锁；真人/上传可在她的衣橱里换 ---- */
-  if (spec){
+  /* ---- 服装 ---- */
+  if (rec){
+    slotHead('outfitLock', '推荐 ' + (recIdx + 1), 'on');
+    document.getElementById('outfitAct').innerHTML =
+      '<div class="lockhint">来自推荐 · 要微调切「自己拼」</div>';
+    document.getElementById('slotOutfit').classList.add('locked');
+  } else if (spec){
     if (r.outfitFixed){
       slotHead('outfitLock', '锁定 · 官方设定', 'fix');
       document.getElementById('outfitAct').innerHTML =
@@ -564,13 +674,20 @@ function render(){
     document.getElementById('slotOutfit').classList.remove('locked');
   }
 
-  /* ---- 姿势：两种模式都能换，这是拍摄变量 ---- */
-  slotHead('poseLock', '可换 · 拍摄变量', '');
-  document.getElementById('poseAct').innerHTML =
-    '<div class="btn-row"><button class="btn" onclick="roll(\'pose\')">换一个</button></div>';
-  document.getElementById('slotPose').classList.remove('locked');
+  /* ---- 姿势 ---- */
+  if (rec){
+    slotHead('poseLock', '推荐 ' + (recIdx + 1), 'on');
+    document.getElementById('poseAct').innerHTML =
+      '<div class="lockhint">来自推荐 · 要微调切「自己拼」</div>';
+    document.getElementById('slotPose').classList.add('locked');
+  } else {
+    slotHead('poseLock', '可换 · 拍摄变量', '');
+    document.getElementById('poseAct').innerHTML =
+      '<div class="btn-row"><button class="btn" onclick="roll(\'pose\')">换一个</button></div>';
+    document.getElementById('slotPose').classList.remove('locked');
+  }
 
-  /* ---- 场景与光线：从项目读，两个模式都一样 ---- */
+  /* ---- 场景与光线：从项目读，所有模式都一样 ---- */
   const pj = PROJECTS[projectKey];
   document.getElementById('envKv').innerHTML =
     '<span><span class="k">地点</span><span class="v">' + pj.place + '</span></span>'
@@ -579,17 +696,44 @@ function render(){
 
   /* ---- 提示词与说明 ---- */
   document.getElementById('promptTx').textContent = buildPrompt() || '—';
-  document.getElementById('promptTag').textContent = spec
-    ? '指定角色 · 已写明不可改的项'
-    : '可以直接粘到生图工具';
-  document.getElementById('rerollBtn').textContent = spec ? '🎲 换姿势' : '🎲 换一组';
+  document.getElementById('promptTag').textContent =
+    rec ? '按项目推荐 · 已写明不可改的项'
+      : spec ? '自己拼 · 已写明不可改的项'
+      : '可以直接粘到生图工具';
+  document.getElementById('rerollBtn').textContent =
+    rec ? '🎲 换一组推荐' : spec ? '🎲 换姿势' : '🎲 换一组';
 
-  document.getElementById('modeNote').innerHTML = spec
-    ? '<b>指定角色：</b>脸由角色决定，<b>不参与任何随机</b>。'
-      + '官方角色连服装配色都锁死；真人模特和上传照片可以换衣服，但换的是<b>她的</b>衣服。'
-      + '只有姿势能换 —— 那是拍摄变量。'
-    : '<b>随机人设：</b>三样都能抽，用来找灵感。'
-      + '抽到满意的那张脸，点 <b>「定成角色」</b> 它就转成指定角色，之后不再随机。';
+  const notes = {
+    rec: '<b>按场景推荐：</b>先有项目（' + PROJECTS[projectKey].n + '），'
+      + '按这个项目的<b>光线、地点、色调</b>给出 3 组搭配，每组都说清为什么这么搭。'
+      + '脸是项目里的人，<b>不参与推荐</b> —— 推荐只动服装和姿势。',
+    spec: '<b>自己拼：</b>脸由角色决定，<b>不参与任何随机</b>。'
+      + '官方角色连服装配色都锁死；真人模特和上传照片可以换衣服，但换的是<b>她的</b>衣服。',
+    rand: '<b>随机探索：</b>没有明确任务时用，三样都能抽。'
+      + '抽到满意的那张脸，点 <b>「定成角色」</b> 它就转成指定角色，之后不再随机。'
+  };
+  document.getElementById('modeNote').innerHTML = notes[mode] || '';
+}
+
+/* 推荐卡：三格小样 + 理由 + 用这组 */
+function renderRecs(){
+  const box = document.getElementById('recs');
+  const list = RECS[projectKey] || [];
+  const role = ROLES[roleKey];
+  box.innerHTML = list.map(function(r, i){
+    const on = (i === recIdx);
+    return '<div class="rec' + (on ? ' on' : '') + '" onclick="pickRec(' + i + ')">'
+      + '<div class="rec-hd"><span class="no">' + (i + 1) + '</span>'
+      + '<span class="nm">' + r.o.split(' · ')[1] + ' + ' + r.p.split(' · ')[1] + '</span></div>'
+      + '<div class="rec-tri">'
+      +   '<i style="color:var(--pri)">' + role.n + '</i>'
+      +   '<i>' + r.o.split(' · ')[1] + '</i>'
+      +   '<i>' + r.p.split(' · ')[1] + '</i>'
+      + '</div>'
+      + '<div class="rec-why">' + r.why + '</div>'
+      + '<button class="btn">' + (on ? '正在用这组' : '用这组') + '</button>'
+      + '</div>';
+  }).join('');
 }
 
 /* 随机人设里抽到满意的脸 → 定为角色，转指定模式 */
@@ -660,7 +804,7 @@ function setTheme(t, btn){
 pose = pick(POSE);
 randCur.face = pick(FACE);
 randCur.outfit = pick(OUTFIT);
-setMode('spec');
+setMode('rec');     // 主流程是「按场景推荐」，不是随机
 render();
 </script>
 </body>
