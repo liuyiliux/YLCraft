@@ -17,7 +17,19 @@ document.addEventListener('keydown', e=>{
 });
 const ta = document.getElementById('ta');
 ta.addEventListener('input', ()=>{ ta.rows=Math.min(3,Math.max(1,Math.ceil(ta.value.length/34)||1)); });
-ta.addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); send(); } });
+ta.addEventListener('keydown', e=>{
+  if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); send(); return; }
+  /* 打 / 直接弹技能列表（2026-11-01 加，基线来自即梦）
+     只在「空输入」或「前面是空白」时触发 —— 否则 a/b 这种路径会误触。
+     openSkillPicker 定义在 30-workspace.js（本文件之后加载），所以加 typeof 守卫。 */
+  if(e.key==='/' && !e.ctrlKey && !e.metaKey && !e.altKey){
+    const v = ta.value, p = ta.selectionStart;
+    if(v.length === 0 || /\s$/.test(v.slice(0, p))){
+      e.preventDefault();
+      if(typeof openSkillPicker === 'function') openSkillPicker();
+    }
+  }
+});
 
 renderUserChip(); renderCanvasName(); renderTplRefBar();
 setMode('shots');
