@@ -1,6 +1,11 @@
 # 2026-11-01 原型重构阶段性交接
 
 > 交接给 workbuddy。**只在原型层（`docs/prototypes/`）工作，没动生产代码。**
+>
+> **状态更新（2026-11-01 晚）**：下面两条高优先级已查清 ——
+> 功能有没有丢看 [`AGENT_PAGE_FEATURE_AUDIT.md`](../prototypes/AGENT_PAGE_FEATURE_AUDIT.md)，
+> 「多角度」的真身也在那份里；v5→v6 的视觉修正见
+> [`AGENT_PAGE_HISTORY.md`](../prototypes/AGENT_PAGE_HISTORY.md) 第 7 节。
 
 ## 目标
 

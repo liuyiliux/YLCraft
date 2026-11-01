@@ -27,7 +27,9 @@
 :root{
   --bg:#08080a; --s1:#0e0e12; --s2:#131318; --s3:#1a1a21; --s4:#222229;
   --ln:#1e1e26; --ln2:#2a2a34; --ln3:#3a3a46;
-  --tx:#e9e9ee; --tx2:#a2a2b0; --tx3:#6b6b7a;
+  /* 2026-11-01 提亮次要文字：原 tx2 #a2a2b0 / tx3 #6b6b7a 在 #08080a 底上对比不足，
+     左栏会话副标题和右栏素材卡元信息实测几乎不可读。 */
+  --tx:#eef0f4; --tx2:#b9bac8; --tx3:#8b8c9e;
   --ac:#22d3ee; --ac2:#0e7490; --photo:#fbbf24;
   --ok:#34d399; --warn:#f5a524; --err:#f87171; --purple:#a78bfa;
   --fm:ui-monospace,"SF Mono",Consolas,monospace;
@@ -90,8 +92,11 @@ brand{}
 .sessions{flex:1;overflow-y:auto;padding:0 8px 12px;min-height:0}
 .sgrp{font-size:10.5px;color:var(--tx3);padding:9px 6px 5px;font-family:var(--fm)}
 .sitem{
-  padding:8px 10px;border-radius:var(--r2);cursor:pointer;margin-bottom:2px;
+  padding:7px 10px;border-radius:var(--r2);cursor:pointer;margin-bottom:2px;
   transition:.15s;position:relative;
+  /* 2026-11-01 改单行：原来标题一行 + 状态说明一行，一屏塞 5 条就满。
+     现在状态靠右、压到 10px，整项一行。 */
+  display:flex;align-items:center;gap:7px;
 }
 .sitem:hover{background:var(--s2)}
 .sitem.on{background:var(--s3)}
@@ -100,11 +105,17 @@ brand{}
   width:2px;height:15px;background:var(--ac);border-radius:2px;
 }
 .sitem-t{
-  font-size:12.5px;color:var(--tx2);line-height:1.45;margin-bottom:2px;
+  /* flex:1 + min-width:0 才让省略号生效；否则长标题会把右边的状态挤出可视区
+     （2026-11-01 实测：第一项「生成一张只露坐姿的全身照」的状态被裁掉）*/
+  flex:1;min-width:0;
+  font-size:12.5px;color:var(--tx2);line-height:1.45;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
 .sitem.on .sitem-t{color:var(--tx)}
-.sitem-m{font-size:10.5px;color:var(--tx3);font-family:var(--fm)}
+.sitem-m{
+  font-size:10px;color:var(--tx3);font-family:var(--fm);
+  margin-left:auto;flex-shrink:0;white-space:nowrap;
+}
 
 /* ============ 中：主对话（抄 Codex / DSH Web） ============ */
 .chat{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg)}
@@ -422,14 +433,10 @@ brand{}
 .cmp .sp{margin-left:auto}
 .cmp .cost{color:var(--ac);font-family:var(--fm);font-size:10.5px}
 
-/* 说明条 */
-.mark{
-  position:fixed;bottom:14px;left:50%;transform:translateX(-50%);
-  font-size:11px;color:var(--tx3);background:rgba(14,14,18,.94);
-  border:1px solid var(--ln2);padding:5px 14px;border-radius:16px;
-  backdrop-filter:blur(8px);z-index:99;
-}
-.mark b{color:var(--photo)}
+/* 说明条已移除（2026-11-01）：原来是一条 position:fixed 的胶囊，压在输入框下方
+   chip 行上，露出「主对话抄 Codex/DSH Web」这种内部说明 —— 违反门禁
+   「界面不许泄漏内部术语」，视觉上还被当成一排多出来的 chip。
+   出处信息改记在 AGENT_PAGE_SA.md，页面不再渲染。 */
 
 /* ============ 素材库（右栏） ============ */
 .libfill{padding:9px 12px 0;flex:0 0 auto;border-bottom:1px solid var(--ln)}
@@ -467,19 +474,31 @@ brand{}
 .li.fresh{border-color:rgba(251,191,36,.5)}
 .li-img{
   width:100%;aspect-ratio:1;display:block;
-  background:linear-gradient(150deg,#222736,#14161d);
+  /* 同 gal-img：原来近黑单色块，14 个格子铺开像没加载完 */
+  background:
+    radial-gradient(ellipse 44% 30% at 50% 36%,rgba(255,224,176,.30),transparent 72%),
+    linear-gradient(180deg,#33405c 0%,#242e3c 44%,#151a20 78%,#0b0d11 100%);
 }
-.li-img.v2{background:linear-gradient(150deg,#2b2436,#171420)}
-.li-img.v3{background:linear-gradient(150deg,#1e2a2e,#121819)}
+.li-img.v2{background:
+  radial-gradient(ellipse 40% 28% at 58% 32%,rgba(255,206,150,.34),transparent 72%),
+  linear-gradient(180deg,#463a2c 0%,#2f2820 46%,#1a1712 80%,#0c0a08 100%)}
+.li-img.v3{background:
+  radial-gradient(ellipse 40% 28% at 46% 34%,rgba(198,218,238,.24),transparent 72%),
+  linear-gradient(180deg,#38424e 0%,#28303a 46%,#161b21 80%,#0a0d10 100%)}
 .li-img.char{
   display:flex;align-items:center;justify-content:center;
-  font-size:20px;color:var(--tx3);
-  background:linear-gradient(150deg,#2a2340,#141020);
+  font-size:20px;color:rgba(255,255,255,.72);
+  text-shadow:0 1px 8px rgba(0,0,0,.6);
+  background:
+    radial-gradient(ellipse 46% 34% at 50% 32%,rgba(214,196,255,.26),transparent 72%),
+    linear-gradient(180deg,#3a3352 0%,#272238 46%,#151223 80%,#0b0913 100%);
 }
 .li-img.vid{
   display:flex;align-items:center;justify-content:center;
-  font-size:15px;color:var(--tx3);
-  background:linear-gradient(150deg,#262230,#16141c);
+  font-size:15px;color:rgba(255,255,255,.72);
+  background:
+    radial-gradient(ellipse 46% 32% at 50% 34%,rgba(200,214,255,.22),transparent 72%),
+    linear-gradient(180deg,#333a4a 0%,#232936 46%,#14171d 80%,#0a0c0f 100%);
 }
 .li-badge{
   position:absolute;top:4px;right:4px;font-size:9px;
@@ -566,19 +585,24 @@ brand{}
 .gal-item.on{border-color:var(--ac);box-shadow:0 0 0 1px var(--ac)}
 .gal-img{
   width:100%;aspect-ratio:3/4;display:block;
+  /* 2026-11-01 原来 4 张是近黑渐变（#1c202b→#101218），缩到 170px 宽就成了 4 个空盒子。
+     改成「主体亮区 + 地平线 + 环境色」三层，缩略图状态下能读成一张照片。 */
   background:
-    radial-gradient(circle at 45% 32%,#2c3243 0%,transparent 58%),
-    linear-gradient(155deg,#1c202b,#101218);
+    radial-gradient(ellipse 42% 26% at 50% 34%,rgba(255,226,180,.34),transparent 72%),
+    radial-gradient(ellipse 70% 40% at 50% 100%,rgba(255,190,120,.14),transparent 70%),
+    linear-gradient(180deg,#33405c 0%,#25303f 40%,#161b22 72%,#0c0e12 100%);
 }
 .gal-img.v2{background:
-  radial-gradient(circle at 55% 38%,#33302a 0%,transparent 55%),
-  linear-gradient(155deg,#22201c,#111013)}
+  radial-gradient(ellipse 34% 24% at 62% 30%,rgba(255,214,150,.40),transparent 70%),
+  radial-gradient(ellipse 66% 38% at 50% 100%,rgba(255,170,90,.16),transparent 70%),
+  linear-gradient(180deg,#4a3f2e 0%,#332b22 42%,#1c1813 74%,#0d0b09 100%)}
 .gal-img.v3{background:
-  radial-gradient(circle at 48% 40%,#2a2f33 0%,transparent 55%),
-  linear-gradient(155deg,#1d2124,#0e1113)}
+  radial-gradient(ellipse 36% 24% at 46% 32%,rgba(206,222,240,.26),transparent 70%),
+  linear-gradient(180deg,#3a4450 0%,#2a323b 44%,#171c21 76%,#0b0e11 100%)}
 .gal-img.v4{background:
-  radial-gradient(circle at 52% 34%,#2f2a34 0%,transparent 56%),
-  linear-gradient(155deg,#201c26,#100e14)}
+  radial-gradient(ellipse 30% 22% at 54% 28%,rgba(255,205,140,.44),transparent 68%),
+  radial-gradient(ellipse 72% 44% at 50% 100%,rgba(240,150,70,.18),transparent 72%),
+  linear-gradient(180deg,#40342c 0%,#2b241f 44%,#191512 76%,#0c0a09 100%)}
 .gal-op{
   position:absolute;inset:auto 0 0 0;display:flex;gap:4px;
   justify-content:center;padding:6px 4px;opacity:0;transition:.16s;
@@ -746,23 +770,25 @@ brand{}
   font-size:9px;padding:1px 6px;border-radius:8px;
   background:rgba(34,211,238,.12);color:var(--ac);font-family:var(--fm);
 }
-.sitem-row{display:flex;align-items:center;gap:7px;margin-bottom:2px}
+/* 旧两行结构的残留样式已删（2026-11-01）：.sitem-row 包裹层被拿掉，
+   现在「圆点 / 标题 / 状态」直接是 .sitem 的三个 flex 子项。 */
 .sitem-dot{
   width:5px;height:5px;border-radius:50%;background:var(--ln3);flex-shrink:0;
 }
 .sitem-dot.run{background:var(--ac);animation:pulse 1.6s infinite}
-.sitem-m{padding-left:12px}
 .side-ft{
   flex:0 0 auto;border-top:1px solid var(--ln);padding:9px 13px;
   font-size:10.5px;color:var(--tx3);line-height:1.5;
 }
 
 /* ============ 视图切换 ============ */
-.vtabs{display:flex;gap:2px;background:var(--s2);padding:2px;border-radius:7px}
+.vtabs{display:flex;gap:2px;background:var(--s2);padding:2px;border-radius:7px;flex:0 0 auto}
 .vtab{
   font-size:11.5px;padding:4px 12px;border-radius:5px;border:none;
   background:transparent;color:var(--tx3);cursor:pointer;transition:.15s;
   font-family:inherit;
+  /* 2026-11-01：窄屏（1100）时「创作/画布」曾被压成竖排两个字 */
+  white-space:nowrap;flex:0 0 auto;
 }
 .vtab:hover{color:var(--tx2)}
 .vtab.on{background:var(--s3);color:var(--tx)}
@@ -811,46 +837,58 @@ brand{}
 .cv-ft .sp{flex:1}
 
 /* ============ 一条状态条 ============ */
+/* 2026-11-01 改：原来有淡底 + 边框 + 整栏宽，加上 .sb-sub 是 display:block，
+   整条被撑成两行、横跨一整栏，看着像一块红牌。按 I4「状态用小圆点，不用色块」
+   改成：无底色、单行、6px 圆点定级。 */
 .statbar{
-  flex:0 0 auto;display:flex;align-items:center;gap:9px;
-  margin:0 26px 8px;padding:8px 14px;border-radius:8px;
-  background:rgba(34,211,238,.06);border:1px solid rgba(34,211,238,.2);
-  font-size:11.5px;color:var(--tx2);transition:.2s;
+  flex:0 0 auto;display:flex;align-items:center;gap:8px;
+  /* 2026-11-01 第三轮：和上面内容块同一列。
+     原来 margin:0 26px 是贴左的，而 .chat-inner 是 max-width:760px 居中 ——
+     1600 宽下状态条比上面那条绿确认条左移了 97px，看着"没对齐"。
+     现在用同一套居中列 + 同样 26px 内缩，左边缘和内容、绿条、结果图全部对齐。 */
+  width:100%;max-width:760px;margin:0 auto;padding:7px 26px;
+  /* 不铺底色（I4）。2026-11-01 实测：1100 宽时上面正文像被这条压住半行，
+     查几何是 .chat-body 滚动区的裁切线正好落在 649px，与状态条顶边重合 ——
+     是滚动裁切，不是遮挡，所以不需要拿背景色去盖。 */
+  background:none;border:0;
+  font-size:12px;color:var(--tx2);transition:.2s;
 }
-/* 状态分级：正常=青，注意=黄，出错=红（不用大色块，只换边框和图标色） */
-.statbar.info{background:rgba(34,211,238,.06);border-color:rgba(34,211,238,.2)}
-.statbar.warn{background:rgba(245,165,36,.07);border-color:rgba(245,165,36,.28)}
-.statbar.err{background:rgba(248,113,113,.07);border-color:rgba(248,113,113,.3)}
-.statbar.ready{background:rgba(167,139,250,.07);border-color:rgba(167,139,250,.26)}
+/* 状态分级只换圆点颜色，不铺底色 */
+.sb-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;background:var(--ac)}
+.statbar.info  .sb-dot{background:var(--ac);animation:pulse 2s ease-in-out infinite}
+.statbar.warn  .sb-dot{background:var(--warn)}
+.statbar.err   .sb-dot{background:var(--err)}
+.statbar.ready .sb-dot{background:var(--purple)}
 
-.sb-ico{font-size:11px;flex-shrink:0}
-.statbar.info .sb-ico{color:var(--ac);animation:spin 2.4s linear infinite;display:inline-block}
-.statbar.warn .sb-ico{color:var(--warn)}
-.statbar.err .sb-ico{color:var(--err)}
-.statbar.ready .sb-ico{color:var(--purple)}
-
-@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
 .sb-t b{color:var(--tx);font-weight:600}
 .statbar.warn .sb-t b{color:var(--warn)}
 .statbar.err .sb-t b{color:var(--err)}
 .statbar.ready .sb-t b{color:var(--purple)}
-.sb-sub{display:block;font-size:10px;color:var(--tx3);margin-top:1px}
+/* .sb-sub 已废（2026-11-01 第二轮）：副文案不再进页面，改成 STATS 的 tip → 元素 title。 */
 
-.sb-acts{margin-left:auto;display:flex;gap:6px;flex-shrink:0}
+.sb-acts{margin-left:2px;display:flex;gap:6px;flex-shrink:0;align-items:center}
+.sb-acts:empty{display:none}
+/* 动作并进句子：用 · 隔着，不再是一个个方块按钮 */
+.sb-acts::before{content:"·";color:var(--tx3);margin-right:4px}
 .sb-b{
-  font-size:11px;padding:3px 10px;border-radius:5px;border:1px solid var(--ln2);
-  background:transparent;color:var(--tx2);cursor:pointer;font-family:inherit;
+  font-size:12px;padding:0;border:0;background:transparent;
+  color:var(--tx);cursor:pointer;font-family:inherit;line-height:1.2;
+  /* 虚线才是"能点"的暗示 —— 比实心按钮轻，仍看得懂 */
+  border-bottom:1px dashed var(--ln3);
   transition:.15s;
 }
-.sb-b:hover{border-color:var(--ln3);color:var(--tx)}
+.sb-b:hover{color:var(--ac);border-bottom-color:var(--ac)}
 .sb-more{
-  width:20px;height:20px;border-radius:5px;border:1px solid var(--ln2);
+  width:20px;height:20px;border-radius:5px;border:1px solid transparent;
   background:transparent;color:var(--tx3);font-size:11px;cursor:pointer;
   flex-shrink:0;transition:.15s;line-height:1;font-family:inherit;
   display:flex;align-items:center;justify-content:center;
+  /* 原型专用（切四档），真实界面没有它 —— 压暗到几乎看不见，不抢注意力 */
+  opacity:.28;
 }
-.sb-more:hover{border-color:var(--ln3);color:var(--tx2)}
+.sb-more:hover{border-color:var(--ln2);color:var(--tx2);opacity:1}
 
 /* toast2 */
 .toast2{
@@ -1004,18 +1042,14 @@ brand{}
         <span class="sproj-c">2 在跑</span>
       </div>
       <div class="sitem on">
-        <div class="sitem-row">
-          <span class="sitem-dot run"></span>
-          <span class="sitem-t">生成一张只露坐姿的全身照</span>
-        </div>
-        <div class="sitem-m">后台 1 个任务在跑</div>
+        <span class="sitem-dot run"></span>
+        <span class="sitem-t">生成一张只露坐姿的全身照</span>
+        <span class="sitem-m">1 个在跑</span>
       </div>
       <div class="sitem">
-        <div class="sitem-row">
-          <span class="sitem-dot"></span>
-          <span class="sitem-t">再来一张横构图</span>
-        </div>
-        <div class="sitem-m">等你要不要确认</div>
+        <span class="sitem-dot"></span>
+        <span class="sitem-t">再来一张横构图</span>
+        <span class="sitem-m">等确认</span>
       </div>
 
       <div class="sproj">
@@ -1023,29 +1057,23 @@ brand{}
         <span class="sproj-c">1 在跑</span>
       </div>
       <div class="sitem">
-        <div class="sitem-row">
-          <span class="sitem-dot run"></span>
-          <span class="sitem-t">检查大纲完成情况</span>
-        </div>
-        <div class="sitem-m">后台 1 个任务在跑</div>
+        <span class="sitem-dot run"></span>
+        <span class="sitem-t">检查大纲完成情况</span>
+        <span class="sitem-m">1 个在跑</span>
       </div>
 
       <div class="sproj">
         <span class="sproj-n">没有项目</span>
       </div>
       <div class="sitem">
-        <div class="sitem-row">
-          <span class="sitem-dot"></span>
-          <span class="sitem-t">给素材加确认卡</span>
-        </div>
-        <div class="sitem-m">昨天完成</div>
+        <span class="sitem-dot"></span>
+        <span class="sitem-t">给素材加确认卡</span>
+        <span class="sitem-m">昨天完成</span>
       </div>
       <div class="sitem">
-        <div class="sitem-row">
-          <span class="sitem-dot"></span>
-          <span class="sitem-t">把桌子向右移动 0.25 米</span>
-        </div>
-        <div class="sitem-m">昨天完成</div>
+        <span class="sitem-dot"></span>
+        <span class="sitem-t">把桌子向右移动 0.25 米</span>
+        <span class="sitem-m">昨天完成</span>
       </div>
     </div>
 
@@ -1339,7 +1367,7 @@ brand{}
 
         <!-- ⭐ 只有一条状态条：同时有几件事时，只说最该说的那一件 -->
     <div class="statbar" id="statBar">
-      <span class="sb-ico" id="sbIco">⚙</span>
+      <span class="sb-dot" id="sbDot"></span>
       <span class="sb-t" id="sbT"></span>
       <div class="sb-acts" id="sbActs"></div>
       <button class="sb-more" id="sbMore" onclick="statCycle()" title="换一件事看">⟳</button>
@@ -1545,10 +1573,6 @@ brand{}
     </div>
   </aside>
 
-</div>
-
-<div class="mark">
-  原型 · 主对话抄 <b>Codex/DSH Web</b> · 右栏抄 <b>画布智能体面板</b>
 </div>
 
 <script>
@@ -1840,34 +1864,38 @@ function toast2(msg){
 
 
 // ================= 状态条：一条，只说最该说的 =================
+// 2026-11-01 第二轮：用户两次说「长」。这次砍到底 ——
+//   ① 文案只留结论（副文案挪进 title，鼠标停上去才看）
+//   ② 每档最多一个按钮（I3：同一动作只允许一个按钮）
+//   ③ 宽度跟内容走（align-self:flex-start），不再横跨整栏
 const STATS = [
   {
     // 优先级 1：任务出问题了 —— 最该说
-    k:'wd', cls:'err', ico:'⊘',
-    html:'供应商那边说<b>「模型不存在」</b> —— GPT Image 2 可能已经下线了'
-        + '<span class="sb-sub">上次 Agnes Video 2.0 下线就是这么发现的</span>',
-    acts:[['换个模型',"toast2('已列出还能用的模型')"],
-          ['去检查连接器',"toast2('打开连接器设置')"]]
+    k:'wd', cls:'err',
+    html:'<b>GPT Image 2</b> 可能已下线',
+    tip:'供应商那边说「模型不存在」。上次 Agnes Video 2.0 下线也是这么发现的。',
+    acts:[['换个模型',"toast2('已列出还能用的模型')"]]
   },
   {
     // 优先级 2：任务卡住
-    k:'stuck', cls:'warn', ico:'⚠',
-    html:'图片生成已经 <b>4 分钟</b>没新进展，看起来卡住了',
-    acts:[['让它去查',"toast2('已让 Agent 检查这个任务')"],['先不管',"hideStat()"]]
+    k:'stuck', cls:'warn',
+    html:'生图卡了 <b>4 分钟</b>',
+    tip:'一直没有新进展，可能卡住了。可以让它自己去查。',
+    acts:[['让它去查',"toast2('已让 Agent 检查这个任务')"]]
   },
   {
     // 优先级 3：正常在跑 —— 全双工的可见证据
-    k:'bg', cls:'info', ico:'⚙',
-    html:'后台 <b>2</b> 个任务在跑 · 图片生成 62% · 素材检索快好了'
-        + '<span class="sb-sub">你可以继续说，不用等它们</span>',
+    k:'bg', cls:'info',
+    html:'后台 <b>2</b> 个在跑 · 62%',
+    tip:'你可以继续说，不用等它们。',
     acts:[]
   },
   {
     // 优先级 4：提前备好了方案 —— 用户停下来才提
-    k:'ready', cls:'ready', ico:'✦',
-    html:'你还在挑图的时候，Agent 已经先把<b>两个改写方案</b>备好了',
-    acts:[['用方案一',"fillChat('用第一个方案，继续')"],
-          ['用方案二',"fillChat('用第二个方案，继续')"]]
+    k:'ready', cls:'ready',
+    html:'Agent 已备好 <b>2 个方案</b>',
+    tip:'你挑图的时候它先做了两个改写方案，要用哪个说一声。',
+    acts:[['看看',"fillChat('用第一个方案，继续')"]]
   }
 ];
 
@@ -1879,7 +1907,8 @@ function renderStat(){
   if (!bar) return;
   bar.className = 'statbar ' + s.cls;
   bar.style.display = '';
-  document.getElementById('sbIco').textContent = s.ico;
+  // 副文案不进页面，进 title：鼠标停上去才有，不占宽度
+  bar.title = s.tip || '';
   document.getElementById('sbT').innerHTML = s.html;
   document.getElementById('sbActs').innerHTML = s.acts.map(function(a){
     return '<button class="sb-b" onclick="' + a[1] + '">' + a[0] + '</button>';
