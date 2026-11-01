@@ -115,7 +115,9 @@ class BaseVideoBackend(ABC):
                 cost=self._cost_per_second * req.duration,
                 latency_ms=latency_ms,
                 provider=self._name,
-                model=self._model,
+                # 失败时也要记录「实际请求的模型」，否则台账只显示连接器默认模型，
+                # 排查时看不出真正发出去的是哪个（2026-10-31 Agnes 2.0 下线案例）。
+                model=effective_model,
                 diagnostics={
                     "exception_type": e.__class__.__name__,
                     "exception_repr": repr(e),
