@@ -25,8 +25,9 @@
 | 8 | **RunningHub / 仙宫云** | `runninghub_xiangongyun` | — | ❌ 没提炼 |
 | 9 | **深海导演 senhai** | `senhai_director_skill_teardown` | — | ❌ 没提炼（它拆过 Skill） |
 | 10 | **infinite-canvas** | `handraw_ohmygame_infinitecanvas` + 许可证审计 | ✅ MIT 判断 + NOTICE 修正 | — |
-| 11 | **OiiOii** | 本次新查 | ✅ 7 个角色化 Agent（搜索需求分角色） | ❌ 角色一致性引擎 |
+| 11 | **OiiOii** | `agent_web_search_and_p456`（第三节）· 二手来源=官方 Changelog | ✅ 7 个角色化 Agent（搜索需求分角色） | ❌ 角色一致性引擎 |
 | 12 | 🔴 **像素蛋糕 PixCake** | **本次新查** | 见下一份文档 | 待补 |
+| 13 | 🔴 **即梦 Dreamina** | `platform_interaction_strengths`（第一节）· **截图 `docs/research/jimeng/`（4 张，2026-11-01 补抓）** · `ylcraft-interaction-quality` J 节 | ✅ `/` 技能 + `@` 主体**双符号双通道**<br>✅ 技能**原地弹出**不跳页、每个带一句话说明 + `官方` 标记<br>✅ **技能名是任务名**（「视频反解」不是「视频分析」）<br>✅ chip 带 `New`/`Hot` 引导发现<br>✅ **画布在左、对话在右**（300px 面板，不遮挡画布）| ✅ 截图已入库（生成/技能弹层/画布/画布+对话）<br>❌ **生成结果页还没抓**（要真跑一次生成）<br>❌ 「查看创作过程」按钮没抄<br>❌ `参考 (0/12)` 计数没抄 |
 
 ### 工具 / 范式 / 学术
 
