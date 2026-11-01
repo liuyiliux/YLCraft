@@ -55,6 +55,7 @@ import { useTheme } from '../../constants/theme'
 // ⚠️ 列走**公共列库** —— 与「查询」页共用同一批列实现
 import { contentColumnsList } from '../../components/content-columns'
 import { PlatformDetailDrawer, resolveMedia, proxyImage } from '../../components/platform-detail'
+import { openDownloadPage } from '../../utils/download'
 
 const { Text } = Typography
 
@@ -250,7 +251,9 @@ export default function MyLikesPanel({
    * **第二版**：自己 fetch blob 存文件 —— 能存了，但**和查询页不一致**。
    *   用户明确指出："还有调到单独下载页面的"。
    *
-   * **现在**：直接跳 `/download?url=<原文链接>`，和查询页同一个入口。
+   * **现在**：跳 `/download?url=<原文链接>`，和查询页同一个入口，
+   *   并且用**新标签页**打开（2026-10-31 用户要求：不要把点赞列表整页跳走 ——
+   *   跳走再回来，筛选/翻页/滚动全丢）。
    *   好处：清晰度选择 / 进度 / 断点续传 / 导入素材库 全都有，
    *   而且**不需要前端自己拼下载逻辑**（少一处会漂移的实现）。
    *
@@ -268,7 +271,7 @@ export default function MyLikesPanel({
       message.warning('这条没有原文链接，无法去下载页')
       return
     }
-    window.location.href = `/download?url=${encodeURIComponent(r.url)}`
+    openDownloadPage(r.url)
   }, [])
 
   /** 下载**本页全部** —— 交给后端批量下载队列（后台跑、可续传）。 */
