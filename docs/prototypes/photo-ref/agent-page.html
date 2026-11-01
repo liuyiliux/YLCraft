@@ -153,6 +153,28 @@ brand{}
 }
 .sug:hover{border-color:rgba(34,211,238,.4);color:var(--ac);background:var(--s2)}
 
+/* 空态：默认藏起来，新对话时把整段对话换成它（2026-11-01 补，核对表里唯一的硬丢） */
+.chat-inner > .empty{display:none}
+.chat-inner.is-empty > *{display:none}
+.chat-inner.is-empty > .empty{display:block}
+/* 新对话时整块垂直居中（否则内容挤在顶部，下面空一大片） */
+.chat-body.body-empty{display:flex;align-items:center}
+.chat-inner.is-empty{width:100%}
+.empty-grid{
+  display:grid;grid-template-columns:1fr 1fr;gap:8px;
+  max-width:560px;margin:0 auto;text-align:left;
+}
+.ecard{
+  display:flex;flex-direction:column;gap:3px;text-align:left;
+  padding:11px 13px;border-radius:var(--r3);background:var(--s1);
+  border:1px solid var(--ln2);cursor:pointer;transition:.15s;font-family:inherit;
+}
+.ecard:hover{border-color:rgba(34,211,238,.4);background:var(--s2)}
+.ecard:active{transform:translateY(1px)}
+.ecard-t{font-size:12.5px;color:var(--tx);line-height:1.45}
+.ecard-d{font-size:11px;color:var(--tx3);line-height:1.5}
+.empty-hint{margin-top:18px;font-size:11px;color:var(--tx3);font-family:var(--fm)}
+
 /* 消息 */
 .turn{margin-bottom:24px}
 .msg-u{display:flex;justify-content:flex-end;margin-bottom:16px}
@@ -408,7 +430,10 @@ brand{}
 .minicard .mv{color:var(--tx2);line-height:1.6}
 .minicard .mv b{color:var(--photo);font-family:var(--fm);font-weight:500}
 
-/* 右栏输入 */
+/* 右栏输入
+   ⚠️ 2026-11-01 核实：这一组 .cmp 规则是**历史遗留、页面上没有 .cmp 元素**，
+   真输入框在 .chat-ft（第 354 行那份样式）。写 JS 选择器时别被这里带偏 ——
+   我这次就因为照着 .cmp 写，点空态卡片填不进输入框。 */
 .cmp{border-top:1px solid var(--ln);padding:9px 12px 10px;
   background:rgba(8,8,10,.5);flex:0 0 auto}
 .cmp .bx{background:var(--s2);border:1px solid var(--ln2);
@@ -1032,7 +1057,7 @@ brand{}
   <aside class="side">
     <div class="side-hd">
       <span class="side-t">对话</span>
-      <button class="side-new" onclick="toast2('开一个新对话')">＋</button>
+      <button class="side-new" onclick="newChat()" title="开一个新对话">＋</button>
     </div>
 
     <!-- 按项目组织，不暴露 session 这种底层概念 -->
@@ -1041,12 +1066,12 @@ brand{}
         <span class="sproj-n">秋天颐和园</span>
         <span class="sproj-c">2 在跑</span>
       </div>
-      <div class="sitem on">
+      <div class="sitem on" onclick="openChat(this)">
         <span class="sitem-dot run"></span>
         <span class="sitem-t">生成一张只露坐姿的全身照</span>
         <span class="sitem-m">1 个在跑</span>
       </div>
-      <div class="sitem">
+      <div class="sitem" onclick="openChat(this)">
         <span class="sitem-dot"></span>
         <span class="sitem-t">再来一张横构图</span>
         <span class="sitem-m">等确认</span>
@@ -1056,7 +1081,7 @@ brand{}
         <span class="sproj-n">短剧 · 第 3 集</span>
         <span class="sproj-c">1 在跑</span>
       </div>
-      <div class="sitem">
+      <div class="sitem" onclick="openChat(this)">
         <span class="sitem-dot run"></span>
         <span class="sitem-t">检查大纲完成情况</span>
         <span class="sitem-m">1 个在跑</span>
@@ -1065,12 +1090,12 @@ brand{}
       <div class="sproj">
         <span class="sproj-n">没有项目</span>
       </div>
-      <div class="sitem">
+      <div class="sitem" onclick="openChat(this)">
         <span class="sitem-dot"></span>
         <span class="sitem-t">给素材加确认卡</span>
         <span class="sitem-m">昨天完成</span>
       </div>
-      <div class="sitem">
+      <div class="sitem" onclick="openChat(this)">
         <span class="sitem-dot"></span>
         <span class="sitem-t">把桌子向右移动 0.25 米</span>
         <span class="sitem-m">昨天完成</span>
@@ -1123,6 +1148,37 @@ brand{}
     <div class="granted" id="grantedBar"></div>
     <div class="chat-body">
       <div class="chat-inner">
+
+        <!-- ⭐ 空态：新对话时显示。
+             真页面有 4 个入口，但挤成两行下划线文字、看着像正文（核对表缺点 #5）。
+             这里做成 2×2 卡片，每张一个「任务名 + 一句它能干什么」。 -->
+        <div class="empty" id="emptyState">
+          <div class="empty-ico">✦</div>
+          <div class="empty-t">让智能体先接管一个明确任务</div>
+          <div class="empty-d">
+            它会自己拆步骤、调工具，结果直接进素材库。<br>
+            不知道从哪开始就点一个 —— 也可以自己打字。
+          </div>
+          <div class="empty-grid">
+            <button class="ecard" onclick="fillChat('列出最近的创作项目')">
+              <span class="ecard-t">列出最近的创作项目</span>
+              <span class="ecard-d">看手上几个项目分别做到哪一步</span>
+            </button>
+            <button class="ecard" onclick="fillChat('检查短剧第 3 集进度')">
+              <span class="ecard-t">检查短剧第 3 集进度</span>
+              <span class="ecard-d">对一遍分镜，标出还没拍的那些</span>
+            </button>
+            <button class="ecard" onclick="fillChat('把项目圣经同步到最新')">
+              <span class="ecard-t">把项目圣经同步到最新</span>
+              <span class="ecard-d">世界观、角色、风格一次对齐</span>
+            </button>
+            <button class="ecard" onclick="fillChat('搜一张小林的立绘')">
+              <span class="ecard-t">搜一张小林的立绘</span>
+              <span class="ecard-d">按标签在素材库里找，直接预览</span>
+            </button>
+          </div>
+          <div class="empty-hint">← 点左边任意一条，回到那个对话</div>
+        </div>
 
         <!-- 用户 -->
         <div class="msg-u">
@@ -1817,6 +1873,35 @@ function fillChat(text){
     ta.style.height = 'auto';
     ta.style.height = Math.min(ta.scrollHeight, 150) + 'px';
   }
+}
+
+// ================= 新对话 / 回到某个对话（空态入口） =================
+function newChat(){
+  document.querySelectorAll('.sitem').forEach(function(x){ x.classList.remove('on'); });
+  document.querySelector('.chat-inner').classList.add('is-empty');
+  // 让 chat-body 变 flex 容器，把空态整块垂直居中
+  const body = document.querySelector('.chat-body');
+  if (body){ body.classList.add('body-empty'); body.scrollTop = 0; }
+  document.getElementById('chatTitle').textContent = '新对话';
+  document.getElementById('chatMeta').textContent = '';
+  // 新对话没有任务，不该挂着状态条
+  const bar = document.getElementById('statBar');
+  if (bar) bar.style.display = 'none';
+  const ta = document.querySelector('.chat-ft textarea');
+  if (ta) ta.focus();
+}
+
+function openChat(el){
+  document.querySelectorAll('.sitem').forEach(function(x){ x.classList.remove('on'); });
+  el.classList.add('on');
+  document.querySelector('.chat-inner').classList.remove('is-empty');
+  const body = document.querySelector('.chat-body');
+  if (body){ body.classList.remove('body-empty'); body.scrollTop = 0; }
+  const t = el.querySelector('.sitem-t');
+  if (t) document.getElementById('chatTitle').textContent = t.textContent;
+  document.getElementById('chatMeta').textContent = '9 步 · 2 工具 · 107,082 tok';
+  const bar = document.getElementById('statBar');
+  if (bar) bar.style.display = '';
 }
 
 // 启动：默认自动 + 素材库
