@@ -25,7 +25,8 @@
   /* ---------- 镜头墙 ---------- */
   .sbar{display:flex;align-items:center;gap:9px;padding:7px 14px;border-bottom:1px solid var(--ln);
     background:rgba(8,8,10,.5);flex:0 0 auto;z-index:5}
-  .sbar .ttl{font-size:12.5px;color:var(--tx)}
+  /* 标题要比特正文重 —— 原来 400 和正文一样重，等于没有标题（2026-11-02 对齐参考图） */
+  .sbar .ttl{font-size:13px;color:var(--tx);font-weight:600}
   .sbar .meta{font-size:11px;color:var(--tx3);font-family:var(--fm)}
   .sbar .sp{margin-left:auto}
   .grid{flex:1;overflow-y:auto;padding:10px 14px 8px;display:grid;
