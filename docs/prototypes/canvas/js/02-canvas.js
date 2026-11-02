@@ -51,7 +51,7 @@ function demoFill(kind, count){
   const base = src.slice(0, total).map((s,i)=>{
     const col = i % 6, row = Math.floor(i / 6);
     return {
-      id:'s'+(i+1), order:i, duration:s.d, status:s.st, name:s.n, cls:i%6,
+      id:'s'+(i+1), order:i, duration:s.d, status:s.st, name:s.n, sz:s.sz || '', cls:i%6,
       x: 16 + col*130,
       y: 26 + row*200 + (col%2)*14,
       w: W, h: H
@@ -102,6 +102,7 @@ function renderShots(){
           + '<svg class="ic" viewBox="0 0 24 24" style="color:var(--tx3)"><path d="M12 3l2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg>待生成</div>' : '')
       + `<span class="no">${String(i+1).padStart(2,'0')}</span>`
       + `<span class="stt ${s.status}"></span>`
+      + (s.sz ? `<span class="sz">${esc(s.sz)}</span>` : '')
       + (typeof wsRefChipsHtml === 'function' ? wsRefChipsHtml(s.id) : '')
       + `</div>`
       + `<div class="info"><div class="nm">${s.name}</div><div class="ln">`
@@ -177,10 +178,16 @@ function renderMeta(){
   const c = k => items.filter(s=>s.status===k).length;
   // 角色图批次没有时长，别硬写「总时长 00:00」，也别留着视频时间轴（2026-11-01 修）
   const isChar = DOC.kind === 'character';
+  // 景别分布比总时长有用 —— 摄影师第一眼看的是「景别够不够变化」（2026-11-02）
+  const szCount = {};
+  items.forEach(s => { if (s.sz) szCount[s.sz] = (szCount[s.sz] || 0) + 1; });
+  const szText = Object.keys(szCount).length
+    ? ' · 景别 ' + Object.keys(szCount).map(k => k + ' ' + szCount[k]).join(' / ')
+    : '';
   document.getElementById('metaBar').textContent =
     (isChar
       ? `${items.length} 张角色图 · 按角度出 · `
-      : `${items.length} 个镜头 · 总时长 ${fmt(items.reduce((a,s)=>a+(s.duration||0),0))} · `)
+      : `${items.length} 个镜头 · 总时长 ${fmt(items.reduce((a,s)=>a+(s.duration||0),0))}${szText} · `)
     + `${c('ok')} 已生成 / ${c('run')} 生成中 / ${c('err')} 失败 / ${c('todo')} 待生成`;
 
   // 标题与底部时间轴跟着换：角色图不是视频，不该有播放器和轨道
@@ -194,7 +201,7 @@ function fmt(sec){ const m=Math.floor(sec/60), s=Math.round(sec%60);
 function addShot(){
   const maxOrder = DOC.items.reduce((a,s)=>Math.max(a,s.order),-1);
   DOC.items.push({id:'n'+Date.now(), order:maxOrder+1, duration:0, status:'todo',
-    name:'新镜头', cls:DOC.items.length%6, x:30, y:30, w:176, h:244});
+    name:'新镜头', sz:'中景', cls:DOC.items.length%6, x:30, y:30, w:176, h:244});
   emptyEl.classList.add('hidden');
   renderShots();
   toast('已加一镜 · 待生成');
