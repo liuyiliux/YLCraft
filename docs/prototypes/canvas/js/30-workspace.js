@@ -1984,3 +1984,30 @@ function wsUseRefRec(key, i){
   wsClosePanel();
   toast('参考已写进输入框 · 还能改');
 }
+
+/* ============================================================
+   顶栏「更多」菜单（2026-11-02）
+   原来顶栏塞了 14 个按钮，1440 宽就撑爆、模式切换被压成竖排。
+   低频工具收进这个菜单，顶栏只留：logo · 剧集名 · 模式切换 · 用户 · 出片 · ⋯
+   ============================================================ */
+function toggleMore(e){
+  if (e) e.stopPropagation();
+  const m = document.getElementById('moreMenu');
+  if (!m) return;
+  const opening = m.classList.contains('hidden');
+  m.classList.toggle('hidden', !opening);
+  if (opening) setTimeout(()=>document.addEventListener('click', moreOutside), 0);
+  else document.removeEventListener('click', moreOutside);
+}
+
+function closeMore(){
+  const m = document.getElementById('moreMenu');
+  if (m) m.classList.add('hidden');
+  document.removeEventListener('click', moreOutside);
+}
+
+function moreOutside(e){
+  if (!(e.target instanceof Element)) return;
+  if (e.target.closest('[onclick*="toggleMore"]')) return;   // 交给 toggleMore 自己翻
+  closeMore();                                               // 点菜单里或外面都关
+}

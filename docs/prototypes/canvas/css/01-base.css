@@ -55,3 +55,19 @@
   .seg button.adv{color:var(--tx3);font-size:11px}
   .seg button.adv.on{background:var(--s3);color:var(--tx);font-weight:500}
 
+  /* ---------- 顶栏右侧：主按钮 + 更多菜单（2026-11-02 收工具） ----------
+     原来顶栏塞了 14 个按钮，1440 宽直接撑爆。低频的收进这个菜单，
+     顶栏只留：logo · 剧集名 · 模式切换 · 用户 · 出片 · ⋯ */
+  .morewrap{position:relative;margin-left:auto;display:flex;gap:6px;align-items:center}
+  .moremenu{position:absolute;top:calc(100% + 9px);right:0;z-index:80;
+    background:rgba(16,16,19,.99);border:1px solid var(--ln2);border-radius:var(--r3);
+    box-shadow:var(--sh3);padding:7px;display:grid;grid-template-columns:repeat(3,1fr);
+    gap:1px;min-width:326px;animation:pop .16s var(--ez)}
+  .moremenu.hidden{display:none}
+  /* 菜单里不要每项都描边，会花 */
+  .moremenu .b{border-color:transparent!important;justify-content:flex-start;
+    font-size:12px;padding:7px 9px}
+  /* 原来 icononly 的按钮只有图标，进了菜单必须带文字，否则看不出是什么 */
+  .moremenu .b.icononly{padding:7px 9px;width:auto}
+  .moremenu .b:hover{background:var(--s3);color:var(--tx)}
+
