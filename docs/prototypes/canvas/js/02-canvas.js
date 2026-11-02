@@ -66,7 +66,7 @@ function demoFill(kind, count){
 
   const N = total;   // 实际生成的数量
   const openings = {
-    script:`收到。我把这段故事拆成了 <b>${N} 个镜头</b>，先按中景/特写/过场分了类。要调整顺序直接拖卡片。`,
+    script:`收到。我把这段故事拆成了 <b>${N} 个分镜</b>，景别从远景到特写都配上了。标题是这一镜讲什么，景别在卡片左下角。要调整顺序直接拖卡片。`,
     character:`按你这份设定出了 <b>${N} 张角色图</b>。正面两张先挑一张定妆，其余角度留给后续镜头当参考 —— 哪张不对单独重跑，别整批重来。`,
     upload:`收到参考图。我把它放在了 <b>自由画布</b>里，可以点开放大改。要拆成镜头序列也可以。`,
     tpl:`用了「短剧分镜」模板：<b>${N} 个镜头</b>，其中 ${Math.max(0,N-3)} 个已生成、1 个生成中、1 个失败、1 个待生成。`,
@@ -201,10 +201,10 @@ function fmt(sec){ const m=Math.floor(sec/60), s=Math.round(sec%60);
 function addShot(){
   const maxOrder = DOC.items.reduce((a,s)=>Math.max(a,s.order),-1);
   DOC.items.push({id:'n'+Date.now(), order:maxOrder+1, duration:0, status:'todo',
-    name:'新镜头', sz:'中景', cls:DOC.items.length%6, x:30, y:30, w:176, h:244});
+    name:'未命名的分镜', sz:'中景', cls:DOC.items.length%6, x:30, y:30, w:176, h:244});
   emptyEl.classList.add('hidden');
   renderShots();
-  toast('已加一镜 · 待生成');
+  toast('已加一镜 · 先填标题和景别');
   grid.scrollTop = grid.scrollHeight;
 }
 
