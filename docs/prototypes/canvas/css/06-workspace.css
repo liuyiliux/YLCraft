@@ -515,12 +515,13 @@
 .ws-used-i{font-size:8.5px;color:var(--ac);border:1px solid rgba(34,211,238,.28);
   border-radius:99px;padding:0 6px;line-height:1.8}
 
-/* ---------- 镜头墙上的参考标记与模拟标记 ---------- */
-.shot-refs{position:absolute;left:6px;right:6px;bottom:5px;z-index:3;
-  display:flex;gap:3px;overflow:hidden;pointer-events:auto}
+/* ---------- 镜头墙上的参考标记与模拟标记 ----------
+   2026-11-03 改：原来 absolute 在缩略图底部（left/right/bottom），和景别、角色角标
+   抢同一行 —— 角标被盖住、点角标还会误开参考弹层。现在挪到卡片下方的 info 区。 */
+.shot-refs{display:flex;gap:3px;margin-top:4px;overflow:hidden}
 .shot-ref{font-size:8px;line-height:1.7;padding:0 5px;border-radius:99px;
   color:var(--tx2);background:rgba(8,8,10,.78);border:1px solid rgba(255,255,255,.12);
-  backdrop-filter:blur(4px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   max-width:76px;cursor:pointer}
 .shot-ref:hover{color:var(--tx);border-color:rgba(34,211,238,.4)}
 .shot-ref.more{flex:0 0 auto;color:var(--tx3)}
