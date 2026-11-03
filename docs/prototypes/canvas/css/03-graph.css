@@ -2,6 +2,10 @@
   /* 高级：连线图 */
   .gwrap{flex:1;overflow:hidden;min-height:0;display:flex}
   .gcanvas{flex:1;overflow:auto;min-height:0;position:relative}
+  /* 无限画布：拖空白处平移（35-infinite.js），光标给抓手 */
+  .gcanvas{cursor:grab}
+  .gcanvas.panning{cursor:grabbing}
+  .gcanvas.panning .gnode{cursor:grabbing}
   .gcanvas::-webkit-scrollbar{width:9px;height:9px}
   .gcanvas::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:4px}
   /* 节点库 */
