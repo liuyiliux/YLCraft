@@ -385,7 +385,11 @@ function buildGraph(keepPos){
     nodes.push({
       id:'g'+i, x:372+col*152, y:16+row*124, w:140,
       t:String(i+1).padStart(2,'0')+' '+items[i].name,
-      sub: items[i].status==='ok'?'已生成':(items[i].status==='err'?'失败 403':(items[i].status==='run'?'生成中':'待生成')),
+      /* 底部信息行放真数据（时长 · 分辨率），不放「已生成」——
+         状态已经由标题行的点和连线颜色表达，这行字要给尺寸这种数，
+         参考图的节点底部就是 1024×576（2026-11-03）。分镜是视频 → 1080×1920 */
+      sub: items[i].status==='err' ? '失败 · 403'
+        : (items[i].duration>0 ? items[i].duration.toFixed(1)+'s' : '—') + ' · 1080×1920',
       kind:'image', st:items[i].status, ins:['text','image'], outs:['image'], shot:i,
       /* 节点带缩略图 —— 参考图里那种卡片式节点（2026-11-03）。
          高度固定 112，和 CSS .gnode.hasimg 一致，否则连线端口会错位。
