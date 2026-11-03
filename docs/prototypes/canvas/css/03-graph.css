@@ -68,6 +68,13 @@
   .gnode .gport.i{left:-4px} .gnode .gport.o{right:-4px}
   .gnode.stage{width:142px;background:var(--s1);border-color:var(--ln2)}
   .gnode.stage .gt{font-size:10.5px;color:var(--tx);font-weight:600}
+  /* 带缩略图的节点（2026-11-03）：高度固定 112，和 js 里的 nodeH 一致，
+     否则连线端口会错位。参考图里那种「卡片式节点」。 */
+  .gnode.hasimg{height:112px;display:flex;flex-direction:column}
+  .gnode.hasimg .gimg{position:relative;flex:1;margin:0 7px 5px;border-radius:5px;
+    overflow:hidden;outline:1px solid rgba(255,255,255,.07);outline-offset:-1px}
+  .gnode.hasimg .gimg .sz{left:4px;bottom:4px;font-size:8px;padding:0 4px}
+  .gnode.hasimg .gbd{flex:0 0 auto;padding-top:0}
   /* 可编辑增强 */
   .gnode{cursor:grab}
   .gnode:active{cursor:grabbing}
