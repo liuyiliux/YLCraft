@@ -66,7 +66,7 @@
 | 修法 | 说明 |
 | --- | --- |
 | ✅ **本文档 = 台账** | 全部对象 + 采纳 + 欠 |
-| 🔲 把台账写进 skill | 让 `ylcraft-platform-baseline` 引用它，每次改 UI 先看台账 |
+| ✅ **把台账写进 skill**（2026-11-03） | 已接进 `ylcraft-interaction-quality`：主文件加了「📒 动 UI 之前：先查台账」小节，`references/checklist.md` 第 0 步也是它。原计划接 `ylcraft-platform-baseline`，实际那个主要讲平台接入，交互门禁才是每次改 UI 都会走的路径 |
 | 🔲 每个"欠"转成任务 | 否则永远是"欠" |
 
 ---
