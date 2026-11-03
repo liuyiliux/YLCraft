@@ -12,6 +12,8 @@
   .empty .ttl{font-size:15px;color:var(--tx);font-weight:600}
   .empty .sub{font-size:12px;color:var(--tx3);margin-top:-14px}
   .empty .opts{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;width:min(460px,90%)}
+  /* 入口是奇数个时，最后一个跨两列收口 —— 否则最后一行空一半，看着像 bug（2026-11-03） */
+  .empty .opts .opt:nth-child(5):last-child{grid-column:1/-1}
   .opt{display:flex;align-items:flex-start;gap:10px;padding:13px 14px;border-radius:var(--r3);
     background:var(--s1);border:1px solid var(--ln);cursor:pointer;text-align:left;
     transition:all .24s var(--ez)}
