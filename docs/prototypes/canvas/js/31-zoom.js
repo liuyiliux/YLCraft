@@ -1,4 +1,4 @@
-/* 31-zoom.js — 画布缩放（Ctrl+滚轮）
+﻿/* 31-zoom.js — 画布缩放（Ctrl+滚轮）
    🔴 2026-10-20 用户报的问题：
       「ctrl 加滚轮是页面放大不是画布放大」
       查证：全项目**根本没有 wheel 事件**，Ctrl+滚轮走的是浏览器默认的页面缩放。
@@ -41,6 +41,8 @@ function applyZoom(){
   t.el.style.transformOrigin = '0 0';
   t.el.style.transform = 'translate(' + CV_PAN.x + 'px,' + CV_PAN.y + 'px) scale(' + CV_ZOOM.toFixed(3) + ')';
   updateZoomBadge();
+  /* 小地图的视口框跟着缩放/平移走（33-gmap.js） */
+  if (typeof updateGmap === 'function') updateGmap();
 }
 
 function resetZoom(){
