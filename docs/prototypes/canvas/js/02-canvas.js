@@ -441,8 +441,10 @@ function renderGraph(){
   const svg    = document.getElementById('gedges');
   const nbox   = document.getElementById('gnodes');
 
-  const maxY = Math.max(...GRAPH.nodes.map(n=>n.y)) + 90;
-  const maxX = Math.max(...GRAPH.nodes.map(n=>n.x+n.w)) + 60;
+  /* 无限画布（2026-11-03）：右下留足余量，别让节点一摆就贴边；
+     真实拖拽时 02-canvas 的节点拖拽还会实时撑大。 */
+  const maxY = Math.max(...GRAPH.nodes.map(n=>n.y + (n.h||54))) + 260;
+  const maxX = Math.max(...GRAPH.nodes.map(n=>n.x+n.w)) + 260;
   ginner.style.height = Math.max(maxY, 420)+'px';
   ginner.style.width  = Math.max(maxX, 700)+'px';
   svg.setAttribute('viewBox', `0 0 ${Math.max(maxX,700)} ${Math.max(maxY,420)}`);
@@ -536,7 +538,24 @@ function bindGraph(){
       const dx=e.clientX-gDrag.sx, dy=e.clientY-gDrag.sy;
       if (Math.abs(dx)>3||Math.abs(dy)>3) gDrag.moved=true;
       const n = GRAPH.nodes.find(x=>x.id===gDrag.id);
-      n.x = Math.max(0, gDrag.ox+dx); n.y = Math.max(0, gDrag.oy+dy);
+      /* 无限画布（2026-11-03）：不再钉在原点。
+         往左上拖出界时把整张图整体平移（世界坐标重锚），同时补滚动量保持视觉不动；
+         往右下拖时实时把内容区撑大 —— 拖多远画布就有多远。 */
+      n.x = gDrag.ox+dx; n.y = gDrag.oy+dy;
+      const c = document.querySelector('#flowGraphView .gcanvas');
+      const g = document.getElementById('ginner');
+      if (c && g && (n.x < 0 || n.y < 0)){
+        const ox2 = n.x < 0 ? (-n.x + 80) : 0;
+        const oy2 = n.y < 0 ? (-n.y + 80) : 0;
+        GRAPH.nodes.forEach(m => { m.x += ox2; m.y += oy2; });
+        c.scrollLeft += ox2 * CV_ZOOM;
+        c.scrollTop  += oy2 * CV_ZOOM;
+        gDrag.ox += ox2; gDrag.oy += oy2;
+      }
+      if (c && g){
+        if (n.x + n.w + 160 > g.offsetWidth)  g.style.width  = (n.x + n.w + 160) + 'px';
+        if (n.y + (n.h||54) + 160 > g.offsetHeight) g.style.height = (n.y + (n.h||54) + 160) + 'px';
+      }
       el.style.left = n.x+'px'; el.style.top = n.y+'px';
       redrawEdges();
     });
