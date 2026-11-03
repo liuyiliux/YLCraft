@@ -54,19 +54,24 @@
   .shot .stt{position:absolute;right:7px;top:7px;z-index:3;width:7px;height:7px;border-radius:50%}
   /* 景别角标（2026-11-02）：放在缩略图左下，不占额外高度。
      景别原来只藏在名字里（「中景推进」），看不出一组片子够不够变化。 */
-  .shot .sz{position:absolute;left:7px;bottom:7px;z-index:3;
+  /* 景别角标（2026-11-02）：放在缩略图左下，不占额外高度。
+     景别原来只藏在名字里（「中景推进」），看不出一组片子够不够变化。
+     2026-11-03 改成通用类 —— 自由画布的卡片也要用。 */
+  .sz{position:absolute;left:7px;bottom:7px;z-index:3;
     font-size:9px;line-height:1.6;color:var(--tx);
     background:rgba(8,8,10,.72);backdrop-filter:blur(6px);
     border-radius:var(--r1);padding:0 5px;letter-spacing:.02em}
   /* 这一镜有谁（2026-11-03）。右下角，和左下景别对称 —— 两个基本属性一眼看全。
      空镜用虚线框：让「没有人」这件事可见，而不是看起来像漏填。 */
-  .shot .cast{position:absolute;right:7px;bottom:7px;z-index:3;
+  .cast{position:absolute;right:7px;bottom:7px;z-index:3;
     font-size:9px;line-height:1.6;color:var(--tx);max-width:62%;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
     background:rgba(8,8,10,.72);backdrop-filter:blur(6px);
     border-radius:var(--r1);padding:0 5px;letter-spacing:.02em}
-  .shot .cast.empty{color:var(--tx3);background:transparent;
+  .cast.empty{color:var(--tx3);background:transparent;
     border:1px dashed rgba(255,255,255,.2)}
+  /* 自由画布的卡片容器也要能定位角标 */
+  .item .im{position:relative}
   .stt.ok{background:var(--ok);box-shadow:0 0 0 2.5px rgba(52,211,153,.22)}
   .stt.run{background:var(--ac);animation:pulse 1.2s ease-in-out infinite}
   .stt.err{background:var(--dg);box-shadow:0 0 0 2.5px rgba(248,113,113,.22)}
