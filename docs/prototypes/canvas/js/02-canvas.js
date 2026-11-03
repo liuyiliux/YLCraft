@@ -50,15 +50,25 @@ function demoFill(kind, count){
             : DEMO;
   const total = Math.min(count || 12, src.length);
   const W = 122, H = 168;
+  /* 自由画布的落位：手摆的、大小不一、间距不匀 —— 名字叫「自由」就不该是网格。
+     坐标是写死的（不用随机），保证每次打开一样，好对比。2026-11-03 */
+  const FREE_POS = [
+    {x:56,  y:26,  w:134, h:180}, {x:224, y:66,  w:114, h:152},
+    {x:372, y:14,  w:152, h:198}, {x:558, y:84,  w:122, h:164},
+    {x:716, y:32,  w:138, h:184}, {x:88,  y:238, w:120, h:160},
+    {x:242, y:290, w:142, h:190}, {x:420, y:244, w:126, h:168},
+    {x:586, y:292, w:118, h:158}, {x:740, y:236, w:134, h:178},
+    {x:142, y:452, w:128, h:172}, {x:326, y:470, w:136, h:182}
+  ];
   const base = src.slice(0, total).map((s,i)=>{
-    const col = i % 6, row = Math.floor(i / 6);
+    const pos = FREE_POS[i] || { x: 40 + (i%6)*140, y: 40 + Math.floor(i/6)*200, w: W, h: H };
     return {
       id:'s'+(i+1), order:i, duration:s.d, status:s.st, name:s.n, sz:s.sz || '',
       cast: s.cast,   // undefined = 不是分镜（如角色图），[] = 空镜
       cls:i%6,
-      x: 16 + col*130,
-      y: 26 + row*200 + (col%2)*14,
-      w: W, h: H
+      x: pos.x,
+      y: pos.y,
+      w: pos.w, h: pos.h
     };
   });
   DOC.items = base;
@@ -234,8 +244,16 @@ function renderFree(){
         s.thumbUrl
           ? `background-image:url('${s.thumbUrl}');background-size:cover;background-position:center`
           : `background:${BG[s.cls]}`
-      }">${s.thumbUrl ? '' : '<div class="glow"></div><div class="fig"></div>'}</div>
-        <div class="lbl2">${s.name}</div>`;
+      }">${s.thumbUrl ? '' : '<div class="glow"></div><div class="fig"></div>'}`
+      /* 自由画布的卡片也要带属性，不能只有一张图 + 名字（2026-11-03） */
+      + (s.sz ? `<span class="sz">${esc(s.sz)}</span>` : '')
+      + (Array.isArray(s.cast)
+          ? (s.cast.length
+              ? `<span class="cast">${s.cast.map(c => esc(c)).join(' · ')}</span>`
+              : `<span class="cast empty">空镜</span>`)
+          : '')
+      + `</div>`
+      + `<div class="lbl2">${s.name}</div>`;
     bindFree(el,s);
     freecv.appendChild(el);
   });
