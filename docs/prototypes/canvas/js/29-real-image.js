@@ -85,7 +85,7 @@ function setItemCanvas(item, canvas, opts){
   return work;
 }
 
-/* 新建一张真图（自由画布 / RAW 解码结果都走这里） */
+/* 新建一张真图（素材墙 / RAW 解码结果都走这里） */
 function addRealImageItem(src, name, opts){
   const o = opts || {};
   const work = riFitCanvas(src, o.maxDim || RI_WORK_MAX);

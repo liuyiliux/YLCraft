@@ -334,7 +334,7 @@ function wsLeftRail() {
     <div class="ws-card ws-pad">
       <div class="ws-card-h">画布</div>
       <div class="ws-canvasrow"><span class="ws-canvasdot"></span><b>${WS_PROJECT.canvas}</b></div>
-      <div class="ws-kv"><span>模式</span><b>${mode === 'shots' ? '镜头墙' : mode === 'free' ? '自由画布' : '高级'}</b></div>
+      <div class="ws-kv"><span>模式</span><b>${mode === 'shots' ? '镜头墙' : mode === 'free' ? '素材墙' : '高级'}</b></div>
       <div class="ws-kv"><span>模板</span><b>${tpl ? tpl.n + ' v' + currentTplRef.ver : '未使用'}</b></div>
       <button class="b ws-wide-b" onclick="wsGoShots()">回到镜头墙</button>
     </div>

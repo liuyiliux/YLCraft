@@ -575,7 +575,7 @@ function layerMaskCSS(mask){
 
 function applyLayers(shotId){
   /* 🔴 2026-10-20 修（用户报「应用以后画布里的图片没变」）：
-     之前只查 .shot（镜头墙），而导入图片会自动切到自由画布模式，
+     之前只查 .shot（镜头墙），而导入图片会自动切到素材墙模式，
      那种模式下的元素是 .item —— 于是这里直接 return，什么都没发生。
      现在两种壳都认。 */
   const el = document.querySelector('.shot[data-id="' + shotId + '"] .im')
