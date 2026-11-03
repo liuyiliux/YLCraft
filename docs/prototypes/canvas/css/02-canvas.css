@@ -77,6 +77,10 @@
   .stt.err{background:var(--dg);box-shadow:0 0 0 2.5px rgba(248,113,113,.22)}
   .stt.todo{background:var(--tx3)}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  /* 分镜是视频、角色图是图片 —— 时长前面带一个播放三角，图片那一栏写「图片」（2026-11-03） */
+  .shot .ln .dur{display:inline-flex;align-items:center;gap:3px}
+  .shot .ln .dur.vid{color:var(--tx2)}
+  .shot .ln .playtri{width:7px;height:7px;fill:currentColor;stroke:none;flex:0 0 auto}
   .shot .info{flex:0 0 auto;padding:5px 7px 6px;background:var(--s1)}
   .shot .nm{font-size:10.5px;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .shot .ln{display:flex;align-items:center;gap:5px;font-size:9px;color:var(--tx3);
