@@ -70,6 +70,11 @@ This repository is developed by multiple AI agents across multiple machines. Bef
 - ❌ 不要拿「我写进去的那个值」当成功证据 —— 那只能证明你写了，不能证明界面读了。
 - ✅ 验收标准必须是**用户能看见的东西**：DOM 里有这个元素 / 页面显示这个字 / 截图对得上。
 - 原型改完必须用 bsk 打开实测，并加 `?nc=<随机>` 防缓存假阴性。
+- 🔴 **`?nc` 只管 HTML，管不到子资源** —— 改了 `js/` 或 `css/` 必须同时 bump
+  `index.html` 里那些标签的 `?v=<日期时间>`（全部一起换）。
+  2026-11-03 踩过：CSS 链接当时**没有** `?v`，用户浏览器一直用旧 CSS，
+  新加的 `.gnode.hasimg{height:208}` 不生效，缩略图高度塌成 0 ——
+  我这边测试全是干净浏览器，看不出问题，用户那边就是"怎么没变化"。
 
 ## Reporting Rules
 
