@@ -74,7 +74,7 @@
   .gnode.hasimg .gimg{position:relative;flex:1;margin:0 7px 5px;border-radius:5px;
     overflow:hidden;outline:1px solid rgba(255,255,255,.07);outline-offset:-1px}
   .gnode.hasimg .gimg .sz{left:4px;bottom:4px;font-size:8px;padding:0 4px}
-  .gnode.hasimg .gbd{flex:0 0 auto;padding-top:0}
+  .gnode.hasimg .gbd{flex:0 0 auto;padding-top:0;font-size:9.5px;color:var(--tx2)}
   /* 可编辑增强 */
   .gnode{cursor:grab}
   .gnode:active{cursor:grabbing}
