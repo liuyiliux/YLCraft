@@ -172,6 +172,24 @@
   .lh-empty{padding:12px;text-align:center;font-size:9px;color:var(--tx3)}
   .lh-foot{padding:4px 8px 6px;font-size:8px;color:var(--tx3);border-top:1px solid var(--ln);flex:0 0 auto}
 
+  /* 版本记录（BeefTV 欠账，2026-11-03）—— 行复用提示词库弹层的壳，只加行内布局 */
+  .ver-row{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:6px;
+    border:1px solid transparent}
+  .ver-row:hover{background:var(--s2)}
+  .ver-row.on{border-color:var(--acl);background:var(--acs)}
+  .ver-i{font-size:8.5px;font-family:var(--fm);color:var(--tx3);flex:0 0 14px}
+  .ver-l{font-size:11px;color:var(--tx1);flex:0 0 auto;max-width:180px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ver-m{font-size:9.5px;font-family:var(--fm);color:var(--tx3);flex:1;min-width:0;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ver-tag{font-size:8.5px;color:var(--tx3);border:1px solid var(--ln2);border-radius:999px;
+    padding:0 6px;flex:0 0 auto}
+  .ver-b{font-size:9.5px;color:var(--tx1);background:var(--s2);border:1px solid var(--ln2);
+    border-radius:5px;padding:3px 8px;cursor:pointer;flex:0 0 auto;transition:all .15s var(--ez)}
+  .ver-b:hover{color:var(--ac);border-color:var(--acl)}
+  .ver-b.del{color:var(--tx3);padding:3px 6px}
+  .ver-b.del:hover{color:var(--dg);border-color:rgba(248,113,113,.5)}
+
   /* 提示词库 */
   .pl{position:fixed;inset:0;z-index:569;display:flex;align-items:center;justify-content:center;
     background:rgba(0,0,0,.76);backdrop-filter:blur(3px);animation:fade .16s var(--ez)}
