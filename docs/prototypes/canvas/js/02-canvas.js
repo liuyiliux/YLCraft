@@ -28,6 +28,8 @@ function setMode(m){
   };
   showHint(hints[m]);
   closeCtx();
+  /* 小地图随视图显隐（33-gmap.js）：切走时 gcanvas 宽度归 0，地图自动藏 */
+  if (typeof updateGmap === 'function') updateGmap();
 }
 
 /* 提示条自动淡出，不长期占位 */
@@ -501,6 +503,8 @@ function renderGraph(){
   } else if (ghost) ghost.innerHTML='';
 
   bindGraph();
+  /* 小地图跟着节点增删/拖动重画（33-gmap.js， BeefTV 欠账 #1） */
+  if (typeof updateGmap === 'function') updateGmap();
 }
 
 /* --------- 交互绑定 --------- */
