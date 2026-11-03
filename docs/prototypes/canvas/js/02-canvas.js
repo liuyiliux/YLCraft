@@ -383,7 +383,7 @@ function buildGraph(keepPos){
   for (let i=0;i<N;i++){
     const col=i%3, row=Math.floor(i/3);
     nodes.push({
-      id:'g'+i, x:372+col*152, y:16+row*124, w:140,
+      id:'g'+i, x:372+col*164, y:16+row*224, w:150,
       t:String(i+1).padStart(2,'0')+' '+items[i].name,
       /* 底部信息行放真数据（时长 · 分辨率），不放「已生成」——
          状态已经由标题行的点和连线颜色表达，这行字要给尺寸这种数，
@@ -391,15 +391,15 @@ function buildGraph(keepPos){
       sub: items[i].status==='err' ? '失败 · 403'
         : (items[i].duration>0 ? items[i].duration.toFixed(1)+'s' : '—') + ' · 1080×1920',
       kind:'image', st:items[i].status, ins:['text','image'], outs:['image'], shot:i,
-      /* 节点带缩略图 —— 参考图里那种卡片式节点（2026-11-03）。
-         高度固定 112，和 CSS .gnode.hasimg 一致，否则连线端口会错位。
+      /* 节点带缩略图 —— 参考图和即梦都是大图卡片，图占主体（2026-11-03 放大）。
+         高度固定 208（竖版 9:16），和 CSS .gnode.hasimg 一致，否则连线端口会错位。
          缩略图信息直接存进节点数据：渲染节点的函数拿不到 items。 */
-      hasimg:true, h:112,
+      hasimg:true, h:208,
       thumb: items[i].thumbUrl || '', shotCls: items[i].cls, shotSz: items[i].sz || '',
       cap:'image-gen'
     });
   }
-  const rows=Math.ceil(N/3), yb=16+rows*124+18;
+  const rows=Math.ceil(N/3), yb=16+rows*224+18;
   nodes.push({id:'merge', x:372, y:yb, w:140, t:'合成时间线', kind:'video',
     sub:'总时长 '+fmt(items.reduce((a,s)=>a+(s.duration||0),0)), st:'ok', ins:['image'], outs:['video'],
     cap:'clip'});

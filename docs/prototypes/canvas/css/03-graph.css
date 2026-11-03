@@ -68,9 +68,10 @@
   .gnode .gport.i{left:-4px} .gnode .gport.o{right:-4px}
   .gnode.stage{width:142px;background:var(--s1);border-color:var(--ln2)}
   .gnode.stage .gt{font-size:10.5px;color:var(--tx);font-weight:600}
-  /* 带缩略图的节点（2026-11-03）：高度固定 112，和 js 里的 nodeH 一致，
-     否则连线端口会错位。参考图里那种「卡片式节点」。 */
-  .gnode.hasimg{height:112px;display:flex;flex-direction:column}
+  /* 带缩略图的节点（2026-11-03）：大图卡片，图占主体 —— 分镜是 9:16 竖图，
+     高度 208 让缩略图有 ~178px，不再是一条横带。和 js 里的 nodeH 一致，
+     否则连线端口会错位。 */
+  .gnode.hasimg{height:208px;display:flex;flex-direction:column}
   .gnode.hasimg .gimg{position:relative;flex:1;margin:0 7px 5px;border-radius:5px;
     overflow:hidden;outline:1px solid rgba(255,255,255,.07);outline-offset:-1px}
   .gnode.hasimg .gimg .sz{left:4px;bottom:4px;font-size:8px;padding:0 4px}
