@@ -47,6 +47,27 @@ const CAPS = {
     params:{ tempo:'标准' },
     cost:2
   },
+  /* 图生视频 + 配乐 —— LibTV 拆解时就记下的欠账（缺视频节点、缺音频节点），
+     2026-11-03 补。两个端点都是后端真有的：
+     POST /api/v1/videos/generate（videos.py:484，入参 prompt/start_image/duration/model）
+     POST /api/v1/bgm/mix       （bgm.py:239，把曲库现成曲目混进视频） */
+  'video-gen': {
+    label:'图生视频', page:'/video-gen',
+    invoke:{ method:'POST', path:'/api/v1/videos/generate' },
+    map:(i,p)=>({ prompt:i.prompt, start_image:i.image, model:p.model, duration:p.duration }),
+    params:{ model:'可灵 3.0', duration:5 },
+    price:'kling-3',              // PRICE_BOOK 里没有这条 → 不显示人民币（不编数字）
+    cost:60,                      // 和工作台 kling-3 同一个数（示例价，按 5 秒计）
+    note:'首帧图 + prompt → 视频片段 · 积分是示例价（同工作台可灵 3.0），人民币未配置'
+  },
+  'bgm-mix': {
+    label:'配乐混音', page:'/bgm',
+    invoke:{ method:'POST', path:'/api/v1/bgm/mix' },
+    map:(i,p)=>({ video:i.video, track_id:p.track, volume:p.volume }),
+    params:{ track:'曲库选一条', volume:0.3 },
+    cost:0,
+    note:'混的是曲库里的现成曲目 · 后端做混音，不调生成模型'
+  },
   'crop': {
     label:'裁剪', page:null, local:true,
     invoke:{ method:'LOCAL', path:'shared/image-ops#crop' },
@@ -151,6 +172,8 @@ Object.assign(CAPS['previs'],      { layer:'model', node:true });
 Object.assign(CAPS['image-editor'],{ layer:'model', node:false,
   note:'L2 页面容器，不是独立能力 —— 它内部调 crop/filter/image-adjust' });
 Object.assign(CAPS['clip'],        { layer:'model', node:true });
+Object.assign(CAPS['video-gen'],   { layer:'model', node:true });
+Object.assign(CAPS['bgm-mix'],     { layer:'local', node:true });
 Object.assign(CAPS['crop'],        { layer:'local', node:true });
 Object.assign(CAPS['filter'],      { layer:'local', node:true });
 

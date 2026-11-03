@@ -351,7 +351,7 @@ let gSel = null;        // 选中节点 id
 let gLink = null;       // { from, kind, x1, y1 } 正在连线
 let gDrag = null;       // { id, sx, sy, ox, oy, moved }
 
-const KIND_COLOR = { text:'#60a5fa', image:'#22d3ee', video:'#a78bfa', model:'#fbbf24', any:'#71717a' };
+const KIND_COLOR = { text:'#60a5fa', image:'#22d3ee', video:'#a78bfa', audio:'#f472b6', model:'#fbbf24', any:'#71717a' };
 const NODE_DEFS = [
   {k:'text',   n:'文本',     ins:[],              outs:['text'],  run:false},
   {k:'prompt', n:'提示词',   ins:['text'],        outs:['text'],  run:true},
@@ -642,6 +642,8 @@ const LIB_DEFS = {
   'text':      {t:'文本',            kind:'text',  ins:[],                outs:['text'],  atomic:1, data:1},
   'prompt':    {t:'提示词',          kind:'text',  ins:['text'],          outs:['text'],  atomic:1, data:1},
   'image':     {t:'AI 生图',         kind:'image', ins:['text','image'],  outs:['image'], atomic:1, cap:'image-gen'},
+  'video':     {t:'图生视频',         kind:'video', ins:['image','text'],  outs:['video'], atomic:1, cap:'video-gen'},
+  'bgm':       {t:'配乐混音',         kind:'audio', ins:['video'],         outs:['video'], atomic:1, cap:'bgm-mix'},
   'to3d':      {t:'图生 3D',         kind:'model', ins:['image'],         outs:['model'], atomic:1, cap:'model-3d'},
   'crop':      {t:'裁剪（本地）',     kind:'image', ins:['image'],         outs:['image'], atomic:1, cap:'crop'},
   'filter':    {t:'滤镜（本地）',     kind:'image', ins:['image'],         outs:['image'], atomic:1, cap:'filter'},
