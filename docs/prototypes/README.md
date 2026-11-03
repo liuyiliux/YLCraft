@@ -194,13 +194,14 @@ python -m http.server 8901 --bind 127.0.0.1 --directory F:\PycharmProjects\YLCra
 
 | 原型 | URL |
 |---|---|
+| **原型启动页（根路径，画布在首位）** | `http://127.0.0.1:8901/` |
+| 画布 | `http://127.0.0.1:8901/canvas/index.html` |
+| 摄影参考库 | `http://127.0.0.1:8901/photo-ref/index.html` |
 | Agent 页面 | `http://127.0.0.1:8901/photo-ref/agent-page.html` |
 | 3D 导演台 + 助手 | `http://127.0.0.1:8901/previs/director-agent.html` |
 | 多角度（独立页） | `http://127.0.0.1:8901/canvas/multi-angle.html` |
 | harness 方案对比 | `http://127.0.0.1:8901/harness_decision.html` |
-| 摄影参考库 | `http://127.0.0.1:8901/photo-ref/index.html` |
 | 生图参考组合 | 在画布里说「凑一组参考」→ 弹层（不是独立页） |
-| 画布 | `http://127.0.0.1:8901/canvas/index.html` |
 
 **改完必须加 `?nc=<随机>` 防缓存假阴性**（`AGENTS.md` 的规定）。
 
