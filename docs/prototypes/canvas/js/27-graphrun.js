@@ -225,6 +225,8 @@ async function runGraph(){
   if (typeof applyAllLayers === 'function') applyAllLayers();
 
   GRAPH_RUNNING = false;
+  /* 版本记录（34-versions.js）：跑完存一版，能回到"跑完这个状态" */
+  if (typeof autoVersion === 'function') autoVersion('跑连线图 · ' + ran + ' 节点');
 
   // 记进制作实况：每个节点落到哪个接口、多少钱，一起写进去（可核对，不是"跑了就完"）
   const epTxt = steps.map(s=>s.id + ' → ' + s.label + ' · <code>' + s.path + '</code> · '

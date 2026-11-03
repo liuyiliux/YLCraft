@@ -101,6 +101,8 @@ function demoFill(kind, count){
   setMode(kind==='upload' ? 'free' : 'shots');
   const unit = kind === 'upload' ? '个对象' : (kind === 'character' ? '张角色图' : '个镜头');
   toast(`已生成 ${N} ${unit}`);
+  /* 版本记录（34-versions.js）：生成完成自动存一版 */
+  if (typeof autoVersion === 'function') autoVersion('生成 ' + N + ' ' + unit);
 }
 
 /* ================= 镜头墙渲染 ================= */

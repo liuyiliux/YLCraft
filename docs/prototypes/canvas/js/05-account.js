@@ -494,6 +494,11 @@ function rerunAll(){
     buildGraph(true);          // 保留你拖过的节点位置
     renderFlow();
   }, 400+i*300));
-  setTimeout(()=>{ buildGraph(true); if(mode==='flow') renderFlow(); }, 400+todo.length*300+120);
+  setTimeout(()=>{
+    buildGraph(true);
+    if(mode==='flow') renderFlow();
+    /* 版本记录（34-versions.js）：整组重跑完成后自动存一版 */
+    if (typeof autoVersion === 'function') autoVersion('整组重跑 · ' + todo.length + ' 镜');
+  }, 400+todo.length*300+120);
 }
 
