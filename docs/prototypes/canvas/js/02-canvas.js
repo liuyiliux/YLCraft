@@ -23,7 +23,7 @@ function setMode(m){
           ? '角色图：点一张看大图 · 拖动换角度顺序 · 想做视频再拆分镜'
           : '镜头墙：点镜头选中 · 拖动换顺序，镜号自动重排')
       : '选一条路开始',
-    free:  DOC.items.length? '自由画布：拖动图片摆放 · 点图放大编辑 · 右键更多' : '选一条路开始',
+    free:  DOC.items.length? '素材墙：拖动图片摆放 · 点图放大编辑 · 右键更多' : '选一条路开始',
     flow:  '高级：这是流程步骤，不是节点连线 · 改完点「整组重跑」'
   };
   showHint(hints[m]);
@@ -43,15 +43,17 @@ function showHint(html, hold){
 
 /* ================= 填充演示数据 ================= */
 function demoFill(kind, count){
-  // 自由画布模式用紧凑排布（6 列 × 2 行，轻微错落），镜头墙模式不依赖坐标
+  // 素材墙模式用紧凑排布（6 列 × 2 行，轻微错落），镜头墙模式不依赖坐标
   // character = 角色图（按角度）· promo = 宣传片（建筑/产品，没有角色）· 其余 = 人物分镜
   const src = kind === 'character' && typeof DEMO_CHAR !== 'undefined' ? DEMO_CHAR
             : kind === 'promo' && typeof DEMO_PROMO !== 'undefined' ? DEMO_PROMO
             : DEMO;
   const total = Math.min(count || 12, src.length);
   const W = 122, H = 168;
-  /* 自由画布的落位：手摆的、大小不一、间距不匀 —— 名字叫「自由」就不该是网格。
-     坐标是写死的（不用随机），保证每次打开一样，好对比。2026-11-03 */
+  /* 素材墙的落位：手摆的、大小不一、间距不匀 —— 摆东西的墙就不该是网格。
+     （本视图 2026-11-03 由「自由画布」改名素材墙：画布专指节点连线图，
+      这里的单位是「一张素材」，不叫画布，免得两种形态混称。）
+     坐标是写死的（不用随机），保证每次打开一样，好对比。 */
   const FREE_POS = [
     {x:56,  y:26,  w:134, h:180}, {x:224, y:66,  w:114, h:152},
     {x:372, y:14,  w:152, h:198}, {x:558, y:84,  w:122, h:164},
@@ -86,7 +88,7 @@ function demoFill(kind, count){
     script:`收到。我把这段故事拆成了 <b>${N} 个分镜</b>，景别从远景到特写都配上了。标题是这一镜讲什么，景别在卡片左下角。要调整顺序直接拖卡片。`,
     promo:`按宣传片的思路拆了 <b>${N} 个镜头</b>。这类片子<b>没有角色属性</b> —— 卡片上只有景别，不标人，也不留空位。`,
     character:`按你这份设定出了 <b>${N} 张角色图</b>。正面两张先挑一张定妆，其余角度留给后续镜头当参考 —— 哪张不对单独重跑，别整批重来。`,
-    upload:`收到参考图。我把它放在了 <b>自由画布</b>里，可以点开放大改。要拆成镜头序列也可以。`,
+    upload:`收到参考图。我把它放在了 <b>素材墙</b>里，可以点开放大改。要拆成镜头序列也可以。`,
     tpl:`用了「短剧分镜」模板：<b>${N} 个镜头</b>，其中 ${Math.max(0,N-3)} 个已生成、1 个生成中、1 个失败、1 个待生成。`,
     talk:`好，我按你说的做了。总共 <b>${N} 个镜头</b>，先看看镜头墙的节奏对不对。`
   };
@@ -248,7 +250,7 @@ function addShot(){
   grid.scrollTop = grid.scrollHeight;
 }
 
-/* ================= 自由画布渲染 ================= */
+/* ================= 素材墙渲染 ================= */
 function renderFree(){
   freecv.querySelectorAll('.item').forEach(e=>e.remove());
   DOC.items.forEach(s=>{
@@ -261,7 +263,7 @@ function renderFree(){
           ? `background-image:url('${s.thumbUrl}');background-size:cover;background-position:center`
           : `background:${BG[s.cls]}`
       }">${s.thumbUrl ? '' : '<div class="glow"></div><div class="fig"></div>'}`
-      /* 自由画布的卡片也要带属性，不能只有一张图 + 名字（2026-11-03） */
+      /* 素材墙的卡片也要带属性，不能只有一张图 + 名字（2026-11-03） */
       + (s.sz ? `<span class="sz">${esc(s.sz)}</span>` : '')
       + (Array.isArray(s.cast)
           ? (s.cast.length
@@ -274,7 +276,7 @@ function renderFree(){
     freecv.appendChild(el);
   });
   /* 🔧 2026-10-20：重建后要把图层效果重新套上，否则一渲染就丢
-     （之前 applyLayers 只认 .shot，自由画布这边压根没套过） */
+     （之前 applyLayers 只认 .shot，素材墙这边压根没套过） */
   if (typeof applyAllLayers === 'function') { try { applyAllLayers(); } catch(_){} }
 }
 function bindFree(el,s){

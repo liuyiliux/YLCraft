@@ -56,7 +56,7 @@
      景别原来只藏在名字里（「中景推进」），看不出一组片子够不够变化。 */
   /* 景别角标（2026-11-02）：放在缩略图左下，不占额外高度。
      景别原来只藏在名字里（「中景推进」），看不出一组片子够不够变化。
-     2026-11-03 改成通用类 —— 自由画布的卡片也要用。 */
+     2026-11-03 改成通用类 —— 素材墙的卡片也要用。 */
   .sz{position:absolute;left:7px;bottom:7px;z-index:3;
     font-size:9px;line-height:1.6;color:var(--tx);
     background:rgba(8,8,10,.72);backdrop-filter:blur(6px);
@@ -70,7 +70,7 @@
     border-radius:var(--r1);padding:0 5px;letter-spacing:.02em}
   .cast.empty{color:var(--tx3);background:transparent;
     border:1px dashed rgba(255,255,255,.2)}
-  /* 自由画布的卡片容器也要能定位角标 */
+  /* 素材墙的卡片容器也要能定位角标 */
   .item .im{position:relative}
   .stt.ok{background:var(--ok);box-shadow:0 0 0 2.5px rgba(52,211,153,.22)}
   .stt.run{background:var(--ac);animation:pulse 1.2s ease-in-out infinite}
@@ -111,7 +111,7 @@
   .seg2.ok{background:#5eead4} .seg2.run{background:var(--ac);animation:pulse 1.2s infinite}
   .seg2.err{background:var(--dg)} .seg2.todo{background:var(--s3);color:var(--tx3)}
 
-  /* ---------- 自由画布 ---------- */
+  /* ---------- 素材墙 ---------- */
   .freecv{position:relative;flex:1;overflow:hidden;min-height:0}
   .item{position:absolute;border-radius:10px;cursor:grab;z-index:10;
     transition:box-shadow .24s var(--ez)}
