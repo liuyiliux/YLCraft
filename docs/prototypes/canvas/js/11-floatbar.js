@@ -57,7 +57,11 @@ function showFloatBar(anchorEl, item){
   let left = r.left + r.width / 2 - bw / 2;
   left = Math.max(8, Math.min(left, window.innerWidth - bw - 8));
   let top = r.top - bh - 8;
-  if (top < 56) top = r.bottom + 8;   // 太靠上就改到下面
+  /* 原来写死 top < 56 才避让，但顶栏 52 + 统计条 34 = 86 —— 算出来 58 刚好卡在
+     统计条上（临界值漏掉了）。改成量统计条的实际底边（2026-11-03） */
+  const sbarEl = document.querySelector('#vShots .sbar');
+  const limit = sbarEl ? sbarEl.getBoundingClientRect().bottom + 6 : 56;
+  if (top < limit) top = r.bottom + 8;
   bar.style.left = left + 'px';
   bar.style.top = top + 'px';
 }
