@@ -115,11 +115,13 @@ function renderShots(){
               ? `<span class="cast">${s.cast.map(c => esc(c)).join(' · ')}</span>`
               : `<span class="cast empty">空镜</span>`)
           : '')
-      + (typeof wsRefChipsHtml === 'function' ? wsRefChipsHtml(s.id) : '')
       + `</div>`
       + `<div class="info"><div class="nm">${s.name}</div><div class="ln">`
       + `<span>${s.duration>0?s.duration.toFixed(1)+'s':'—'}</span>`
       + `<span class="d">${s.wsSim ? '模拟' : s.canvas ? s.canvas.width+'×'+s.canvas.height : s.status==='ok'?'1024×1536':s.status==='err'?'403':s.status==='run'?'生成中':'—'}</span>`
+      /* 参考标记原来 absolute 在缩略图底部，整行盖住景别和角色角标 ——
+         角标看不见、点角标还会误开到参考弹层。挪到 info 区（2026-11-03） */
+      + (typeof wsRefChipsHtml === 'function' ? wsRefChipsHtml(s.id) : '')
       + `</div></div>`;
     el.addEventListener('click', ()=>{
       if(s.status==='todo') return;
