@@ -65,6 +65,9 @@ function demoFill(kind, count){
     return {
       id:'s'+(i+1), order:i, duration:s.d, status:s.st, name:s.n, sz:s.sz || '',
       cast: s.cast,   // undefined = 不是分镜（如角色图），[] = 空镜
+      /* 分镜是**视频片段**，角色图才是**图片** —— 之前全按图片处理，
+         连分辨率都显示成 SD 的 1024×1536（2026-11-03） */
+      media: kind === 'character' ? 'img' : 'vid',
       cls:i%6,
       x: pos.x,
       y: pos.y,
@@ -106,6 +109,18 @@ function renderShots(){
     el.draggable = true;
     el.dataset.id = s.id;
     el.dataset.i = i;
+    /* 分镜是视频，角色图是图片 —— 时长/分辨率/播放标识都跟着变（2026-11-03） */
+    const isVid = s.media !== 'img';
+    const res = s.wsSim ? '模拟'
+      : s.canvas ? (s.canvas.width + '×' + s.canvas.height)
+      : s.status === 'ok' ? (isVid ? '1080×1920' : '1024×1536')
+      : s.status === 'err' ? '403'
+      : s.status === 'run' ? '生成中' : '—';
+    const durTx = isVid && s.duration > 0
+      ? '<svg class="ic sm playtri" viewBox="0 0 24 24"><path d="M7 4l12 8-12 8z"/></svg>'
+        + s.duration.toFixed(1) + 's'
+      : (isVid ? '—' : '图片');
+
     el.innerHTML = `<div class="im${s.thumbUrl?' has-img':''}" style="${
         s.thumbUrl
           ? `background-image:url('${s.thumbUrl}');background-size:cover;background-position:center`
@@ -127,8 +142,8 @@ function renderShots(){
           : '')
       + `</div>`
       + `<div class="info"><div class="nm">${s.name}</div><div class="ln">`
-      + `<span>${s.duration>0?s.duration.toFixed(1)+'s':'—'}</span>`
-      + `<span class="d">${s.wsSim ? '模拟' : s.canvas ? s.canvas.width+'×'+s.canvas.height : s.status==='ok'?'1024×1536':s.status==='err'?'403':s.status==='run'?'生成中':'—'}</span>`
+      + `<span class="dur${isVid ? ' vid' : ''}">${durTx}</span>`
+      + `<span class="d">${res}</span>`
       /* 参考标记原来 absolute 在缩略图底部，整行盖住景别和角色角标 ——
          角标看不见、点角标还会误开到参考弹层。挪到 info 区（2026-11-03） */
       + (typeof wsRefChipsHtml === 'function' ? wsRefChipsHtml(s.id) : '')
@@ -225,7 +240,8 @@ function fmt(sec){ const m=Math.floor(sec/60), s=Math.round(sec%60);
 function addShot(){
   const maxOrder = DOC.items.reduce((a,s)=>Math.max(a,s.order),-1);
   DOC.items.push({id:'n'+Date.now(), order:maxOrder+1, duration:0, status:'todo',
-    name:'未命名的分镜', sz:'中景', cast:[], cls:DOC.items.length%6, x:30, y:30, w:176, h:244});
+    name:'未命名的分镜', sz:'中景', cast:[], media:'vid',
+    cls:DOC.items.length%6, x:30, y:30, w:176, h:244});
   emptyEl.classList.add('hidden');
   renderShots();
   toast('已加一镜 · 先填标题和景别');
