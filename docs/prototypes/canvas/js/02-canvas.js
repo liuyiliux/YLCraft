@@ -1,4 +1,4 @@
-/* 02-canvas.js - split from canvas_unified_v14.html (lines 37-570) */
+﻿/* 02-canvas.js - split from canvas_unified_v14.html (lines 37-570) */
 /* ================= 模式切换 ================= */
 function setMode(m){
   mode = m;
@@ -381,14 +381,19 @@ function buildGraph(keepPos){
   for (let i=0;i<N;i++){
     const col=i%3, row=Math.floor(i/3);
     nodes.push({
-      id:'g'+i, x:372+col*152, y:16+row*78, w:140,
+      id:'g'+i, x:372+col*152, y:16+row*124, w:140,
       t:String(i+1).padStart(2,'0')+' '+items[i].name,
       sub: items[i].status==='ok'?'已生成':(items[i].status==='err'?'失败 403':(items[i].status==='run'?'生成中':'待生成')),
       kind:'image', st:items[i].status, ins:['text','image'], outs:['image'], shot:i,
+      /* 节点带缩略图 —— 参考图里那种卡片式节点（2026-11-03）。
+         高度固定 112，和 CSS .gnode.hasimg 一致，否则连线端口会错位。
+         缩略图信息直接存进节点数据：渲染节点的函数拿不到 items。 */
+      hasimg:true, h:112,
+      thumb: items[i].thumbUrl || '', shotCls: items[i].cls, shotSz: items[i].sz || '',
       cap:'image-gen'
     });
   }
-  const rows=Math.ceil(N/3), yb=16+rows*78+18;
+  const rows=Math.ceil(N/3), yb=16+rows*124+18;
   nodes.push({id:'merge', x:372, y:yb, w:140, t:'合成时间线', kind:'video',
     sub:'总时长 '+fmt(items.reduce((a,s)=>a+(s.duration||0),0)), st:'ok', ins:['image'], outs:['video'],
     cap:'clip'});
@@ -434,7 +439,10 @@ function renderGraph(){
 
   const pos = {};
   GRAPH.nodes.forEach(n=> pos[n.id]={x:n.x,y:n.y,w:n.w});
-  const portY = (n, idx, total) => n.y + 24 + (idx - (total-1)/2) * 15;
+  /* 带图的节点高度 112，普通节点实测 54（不是 48）—— 端口和连线都用这个基准，
+     否则普通节点的连线会偏 3px（2026-11-03 量出来的） */
+  const nodeH = n => n.h || 54;
+  const portY = (n, idx, total) => n.y + nodeH(n)/2 + (idx - (total-1)/2) * 15;
 
   // 连线
   svg.innerHTML = GRAPH.edges.map((e,i)=>{
@@ -456,13 +464,22 @@ function renderGraph(){
   nbox.innerHTML = GRAPH.nodes.map(n=>{
     const dot = n.st==='ok'?'var(--ok)':n.st==='run'?'var(--ac)':n.st==='err'?'var(--dg)':'var(--tx3)';
     const ins = (n.ins||[]).map((k,i)=>`<span class="gport i" data-node="${n.id}" data-kind="${k}" data-dir="in"
-        style="border-color:${KIND_COLOR[k]||KIND_COLOR.any};top:${24+(i-(n.ins.length-1)/2)*15}px"></span>`).join('');
+        style="border-color:${KIND_COLOR[k]||KIND_COLOR.any};top:${(n.h||54)/2+(i-(n.ins.length-1)/2)*15}px"></span>`).join('');
     const outs = (n.outs||[]).map((k,i)=>`<span class="gport o" data-node="${n.id}" data-kind="${k}" data-dir="out"
-        style="border-color:${KIND_COLOR[k]||KIND_COLOR.any};top:${24+(i-(n.outs.length-1)/2)*15}px"></span>`).join('');
-    return `<div class="gnode${gSel===n.id?' sel':''}${n.comp?' comp':''}${n.userGroup?' usergrp':''}${gMulti.has(n.id)?' multi':''}" data-id="${n.id}"
+        style="border-color:${KIND_COLOR[k]||KIND_COLOR.any};top:${(n.h||54)/2+(i-(n.outs.length-1)/2)*15}px"></span>`).join('');
+    const shot = n.hasimg ? n : null;
+    const imgStyle = shot
+      ? (shot.thumb
+          ? `background-image:url('${shot.thumb}');background-size:cover;background-position:center`
+          : `background:${BG[shot.shotCls] || BG[0]}`)
+      : '';
+    return `<div class="gnode${gSel===n.id?' sel':''}${n.comp?' comp':''}${n.userGroup?' usergrp':''}${gMulti.has(n.id)?' multi':''}${n.hasimg?' hasimg':''}" data-id="${n.id}"
         style="left:${n.x}px;top:${n.y}px;width:${n.w}px">
       ${ins}
       <div class="ghd"><span class="gt">${n.t}</span><span class="gd" style="background:${dot}"></span></div>
+      ${shot ? `<div class="gimg" style="${imgStyle}">`
+        + (shot.shotSz ? `<span class="sz">${esc(shot.shotSz)}</span>` : '')
+        + `</div>` : ''}
       <div class="gbd">${n.sub}</div>
       ${outs}
       ${capKeyOfNode(n)?`<button class="grun" data-run="${n.id}" title="运行这个节点（会先过门禁）">▶</button>`:''}
