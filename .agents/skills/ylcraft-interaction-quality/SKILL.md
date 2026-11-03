@@ -21,6 +21,25 @@ description: Enforce YLCraft interaction quality for Agent conversations, tool-r
 
 ---
 
+## 📒 动 UI 之前：先查台账（2026-11-03 加）
+
+> 这条是修「**每次都要用户提醒**」的根因：台账早就写好了，但我改 UI 时不会自动去翻它。
+
+**改任何页面 / 加任何交互之前，先打开 `docs/research/RESEARCH_LEDGER.md` 第三节**
+（「按『还欠什么』重新排序」）—— 那里列着**已经调研过、但还没落进原型**的做法。
+
+| 文件 | 什么时候看 |
+| --- | --- |
+| `docs/research/RESEARCH_LEDGER.md` | **每次动 UI 前必看**。21 个平台的「抄了什么 ✅ / 还欠什么 ❌」 |
+| `docs/research/jimeng/*.png` | 要抄即梦的真实界面：首页 / 技能弹层 / 画布 / 画布+对话（4 张） |
+| `docs/research/2026-10-15_platform_interaction_strengths.md` | 横向对比各平台交互优点（25KB） |
+| `references/industry-practices.md` | 本 skill 内的提炼版（A–J，带一手来源） |
+
+**判据**：如果要做的东西已经在台账的「还欠什么」里有结论，**不要重新设计** —— 照结论做，
+并在完成后把那一行从 ❌ 改成 ✅（否则台账会越来越不可信）。
+
+---
+
 ## 🚨 两条最根本的（比条文更底层）
 
 ### 1. 界面不许泄漏内部术语 —— 「引擎术语 / 用户术语」分开维护
