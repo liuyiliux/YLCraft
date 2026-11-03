@@ -32,7 +32,8 @@ ta.addEventListener('keydown', e=>{
 });
 
 renderUserChip(); renderCanvasName(); renderTplRefBar();
-setMode('shots');
+/* 默认落在画布（连线图）—— 节点图才是画布本体（2026-11-03 用户定的） */
+setMode('flow');
 
 /* ============================================================
    🔴 加载顺序陷阱（这个项目踩过两次，统一解决）：

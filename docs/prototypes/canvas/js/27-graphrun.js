@@ -306,8 +306,12 @@ function syncGraphRunBtn(){
    这样连线图里只有一个运行按钮，不重复。 */
 (function(){
   function boot(){
-    const btn = document.querySelector('#vFlow .sbar button');
-    if (btn){
+    /* 🔴 必须精确指到「整组重跑」：sbar 里第一个 button 是「步骤」切换钮 ——
+       之前用 '#vFlow .sbar button' 取第一个，结果点「步骤」会触发跑整图 + 门禁。
+       2026-11-03 给按钮加了 id，直接指。 */
+    const btn = document.getElementById('rerunBtn')
+      || document.querySelector('#vFlow .sbar button.b.solid');
+    if (btn && !btn.dataset.wired){
       btn.onclick = null;
       btn.addEventListener('click', function(e){
         e.preventDefault();

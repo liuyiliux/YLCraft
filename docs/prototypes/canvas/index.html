@@ -32,7 +32,7 @@
   </div>
   <div id="tplRefBar" class="hidden"></div>
   <button class="b adv" id="mFlow" onclick="setMode('flow')" style="font-size:11.5px;color:var(--tx3);padding:5px 9px">
-    <svg class="ic sm" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M6 8.4v5.6A3.4 3.4 0 0 0 9.4 17.4H15.6"/></svg>高级
+    <svg class="ic sm" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M6 8.4v5.6A3.4 3.4 0 0 0 9.4 17.4H15.6"/></svg>画布
   </button>
 
   <div id="userChip" onclick="openUserMenu()" class="uchip" title="切换用户（演示画布隔离）"></div>
@@ -113,23 +113,23 @@
       </div>
     </div>
 
-    <!-- 高级：打组执行 / 连线图 -->
+    <!-- 画布（原「高级」，2026-11-03 改名：节点连线图才是画布本体）：步骤 / 连线图 -->
     <div id="vFlow" class="hidden" style="flex:1;display:flex;flex-direction:column;min-height:0">
       <div class="sbar">
-        <span class="ttl">高级</span>
+        <span class="ttl">画布</span>
         <div class="subseg">
-          <button id="ftbSteps" class="on" onclick="setFlowView('steps')">步骤</button>
-          <button id="ftbGraph" onclick="setFlowView('graph')">连线图</button>
+          <button id="ftbSteps" onclick="setFlowView('steps')">步骤</button>
+          <button id="ftbGraph" class="on" onclick="setFlowView('graph')">连线图</button>
         </div>
         <span class="meta" id="flowCount"></span>
         <span class="sp"></span>
-        <button class="b solid" style="font-size:11.5px" onclick="rerunAll()">
+        <button class="b solid" id="rerunBtn" style="font-size:11.5px" onclick="rerunAll()">
           <svg class="ic sm" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>整组重跑
         </button>
       </div>
 
-      <!-- 子视图 A：步骤 -->
-      <div class="flow" id="flowStepsView">
+      <!-- 子视图 A：步骤（默认显示连线图，这个收起来） -->
+      <div class="flow hidden" id="flowStepsView">
         <div class="grp">
           <div class="gh">
             <svg class="ic sm" viewBox="0 0 24 24" style="color:var(--ac)"><path d="M4 4h7v7H4zM13 13h7v7h-7zM13 4h7v7h-7z"/></svg>
@@ -145,8 +145,8 @@
         </div>
       </div>
 
-      <!-- 子视图 B：连线图（可编辑 · 可连线 · 可运行 · 节点库可加） -->
-      <div class="gwrap hidden" id="flowGraphView">
+      <!-- 子视图 B：连线图（默认 · 可编辑 · 可连线 · 可运行 · 节点库可加） -->
+      <div class="gwrap" id="flowGraphView">
         <!-- 节点库：基础 / 复杂 两栏（P4 加新用途=加配置） -->
         <aside class="nodelib">
           <div class="nlh">
