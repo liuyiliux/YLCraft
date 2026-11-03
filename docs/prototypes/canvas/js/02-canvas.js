@@ -51,7 +51,9 @@ function demoFill(kind, count){
   const base = src.slice(0, total).map((s,i)=>{
     const col = i % 6, row = Math.floor(i / 6);
     return {
-      id:'s'+(i+1), order:i, duration:s.d, status:s.st, name:s.n, sz:s.sz || '', cls:i%6,
+      id:'s'+(i+1), order:i, duration:s.d, status:s.st, name:s.n, sz:s.sz || '',
+      cast: s.cast,   // undefined = 不是分镜（如角色图），[] = 空镜
+      cls:i%6,
       x: 16 + col*130,
       y: 26 + row*200 + (col%2)*14,
       w: W, h: H
@@ -103,6 +105,13 @@ function renderShots(){
       + `<span class="no">${String(i+1).padStart(2,'0')}</span>`
       + `<span class="stt ${s.status}"></span>`
       + (s.sz ? `<span class="sz">${esc(s.sz)}</span>` : '')
+      /* 这一镜画面里有谁。空数组显式标「空镜」——
+         不标就分不清「确实没人」和「忘了填」（2026-11-03，照 Storyboard 的做法） */
+      + (Array.isArray(s.cast)
+          ? (s.cast.length
+              ? `<span class="cast">${s.cast.map(c => esc(c)).join(' · ')}</span>`
+              : `<span class="cast empty">空镜</span>`)
+          : '')
       + (typeof wsRefChipsHtml === 'function' ? wsRefChipsHtml(s.id) : '')
       + `</div>`
       + `<div class="info"><div class="nm">${s.name}</div><div class="ln">`
@@ -201,7 +210,7 @@ function fmt(sec){ const m=Math.floor(sec/60), s=Math.round(sec%60);
 function addShot(){
   const maxOrder = DOC.items.reduce((a,s)=>Math.max(a,s.order),-1);
   DOC.items.push({id:'n'+Date.now(), order:maxOrder+1, duration:0, status:'todo',
-    name:'未命名的分镜', sz:'中景', cls:DOC.items.length%6, x:30, y:30, w:176, h:244});
+    name:'未命名的分镜', sz:'中景', cast:[], cls:DOC.items.length%6, x:30, y:30, w:176, h:244});
   emptyEl.classList.add('hidden');
   renderShots();
   toast('已加一镜 · 先填标题和景别');
