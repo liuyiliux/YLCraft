@@ -24,7 +24,7 @@ function setMode(m){
           : '镜头墙：点镜头选中 · 拖动换顺序，镜号自动重排')
       : '选一条路开始',
     free:  DOC.items.length? '素材墙：拖动图片摆放 · 点图放大编辑 · 右键更多' : '选一条路开始',
-    flow:  '高级：这是流程步骤，不是节点连线 · 改完点「整组重跑」'
+    flow:  '画布：节点 + 连线，能拖能连能跑 · 上面可切「步骤」看流程组成'
   };
   showHint(hints[m]);
   closeCtx();
@@ -334,8 +334,8 @@ function renderFlow(){
   if (flowView==='graph') renderGraph();
 }
 
-/* 高级子视图切换 */
-let flowView = 'steps';
+/* 画布（原「高级」）子视图切换 · 默认连线图 —— 节点图才是画布本体（2026-11-03） */
+let flowView = 'graph';
 function setFlowView(v){
   flowView = v;
   document.getElementById('ftbSteps').classList.toggle('on', v==='steps');
