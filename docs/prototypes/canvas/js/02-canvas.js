@@ -44,8 +44,10 @@ function showHint(html, hold){
 /* ================= 填充演示数据 ================= */
 function demoFill(kind, count){
   // 自由画布模式用紧凑排布（6 列 × 2 行，轻微错落），镜头墙模式不依赖坐标
-  // character = 角色图批次（按角度），其余 = 视频分镜（按景别 + 时长）
-  const src = (kind === 'character' && typeof DEMO_CHAR !== 'undefined') ? DEMO_CHAR : DEMO;
+  // character = 角色图（按角度）· promo = 宣传片（建筑/产品，没有角色）· 其余 = 人物分镜
+  const src = kind === 'character' && typeof DEMO_CHAR !== 'undefined' ? DEMO_CHAR
+            : kind === 'promo' && typeof DEMO_PROMO !== 'undefined' ? DEMO_PROMO
+            : DEMO;
   const total = Math.min(count || 12, src.length);
   const W = 122, H = 168;
   const base = src.slice(0, total).map((s,i)=>{
@@ -69,6 +71,7 @@ function demoFill(kind, count){
   const N = total;   // 实际生成的数量
   const openings = {
     script:`收到。我把这段故事拆成了 <b>${N} 个分镜</b>，景别从远景到特写都配上了。标题是这一镜讲什么，景别在卡片左下角。要调整顺序直接拖卡片。`,
+    promo:`按宣传片的思路拆了 <b>${N} 个镜头</b>。这类片子<b>没有角色属性</b> —— 卡片上只有景别，不标人，也不留空位。`,
     character:`按你这份设定出了 <b>${N} 张角色图</b>。正面两张先挑一张定妆，其余角度留给后续镜头当参考 —— 哪张不对单独重跑，别整批重来。`,
     upload:`收到参考图。我把它放在了 <b>自由画布</b>里，可以点开放大改。要拆成镜头序列也可以。`,
     tpl:`用了「短剧分镜」模板：<b>${N} 个镜头</b>，其中 ${Math.max(0,N-3)} 个已生成、1 个生成中、1 个失败、1 个待生成。`,
