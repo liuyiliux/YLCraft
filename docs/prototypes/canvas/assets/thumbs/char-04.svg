@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 480" width="360" height="480">
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="0.85" y2="1"><stop offset="0" stop-color="#403934"/><stop offset="0.52" stop-color="#231f1d"/><stop offset="1" stop-color="#100e0d"/></linearGradient>
+<radialGradient id="lt" cx="0.40" cy="0.26" r="0.72"><stop offset="0" stop-color="#e8d4bb" stop-opacity=".62"/><stop offset="0.42" stop-color="#e8d4bb" stop-opacity=".18"/><stop offset="1" stop-color="#e8d4bb" stop-opacity="0"/></radialGradient>
+<radialGradient id="vig" cx="50%" cy="48%" r="72%"><stop offset="52%" stop-color="#000" stop-opacity="0"/><stop offset="100%" stop-color="#000" stop-opacity=".50"/></radialGradient>
+<filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="16"/></filter>
+</defs>
+<rect x="0.0" y="0.0" width="360.0" height="480.0" fill="url(#bg)" opacity="1.00" />
+<rect x="0.0" y="0.0" width="360.0" height="480.0" fill="url(#lt)" opacity="1.00" />
+<circle cx="180.0" cy="220.8" r="132.0" fill="#e8d4bb" opacity="0.07"/>
+<ellipse cx="180" cy="432" rx="120" ry="14" fill="#0b0908" opacity=".28"/>
+<g><path d="M 176.1 228.4 Q 162.3 219.1 155.2 247.0 Q 161.4 314.7 167.3 377.2 L 202.0 377.2 Q 198.6 314.7 204.8 247.0 Q 207.0 219.1 193.2 228.4 Z" fill="#0b0908" opacity=".87"/><path d="M 168.3 242.3 Q 164.3 302.8 169.0 377.2" fill="none" stroke="#e8d4bb" stroke-width="1.2" opacity=".13"/><path d="M 201.0 242.3 Q 205.0 302.8 200.3 377.2" fill="none" stroke="#e8d4bb" stroke-width="1.2" opacity=".13"/><path d="M 167.6 211.2 C 167.6 178.8 201.7 178.8 201.7 211.2 C 200.3 227.5 169.0 227.5 167.6 211.2 Z" fill="#0b0908" opacity=".9"/><path d="M 169.3 208.1 Q 161.6 185.0 196.6 192.4 L 169.3 208.1 Z" fill="#0b0908"/><path d="M 176.1 228.4 Q 162.3 219.1 155.2 247.0 Q 161.4 314.7 167.3 377.2 L 202.0 377.2 Q 198.6 314.7 204.8 247.0 Q 207.0 219.1 193.2 228.4 Z" fill="none" stroke="#e8d4bb" stroke-width="2.0" opacity=".34"/><path d="M 167.6 211.2 C 167.6 178.8 201.7 178.8 201.7 211.2 C 200.3 227.5 169.0 227.5 167.6 211.2 Z" fill="none" stroke="#e8d4bb" stroke-width="1.7" opacity=".38"/></g>
+<rect x="0.0" y="0.0" width="360.0" height="480.0" fill="url(#vig)" opacity="1.00" />
+<title>侧面</title>
+</svg>

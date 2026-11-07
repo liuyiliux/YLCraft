@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 480" width="360" height="480">
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="0.85" y2="1"><stop offset="0" stop-color="#314247"/><stop offset="0.52" stop-color="#1a262a"/><stop offset="1" stop-color="#0a1113"/></linearGradient>
+<radialGradient id="lt" cx="0.62" cy="0.22" r="0.72"><stop offset="0" stop-color="#b6dcd4" stop-opacity=".62"/><stop offset="0.42" stop-color="#b6dcd4" stop-opacity=".18"/><stop offset="1" stop-color="#b6dcd4" stop-opacity="0"/></radialGradient>
+<radialGradient id="vig" cx="50%" cy="48%" r="72%"><stop offset="52%" stop-color="#000" stop-opacity="0"/><stop offset="100%" stop-color="#000" stop-opacity=".50"/></radialGradient>
+<filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="16"/></filter>
+</defs>
+<rect x="0.0" y="0.0" width="360.0" height="480.0" fill="url(#bg)" opacity="1.00" />
+<rect x="0.0" y="0.0" width="360.0" height="480.0" fill="url(#lt)" opacity="1.00" />
+<rect x="8.0" y="40.0" width="10.0" height="440.0" fill="#060c0e" opacity="0.28" /><rect x="342.0" y="40.0" width="10.0" height="440.0" fill="#060c0e" opacity="0.28" /><rect x="68.0" y="53.0" width="18.0" height="440.0" fill="#060c0e" opacity="0.43" /><rect x="274.0" y="53.0" width="18.0" height="440.0" fill="#060c0e" opacity="0.43" /><rect x="128.0" y="66.0" width="26.0" height="440.0" fill="#060c0e" opacity="0.58" /><rect x="206.0" y="66.0" width="26.0" height="440.0" fill="#060c0e" opacity="0.58" /><path d="M 0 346 L 360 346" stroke="#060c0e" stroke-width="1" opacity=".30"/>
+<path d="M 20 298 L 340 298 L 340 307 L 20 307 Z" fill="#060c0e" opacity=".34"/><path d="M 8 332 L 352 332 L 352 341 L 8 341 Z" fill="#060c0e" opacity=".34"/><path d="M -4 366 L 364 366 L 364 375 L -4 375 Z" fill="#060c0e" opacity=".34"/><path d="M -16 400 L 376 400 L 376 409 L -16 409 Z" fill="#060c0e" opacity=".34"/>
+<g><path d="M 183.8 285.3 Q 176.0 281.5 174.8 292.7 Q 177.3 319.8 178.5 344.8 L 195.9 344.8 Q 197.1 319.8 199.6 292.7 Q 198.4 281.5 190.6 285.3 Z" fill="#060c0e" opacity=".87"/><path d="M 179.0 290.8 Q 177.0 315.0 179.4 344.8" fill="none" stroke="#b6dcd4" stroke-width="0.5" opacity=".13"/><path d="M 195.4 290.8 Q 197.4 315.0 195.0 344.8" fill="none" stroke="#b6dcd4" stroke-width="0.5" opacity=".13"/><path d="M 180.4 278.4 C 180.4 265.4 194.0 265.4 194.0 278.4 C 193.5 284.9 180.9 284.9 180.4 278.4 Z" fill="#060c0e" opacity=".9"/><circle cx="187.2" cy="271.3" r="4.7" fill="#060c0e" opacity="0.95"/><path d="M 183.8 285.3 Q 176.0 281.5 174.8 292.7 Q 177.3 319.8 178.5 344.8 L 195.9 344.8 Q 197.1 319.8 199.6 292.7 Q 198.4 281.5 190.6 285.3 Z" fill="none" stroke="#b6dcd4" stroke-width="0.8" opacity=".34"/><path d="M 180.4 278.4 C 180.4 265.4 194.0 265.4 194.0 278.4 C 193.5 284.9 180.9 284.9 180.4 278.4 Z" fill="none" stroke="#b6dcd4" stroke-width="0.7" opacity=".38"/></g>
+<rect x="0.0" y="0.0" width="360.0" height="480.0" fill="url(#vig)" opacity="1.00" />
+<title>从石阶走到廊下</title>
+</svg>

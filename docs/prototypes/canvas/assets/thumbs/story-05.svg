@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 480" width="360" height="480">
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="0.85" y2="1"><stop offset="0" stop-color="#6a4522"/><stop offset="0.52" stop-color="#33200f"/><stop offset="1" stop-color="#120c08"/></linearGradient>
+<radialGradient id="lt" cx="0.34" cy="0.30" r="0.72"><stop offset="0" stop-color="#ffd39a" stop-opacity=".62"/><stop offset="0.42" stop-color="#ffd39a" stop-opacity=".18"/><stop offset="1" stop-color="#ffd39a" stop-opacity="0"/></radialGradient>
+<radialGradient id="vig" cx="50%" cy="48%" r="72%"><stop offset="52%" stop-color="#000" stop-opacity="0"/><stop offset="100%" stop-color="#000" stop-opacity=".50"/></radialGradient>
+<filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="16"/></filter>
+</defs>
+<rect x="0.0" y="0.0" width="360.0" height="480.0" fill="url(#bg)" opacity="1.00" />
+<rect x="0.0" y="0.0" width="360.0" height="480.0" fill="url(#lt)" opacity="1.00" />
+<rect x="58.0" y="55.0" width="4.0" height="370.0" fill="#0c0806" opacity="0.48" /><rect x="118.0" y="55.0" width="4.0" height="370.0" fill="#0c0806" opacity="0.48" /><rect x="178.0" y="55.0" width="4.0" height="370.0" fill="#0c0806" opacity="0.48" /><rect x="238.0" y="55.0" width="4.0" height="370.0" fill="#0c0806" opacity="0.48" /><rect x="298.0" y="55.0" width="4.0" height="370.0" fill="#0c0806" opacity="0.48" /><rect x="20.0" y="133.0" width="320.0" height="4.0" fill="#0c0806" opacity="0.48" /><rect x="20.0" y="211.0" width="320.0" height="4.0" fill="#0c0806" opacity="0.48" /><rect x="20.0" y="289.0" width="320.0" height="4.0" fill="#0c0806" opacity="0.48" /><rect x="20.0" y="367.0" width="320.0" height="4.0" fill="#0c0806" opacity="0.48" /><rect x="20.0" y="55.0" width="320.0" height="370.0" fill="#ffd39a" opacity="0.05" />
+<g><path d="M 174.2 242.0 Q 161.1 235.7 159.0 254.6 Q 163.2 300.5 165.3 342.8 L 194.7 342.8 Q 196.8 300.5 201.0 254.6 Q 198.9 235.7 185.8 242.0 Z" fill="#0c0806" opacity=".87"/><path d="M 166.1 251.5 Q 162.8 292.4 166.8 342.8" fill="none" stroke="#ffd39a" stroke-width="0.8" opacity=".13"/><path d="M 193.9 251.5 Q 197.2 292.4 193.2 342.8" fill="none" stroke="#ffd39a" stroke-width="0.8" opacity=".13"/><path d="M 168.4 230.4 C 168.4 208.4 191.6 208.4 191.6 230.4 C 190.6 241.5 169.4 241.5 168.4 230.4 Z" fill="#0c0806" opacity=".9"/><path d="M 168.4 227.2 Q 180.0 203.5 191.6 227.2 Q 180.0 217.6 168.4 227.2 Z" fill="#0c0806"/><path d="M 174.2 242.0 Q 161.1 235.7 159.0 254.6 Q 163.2 300.5 165.3 342.8 L 194.7 342.8 Q 196.8 300.5 201.0 254.6 Q 198.9 235.7 185.8 242.0 Z" fill="none" stroke="#ffd39a" stroke-width="1.4" opacity=".34"/><path d="M 168.4 230.4 C 168.4 208.4 191.6 208.4 191.6 230.4 C 190.6 241.5 169.4 241.5 168.4 230.4 Z" fill="none" stroke="#ffd39a" stroke-width="1.2" opacity=".38"/></g>
+<rect x="0.0" y="0.0" width="360.0" height="480.0" fill="url(#vig)" opacity="1.00" />
+<title>停在窗棂前</title>
+</svg>

@@ -90,18 +90,18 @@ function renderGroupBar(){
   if (gMulti.size >= 2 && !insideGroup){
     bar.classList.remove('hidden');
     bar.innerHTML = `<span class="gb-t">已选 <b>${gMulti.size}</b> 个节点</span>
-      <button class="b solid" style="font-size:11px;padding:3px 10px" onclick="makeGroup()">打组</button>
-      <button class="b" style="font-size:11px;padding:3px 8px" onclick="gMulti.clear();renderGraph();renderGroupBar()">取消</button>`;
+      <button class="b solid" style="font-size:var(--fz);padding:3px 10px" onclick="makeGroup()">打组</button>
+      <button class="b" style="font-size:var(--fz);padding:3px 8px" onclick="gMulti.clear();renderGraph();renderGroupBar()">取消</button>`;
   } else if (insideGroup){
     bar.classList.remove('hidden');
     bar.innerHTML = `<span class="gb-t">在组「${(GROUPS[insideGroup]||{}).t||''}」内部</span>
-      <button class="b solid" style="font-size:11px;padding:3px 10px" onclick="exitGroup()">Tab 退出</button>`;
+      <button class="b solid" style="font-size:var(--fz);padding:3px 10px" onclick="exitGroup()">Tab 退出</button>`;
   } else if (gSel && GROUPS[gSel]){
     bar.classList.remove('hidden');
     bar.innerHTML = `<span class="gb-t">组「${GROUPS[gSel].t}」· Tab 进入</span>
-      <button class="b" style="font-size:11px;padding:3px 10px" onclick="renameGroup('${gSel}')">重命名</button>
-      <button class="b" style="font-size:11px;padding:3px 10px" onclick="saveGroupAsFlow('${gSel}')">存为流程</button>
-      <button class="b solid" style="font-size:11px;padding:3px 10px" onclick="enterGroup('${gSel}')">进入</button>`;
+      <button class="b" style="font-size:var(--fz);padding:3px 10px" onclick="renameGroup('${gSel}')">重命名</button>
+      <button class="b" style="font-size:var(--fz);padding:3px 10px" onclick="saveGroupAsFlow('${gSel}')">存为流程</button>
+      <button class="b solid" style="font-size:var(--fz);padding:3px 10px" onclick="enterGroup('${gSel}')">进入</button>`;
   } else {
     bar.classList.add('hidden');
   }

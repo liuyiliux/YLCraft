@@ -22,20 +22,27 @@
     display:flex;align-items:center;justify-content:center;flex:0 0 auto;color:var(--tx2)}
   .opt:hover .oi{background:var(--ac);color:#04222a}
   .opt .on{font-size:12.5px;color:var(--tx);margin-bottom:2px}
-  .opt .od{font-size:10.5px;color:var(--tx3);line-height:1.5}
+  .opt .od{font-size:var(--fz);color:var(--tx3);line-height:1.5}
 
   /* ---------- 镜头墙 ---------- */
   .sbar{display:flex;align-items:center;gap:9px;padding:7px 14px;border-bottom:1px solid var(--ln);
     background:rgba(8,8,10,.5);flex:0 0 auto;z-index:5}
   /* 标题要比特正文重 —— 原来 400 和正文一样重，等于没有标题（2026-11-02 对齐参考图） */
   .sbar .ttl{font-size:13px;color:var(--tx);font-weight:600}
-  .sbar .meta{font-size:11px;color:var(--tx3);font-family:var(--fm)}
+  .sbar .meta{font-size:var(--fz);color:var(--tx3);font-family:var(--fm)}
   .sbar .sp{margin-left:auto}
-  .grid{flex:1;overflow-y:auto;padding:10px 14px 8px;display:grid;
-    grid-template-columns:repeat(6,minmax(0,1fr));gap:11px;align-content:start;min-height:0}
+  /* 2026-11-05：卡片原来是固定 136px 且 align-content:start，
+     12 镜只占上部 1/3，下面 500px 全黑。改成「卡片跟着视口长高 +
+     行间均匀分配剩余空间」：图成为主体，1 行 / 2 行 / 3 行都不塌。
+     用 clamp 不用 1fr —— 1 行时 1fr 会把卡片拉成 700px 的怪物。 */
+  /* 底部 48px 让给折叠后的历史条，卡片再多也不被压住 */
+  .grid{flex:1;overflow-y:auto;padding:10px 14px 48px;display:grid;
+    grid-template-columns:repeat(6,minmax(0,1fr));gap:11px;
+    align-content:space-evenly;min-height:0;
+    grid-auto-rows:minmax(136px,clamp(136px,26vh,280px))}
   .grid::-webkit-scrollbar{width:8px}
   .grid::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:4px}
-  .shot{position:relative;display:flex;flex-direction:column;height:136px;
+  .shot{position:relative;display:flex;flex-direction:column;height:auto;min-height:136px;
     background:var(--s1);border:1px solid var(--ln);border-radius:var(--r3);overflow:hidden;
     cursor:grab;transition:all .24s var(--ez)}
   .shot:hover{border-color:var(--ln2);transform:translateY(-2px);box-shadow:var(--sh2)}
@@ -49,7 +56,7 @@
     background:radial-gradient(circle at 62% 32%,rgba(255,214,150,.22),transparent 55%)}
   .shot .no{position:absolute;left:7px;top:7px;z-index:3;min-width:20px;height:18px;padding:0 5px;
     border-radius:var(--r1);background:rgba(8,8,10,.72);backdrop-filter:blur(6px);
-    color:var(--tx);font-size:10px;font-family:var(--fm);font-weight:600;
+    color:var(--tx);font-size:var(--fz);font-family:var(--fm);font-weight:600;
     display:flex;align-items:center;justify-content:center}
   .shot .stt{position:absolute;right:7px;top:7px;z-index:3;width:7px;height:7px;border-radius:50%}
   /* 景别角标（2026-11-02）：放在缩略图左下，不占额外高度。
@@ -58,13 +65,13 @@
      景别原来只藏在名字里（「中景推进」），看不出一组片子够不够变化。
      2026-11-03 改成通用类 —— 素材墙的卡片也要用。 */
   .sz{position:absolute;left:7px;bottom:7px;z-index:3;
-    font-size:9px;line-height:1.6;color:var(--tx);
+    font-size:var(--fz);line-height:1.6;color:var(--tx);
     background:rgba(8,8,10,.72);backdrop-filter:blur(6px);
     border-radius:var(--r1);padding:0 5px;letter-spacing:.02em}
   /* 这一镜有谁（2026-11-03）。右下角，和左下景别对称 —— 两个基本属性一眼看全。
      空镜用虚线框：让「没有人」这件事可见，而不是看起来像漏填。 */
   .cast{position:absolute;right:7px;bottom:7px;z-index:3;
-    font-size:9px;line-height:1.6;color:var(--tx);max-width:62%;
+    font-size:var(--fz);line-height:1.6;color:var(--tx);max-width:62%;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
     background:rgba(8,8,10,.72);backdrop-filter:blur(6px);
     border-radius:var(--r1);padding:0 5px;letter-spacing:.02em}
@@ -82,29 +89,29 @@
   .shot .ln .dur.vid{color:var(--tx2)}
   .shot .ln .playtri{width:7px;height:7px;fill:currentColor;stroke:none;flex:0 0 auto}
   .shot .info{flex:0 0 auto;padding:5px 7px 6px;background:var(--s1)}
-  .shot .nm{font-size:10.5px;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .shot .ln{display:flex;align-items:center;gap:5px;font-size:9px;color:var(--tx3);
+  .shot .nm{font-size:var(--fz);color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .shot .ln{display:flex;align-items:center;gap:5px;font-size:var(--fz);color:var(--tx3);
     font-family:var(--fm);margin-top:1px}
   .shot .ln .d{margin-left:auto}
   .shot.err .im{filter:grayscale(.6) brightness(.5)}
   .shot .errbadge{position:absolute;left:0;right:0;bottom:0;padding:4px;
     background:linear-gradient(to top,rgba(248,113,113,.18),transparent);
-    font-size:9px;color:var(--dg);text-align:center;z-index:2}
+    font-size:var(--fz);color:var(--dg);text-align:center;z-index:2}
   .shot.todo .im{opacity:.32}
   .shot .todobadge{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-    flex-direction:column;gap:3px;z-index:2;color:var(--tx3);font-size:9.5px}
+    flex-direction:column;gap:3px;z-index:2;color:var(--tx3);font-size:var(--fz)}
 
   /* 时间线（镜头墙模式底部，属于主内容，不是独立区） */
   .tl{flex:0 0 auto;border-top:1px solid var(--ln);padding:7px 14px 8px;background:rgba(8,8,10,.6);z-index:5}
   .tl .tr{display:flex;align-items:center;gap:6px;margin-bottom:6px}
   .tl .play{width:26px;height:26px;border-radius:50%;background:#f2f2f5;color:#0a0a0c;border:0;
     display:flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto}
-  .tl .time{font-size:11px;color:var(--tx2);font-family:var(--fm);margin-left:5px}
+  .tl .time{font-size:var(--fz);color:var(--tx2);font-family:var(--fm);margin-left:5px}
   .tl .time b{color:var(--tx)}
-  .tl .right{margin-left:auto;font-size:10px;color:var(--tx3);font-family:var(--fm)}
+  .tl .right{margin-left:auto;font-size:var(--fz);color:var(--tx3);font-family:var(--fm)}
   .track{display:flex;height:24px;gap:2px}
   .seg2{flex:1;border-radius:3px;display:flex;align-items:center;justify-content:center;
-    font-size:9px;font-family:var(--fm);color:rgba(0,0,0,.55);font-weight:600;
+    font-size:var(--fz);font-family:var(--fm);color:rgba(0,0,0,.55);font-weight:600;
     cursor:pointer;transition:all .2s var(--ez)}
   .seg2:hover{filter:brightness(1.25)}
   .seg2.sel{outline:2px solid var(--ac);outline-offset:1px}
@@ -125,7 +132,7 @@
     background:linear-gradient(175deg,#e8d5bd,#a8825c);border-radius:42% 42% 20% 20%/16% 16% 8% 8%}
   .item .glow{position:absolute;inset:0;
     background:radial-gradient(circle at 62% 32%,rgba(255,214,150,.24),transparent 55%)}
-  .item .lbl2{position:absolute;left:0;top:-19px;font-size:10px;color:var(--tx3);
+  .item .lbl2{position:absolute;left:0;top:-19px;font-size:var(--fz);color:var(--tx3);
     white-space:nowrap;opacity:0;transition:opacity .2s;pointer-events:none}
   .item:hover .lbl2,.item.sel .lbl2{opacity:1}
   /* 底部工具条：砍到 4 个 */
@@ -146,19 +153,19 @@
     padding:14px 16px;margin-bottom:12px}
   .grp .gh{display:flex;align-items:center;gap:9px;margin-bottom:10px}
   .grp .gh .t{font-size:12.5px;color:var(--tx);font-weight:600}
-  .grp .gh .c{font-size:10.5px;color:var(--tx3);font-family:var(--fm)}
+  .grp .gh .c{font-size:var(--fz);color:var(--tx3);font-family:var(--fm)}
   .grp .gh .sp{margin-left:auto}
   .steps{display:flex;flex-direction:column;gap:7px}
   .step{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:var(--r2);
     background:var(--bg2);border:1px solid var(--ln)}
   .step .n{width:17px;height:17px;border-radius:50%;background:var(--s3);color:var(--tx3);
-    font-size:9.5px;font-family:var(--fm);display:flex;align-items:center;justify-content:center;flex:0 0 auto}
-  .step .tx{font-size:11.5px;color:var(--tx2);flex:1}
-  .step .st2{font-size:10px;font-family:var(--fm)}
+    font-size:var(--fz);font-family:var(--fm);display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .step .tx{font-size:var(--fz);color:var(--tx2);flex:1}
+  .step .st2{font-size:var(--fz);font-family:var(--fm)}
   .step .st2.ok{color:var(--ok)} .step .st2.run{color:var(--ac)}
   .step .st2.err{color:var(--dg)} .step .st2.todo{color:var(--tx3)}
   .note{display:flex;gap:8px;background:var(--acs);border:1px solid var(--acl);
-    border-radius:var(--r2);padding:9px 11px;font-size:11.5px;color:var(--tx2);line-height:1.65}
+    border-radius:var(--r2);padding:9px 11px;font-size:var(--fz);color:var(--tx2);line-height:1.65}
   .note .ic{color:var(--ac);margin-top:1px}
   .note b{color:var(--tx)}
 
@@ -167,7 +174,7 @@
     display:flex;flex-direction:column;z-index:25;min-height:0;overflow:hidden}
   .agh{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--ln);flex:0 0 auto}
   .agh .t{font-size:12px;font-weight:600}
-  .agh .m{margin-left:auto;font-size:10px;color:var(--tx3);font-family:var(--fm)}
+  .agh .m{margin-left:auto;font-size:var(--fz);color:var(--tx3);font-family:var(--fm)}
   .agb{flex:1;overflow-y:auto;padding:14px;min-height:0}
   .agb::-webkit-scrollbar{width:6px}
   .agb::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:3px}
@@ -176,7 +183,7 @@
   .msg.me .bubble{background:var(--s3);border:1px solid var(--ln);
     border-radius:var(--r2) var(--r2) 3px var(--r2);padding:9px 12px;font-size:12.5px;
     color:var(--tx);line-height:1.65;max-width:300px}
-  .msg.ai .who{font-size:10px;color:var(--tx3);margin-bottom:5px}
+  .msg.ai .who{font-size:var(--fz);color:var(--tx3);margin-bottom:5px}
   .msg.ai .bubble{background:var(--bg2);border:1px solid var(--ln);
     border-radius:var(--r2) var(--r2) var(--r2) 3px;padding:11px 13px;
     font-size:12.5px;color:var(--tx2);line-height:1.75}
@@ -191,12 +198,12 @@
     color:#04222a;display:flex;align-items:center;justify-content:center;cursor:pointer}
   /* 参数行：砍到 2 个 + 更多 */
   .cmp .prow{display:flex;align-items:center;gap:4px;margin-top:7px;padding-top:6px;
-    border-top:1px solid var(--ln);font-size:11px;color:var(--tx2)}
+    border-top:1px solid var(--ln);font-size:var(--fz);color:var(--tx2)}
   .cmp .op{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:var(--r1);cursor:pointer}
   .cmp .op:hover{background:var(--s3)}
-  .cmp .op .cv2{color:var(--tx3);font-size:9px}
+  .cmp .op .cv2{color:var(--tx3);font-size:var(--fz)}
   .cmp .sp{margin-left:auto}
-  .cmp .cost{color:var(--ac);font-family:var(--fm);font-size:10.5px}
+  .cmp .cost{color:var(--ac);font-family:var(--fm);font-size:var(--fz)}
 
   /* 右键菜单：砍到 6 项 */
   .ctx{position:fixed;width:196px;background:rgba(20,20,24,.99);backdrop-filter:blur(24px);
@@ -226,23 +233,23 @@
   @keyframes zi{from{transform:scale(.94);opacity:.4}to{transform:scale(1);opacity:1}}
   .lbb{flex:0 0 auto;padding:11px 16px;display:flex;align-items:center;gap:6px;
     border-top:1px solid rgba(255,255,255,.06);justify-content:center;position:relative}
-  .lbb .m2{position:absolute;left:16px;font-size:10px;color:var(--tx3);font-family:var(--fm)}
-  .tool{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--tx2);
+  .lbb .m2{position:absolute;left:16px;font-size:var(--fz);color:var(--tx3);font-family:var(--fm)}
+  .tool{display:flex;align-items:center;gap:5px;font-size:var(--fz);color:var(--tx2);
     background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);
     border-radius:var(--r2);padding:5px 10px;cursor:pointer;transition:all .2s var(--ez)}
   .tool:hover{color:var(--tx);background:rgba(255,255,255,.12)}
-  .tool .pr{color:var(--ac);font-family:var(--fm);font-size:10px}
+  .tool .pr{color:var(--ac);font-family:var(--fm);font-size:var(--fz)}
 
   /* 高级：子视图切换 */
   .subseg{display:flex;gap:1px;padding:2px;background:var(--s1);border:1px solid var(--ln);border-radius:var(--r2)}
-  .subseg button{font-size:11px;color:var(--tx3);background:0;border:0;padding:3px 10px;
+  .subseg button{font-size:var(--fz);color:var(--tx3);background:0;border:0;padding:3px 10px;
     border-radius:var(--r1);cursor:pointer;transition:all .2s var(--ez)}
   .subseg button.on{background:var(--s3);color:var(--tx);font-weight:500}
 
 
 /* ===== 画布缩放指示（31-zoom） ===== */
 .zoom-badge{position:fixed;right:14px;bottom:74px;z-index:58;
-  font-family:var(--fm);font-size:10.5px;font-weight:600;
+  font-family:var(--fm);font-size:var(--fz);font-weight:600;
   padding:4px 10px;border-radius:6px;cursor:pointer;
   background:rgba(20,20,26,.9);border:1px solid var(--ln2);color:var(--ac);
   backdrop-filter:blur(6px);transition:opacity .2s var(--ez)}

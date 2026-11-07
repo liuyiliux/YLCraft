@@ -62,7 +62,8 @@ a.card.dim{opacity:.62}
   <div class="hd"><span class="logo">YLCraft 原型</span><span class="sub">本地预览 · 127.0.0.1:8901</span></div>
   <div class="tip">
     三个<b>活原型</b>在改，其余是历史版本。<b>历史版本别改、别当规格</b>——
-    看现状只认下面这三个入口。规矩见 <a href="README.md" style="color:var(--tx2)">README</a>。
+    看现状只认下面这三个入口。画布默认带一份示例分镜，想看空态点下面的「空白画布」。
+    规矩见 <a href="README.md" style="color:var(--tx2)">README</a>。
   </div>
 
   <!-- 画布：主入口，排第一 -->
@@ -71,7 +72,7 @@ a.card.dim{opacity:.62}
       <div class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div>
       <div>
         <div class="t">画布</div>
-        <div class="d">AI 创作工作台 · 正在重做视觉（节点带大图缩略图 / 真数据信息行 / 图生视频 + 配乐混音节点）</div>
+        <div class="d">AI 创作工作台 · 默认 12 镜示例（节点大图卡 / 真数据信息行 / 图生视频 + 配乐混音）</div>
       </div>
       <span class="go">进入 →</span>
     </div>
@@ -104,6 +105,7 @@ a.card.dim{opacity:.62}
   <div class="ft">
     预览服务：<code style="font-family:ui-monospace,monospace;color:var(--tx2)">cd docs/prototypes && python -m http.server 8901 --bind 127.0.0.1</code><br>
     改完链接带 <code style="font-family:ui-monospace,monospace;color:var(--tx2)">?nc=随机数</code> 防缓存假阴性 ·
+    <a href="canvas/index.html?empty=1">空白画布 ?empty=1</a> ·
     原型不是实现事实，落地前先看真代码
   </div>
 

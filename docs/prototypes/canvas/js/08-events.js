@@ -13,6 +13,7 @@ document.addEventListener('keydown', e=>{
   if(e.key==='Escape'){
     if(ctxEl) closeCtx();
     else if(document.querySelector('.lb')) closeLB();
+    else if(typeof clearEdgeFocus==='function') clearEdgeFocus();  // 取消节点连线高亮
   }
 });
 const ta = document.getElementById('ta');
@@ -32,6 +33,13 @@ ta.addEventListener('keydown', e=>{
 });
 
 renderUserChip(); renderCanvasName(); renderTplRefBar();
+/* 默认带一份示例分镜（2026-11-05）：
+   之前默认连线图是空的，第一屏只剩空态 + 右下孤立的小地图框，
+   跟讨论过的「大图节点」不是一回事。现在进来就能看到 12 镜 / 18 节点。
+   ?empty=1 保留真空态，用来演示「从一个想法开始」那条路。 */
+if (new URLSearchParams(location.search).get('empty') !== '1'){
+  demoFill('script', 12, { quiet:true });
+}
 /* 默认落在画布（连线图）—— 节点图才是画布本体（2026-11-03 用户定的） */
 setMode('flow');
 
@@ -52,6 +60,11 @@ function __bootDeferred(){
   // 27-graphrun.js
   if (typeof mountGraphRunBtn === 'function') mountGraphRunBtn();
   if (typeof syncGraphRunBtn === 'function') syncGraphRunBtn();
+  /* 示例分镜也存一版，版本记录一进来就有东西可看（34-versions.js） */
+  if (typeof autoVersion === 'function'
+      && new URLSearchParams(location.search).get('empty') !== '1'){
+    autoVersion('示例分镜');
+  }
 }
 
 /* 原型演示工具条：搜索失败 / 注入（真实现里不该有） */
@@ -63,7 +76,7 @@ function mountFailToolsMsg(){
   const d = document.createElement('div');
   d.className = 'msg ai'; d.id = 'failToolsMsg';
   d.innerHTML = `<div class="who">演示</div><div class="bubble" style="padding:9px 11px">${failToolbar()}
-    <div style="font-size:9.5px;color:var(--tx3);margin-top:6px;line-height:1.6">
+    <div style="font-size:var(--fz);color:var(--tx3);margin-top:6px;line-height:1.6">
       真搜索一定会失败。这三种要分开说 —— 别把"查不到"说成"没有"。
     </div></div>`;
   host.appendChild(d);
@@ -151,7 +164,7 @@ function disableCite(title, el){
   st.textContent = `
     .cc-i .cc-t{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .cc-i.off{opacity:.42;text-decoration:line-through}
-    .cc-x{margin-left:3px;opacity:.5;cursor:pointer;font-size:8px;padding:0 1px;line-height:1}
+    .cc-x{margin-left:3px;opacity:.5;cursor:pointer;font-size:var(--fz);padding:0 1px;line-height:1}
     .cc-x:hover{opacity:1;color:var(--dg)}
   `;
   document.head.appendChild(st);

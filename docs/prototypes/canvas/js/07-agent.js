@@ -477,7 +477,7 @@ function renderTplRefBar(){
   el.classList.remove('hidden');
   el.innerHTML = `<span class="trb">来自 <b>${t.n}</b> v${currentTplRef.ver}</span>`
     + (newer
-      ? `<button class="b" style="font-size:10.5px;padding:3px 9px;border-color:var(--wn);color:var(--wn)"
+      ? `<button class="b" style="font-size:var(--fz);padding:3px 9px;border-color:var(--wn);color:var(--wn)"
            onclick="showTplUpgrade()">有新版 v${t.latest}</button>`
       : `<span class="trb ok">已是最新</span>`);
 }
