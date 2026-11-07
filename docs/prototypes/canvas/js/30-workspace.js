@@ -1848,7 +1848,7 @@ function wsSkillRender(){
           <span class="atpop-t"><b>${esc(s.n)}</b><i>${esc(s.d)}</i></span>
           <span class="sk-tag">官方</span>
         </button>`).join('')
-    : `<div style="padding:14px 10px;font-size:10px;color:var(--tx3);text-align:center">
+    : `<div style="padding:14px 10px;font-size:var(--fz);color:var(--tx3);text-align:center">
          没有匹配「${esc(wsSkillQ)}」的技能</div>`;
 }
 

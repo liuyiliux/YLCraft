@@ -235,12 +235,12 @@ function renderHistory(){
   const host = document.getElementById('histPanel');
   if (!host) return;
   host.innerHTML = `
-    <div class="lh-hd">
+    <div class="lh-hd" onclick="toggleHistPanel()" title="点开 / 收起历史">
       <span class="lh-t">历史</span>
       <span class="lh-n">${HIST_POS+1}/${HISTORY.length}</span>
       <span class="lh-btns">
-        <button class="lh-b" onclick="undo()" title="撤销 Ctrl+Z">↶</button>
-        <button class="lh-b" onclick="redo()" title="重做 Ctrl+Y">↷</button>
+        <button class="lh-b" onclick="event.stopPropagation();undo()" title="撤销 Ctrl+Z">↶</button>
+        <button class="lh-b" onclick="event.stopPropagation();redo()" title="重做 Ctrl+Y">↷</button>
       </span>
     </div>
     <div class="lh-body">
@@ -253,6 +253,11 @@ function renderHistory(){
         </div>`).join('') : '<div class="lh-empty">还没有操作</div>'}
     </div>
     <div class="lh-foot">点任意一步可以回到那里 · Ctrl+Z 撤销</div>`;
+}
+
+function toggleHistPanel(){
+  const h = document.getElementById('histPanel');
+  if (h) h.classList.toggle('open');
 }
 
 /* ---------- ③ 提示词库 ---------- */

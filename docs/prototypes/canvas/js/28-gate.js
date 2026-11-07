@@ -204,7 +204,7 @@ function openGateLog(){
           </div>
         </div>
         <div class="ex-foot">
-          <div class="ex-cost" style="font-size:9.5px;color:var(--tx3)">
+          <div class="ex-cost" style="font-size:var(--fz);color:var(--tx3)">
             门禁是强制的：不批准，流程不会往下走
           </div>
           <div class="le-acts"><button class="insp-b ghost" onclick="closeGateLog()">关闭</button></div>

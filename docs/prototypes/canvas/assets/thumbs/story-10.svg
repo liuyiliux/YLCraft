@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 480" width="360" height="480">
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="0.85" y2="1"><stop offset="0" stop-color="#314247"/><stop offset="0.52" stop-color="#1a262a"/><stop offset="1" stop-color="#0a1113"/></linearGradient>
+<radialGradient id="lt" cx="0.24" cy="0.62" r="0.72"><stop offset="0" stop-color="#b6dcd4" stop-opacity=".62"/><stop offset="0.42" stop-color="#b6dcd4" stop-opacity=".18"/><stop offset="1" stop-color="#b6dcd4" stop-opacity="0"/></radialGradient>
+<radialGradient id="vig" cx="50%" cy="48%" r="72%"><stop offset="52%" stop-color="#000" stop-opacity="0"/><stop offset="100%" stop-color="#000" stop-opacity=".50"/></radialGradient>
+<filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="16"/></filter>
+</defs>
+<rect x="0.0" y="0.0" width="360.0" height="480.0" fill="url(#bg)" opacity="1.00" />
+<rect x="0.0" y="0.0" width="360.0" height="480.0" fill="url(#lt)" opacity="1.00" />
+<path d="M 20 298 L 340 298 L 340 307 L 20 307 Z" fill="#060c0e" opacity=".34"/><path d="M 8 332 L 352 332 L 352 341 L 8 341 Z" fill="#060c0e" opacity=".34"/><path d="M -4 366 L 364 366 L 364 375 L -4 375 Z" fill="#060c0e" opacity=".34"/><path d="M -16 400 L 376 400 L 376 409 L -16 409 Z" fill="#060c0e" opacity=".34"/>
+<path d="M 30 480 L 110 264 L 150 264 L 80 480 Z" fill="#b6dcd4" opacity=".07"/><path d="M 120 480 L 200 264 L 240 264 L 170 480 Z" fill="#b6dcd4" opacity=".07"/><path d="M 210 480 L 290 264 L 330 264 L 260 480 Z" fill="#b6dcd4" opacity=".07"/>
+<rect x="0.0" y="0.0" width="360.0" height="480.0" fill="url(#vig)" opacity="1.00" />
+<title>光影扫过地面</title>
+</svg>

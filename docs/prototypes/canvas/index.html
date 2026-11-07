@@ -4,12 +4,12 @@
 <meta charset="UTF-8">
 <link rel="icon" href="data:,">
 <title>YLCraft 画布 · 统一原型 v14</title>
-  <link rel="stylesheet" href="css/01-base.css?v=202611032325">
-  <link rel="stylesheet" href="css/02-canvas.css?v=202611032325">
-  <link rel="stylesheet" href="css/03-graph.css?v=202611032325">
-  <link rel="stylesheet" href="css/04-search.css?v=202611032325">
-  <link rel="stylesheet" href="css/05-panels.css?v=202611032325">
-  <link rel="stylesheet" href="css/06-workspace.css?v=202611032325">
+  <link rel="stylesheet" href="css/01-base.css?v=202611072255">
+  <link rel="stylesheet" href="css/02-canvas.css?v=202611072255">
+  <link rel="stylesheet" href="css/03-graph.css?v=202611072255">
+  <link rel="stylesheet" href="css/04-search.css?v=202611072255">
+  <link rel="stylesheet" href="css/05-panels.css?v=202611072255">
+  <link rel="stylesheet" href="css/06-workspace.css?v=202611072255">
 </head>
 <body>
 
@@ -31,7 +31,7 @@
     </button>
   </div>
   <div id="tplRefBar" class="hidden"></div>
-  <button class="b adv" id="mFlow" onclick="setMode('flow')" style="font-size:11.5px;color:var(--tx3);padding:5px 9px">
+  <button class="b adv" id="mFlow" onclick="setMode('flow')" style="font-size:var(--fz);color:var(--tx3);padding:5px 9px">
     <svg class="ic sm" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M6 8.4v5.6A3.4 3.4 0 0 0 9.4 17.4H15.6"/></svg>画布
   </button>
 
@@ -123,7 +123,7 @@
         </div>
         <span class="meta" id="flowCount"></span>
         <span class="sp"></span>
-        <button class="b solid" id="rerunBtn" style="font-size:11.5px" onclick="rerunAll()">
+        <button class="b solid" id="rerunBtn" style="font-size:var(--fz)" onclick="rerunAll()">
           <svg class="ic sm" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>整组重跑
         </button>
       </div>
@@ -184,7 +184,7 @@
           </div>
           <div class="gparams hidden" id="gparams"></div>
           <div id="groupBar" class="hidden"></div>
-          <div class="ghint">拖空白处平移 · Ctrl+滚轮缩放 · 拖节点摆位置 · <b>从右侧圆点拖到左侧圆点</b>连线 · 点连线断开 · 点节点改参数</div>
+          <div class="ghint">拖空白平移 · <b>点节点亮连线</b> · 拖圆点连线 · 点连线断开</div>
         </div>
         <!-- 小地图（BeefTV 欠账 #1，2026-11-03）：节点缩成色块 + 视口框，点/拖导航 -->
         <div id="gmap" class="gmap hidden" title="小地图 · 点/拖跳到那个位置"></div>
@@ -231,41 +231,41 @@
 <div class="hint" id="hintBar">选一条路开始 · 三个模式随时切换</div>
 
 
-<script src="js/01-data.js?v=202611032325"></script>
-<script src="js/02-canvas.js?v=202611032325"></script>
-<script src="js/03-groups.js?v=202611032325"></script>
-<script src="js/04-caps.js?v=202611032325"></script>
-<script src="js/05-account.js?v=202611032325"></script>
-<script src="js/06-imageops.js?v=202611032325"></script>
-<script src="js/07-agent.js?v=202611032325"></script>
-<script src="js/08-events.js?v=202611032325"></script>
-<script src="js/09-search.js?v=202611032325"></script>
-<script src="js/10-failures.js?v=202611032325"></script>
-<script src="js/11-floatbar.js?v=202611032325"></script>
-<script src="js/12-inspect.js?v=202611032325"></script>
-<script src="js/13-localedit.js?v=202611032325"></script>
-<script src="js/14-raw.js?v=202611032325"></script>
-<script src="js/15-chain.js?v=202611032325"></script>
-<script src="js/16-export.js?v=202611032325"></script>
-<script src="js/17-channels.js?v=202611032325"></script>
-<script src="js/18-panels.js?v=202611032325"></script>
-<script src="js/19-aifit.js?v=202611032325"></script>
-<script src="js/20-board.js?v=202611032325"></script>
-<script src="js/21-presets.js?v=202611032325"></script>
-<script src="js/22-batch.js?v=202611032325"></script>
-<script src="js/23-mask.js?v=202611032325"></script>
-<script src="js/24-quality.js?v=202611032325"></script>
-<script src="js/25-enhance.js?v=202611032325"></script>
-<script src="js/26-retouch.js?v=202611032325"></script>
-<script src="js/27-graphrun.js?v=202611032325"></script>
-<script src="js/28-gate.js?v=202611032325"></script>
-<script src="js/29-real-image.js?v=202611032325"></script>
-<script src="js/30-workspace.js?v=202611032325"></script>
-<script src="js/31-zoom.js?v=202611032325"></script>
-<script src="js/32-localhub.js?v=202611032325"></script>
-<script src="js/33-gmap.js?v=202611032325"></script>
-<script src="js/34-versions.js?v=202611032325"></script>
-<script src="js/35-infinite.js?v=202611032325"></script>
+<script src="js/01-data.js?v=202611072255"></script>
+<script src="js/02-canvas.js?v=202611072255"></script>
+<script src="js/03-groups.js?v=202611072255"></script>
+<script src="js/04-caps.js?v=202611072255"></script>
+<script src="js/05-account.js?v=202611072255"></script>
+<script src="js/06-imageops.js?v=202611072255"></script>
+<script src="js/07-agent.js?v=202611072255"></script>
+<script src="js/08-events.js?v=202611072255"></script>
+<script src="js/09-search.js?v=202611072255"></script>
+<script src="js/10-failures.js?v=202611072255"></script>
+<script src="js/11-floatbar.js?v=202611072255"></script>
+<script src="js/12-inspect.js?v=202611072255"></script>
+<script src="js/13-localedit.js?v=202611072255"></script>
+<script src="js/14-raw.js?v=202611072255"></script>
+<script src="js/15-chain.js?v=202611072255"></script>
+<script src="js/16-export.js?v=202611072255"></script>
+<script src="js/17-channels.js?v=202611072255"></script>
+<script src="js/18-panels.js?v=202611072255"></script>
+<script src="js/19-aifit.js?v=202611072255"></script>
+<script src="js/20-board.js?v=202611072255"></script>
+<script src="js/21-presets.js?v=202611072255"></script>
+<script src="js/22-batch.js?v=202611072255"></script>
+<script src="js/23-mask.js?v=202611072255"></script>
+<script src="js/24-quality.js?v=202611072255"></script>
+<script src="js/25-enhance.js?v=202611072255"></script>
+<script src="js/26-retouch.js?v=202611072255"></script>
+<script src="js/27-graphrun.js?v=202611072255"></script>
+<script src="js/28-gate.js?v=202611072255"></script>
+<script src="js/29-real-image.js?v=202611072255"></script>
+<script src="js/30-workspace.js?v=202611072255"></script>
+<script src="js/31-zoom.js?v=202611072255"></script>
+<script src="js/32-localhub.js?v=202611072255"></script>
+<script src="js/33-gmap.js?v=202611072255"></script>
+<script src="js/34-versions.js?v=202611072255"></script>
+<script src="js/35-infinite.js?v=202611072255"></script>
 
 <script>
 /* 挂载 Agent 面板的「对话 / 制作实况」切换 */

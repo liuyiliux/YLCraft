@@ -337,7 +337,7 @@ function exPreviewLarger(){
       <div style="max-width:90vw;max-height:92vh;cursor:zoom-out">
         <img src="${url}" style="max-width:90vw;max-height:88vh;border-radius:8px;
           box-shadow:0 24px 70px -20px rgba(0,0,0,.95);display:block">
-        <div style="text-align:center;font-size:10px;color:var(--tx3);margin-top:8px">
+        <div style="text-align:center;font-size:var(--fz);color:var(--tx3);margin-top:8px">
           640×960 真合成 · 点任意处关闭
         </div>
       </div>

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 480" width="360" height="480">
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="0.85" y2="1"><stop offset="0" stop-color="#403934"/><stop offset="0.52" stop-color="#231f1d"/><stop offset="1" stop-color="#100e0d"/></linearGradient>
+<radialGradient id="lt" cx="0.50" cy="0.28" r="0.72"><stop offset="0" stop-color="#e8d4bb" stop-opacity=".62"/><stop offset="0.42" stop-color="#e8d4bb" stop-opacity=".18"/><stop offset="1" stop-color="#e8d4bb" stop-opacity="0"/></radialGradient>
+<radialGradient id="vig" cx="50%" cy="48%" r="72%"><stop offset="52%" stop-color="#000" stop-opacity="0"/><stop offset="100%" stop-color="#000" stop-opacity=".50"/></radialGradient>
+<filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="16"/></filter>
+</defs>
+<rect x="0.0" y="0.0" width="360.0" height="480.0" fill="url(#bg)" opacity="1.00" />
+<rect x="0.0" y="0.0" width="360.0" height="480.0" fill="url(#lt)" opacity="1.00" />
+<circle cx="180.0" cy="220.8" r="132.0" fill="#e8d4bb" opacity="0.07"/>
+<ellipse cx="180" cy="432" rx="120" ry="14" fill="#0b0908" opacity=".28"/>
+<g><path d="M 170.4 230.6 Q 148.5 220.1 145.0 251.6 Q 152.0 328.0 155.5 398.6 L 204.5 398.6 Q 208.0 328.0 215.0 251.6 Q 211.5 220.1 189.6 230.6 Z" fill="#0b0908" opacity=".87"/><path d="M 156.9 246.3 Q 151.3 314.6 157.9 398.6" fill="none" stroke="#e8d4bb" stroke-width="1.4" opacity=".13"/><path d="M 203.1 246.3 Q 208.7 314.6 202.1 398.6" fill="none" stroke="#e8d4bb" stroke-width="1.4" opacity=".13"/><path d="M 160.8 211.2 C 160.8 174.6 199.2 174.6 199.2 211.2 C 197.7 229.6 162.3 229.6 160.8 211.2 Z" fill="#0b0908" opacity=".9"/><path d="M 160.8 205.9 Q 180.0 166.3 199.2 205.9 Q 180.0 189.9 160.8 205.9 Z" fill="#0b0908"/><path d="M 170.4 230.6 Q 148.5 220.1 145.0 251.6 Q 152.0 328.0 155.5 398.6 L 204.5 398.6 Q 208.0 328.0 215.0 251.6 Q 211.5 220.1 189.6 230.6 Z" fill="none" stroke="#e8d4bb" stroke-width="2.3" opacity=".34"/><path d="M 160.8 211.2 C 160.8 174.6 199.2 174.6 199.2 211.2 C 197.7 229.6 162.3 229.6 160.8 211.2 Z" fill="none" stroke="#e8d4bb" stroke-width="1.9" opacity=".38"/></g>
+<rect x="0.0" y="0.0" width="360.0" height="480.0" fill="url(#vig)" opacity="1.00" />
+<title>正面半身</title>
+</svg>

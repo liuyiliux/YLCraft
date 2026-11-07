@@ -242,7 +242,7 @@ function openPage(capKey){
         <span class="pgv-dot" style="background:#fbbf24"></span>
         <span class="pgv-dot" style="background:#34d399"></span>
         <span class="pgv-url">${cap.page}?params=${cap.params ? '…' : ''}</span>
-        <button class="b" style="margin-left:auto;font-size:11px;padding:3px 9px" onclick="closeOverlay()">返回画布 ←</button>
+        <button class="b" style="margin-left:auto;font-size:var(--fz);padding:3px 9px" onclick="closeOverlay()">返回画布 ←</button>
       </div>
       <div class="pgv-body">
         <div class="pgv-h">这里是完整页面</div>
@@ -253,7 +253,7 @@ function openPage(capKey){
         ${cap.file?`
         <div class="pgv-kv"><span>这一页真有</span><code>${cap.file}</code>
           <a class="b" href="${cap.file}" target="_blank" rel="noopener"
-             style="margin-left:8px;font-size:11px;padding:3px 9px;text-decoration:none;color:inherit">↗ 真打开这一页</a></div>`:''}
+             style="margin-left:8px;font-size:var(--fz);padding:3px 9px;text-decoration:none;color:inherit">↗ 真打开这一页</a></div>`:''}
         <div class="pgv-note">
           ${cap.file
             ? '🔴 这一页<b>真存在</b>（上面就是真的 <code>target="_blank"</code> 链接，不是示意）。'
@@ -358,8 +358,8 @@ function showNodeParams(id){
   /* 这一栏就是"节点背后那份能力"：能指到就报接口和价，指不到就明说，不编 */
   const capBlock = cap ? `
       <div class="psep"></div>
-      <div class="prow"><span class="pk">能力</span><span class="pv">${cap.label} <code style="font-size:10px">${capKey}</code></span></div>
-      <div class="prow"><span class="pk">接口</span><span class="pv"><code style="font-size:10px">${cap.invoke.method==='LOCAL'?'本地 '+cap.invoke.path:cap.invoke.path}</code></span></div>
+      <div class="prow"><span class="pk">能力</span><span class="pv">${cap.label} <code style="font-size:var(--fz)">${capKey}</code></span></div>
+      <div class="prow"><span class="pk">接口</span><span class="pv"><code style="font-size:var(--fz)">${cap.invoke.method==='LOCAL'?'本地 '+cap.invoke.path:cap.invoke.path}</code></span></div>
       <div class="prow"><span class="pk">成本</span><span class="pv">${cap.cost?'⚡'+cap.cost:'免费'}</span></div>
       ${it?`<div class="prow"><span class="pk">参数</span><span class="pv">${escapeHtml(Object.values(cap.params).join(' · '))}</span></div>`:''}
       ` : (n.cap ? `
@@ -388,10 +388,10 @@ function showNodeParams(id){
       `:''}
     </div>
     <div class="pf">
-      ${capKey?`<button class="b solid" style="flex:1;justify-content:center;font-size:11.5px"
+      ${capKey?`<button class="b solid" style="flex:1;justify-content:center;font-size:var(--fz)"
         onclick="runNode('${id}')">▶ 运行这个节点</button>`:
-        `<span style="font-size:11px;color:var(--tx3)">${n.userGroup?'组节点 · 按 Tab 进去跑里面的':(n.data?'读文档 · 不调能力':'指不到能力 · 跑不了')}</span>`}
-      ${capKey ? `<button class="b out" style="font-size:11.5px" onclick="openPage('${capKey}')">打开完整页面 ↗</button>` : ''}
+        `<span style="font-size:var(--fz);color:var(--tx3)">${n.userGroup?'组节点 · 按 Tab 进去跑里面的':(n.data?'读文档 · 不调能力':'指不到能力 · 跑不了')}</span>`}
+      ${capKey ? `<button class="b out" style="font-size:var(--fz)" onclick="openPage('${capKey}')">打开完整页面 ↗</button>` : ''}
     </div>`;
 }
 function closeParams(){

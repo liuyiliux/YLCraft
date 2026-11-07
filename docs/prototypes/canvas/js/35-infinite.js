@@ -29,6 +29,8 @@
     c.addEventListener('pointerdown', e => {
       if (e.button !== 0) return;                 // 只左键
       if (!isBackground(e.target)) return;
+      /* 点空白 = 取消节点选中，连线恢复默认亮度（Esc 同效，见 08-events.js） */
+      if (typeof clearEdgeFocus === 'function') clearEdgeFocus();
       /* 空白处双击要留给「缩放复位」，所以不抢 dblclick */
       pan = { x: e.clientX, y: e.clientY, sl: c.scrollLeft, st: c.scrollTop };
       c.classList.add('panning');

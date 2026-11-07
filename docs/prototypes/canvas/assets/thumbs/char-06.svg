@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 480" width="360" height="480">
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="0.85" y2="1"><stop offset="0" stop-color="#403934"/><stop offset="0.52" stop-color="#231f1d"/><stop offset="1" stop-color="#100e0d"/></linearGradient>
+<radialGradient id="lt" cx="0.50" cy="0.40" r="0.72"><stop offset="0" stop-color="#e8d4bb" stop-opacity=".62"/><stop offset="0.42" stop-color="#e8d4bb" stop-opacity=".18"/><stop offset="1" stop-color="#e8d4bb" stop-opacity="0"/></radialGradient>
+<radialGradient id="vig" cx="50%" cy="48%" r="72%"><stop offset="52%" stop-color="#000" stop-opacity="0"/><stop offset="100%" stop-color="#000" stop-opacity=".50"/></radialGradient>
+<filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="16"/></filter>
+</defs>
+<rect x="0.0" y="0.0" width="360.0" height="480.0" fill="url(#bg)" opacity="1.00" />
+<rect x="0.0" y="0.0" width="360.0" height="480.0" fill="url(#lt)" opacity="1.00" />
+<circle cx="180.0" cy="220.8" r="132.0" fill="#e8d4bb" opacity="0.07"/>
+<ellipse cx="180" cy="432" rx="120" ry="14" fill="#0b0908" opacity=".28"/>
+<g><path d="M 171.5 233.2 Q 146.5 223.9 142.8 251.8 Q 149.0 319.5 154.0 382.0 L 206.0 382.0 Q 211.0 319.5 217.2 251.8 Q 213.5 223.9 188.5 233.2 Z" fill="#0b0908" opacity=".87"/><path d="M 155.4 247.1 Q 149.5 307.6 156.6 382.0" fill="none" stroke="#e8d4bb" stroke-width="1.2" opacity=".13"/><path d="M 204.6 247.1 Q 210.5 307.6 203.4 382.0" fill="none" stroke="#e8d4bb" stroke-width="1.2" opacity=".13"/><path d="M 162.9 220.8 C 162.9 197.4 197.1 197.4 197.1 220.8 C 195.7 232.6 164.3 232.6 162.9 220.8 Z" fill="#0b0908" opacity=".9"/><circle cx="180.0" cy="219.2" r="19.4" fill="#0b0908" opacity="0.95"/><path d="M 171.5 233.2 Q 146.5 223.9 142.8 251.8 Q 149.0 319.5 154.0 382.0 L 206.0 382.0 Q 211.0 319.5 217.2 251.8 Q 213.5 223.9 188.5 233.2 Z" fill="none" stroke="#e8d4bb" stroke-width="2.0" opacity=".34"/><path d="M 162.9 220.8 C 162.9 197.4 197.1 197.4 197.1 220.8 C 195.7 232.6 164.3 232.6 162.9 220.8 Z" fill="none" stroke="#e8d4bb" stroke-width="1.7" opacity=".38"/></g>
+<rect x="0.0" y="0.0" width="360.0" height="480.0" fill="url(#vig)" opacity="1.00" />
+<title>俯视半身</title>
+</svg>

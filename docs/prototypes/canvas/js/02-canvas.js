@@ -44,13 +44,20 @@ function showHint(html, hold){
 }
 
 /* ================= 填充演示数据 ================= */
-function demoFill(kind, count){
+function demoFill(kind, count, opts){
+  /* opts.quiet = 启动时的默认示例数据（2026-11-05）：只填内容，
+     不发消息 / 不弹 toast / 不切模式 / 不自动存版本，免得一进页面弹一堆东西。 */
+  const quiet = !!(opts && opts.quiet);
   // 素材墙模式用紧凑排布（6 列 × 2 行，轻微错落），镜头墙模式不依赖坐标
   // character = 角色图（按角度）· promo = 宣传片（建筑/产品，没有角色）· 其余 = 人物分镜
   const src = kind === 'character' && typeof DEMO_CHAR !== 'undefined' ? DEMO_CHAR
             : kind === 'promo' && typeof DEMO_PROMO !== 'undefined' ? DEMO_PROMO
             : DEMO;
   const total = Math.min(count || 12, src.length);
+  /* 本地占位片：三组题材各一套纯本地 SVG，不外链、不占版权。
+     数量超出时按组循环，绝不出现空 url。生成脚本 tools/gen_thumbs.py。 */
+  const thumbSet = kind === 'character' ? 'char' : kind === 'promo' ? 'promo' : 'story';
+  const THUMB_N = { char:6, promo:6, story:12 };
   const W = 122, H = 168;
   /* 素材墙的落位：手摆的、大小不一、间距不匀 —— 摆东西的墙就不该是网格。
      （本视图 2026-11-03 由「自由画布」改名素材墙：画布专指节点连线图，
@@ -72,6 +79,8 @@ function demoFill(kind, count){
       /* 分镜是**视频片段**，角色图才是**图片** —— 之前全按图片处理，
          连分辨率都显示成 SD 的 1024×1536（2026-11-03） */
       media: kind === 'character' ? 'img' : 'vid',
+      thumbUrl: 'assets/thumbs/' + thumbSet + '-'
+        + String((i % THUMB_N[thumbSet]) + 1).padStart(2,'0') + '.svg',
       cls:i%6,
       x: pos.x,
       y: pos.y,
@@ -94,6 +103,14 @@ function demoFill(kind, count){
     tpl:`用了「短剧分镜」模板：<b>${N} 个镜头</b>，其中 ${Math.max(0,N-3)} 个已生成、1 个生成中、1 个失败、1 个待生成。`,
     talk:`好，我按你说的做了。总共 <b>${N} 个镜头</b>，先看看镜头墙的节奏对不对。`
   };
+  if (quiet){
+    /* 默认示例：把「画布还是空的」换成示例说明，别让右边和左边自相矛盾 */
+    const w = document.getElementById('welcome');
+    if (w) w.innerHTML = '已载入一份<b>示例分镜</b>：秋天颐和园 · 小林 · 12 镜。'
+      + '左边是节点和连线，点节点改参数，拖空白处平移。<br><br>'
+      + '想看从零开始的样子：回启动页点<b>空白画布</b>（?empty=1）。';
+    return;
+  }
   // 搜索流程里由 runSearchDemo 自己汇报，不要这里再插一条
   if (!window.__suppressDemoMsg) agAdd('ai', openings[kind] || '好的。');
 
@@ -188,7 +205,7 @@ bindFloatBarHide();
   const d = document.createElement('div');
   d.className = 'msg ai'; d.id = 'failToolsMsg';
   d.innerHTML = `<div class="who">演示</div><div class="bubble" style="padding:9px 11px">${failToolbar()}
-    <div style="font-size:9.5px;color:var(--tx3);margin-top:6px;line-height:1.6">
+    <div style="font-size:var(--fz);color:var(--tx3);margin-top:6px;line-height:1.6">
       真搜索一定会失败。这三种要分开说 —— 别把"查不到"说成"没有"。
     </div></div>`;
   host.appendChild(d);
@@ -385,9 +402,11 @@ function buildGraph(keepPos){
     {id:'board',  x:186, y:170, w:136, t:'分镜表',   sub:'镜号 01-'+String(N).padStart(2,'0'), kind:'text', st:'ok', data:true, ins:['text'], outs:['text']}
   ];
   for (let i=0;i<N;i++){
+    /* 列距 176（原来 164）：列间留白，卡片不贴脸。
+       这个间距是 11-07 为避障通道调的；避障已撤，布局沿用不改（不动数据）。*/
     const col=i%3, row=Math.floor(i/3);
     nodes.push({
-      id:'g'+i, x:372+col*164, y:16+row*224, w:150,
+      id:'g'+i, x:372+col*176, y:16+row*224, w:150,
       t:String(i+1).padStart(2,'0')+' '+items[i].name,
       /* 底部信息行放真数据（时长 · 分辨率），不放「已生成」——
          状态已经由标题行的点和连线颜色表达，这行字要给尺寸这种数，
@@ -403,18 +422,21 @@ function buildGraph(keepPos){
       cap:'image-gen'
     });
   }
+  /* 收尾节点错落成两列四行（原来 2×2 挤在同一行）：
+     往下错开后汇流线不会全挤在同一行端口上。同为 11-07 避障方案调的布局，
+     避障已撤但布局沿用不改。*/
   const rows=Math.ceil(N/3), yb=16+rows*224+18;
   nodes.push({id:'merge', x:372, y:yb, w:140, t:'合成时间线', kind:'video',
     sub:'总时长 '+fmt(items.reduce((a,s)=>a+(s.duration||0),0)), st:'ok', ins:['image'], outs:['video'],
     cap:'clip'});
-  nodes.push({id:'out',   x:548, y:yb, w:140, t:'出片', kind:'video',
+  nodes.push({id:'out',   x:548, y:yb+78, w:140, t:'出片', kind:'video',
     sub:'未开始', st:'todo', ins:['video'], outs:[],
     cap:'clip-render'});
   // 🔴 3D 分支：图生3D（原子）→ 3D 导演台（复合）
-  nodes.push({id:'to3d',   x:372, y:yb+78, w:140, t:'图生 3D', kind:'model',
+  nodes.push({id:'to3d',   x:372, y:yb+156, w:140, t:'图生 3D', kind:'model',
     sub:'TripoSR → glb', st:'ok', ins:['image'], outs:['model'], atomic:true,
     cap:'model-3d'});
-  nodes.push({id:'previs', x:548, y:yb+78, w:140, t:'3D 导演台', kind:'video', comp:1,
+  nodes.push({id:'previs', x:548, y:yb+234, w:140, t:'3D 导演台', kind:'video', comp:1,
     sub:'预演运镜 → 回填分镜', st:'todo', ins:['model','text'], outs:['video'],
     cap:'previs'});
 
@@ -434,6 +456,101 @@ function buildGraph(keepPos){
   GRAPH = { nodes, edges };
 }
 
+/* --------- 连线：单段平滑贝塞尔（2026-11-07 对齐即梦） ---------
+   即梦 / React Flow / ComfyUI 都是「端口水平出入的一根 S 曲线」：不绕路、不避障，
+   穿过别的卡片时线在节点下层，被卡片自然盖住就够了。
+   上一版为了把「穿卡数」压到 0 枚举走廊候选，线绕到图底反而难看 ——
+   用户 11-07 拿即梦截图明确否掉，整套采样避障（bezPt / arcSeg / sampleSegs /
+   pathHits / pathLen / segsToPath / 走廊策略）一并删除，别再捡回来。 */
+function routeEdge(e,pos,y1,y2){
+  const a=pos[e.f], b=pos[e.t];
+  if(!a||!b) return '';
+  const x1=a.x+a.w, x2=b.x;
+  const span=Math.abs(x2-x1);
+  /* 控制点只沿 x 偏 → 端口水平出入；跨度越大弯得越开，短边不回勾。
+     回环边（x2<x1）自然形成 U 形，跟主流节点编辑器一致。 */
+  const s=Math.min(170,Math.max(20,span*.5),Math.max(16,span*.48));
+  const f=n=>Math.round(n*10)/10;
+  return `M ${f(x1)} ${f(y1)} C ${f(x1+s)} ${f(y1)}, ${f(x2-s)} ${f(y2)}, ${f(x2)} ${f(y2)}`;
+}
+function buildEdgesSvg(){
+  const svg=document.getElementById('gedges');
+  if(!svg) return;
+  const pos={}; GRAPH.nodes.forEach(n=>pos[n.id]=n);
+  /* 端口基准统一用节点真实高度（大图卡 208、普通 54），
+     renderGraph 和 redrawEdges 以前各算各的，拖动时会跳 3px。 */
+  const portY=(n,idx,total)=>n.y+(n.h||54)/2+(idx-(total-1)/2)*15;
+  /* 平时所有线统一灰色、不分状态色（对齐即梦）：状态由节点标题的小圆点和
+     卡片上的「失败 · 403」表达；点节点才由 focusEdges 点亮直连的线。 */
+  svg.innerHTML=GRAPH.edges.map((e,i)=>{
+    const a=pos[e.f], b=pos[e.t]; if(!a||!b) return '';
+    const yi=(a.outs||[]).indexOf(e.fp), yo=(b.ins||[]).indexOf(e.tp);
+    const y1=portY(a,yi<0?0:yi,Math.max((a.outs||[]).length,1))-8;
+    const y2=portY(b,yo<0?0:yo,Math.max((b.ins||[]).length,1))-8;
+    return `<path class="gedge" data-ei="${i}" style="pointer-events:stroke;cursor:pointer" d="${routeEdge(e,pos,y1,y2)}"/>`;
+  }).join('');
+  /* 重画后把选中聚焦补回来（拖动 / 切视图 / 断线都会走这里），
+     否则高亮会在第一次 redrawEdges 时消失。 */
+  focusEdges(gSel);
+}
+
+/* --------- 选中节点 → 点亮相连连线（2026-11-07 对齐即梦） ---------
+   即梦是「平时全灰，点了卡片才把与它直连的线点亮」，其余线仍是灰的、
+   不额外压暗。这里只切 .hi，不重建路径 —— 拖节点时每帧调用也不会卡。 */
+let GHINT_BASE = '';
+function setFocusHint(html){
+  const h = document.querySelector('#flowGraphView .ghint');
+  if (!h) return;
+  if (!GHINT_BASE) GHINT_BASE = h.innerHTML;
+  const out = html || GHINT_BASE;
+  if (h.innerHTML !== out) h.innerHTML = out;
+  h.classList.toggle('focused', !!html);
+}
+function focusEdges(sel){
+  const svg = document.getElementById('gedges');
+  if (!svg) return 0;
+  const ids = sel instanceof Set ? sel
+            : Array.isArray(sel) ? new Set(sel)
+            : new Set(sel ? [sel] : []);
+  const edges = (typeof GRAPH !== 'undefined' && GRAPH.edges) || [];
+  const nodes = (typeof GRAPH !== 'undefined' && GRAPH.nodes) || [];
+  const near = new Set();
+  let hit = 0;
+  svg.querySelectorAll('.gedge[data-ei]').forEach(p=>{
+    const e = edges[+p.dataset.ei];
+    const rel = ids.size > 0 && !!e && (ids.has(e.f) || ids.has(e.t));
+    p.classList.toggle('hi', rel);
+    if (rel){ hit++; near.add(e.f); near.add(e.t); }
+  });
+  svg.classList.toggle('focused', ids.size > 0 && hit > 0);
+  const nbox = document.getElementById('gnodes');
+  if (nbox) nbox.querySelectorAll('.gnode').forEach(el=>{
+    el.classList.toggle('rel', ids.size > 0 && near.has(el.dataset.id) && !ids.has(el.dataset.id));
+  });
+  if (hit){
+    const one = ids.size === 1 ? [...ids][0] : '';
+    const node = nodes.find(n=>n.id===one);
+    const label = ids.size === 1 ? (node ? node.t : one) : ids.size+' 个节点';
+    const safe = typeof esc === 'function' ? esc(String(label))
+      : String(label).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    setFocusHint(`已点亮与「${safe}」相连的 <b>${hit}</b> 条连线 · 点空白 / Esc 取消`);
+  } else if (ids.size){
+    setFocusHint(`选中的节点还没有连线 · 拖右侧圆点连一条`);
+  } else {
+    setFocusHint('');
+  }
+  return hit;
+}
+function clearEdgeFocus(){
+  gSel = null;
+  focusEdges(null);
+  document.querySelectorAll('#gnodes .gnode').forEach(el=>el.classList.remove('sel','multi','rel'));
+  if (typeof gMulti !== 'undefined' && gMulti.size) gMulti.clear();
+  if (typeof renderGroupBar === 'function') renderGroupBar();
+  if (typeof closeParams === 'function') closeParams();
+  setFocusHint('');
+}
+
 /* --------- 渲染 --------- */
 function renderGraph(){
   if (!GRAPH.nodes.length) buildGraph(false);
@@ -449,28 +566,8 @@ function renderGraph(){
   ginner.style.width  = Math.max(maxX, 700)+'px';
   svg.setAttribute('viewBox', `0 0 ${Math.max(maxX,700)} ${Math.max(maxY,420)}`);
 
-  const pos = {};
-  GRAPH.nodes.forEach(n=> pos[n.id]={x:n.x,y:n.y,w:n.w});
-  /* 带图的节点高度 112，普通节点实测 54（不是 48）—— 端口和连线都用这个基准，
-     否则普通节点的连线会偏 3px（2026-11-03 量出来的） */
-  const nodeH = n => n.h || 54;
-  const portY = (n, idx, total) => n.y + nodeH(n)/2 + (idx - (total-1)/2) * 15;
-
-  // 连线
-  svg.innerHTML = GRAPH.edges.map((e,i)=>{
-    const a = pos[e.f], b = pos[e.t];
-    if (!a || !b) return '';
-    const na = GRAPH.nodes.find(n=>n.id===e.f), nb = GRAPH.nodes.find(n=>n.id===e.t);
-    const yi = na.outs.indexOf(e.fp), yo = nb.ins.indexOf(e.tp);
-    const y1 = portY(a, yi<0?0:yi, Math.max(na.outs.length,1)) - 8;
-    const y2 = portY(b, yo<0?0:yo, Math.max(nb.ins.length,1)) - 8;
-    const x1 = a.x + a.w, x2 = b.x;
-    const dx = Math.max(28, (x2-x1)/2);
-    const st = nb.st || 'ok';
-    const cls = st==='run'?'run':st==='err'?'err':st==='todo'?'todo':'ok';
-    return `<path class="gedge ${cls}" data-ei="${i}" style="pointer-events:stroke;cursor:pointer"
-      d="M ${x1} ${y1} C ${x1+dx} ${y1}, ${x2-dx} ${y2}, ${x2} ${y2}"/>`;
-  }).join('');
+  /* 连线统一交给 buildEdgesSvg（单段平滑贝塞尔），两处绘制不再各写一份 */
+  buildEdgesSvg();
 
   // 节点
   nbox.innerHTML = GRAPH.nodes.map(n=>{
@@ -501,11 +598,16 @@ function renderGraph(){
   // 临时连线
   const ghost = document.getElementById('gghost');
   if (gLink && ghost){
-    const a = pos[gLink.from];
-    const x1 = a.x + a.w, y1 = a.y + 8;
-    ghost.innerHTML = `<path class="gedge ghost" d="M ${x1} ${y1} L ${gLink.x1} ${gLink.y1}"/>`;
+    const a = GRAPH.nodes.find(n=>n.id===gLink.from);
+    if (a){
+      const x1 = a.x + a.w, y1 = a.y + 8;
+      ghost.innerHTML = `<path class="gedge ghost" d="M ${x1} ${y1} L ${gLink.x1} ${gLink.y1}"/>`;
+    }
   } else if (ghost) ghost.innerHTML='';
 
+  /* 上面 buildEdgesSvg 已给「连线」补过高亮，但它跑在 nbox.innerHTML 之前，
+     节点 DOM 重建会把 .rel（相连节点的浅色边框）冲掉 —— 这里补一次。 */
+  focusEdges(gSel);
   bindGraph();
   /* 小地图跟着节点增删/拖动重画（33-gmap.js， BeefTV 欠账 #1） */
   if (typeof updateGmap === 'function') updateGmap();
@@ -524,6 +626,7 @@ function bindGraph(){
         if (gMulti.has(id)) gMulti.delete(id); else gMulti.add(id);
         el.classList.toggle('multi', gMulti.has(id));
         renderGroupBar();
+        focusEdges(gMulti);            // 多选：所有选中节点的相连线一起亮
         return;
       }
       gSel = id;
@@ -531,6 +634,7 @@ function bindGraph(){
       el.setPointerCapture(e.pointerId);
       // 只改选中态，绝不 renderGraph（否则正在拖的节点被重建，拖不动）
       document.querySelectorAll('.gnode').forEach(x=>x.classList.toggle('sel', x.dataset.id===id));
+      focusEdges(id);                // 相连的连线亮起来（只切 class，不重画路径）
       showNodeParams(id);
     });
     el.addEventListener('pointermove', e=>{
@@ -644,22 +748,8 @@ function endLink(){
   renderGraph();
 }
 function redrawEdges(){
-  const svg = document.getElementById('gedges');
-  const pos = {};
-  GRAPH.nodes.forEach(n=> pos[n.id]={x:n.x,y:n.y,w:n.w});
-  const portY = (n, idx, total) => n.y + 24 + (idx - (total-1)/2) * 15;
-  svg.innerHTML = GRAPH.edges.map((e,i)=>{
-    const a=pos[e.f], b=pos[e.t]; if(!a||!b) return '';
-    const na=GRAPH.nodes.find(n=>n.id===e.f), nb=GRAPH.nodes.find(n=>n.id===e.t);
-    const yi=na.outs.indexOf(e.fp), yo=nb.ins.indexOf(e.tp);
-    const y1=portY(a,yi<0?0:yi,Math.max(na.outs.length,1))-8;
-    const y2=portY(b,yo<0?0:yo,Math.max(nb.ins.length,1))-8;
-    const x1=a.x+a.w, x2=b.x, dx=Math.max(28,(x2-x1)/2);
-    const st=nb.st||'ok';
-    const cls=st==='run'?'run':st==='err'?'err':st==='todo'?'todo':'ok';
-    return `<path class="gedge ${cls}" data-ei="${i}" style="pointer-events:stroke;cursor:pointer"
-      d="M ${x1} ${y1} C ${x1+dx} ${y1}, ${x2-dx} ${y2}, ${x2} ${y2}"/>`;
-  }).join('');
+  /* 拖动节点时实时重算正交路由（原来这里用的是另一套 portY 基准，会跳 3px） */
+  buildEdgesSvg();
 }
 
 /* --------- 从节点库加节点（P4：加新用途=加配置） --------- */

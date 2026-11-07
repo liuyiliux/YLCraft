@@ -255,11 +255,11 @@ async function runGraph(){
   if (typeof agAdd === 'function'){
     agAdd('ai', `连线图跑完了：<b>${ran} 个节点</b>，花费 <b>${costTxt}</b>。<br><br>`
       + `执行顺序（按依赖排的）：<br>`
-      + `<span style="font-family:var(--fm);font-size:10px;color:var(--tx3)">`
+      + `<span style="font-family:var(--fm);font-size:var(--fz);color:var(--tx3)">`
       + order.filter(id=>!EX[id].data).join(' → ')
       + `</span><br><br>`
       + `每个节点调的是哪个接口：<br>`
-      + `<span style="font-family:var(--fm);font-size:10px;color:var(--tx3)">`
+      + `<span style="font-family:var(--fm);font-size:var(--fz);color:var(--tx3)">`
       + steps.map(s=>s.id + ' · ' + s.path + ' · ' + (s.cost ? '⚡'+s.cost : '免费')).join('<br>')
       + `</span><br>`
       + (skipped.length ? `<br>🔴 有 <b>${skipped.length}</b> 个节点<b>没跑</b>：`

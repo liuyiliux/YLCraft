@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 480" width="360" height="480">
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="0.85" y2="1"><stop offset="0" stop-color="#523529"/><stop offset="0.52" stop-color="#291a14"/><stop offset="1" stop-color="#120c09"/></linearGradient>
+<radialGradient id="lt" cx="0.70" cy="0.20" r="0.72"><stop offset="0" stop-color="#f0bb82" stop-opacity=".62"/><stop offset="0.42" stop-color="#f0bb82" stop-opacity=".18"/><stop offset="1" stop-color="#f0bb82" stop-opacity="0"/></radialGradient>
+<radialGradient id="vig" cx="50%" cy="48%" r="72%"><stop offset="52%" stop-color="#000" stop-opacity="0"/><stop offset="100%" stop-color="#000" stop-opacity=".50"/></radialGradient>
+<filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="16"/></filter>
+</defs>
+<rect x="0.0" y="0.0" width="360.0" height="480.0" fill="url(#bg)" opacity="1.00" />
+<rect x="0.0" y="0.0" width="360.0" height="480.0" fill="url(#lt)" opacity="1.00" />
+<circle cx="174.6" cy="400.9" r="17.7" fill="#f0bb82" opacity="0.13"/><circle cx="203.4" cy="437.8" r="14.4" fill="#f0bb82" opacity="0.11"/><circle cx="176.3" cy="269.1" r="13.8" fill="#f0bb82" opacity="0.12"/><circle cx="278.8" cy="304.3" r="18.4" fill="#f0bb82" opacity="0.05"/><circle cx="267.2" cy="176.1" r="9.7" fill="#f0bb82" opacity="0.07"/><circle cx="114.4" cy="89.1" r="16.5" fill="#f0bb82" opacity="0.13"/><circle cx="210.2" cy="197.3" r="14.4" fill="#f0bb82" opacity="0.13"/>
+<rect x="0.0" y="336.0" width="360.0" height="14.0" fill="#0b0706" opacity="0.72" /><rect x="0.0" y="412.8" width="360.0" height="8.0" fill="#0b0706" opacity="0.50" /><rect x="18.0" y="336.0" width="7.0" height="86.4" fill="#0b0706" opacity="0.60" /><rect x="72.0" y="336.0" width="7.0" height="86.4" fill="#0b0706" opacity="0.60" /><rect x="126.0" y="336.0" width="7.0" height="86.4" fill="#0b0706" opacity="0.60" /><rect x="180.0" y="336.0" width="7.0" height="86.4" fill="#0b0706" opacity="0.60" /><rect x="234.0" y="336.0" width="7.0" height="86.4" fill="#0b0706" opacity="0.60" /><rect x="288.0" y="336.0" width="7.0" height="86.4" fill="#0b0706" opacity="0.60" /><rect x="342.0" y="336.0" width="7.0" height="86.4" fill="#0b0706" opacity="0.60" />
+<rect x="0.0" y="0.0" width="360.0" height="480.0" fill="url(#vig)" opacity="1.00" />
+<title>手指划过木栏杆</title>
+</svg>
