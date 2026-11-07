@@ -2,7 +2,9 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
+<link rel="icon" href="data:,">
 <title>地点光线 · 原型</title>
+<link rel="stylesheet" href="../shared/theme.css?v=202611072335">
 <style>
 :root{
   --bgPage:#09090b; --bgCard:#16161a; --bgElev:#1f1f27; --bgInput:#111116; --bgHover:#1c1c22;
@@ -10,7 +12,7 @@
   --bd:rgba(255,255,255,.06); --bd2:rgba(255,255,255,.12); --bd3:rgba(255,255,255,.22);
   --pri:#22d3ee; --ok:#4ade80; --warn:#fbbf24; --err:#f87171; --photo:#fbbf24;
   --drama:#a78bfa; --coser:#f472b6;
-  --fm:'SF Mono',Consolas,monospace;
+  
   --ff:'Inter',-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
   --rSM:8px; --rMD:12px; --rLG:16px;
 }
@@ -71,7 +73,7 @@ input{font:inherit}
 .sunbar{position:relative;height:96px;margin-top:16px;border-radius:var(--rSM);
   background:linear-gradient(180deg,#0b1020,#1a1208);border:1px solid var(--bd2);overflow:hidden}
 .sunbar .horizon{position:absolute;left:0;right:0;bottom:22px;height:1px;background:var(--bd3)}
-.sunbar .hz-lbl{position:absolute;left:8px;bottom:26px;font-size:11px;color:var(--tx3);font-family:var(--fm)}
+.sunbar .hz-lbl{position:absolute;left:8px;bottom:26px;font-size:var(--fz);color:var(--tx3);font-family:var(--fm)}
 .arc{position:absolute;inset:0}
 .arc svg{width:100%;height:100%}
 .sun-dot{position:absolute;width:12px;height:12px;border-radius:50%;
@@ -82,7 +84,7 @@ input{font:inherit}
 /* 方向罗盘 */
 .compass{position:relative;width:220px;height:220px;margin:0 auto}
 .compass svg{width:100%;height:100%}
-.c-dir{fill:var(--tx3);font-size:11px;font-family:var(--fm)}
+.c-dir{fill:var(--tx3);font-size:var(--fz);font-family:var(--fm)}
 
 /* 表格 */
 table{width:100%;border-collapse:collapse;font-size:14px}
@@ -94,7 +96,7 @@ td.time{font-family:var(--fm);color:var(--tx1);font-weight:600}
 td.good{color:var(--ok)}
 td.warnc{color:var(--warn)}
 td.bad{color:var(--err)}
-.tag-i{display:inline-block;font-size:11px;padding:2px 8px;border-radius:4px;
+.tag-i{display:inline-block;font-size:var(--fz);padding:2px 8px;border-radius:4px;
   font-family:var(--fm);margin-left:6px}
 .tag-i.ok{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
 .tag-i.warn{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
@@ -618,5 +620,6 @@ function loadWeather(){
 document.addEventListener('DOMContentLoaded',function(){runQuery();loadWeather();});
 document.getElementById('qDate').addEventListener('change',runQuery);
 </script>
+<script src="../shared/proto-nav.js?v=202611072335"></script>
 </body>
 </html>

@@ -2,43 +2,45 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<link rel="icon" href="data:,">
 <title>可行性验证：液化 / 磨皮 / 祛瑕疵（纯本地算法）</title>
+<link rel="stylesheet" href="../shared/theme.css?v=202611072335">
 <style>
 :root{--bg:#0a0a0c;--bg1:#101013;--bg2:#16161a;--ln:#22222a;--ln2:#2e2e38;
   --tx:#e8e8ec;--tx2:#a1a1ad;--tx3:#6c6c78;--ac:#22d3ee;--acs:rgba(34,211,238,.1);
   --acl:rgba(34,211,238,.4);--ok:#34d399;--dg:#f87171;--wn:#fbbf24;
-  --fm:ui-monospace,monospace;--ez:cubic-bezier(.4,0,.2,1)}
+  --ez:cubic-bezier(.4,0,.2,1)}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--tx);font-family:system-ui,sans-serif;
+body{background:var(--bg);color:var(--tx);font-family:var(--fs);
   font-size:13px;padding:20px;min-height:100vh}
 h1{font-size:15px;margin-bottom:4px}
-.sub{font-size:11px;color:var(--tx3);margin-bottom:18px}
+.sub{font-size:var(--fz);color:var(--tx3);margin-bottom:18px}
 .grid{display:flex;gap:16px;flex-wrap:wrap}
 .card{background:var(--bg1);border:1px solid var(--ln);border-radius:10px;padding:14px;
   flex:1;min-width:300px}
 .card h2{font-size:12px;margin-bottom:3px;display:flex;align-items:center;gap:7px}
-.badge{font-size:8.5px;border-radius:3px;padding:1px 6px;font-weight:400}
+.badge{font-size:var(--fz);border-radius:3px;padding:1px 6px;font-weight:400}
 .badge.ok{color:var(--ok);background:rgba(52,211,153,.12)}
 .badge.no{color:var(--dg);background:rgba(248,113,113,.12)}
-.desc{font-size:10px;color:var(--tx3);line-height:1.6;margin-bottom:10px}
+.desc{font-size:var(--fz);color:var(--tx3);line-height:1.6;margin-bottom:10px}
 .canvas-row{display:flex;gap:8px;margin-bottom:10px}
 .cw{flex:1;text-align:center}
 canvas{width:100%;border-radius:6px;display:block;background:#000}
-.cl{font-size:8.5px;color:var(--tx3);margin-top:4px}
+.cl{font-size:var(--fz);color:var(--tx3);margin-top:4px}
 .ctrl{display:flex;flex-direction:column;gap:7px}
 .row{display:flex;align-items:center;gap:8px}
-.lbl{font-size:10px;color:var(--tx2);flex:0 0 56px}
+.lbl{font-size:var(--fz);color:var(--tx2);flex:0 0 56px}
 input[type=range]{flex:1;-webkit-appearance:none;height:3px;background:var(--ln2);
   border-radius:2px;outline:none;cursor:pointer}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;
   border-radius:50%;background:var(--ac);cursor:grab}
-.val{font-size:9.5px;font-family:var(--fm);color:var(--ac);flex:0 0 40px;text-align:right}
-.btn{font-size:10px;padding:5px 11px;border-radius:5px;cursor:pointer;font-family:inherit;
+.val{font-size:var(--fz);font-family:var(--fm);color:var(--ac);flex:0 0 40px;text-align:right}
+.btn{font-size:var(--fz);padding:5px 11px;border-radius:5px;cursor:pointer;font-family:inherit;
   background:var(--bg2);border:1px solid var(--ln2);color:var(--tx2)}
 .btn:hover{background:#1f1f26;color:var(--tx)}
 .btn.pri{background:var(--ac);border-color:var(--ac);color:#04222a;font-weight:600}
-.note{font-size:9px;color:var(--tx3);margin-top:8px;line-height:1.6}
-.perf{font-size:9px;font-family:var(--fm);color:var(--ok);margin-top:6px}
+.note{font-size:var(--fz);color:var(--tx3);margin-top:8px;line-height:1.6}
+.perf{font-size:var(--fz);font-family:var(--fm);color:var(--ok);margin-top:6px}
 </style>
 </head>
 <body>
@@ -485,5 +487,6 @@ window.addEventListener('load', ()=>{
   setTimeout(runHealDemo, 300);
 });
 </script>
+<script src="../shared/proto-nav.js?v=202611072335"></script>
 </body>
 </html>

@@ -3,7 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
 <title>Harness 架构决策 · 原型</title>
+<link rel="stylesheet" href="shared/theme.css?v=202611072335">
 <style>
 :root{
   --bg:#09090b; --bgCard:#121216; --bgInput:#17171c; --bgHover:#1d1d24;
@@ -11,13 +13,13 @@
   --tx:#e8e8ec; --tx2:#a8a8b4; --tx3:#6e6e7c;
   --photo:#fbbf24; --ok:#34d399; --warn:#f5a524; --err:#f87171;
   --info:#22d3ee; --purple:#a78bfa;
-  --fm:ui-monospace,"SF Mono",Consolas,monospace;
+  
   --r:10px; --rL:14px;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 body{
   background:var(--bg);color:var(--tx);
-  font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  font-family:var(--fs);
   font-size:16px;line-height:1.6;padding:40px 24px 80px;
 }
 .wrap{max-width:1180px;margin:0 auto}
@@ -62,7 +64,7 @@ body{
 .card.on .card-k{background:var(--photo);color:#1a1205;border-color:var(--photo)}
 .card-t{font-size:18px;font-weight:600;flex:1}
 .card-tag{
-  font-size:11.5px;padding:2px 9px;border-radius:5px;font-family:var(--fm);
+  font-size:var(--fz);padding:2px 9px;border-radius:5px;font-family:var(--fm);
   background:var(--bgInput);color:var(--tx3);
 }
 .card.on .card-tag{background:rgba(251,191,36,.14);color:var(--photo)}
@@ -72,7 +74,7 @@ body{
 /* 迷你流程图 */
 .flow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px}
 .fi{
-  font-size:11.5px;padding:4px 9px;border-radius:5px;font-family:var(--fm);
+  font-size:var(--fz);padding:4px 9px;border-radius:5px;font-family:var(--fm);
   background:var(--bgInput);border:1px solid var(--bd2);color:var(--tx2);
 }
 .fi.hl{border-color:var(--photo);color:var(--photo);background:rgba(251,191,36,.1)}
@@ -141,12 +143,12 @@ body{
 }
 .prem .pm-n{
   width:22px;height:22px;border-radius:50%;background:var(--bgCard);
-  border:1px solid var(--bd2);color:var(--tx3);font-size:11px;font-family:var(--fm);
+  border:1px solid var(--bd2);color:var(--tx3);font-size:var(--fz);font-family:var(--fm);
   display:flex;align-items:center;justify-content:center;flex-shrink:0;
 }
 .prem .pm-t{flex:1;color:var(--tx2)}
 .prem .pm-s{
-  font-size:11.5px;padding:2px 9px;border-radius:5px;font-family:var(--fm);
+  font-size:var(--fz);padding:2px 9px;border-radius:5px;font-family:var(--fm);
   background:rgba(248,113,113,.12);color:var(--err);
 }
 
@@ -396,5 +398,6 @@ function pick(k){
 
 render();
 </script>
+<script src="shared/proto-nav.js?v=202611072335"></script>
 </body>
 </html>

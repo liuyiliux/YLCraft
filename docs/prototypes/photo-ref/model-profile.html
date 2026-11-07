@@ -2,7 +2,9 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
+<link rel="icon" href="data:,">
 <title>模特档案 · 原型</title>
+<link rel="stylesheet" href="../shared/theme.css?v=202611072335">
 <style>
 :root{
   --bgPage:#09090b; --bgCard:#16161a; --bgElev:#1f1f27; --bgInput:#111116; --bgHover:#1c1c22;
@@ -10,7 +12,7 @@
   --bd:rgba(255,255,255,.06); --bd2:rgba(255,255,255,.12); --bd3:rgba(255,255,255,.22);
   --pri:#22d3ee; --ok:#4ade80; --warn:#fbbf24; --err:#f87171; --photo:#fbbf24;
   --drama:#a78bfa; --coser:#f472b6; --ecom:#f87171;
-  --fm:'SF Mono',Consolas,monospace;
+  
   --ff:'Inter',-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
   --rSM:8px; --rMD:12px; --rLG:16px;
 }
@@ -122,7 +124,7 @@ input,textarea,select{font:inherit}
 .shoot-i.g2{background:linear-gradient(150deg,#3a2a1a,#1a1208)}
 .shoot-i.g3{background:linear-gradient(150deg,#1a2a3a,#081018)}
 .shoot-t{padding:8px 10px;font-size:13px;color:var(--tx2);line-height:1.4}
-.shoot-d{padding:0 10px 9px;font-size:11px;color:var(--tx3);font-family:var(--fm)}
+.shoot-d{padding:0 10px 9px;font-size:var(--fz);color:var(--tx3);font-family:var(--fm)}
 
 /* 时间线 */
 .timeline{position:relative;padding-left:22px}
@@ -412,5 +414,6 @@ function fake(msg){
   window._tt=setTimeout(()=>d.style.display='none',2600);
 }
 </script>
+<script src="../shared/proto-nav.js?v=202611072335"></script>
 </body>
 </html>
