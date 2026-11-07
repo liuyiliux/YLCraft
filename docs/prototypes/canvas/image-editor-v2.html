@@ -2,7 +2,9 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<link rel="icon" href="data:,">
 <title>图片编辑 v2 · AI 建议 → 图层</title>
+<link rel="stylesheet" href="../shared/theme.css?v=202611072335">
 <style>
 :root{
   /* ⭐ 照片优先：界面全部中性灰，只用一处强调色，且不在画布附近 */
@@ -12,19 +14,19 @@
   --ac:#22d3ee; --acs:rgba(34,211,238,.1); --acl:rgba(34,211,238,.4);
   --ok:#34d399; --oks:rgba(52,211,153,.1); --okl:rgba(52,211,153,.4);
   --wn:#fbbf24; --wnl:rgba(251,191,36,.35);
-  --r2:7px; --fm:ui-monospace,SFMono-Regular,Menlo,monospace;
+  --r2:7px; 
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+body{background:var(--bg);color:var(--tx);font-family:var(--fs);
   font-size:13px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 
 /* 顶栏 */
 .top{display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid var(--ln);
   background:var(--bg1);flex:0 0 auto}
 .mk{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,#22d3ee,#0891b2);
-  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#04222a}
+  display:flex;align-items:center;justify-content:center;font-size:var(--fz);font-weight:700;color:#04222a}
 .ttl{font-size:13px;font-weight:600}
-.sub{font-size:10.5px;color:var(--tx3);margin-left:auto}
+.sub{font-size:var(--fz);color:var(--tx3);margin-left:auto}
 
 /* 三栏：左建议+图层 / 中画布 / 右参数 */
 .main{display:flex;flex:1;min-height:0}
@@ -47,7 +49,7 @@ body{background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"S
   border:1.5px dashed var(--wnl);border-radius:50%;
   background:rgba(251,191,36,.06);display:none;pointer-events:none}
 .mask.on{display:block}
-.tag{font-size:10px;color:var(--tx3)}
+.tag{font-size:var(--fz);color:var(--tx3)}
 .tag b{color:var(--tx2)}
 
 /* 对比遮罩 */
@@ -57,10 +59,10 @@ body{background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"S
 .cmpbar.on{display:block}
 
 /* 通用 */
-.sec{font-size:10px;color:var(--tx3);letter-spacing:.05em;margin:14px 0 8px;
+.sec{font-size:var(--fz);color:var(--tx3);letter-spacing:.05em;margin:14px 0 8px;
   display:flex;align-items:center;gap:7px}
 .sec:first-child{margin-top:0}
-.sec em{font-style:normal;font-family:var(--fm);font-size:9px;padding:1px 6px;
+.sec em{font-style:normal;font-family:var(--fm);font-size:var(--fz);padding:1px 6px;
   border-radius:9px;background:var(--s2);color:var(--tx3)}
 
 /* ⭐ AI 建议卡 */
@@ -75,14 +77,14 @@ body{background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"S
 .sg.adopted .sg-dot{background:var(--ok);border-color:var(--ok)}
 .sg-t{flex:1;font-size:12.5px;color:var(--tx);line-height:1.5;font-weight:500}
 .sg.ignored .sg-t{text-decoration:line-through;color:var(--tx3)}
-.sg-kind{font-size:9px;padding:1px 6px;border-radius:3px;font-family:var(--fm);
+.sg-kind{font-size:var(--fz);padding:1px 6px;border-radius:3px;font-family:var(--fm);
   background:var(--s2);color:var(--tx3);flex-shrink:0}
-.sg-why{font-size:11px;color:var(--tx3);line-height:1.6;padding-left:21px;margin-bottom:6px}
-.sg-src{font-size:9px;font-family:var(--fm);padding-left:21px;margin-bottom:8px}
+.sg-why{font-size:var(--fz);color:var(--tx3);line-height:1.6;padding-left:21px;margin-bottom:6px}
+.sg-src{font-size:var(--fz);font-family:var(--fm);padding-left:21px;margin-bottom:8px}
 .sg-src.v{color:var(--ok)}
 .sg-src.g{color:var(--wn)}
 .sg-acts{display:flex;gap:6px;padding-left:21px}
-.sg-b{font-size:10.5px;padding:4px 11px;border-radius:5px;border:1px solid var(--ln2);
+.sg-b{font-size:var(--fz);padding:4px 11px;border-radius:5px;border:1px solid var(--ln2);
   color:var(--tx2);background:transparent;font-family:inherit;cursor:pointer;transition:.16s}
 .sg-b:hover{border-color:var(--tx3);color:var(--tx)}
 .sg-b.y{border-color:var(--okl);color:var(--ok);background:var(--oks)}
@@ -94,76 +96,76 @@ body{background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"S
   background:var(--bg2);border:1px solid var(--ln);margin-bottom:6px;transition:.16s}
 .ly.off{opacity:.4}
 .ly-eye{width:18px;height:18px;border-radius:4px;border:1px solid var(--ln2);
-  background:transparent;cursor:pointer;flex-shrink:0;font-size:10px;color:var(--tx3);
+  background:transparent;cursor:pointer;flex-shrink:0;font-size:var(--fz);color:var(--tx3);
   display:flex;align-items:center;justify-content:center;font-family:inherit}
 .ly-eye.on{background:var(--acs);border-color:var(--acl);color:var(--ac)}
-.ly-n{flex:1;font-size:11.5px;color:var(--tx)}
-.ly-r{font-size:9px;font-family:var(--fm);color:var(--tx3);
+.ly-n{flex:1;font-size:var(--fz);color:var(--tx)}
+.ly-r{font-size:var(--fz);font-family:var(--fm);color:var(--tx3);
   padding:1px 6px;border-radius:3px;background:var(--s2)}
 .ly-x{font-size:12px;color:var(--tx3);cursor:pointer;padding:0 3px;background:none;
   border:none;font-family:inherit;transition:.16s}
 .ly-x:hover{color:#f87171}
-.empty{font-size:11px;color:var(--tx3);line-height:1.7;padding:14px 4px;text-align:center}
+.empty{font-size:var(--fz);color:var(--tx3);line-height:1.7;padding:14px 4px;text-align:center}
 
 /* 参数 */
 .row{display:flex;align-items:center;gap:9px;margin-bottom:8px}
-.l{font-size:11px;color:var(--tx2);flex:0 0 44px}
+.l{font-size:var(--fz);color:var(--tx2);flex:0 0 44px}
 input[type=range]{flex:1;min-width:0;-webkit-appearance:none;appearance:none;height:3px;
   background:var(--ln2);border-radius:2px;outline:none;cursor:pointer}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;
   border-radius:50%;background:var(--ac);cursor:grab;box-shadow:0 0 0 2px rgba(34,211,238,.2)}
-.v{font-size:10px;font-family:var(--fm);color:var(--ac);flex:0 0 56px;text-align:right}
+.v{font-size:var(--fz);font-family:var(--fm);color:var(--ac);flex:0 0 56px;text-align:right}
 .curwrap{background:var(--bg2);border:1px solid var(--ln);border-radius:6px;padding:6px}
 svg.curve{width:100%;display:block;cursor:crosshair}
 .diag{stroke:rgba(255,255,255,.12);stroke-width:1;stroke-dasharray:3 3}
 .grid{stroke:rgba(255,255,255,.06);stroke-width:1}
 .path{fill:none;stroke:var(--ac);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .dot{fill:var(--ac);stroke:var(--bg1);stroke-width:1.5;cursor:grab}
-.hint{font-size:9px;color:var(--tx3);margin-top:5px;text-align:center}
+.hint{font-size:var(--fz);color:var(--tx3);margin-top:5px;text-align:center}
 .chs{display:inline-flex;gap:2px;margin-left:4px}
-.ch{font-size:9px;padding:1px 7px;border-radius:3px;cursor:pointer;background:var(--s2);
+.ch{font-size:var(--fz);padding:1px 7px;border-radius:3px;cursor:pointer;background:var(--s2);
   border:1px solid var(--ln2);color:var(--tx3);font-family:inherit}
 .ch.on{color:var(--ac);border-color:var(--acl);background:var(--acs)}
 .ch.r.on{color:#f87171;border-color:rgba(248,113,113,.5);background:rgba(248,113,113,.12)}
 .ch.g.on{color:#34d399;border-color:rgba(52,211,153,.5);background:rgba(52,211,153,.12)}
 .ch.b.on{color:#60a5fa;border-color:rgba(96,165,250,.5);background:rgba(96,165,250,.12)}
-.reset{margin-left:auto;font-size:9px;color:var(--ac);background:transparent;
+.reset{margin-left:auto;font-size:var(--fz);color:var(--ac);background:transparent;
   border:1px solid var(--acl);border-radius:3px;padding:1px 7px;cursor:pointer;font-family:inherit}
 
 /* 区域选择 */
 .regions{display:flex;gap:5px;flex-wrap:wrap}
-.rg{font-size:10px;padding:5px 11px;border-radius:5px;border:1px solid var(--ln2);
+.rg{font-size:var(--fz);padding:5px 11px;border-radius:5px;border:1px solid var(--ln2);
   color:var(--tx3);background:var(--s2);cursor:pointer;font-family:inherit;transition:.16s}
 .rg:hover{border-color:var(--ln3);color:var(--tx2)}
 .rg.on{background:var(--acs);border-color:var(--acl);color:var(--ac)}
-.reg-note{font-size:9.5px;color:var(--tx3);line-height:1.6;margin-top:7px}
+.reg-note{font-size:var(--fz);color:var(--tx3);line-height:1.6;margin-top:7px}
 
 /* 底部能力对照 */
 .capbar{border-top:1px solid var(--ln);background:var(--s1);padding:9px 16px;flex:0 0 auto}
 .capbar-h{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-.capbar-t{font-size:10px;color:var(--tx2)}
-.capbar-k{font-size:9px;font-family:var(--fm);color:var(--ac);background:var(--acs);
+.capbar-t{font-size:var(--fz);color:var(--tx2)}
+.capbar-k{font-size:var(--fz);font-family:var(--fm);color:var(--ac);background:var(--acs);
   border:1px solid var(--acl);border-radius:3px;padding:1px 6px}
 .capbar-r{display:flex;gap:14px;flex-wrap:wrap;margin-left:auto}
-.cr{display:flex;align-items:center;gap:6px;font-size:9.5px;color:var(--tx3)}
-.cr-b{font-size:8px;border-radius:3px;padding:1px 5px}
+.cr{display:flex;align-items:center;gap:6px;font-size:var(--fz);color:var(--tx3)}
+.cr-b{font-size:var(--fz);border-radius:3px;padding:1px 5px}
 .cr-b.l2{color:var(--ac);background:var(--acs)}
 .cr-b.l3{color:var(--wn);background:rgba(251,191,36,.12)}
-.cr-arrow{color:var(--tx3);font-size:10px}
-.cr-same{color:var(--ok);font-size:9px}
+.cr-arrow{color:var(--tx3);font-size:var(--fz)}
+.cr-same{color:var(--ok);font-size:var(--fz)}
 
 .foot{display:flex;align-items:center;gap:10px;padding:9px 16px;border-top:1px solid var(--ln);
   background:var(--bg1);flex:0 0 auto}
-.cost{font-size:11px;color:var(--tx2)}
+.cost{font-size:var(--fz);color:var(--tx2)}
 .cost b{color:var(--ok);font-family:var(--fm);font-size:14px}
-.costn{font-size:9.5px;color:var(--tx3);margin-left:6px}
+.costn{font-size:var(--fz);color:var(--tx3);margin-left:6px}
 .acts{margin-left:auto;display:flex;gap:7px}
-.btn{font-size:10.5px;padding:6px 13px;border-radius:6px;cursor:pointer;
+.btn{font-size:var(--fz);padding:6px 13px;border-radius:6px;cursor:pointer;
   border:1px solid var(--ln2);background:var(--s2);color:var(--tx2);font-family:inherit}
 .btn:hover{color:var(--tx);background:var(--s3)}
 .btn.pri{color:#04222a;background:var(--ac);border-color:var(--ac);font-weight:600}
 .btn.pri:hover{filter:brightness(1.1)}
-.kbd{font-family:var(--fm);font-size:9px;padding:1px 5px;border-radius:3px;
+.kbd{font-family:var(--fm);font-size:var(--fz);padding:1px 5px;border-radius:3px;
   border:1px solid var(--ln2);background:var(--s2);color:var(--tx2)}
 </style>
 </head>
@@ -281,7 +283,7 @@ svg.curve{width:100%;display:block;cursor:crosshair}
       <span class="cr-same">同一个能力 · 同一套参数</span>
     </span>
   </div>
-  <div style="font-size:9px;color:var(--tx3);line-height:1.55">
+  <div style="font-size:var(--fz);color:var(--tx3);line-height:1.55">
     🔴 <b style="color:var(--tx2)">页面与节点是兄弟</b> ——
     不是「画布调用页面」，也不是「页面提取成节点」。两者都调
     <code style="color:var(--ac);font-family:var(--fm)">POST /api/v1/images/adjust</code>，
@@ -372,7 +374,7 @@ function renderSugg(){
   }).join('');
 
   if (ign.length){
-    h += '<div style="font-size:9.5px;color:var(--tx3);margin:10px 0 6px">已忽略</div>';
+    h += '<div style="font-size:var(--fz);color:var(--tx3);margin:10px 0 6px">已忽略</div>';
     h += ign.map(s=>'<div class="sg ignored">'
       + '<div class="sg-hd"><span class="sg-dot"></span>'
       + '<span class="sg-t">'+s.title+'</span></div>'
@@ -689,5 +691,6 @@ renderLayers();
 renderManual();
 preview();
 </script>
+<script src="../shared/proto-nav.js?v=202611072335"></script>
 </body>
 </html>

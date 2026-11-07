@@ -1,0 +1,24 @@
+/* ============================================================
+   YLCraft 原型通用设计令牌 —— 单一事实来源（2026-11-07 ⑥）
+   ------------------------------------------------------------
+   所有「活原型 / 子原型」共用这一份：字体栈、字号下限、品牌基色。
+   各页在 <head> 里先引本文件，再写自己的 <style>：
+
+     <link rel="stylesheet" href="../shared/theme.css?v=<版本>">
+
+   规矩：
+     · --fs / --fm / --fz 全站统一，页面不要再各自定义一份；
+     · --fz = 12px 是字号下限。层级靠字重与颜色，不靠偷偷缩字；
+     · --bg / --ac 是暗色基底默认值，各页可按需覆盖；
+     · 摄影参考库对齐真实 theme.tsx，用 --bgPage / --pri 的三主题体系
+       （deep / moonlight / dawn），**保留不动**：只把 --ff 指到 --fs、
+       --fs-xs 指到 --fz，颜色变量不拍平，否则亮色主题会瞎；
+     · 历史版本 canvas_*.html / platform_shell_* 不引入，别改。
+   ============================================================ */
+:root{
+  --fs:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  --fm:'JetBrains Mono',ui-monospace,'SF Mono',Consolas,monospace;
+  --fz:12px;
+  --bg:#08080a;
+  --ac:#22d3ee;
+}

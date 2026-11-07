@@ -12,12 +12,9 @@
     --sh2:0 6px 22px -8px rgba(0,0,0,.85);
     --sh3:0 24px 70px -20px rgba(0,0,0,.95),0 0 0 1px rgba(255,255,255,.07);
     --ez:cubic-bezier(.16,1,.3,1);
-    --fs:'Inter',-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
-    --fm:'JetBrains Mono',Consolas,monospace;
-    /* 字号下限（2026-11-07）：原型里曾散落 8 / 8.5 / 9 / 10 / 11px 五档小字，
-       实测默认态 146 个文字元素 <12px，密度靠缩小字号撑出来的，实际读不清。
-       全部走这一个变量，层级改靠字重和颜色，不再靠偷偷调小字号。 */
-    --fz:12px;
+    /* --fs / --fm / --fz 统一定义在 ../shared/theme.css（2026-11-07 ⑥ 跨页一致性），
+       这里不再各自定义一份。--fz = 12px 是全站字号下限，
+       层级靠字重和颜色，不靠偷偷缩字。 */
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}

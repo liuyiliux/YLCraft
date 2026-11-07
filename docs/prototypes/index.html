@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="data:,">
 <title>YLCraft 原型</title>
+<link rel="stylesheet" href="shared/theme.css?v=202611072335">
 <style>
 /* 和画布同一套底色变量（深海主题）。只有暗色一套 —— 启动页不用多主题。 */
 :root{
@@ -14,7 +15,7 @@
   --ac:#22d3ee; --r3:10px;
 }
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:var(--bg);color:var(--tx);font-family:-apple-system,'Segoe UI','Microsoft YaHei',sans-serif;
+body{background:var(--bg);color:var(--tx);font-family:var(--fs);
   min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px 20px}
 .wrap{width:min(720px,100%)}
 
@@ -34,9 +35,9 @@ body{background:var(--bg);color:var(--tx);font-family:-apple-system,'Segoe UI','
 .primary .ic svg{width:19px;height:19px;stroke:var(--ac);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .primary .t{font-size:15px;font-weight:600}
 .primary .d{font-size:12px;color:var(--tx3);margin-top:3px;line-height:1.6}
-.primary .go{margin-left:auto;font-size:11px;color:var(--ac);flex:0 0 auto}
+.primary .go{margin-left:auto;font-size:var(--fz);color:var(--ac);flex:0 0 auto}
 .primary .modes{display:flex;gap:6px;margin-top:13px;flex-wrap:wrap}
-.primary .modes span{font-size:10.5px;color:var(--tx2);background:var(--s1);
+.primary .modes span{font-size:var(--fz);color:var(--tx2);background:var(--s1);
   border:1px solid var(--ln);border-radius:999px;padding:2px 9px}
 .primary .modes span i{font-style:normal;color:var(--tx3)}
 
@@ -46,12 +47,12 @@ a.card{display:block;background:var(--s1);border:1px solid var(--ln);border-radi
   padding:13px 15px;text-decoration:none;color:inherit;transition:border-color .18s}
 a.card:hover{border-color:var(--ln2);color:var(--tx)}
 a.card .t{font-size:12.5px;font-weight:500;display:flex;align-items:center;gap:7px}
-a.card .t .st{font-size:9.5px;color:var(--tx3);font-weight:400;margin-left:auto}
-a.card .d{font-size:11px;color:var(--tx3);margin-top:4px;line-height:1.6}
+a.card .t .st{font-size:var(--fz);color:var(--tx3);font-weight:400;margin-left:auto}
+a.card .d{font-size:var(--fz);color:var(--tx3);margin-top:4px;line-height:1.6}
 a.card.dim{opacity:.62}
 
 .ft{margin-top:22px;padding-top:14px;border-top:1px solid var(--ln);
-  font-size:11px;color:var(--tx3);line-height:1.8}
+  font-size:var(--fz);color:var(--tx3);line-height:1.8}
 .ft a{color:var(--tx2);text-decoration:none}
 .ft a:hover{color:var(--ac)}
 </style>
@@ -61,9 +62,10 @@ a.card.dim{opacity:.62}
 
   <div class="hd"><span class="logo">YLCraft 原型</span><span class="sub">本地预览 · 127.0.0.1:8901</span></div>
   <div class="tip">
-    三个<b>活原型</b>在改，其余是历史版本。<b>历史版本别改、别当规格</b>——
-    看现状只认下面这三个入口。画布默认带一份示例分镜，想看空态点下面的「空白画布」。
-    规矩见 <a href="README.md" style="color:var(--tx2)">README</a>。
+    三个<b>活原型</b>在改，另有若干子原型与历史版本。<b>历史版本别改、别当规格</b>——
+    看现状只认下面这三个入口；每页顶栏的「原型 ▾」可以互相跳转。
+    画布默认带一份示例分镜，想看空态点下面的「空白画布」。
+    规矩与<a href="README.md" style="color:var(--tx2)">子原型登记</a>见 README。
   </div>
 
   <!-- 画布：主入口，排第一 -->
@@ -103,8 +105,8 @@ a.card.dim{opacity:.62}
   </div>
 
   <div class="ft">
-    预览服务：<code style="font-family:ui-monospace,monospace;color:var(--tx2)">cd docs/prototypes && python -m http.server 8901 --bind 127.0.0.1</code><br>
-    改完链接带 <code style="font-family:ui-monospace,monospace;color:var(--tx2)">?nc=随机数</code> 防缓存假阴性 ·
+    预览服务：<code style="font-family:var(--fm),monospace;color:var(--tx2)">cd docs/prototypes && python -m http.server 8901 --bind 127.0.0.1</code><br>
+    改完链接带 <code style="font-family:var(--fm),monospace;color:var(--tx2)">?nc=随机数</code> 防缓存假阴性 ·
     <a href="canvas/index.html?empty=1">空白画布 ?empty=1</a> ·
     原型不是实现事实，落地前先看真代码
   </div>

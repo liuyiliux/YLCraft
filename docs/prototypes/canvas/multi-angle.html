@@ -3,7 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
 <title>多角度编辑 · 原型</title>
+<link rel="stylesheet" href="../shared/theme.css?v=202611072335">
 <style>
 :root{
   --bg:#08080a; --bg2:#0b0b0e; --s1:#101013; --s2:#16161a; --s3:#1c1c21;
@@ -17,8 +19,8 @@
   --sh2:0 6px 22px -8px rgba(0,0,0,.85);
   --sh3:0 24px 70px -20px rgba(0,0,0,.95),0 0 0 1px rgba(255,255,255,.07);
   --ez:cubic-bezier(.16,1,.3,1);
-  --fs:'Inter',-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
-  --fm:'JetBrains Mono',Consolas,monospace;
+  
+  
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
@@ -42,11 +44,11 @@ button{font-family:inherit}
 .brand .mk{
   width:20px;height:20px;border-radius:var(--r1);background:var(--ac);
   display:flex;align-items:center;justify-content:center;color:#04222a;
-  font-weight:800;font-size:11px;
+  font-weight:800;font-size:var(--fz);
 }
 .crumb{font-size:12px;color:var(--tx3)}
 .crumb b{color:var(--tx2);font-weight:500}
-.saved{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--tx3)}
+.saved{display:inline-flex;align-items:center;gap:5px;font-size:var(--fz);color:var(--tx3)}
 .saved i{width:5px;height:5px;border-radius:50%;background:var(--ok)}
 .sp{flex:1}
 
@@ -68,11 +70,11 @@ button{font-family:inherit}
 .nd.sel{border-color:var(--ac);box-shadow:0 0 0 1px var(--ac),var(--sh2)}
 .nd-hd{
   display:flex;align-items:center;gap:6px;padding:7px 9px 6px;
-  font-size:10.5px;color:var(--tx3);border-bottom:1px solid var(--ln);
+  font-size:var(--fz);color:var(--tx3);border-bottom:1px solid var(--ln);
 }
 .nd-hd .ic{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:1.7}
 .nd-hd .nm{color:var(--tx2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.nd-hd .pin{font-size:9px;opacity:.5}
+.nd-hd .pin{font-size:var(--fz);opacity:.5}
 .nd-img{
   display:block;width:100%;aspect-ratio:3/4;border-radius:0 0 var(--r3) var(--r3);
   background:
@@ -99,7 +101,7 @@ button{font-family:inherit}
 .nd:hover .nd-op{opacity:1;pointer-events:auto}
 .nd-op b{
   width:22px;height:22px;border-radius:var(--r1);display:flex;align-items:center;
-  justify-content:center;font-size:10px;color:var(--tx2);cursor:pointer;
+  justify-content:center;font-size:var(--fz);color:var(--tx2);cursor:pointer;
   transition:.15s;font-weight:400;
 }
 .nd-op b:hover{background:var(--s3);color:var(--tx)}
@@ -115,7 +117,7 @@ button{font-family:inherit}
 .link-ic{
   position:absolute;width:19px;height:19px;border-radius:50%;
   background:var(--s2);border:1px solid var(--ln2);display:flex;
-  align-items:center;justify-content:center;font-size:9px;color:var(--tx3);
+  align-items:center;justify-content:center;font-size:var(--fz);color:var(--tx3);
   pointer-events:auto;cursor:pointer;transition:.15s;z-index:2;
   transform:translate(-50%,-50%);
 }
@@ -137,7 +139,7 @@ button{font-family:inherit}
   border-bottom:1px solid var(--ln);
 }
 .ma-t{font-size:14px;font-weight:600}
-.ma-sub{font-size:11px;color:var(--tx3)}
+.ma-sub{font-size:var(--fz);color:var(--tx3)}
 .ma-x{
   margin-left:auto;width:24px;height:24px;border-radius:var(--r1);
   border:none;background:transparent;color:var(--tx3);cursor:pointer;
@@ -168,7 +170,7 @@ button{font-family:inherit}
   transform:translate(-50%,-50%);transition:left .28s var(--ez),top .28s var(--ez);
   background:rgba(22,22,26,.9);border:1px solid var(--awn,var(--wnl));
   box-shadow:0 0 14px rgba(251,191,36,.24);cursor:grab;
-  display:flex;align-items:center;justify-content:center;font-size:10px;
+  display:flex;align-items:center;justify-content:center;font-size:var(--fz);
   color:var(--wn);z-index:3;
 }
 /* 相机射出的视锥 */
@@ -181,17 +183,17 @@ button{font-family:inherit}
 /* 右：控制 */
 .ma-ctl{display:flex;flex-direction:column;gap:15px}
 .ctl-t{
-  font-size:11px;color:var(--tx3);margin-bottom:7px;
+  font-size:var(--fz);color:var(--tx3);margin-bottom:7px;
   display:flex;align-items:center;gap:7px;
 }
-.ctl-t .reset{margin-left:auto;font-size:10px;color:var(--tx3);cursor:pointer}
+.ctl-t .reset{margin-left:auto;font-size:var(--fz);color:var(--tx3);cursor:pointer}
 .ctl-t .reset:hover{color:var(--ac)}
 
 /* 9 方位 */
 .dirs{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
 .dir{
   padding:7px 4px;border-radius:var(--r1);border:1px solid var(--ln2);
-  background:transparent;color:var(--tx2);font-size:11.5px;cursor:pointer;
+  background:transparent;color:var(--tx2);font-size:var(--fz);cursor:pointer;
   transition:.15s;
 }
 .dir:hover{border-color:var(--ln3);color:var(--tx)}
@@ -202,10 +204,10 @@ button{font-family:inherit}
 /* 滑块 */
 .sld{margin-bottom:2px}
 .sld-t{
-  display:flex;align-items:center;font-size:11px;color:var(--tx3);
+  display:flex;align-items:center;font-size:var(--fz);color:var(--tx3);
   margin-bottom:5px;
 }
-.sld-t .v{margin-left:auto;color:var(--tx2);font-family:var(--fm);font-size:10.5px}
+.sld-t .v{margin-left:auto;color:var(--tx2);font-family:var(--fm);font-size:var(--fz)}
 input[type=range]{
   -webkit-appearance:none;width:100%;height:3px;border-radius:2px;
   background:rgba(255,255,255,.11);outline:none;cursor:pointer;
@@ -217,7 +219,7 @@ input[type=range]::-webkit-slider-thumb{
 }
 .sld-marks{
   display:flex;justify-content:space-between;margin-top:3px;
-  font-size:9px;color:var(--tx3);font-family:var(--fm);
+  font-size:var(--fz);color:var(--tx3);font-family:var(--fm);
 }
 
 /* 底部 */
@@ -225,8 +227,8 @@ input[type=range]::-webkit-slider-thumb{
   display:flex;align-items:center;gap:9px;padding:12px 16px;
   border-top:1px solid var(--ln);background:rgba(8,8,10,.4);
 }
-.ma-ft .cost{font-size:11px;color:var(--wn);font-family:var(--fm)}
-.ma-ft .hint{font-size:10.5px;color:var(--tx3)}
+.ma-ft .cost{font-size:var(--fz);color:var(--wn);font-family:var(--fm)}
+.ma-ft .hint{font-size:var(--fz);color:var(--tx3)}
 .gen{
   margin-left:auto;padding:8px 22px;border-radius:var(--r2);border:none;
   background:var(--tx);color:#0a0a0c;font-size:12.5px;font-weight:600;
@@ -239,14 +241,14 @@ input[type=range]::-webkit-slider-thumb{
 .toast{
   position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(10px);
   padding:8px 16px;border-radius:20px;background:var(--s2);
-  border:1px solid var(--ln2);font-size:11.5px;color:var(--tx2);
+  border:1px solid var(--ln2);font-size:var(--fz);color:var(--tx2);
   box-shadow:var(--sh2);opacity:0;transition:.2s;pointer-events:none;z-index:90;
 }
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 
 /* 说明 */
 .note{
-  position:fixed;left:14px;bottom:14px;font-size:10.5px;color:var(--tx3);
+  position:fixed;left:14px;bottom:14px;font-size:var(--fz);color:var(--tx3);
   background:rgba(16,16,19,.92);border:1px solid var(--ln2);
   padding:6px 12px;border-radius:8px;line-height:1.5;z-index:80;
   backdrop-filter:blur(8px);
@@ -297,7 +299,7 @@ input[type=range]::-webkit-slider-thumb{
       <b title="超清">✦</b>
       <b title="去画布编辑">✎</b>
     </div>
-    <div style="padding:6px 9px;border-top:1px solid var(--ln);font-size:9.5px;
+    <div style="padding:6px 9px;border-top:1px solid var(--ln);font-size:var(--fz);
                 color:var(--tx3);font-family:var(--fm)">来自 图片 1 · 左上 315°</div>
   </div>
 
@@ -498,7 +500,7 @@ function doGenerate(){
         <b title="超清">✦</b>
         <b title="去画布编辑">✎</b>
       </div>
-      <div style="padding:6px 9px;border-top:1px solid var(--ln);font-size:9.5px;
+      <div style="padding:6px 9px;border-top:1px solid var(--ln);font-size:var(--fz);
                   color:var(--tx3);font-family:var(--fm)">
         来自 ${fromNode.querySelector('.nm').textContent} · ${labelOf()}
       </div>`;
@@ -660,5 +662,6 @@ syncAll();
 drawLink('n1', 'n2');
 updateCount();
 </script>
+<script src="../shared/proto-nav.js?v=202611072335"></script>
 </body>
 </html>

@@ -2,7 +2,9 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<link rel="icon" href="data:,">
 <title>图片编辑 · L2 独立页面（证明「页面与节点是兄弟」）</title>
+<link rel="stylesheet" href="../shared/theme.css?v=202611072335">
 <style>
 :root{
   --bg:#0a0a0c; --bg1:#101013; --bg2:#16161a; --s1:#0f0f12; --s2:#1c1c21; --s3:#26262d;
@@ -10,20 +12,20 @@
   --tx:#e8e8ec; --tx2:#a1a1ad; --tx3:#6c6c78;
   --ac:#22d3ee; --acs:rgba(34,211,238,.1); --acl:rgba(34,211,238,.4);
   --ok:#34d399; --wn:#fbbf24; --wnl:rgba(251,191,36,.35); --dg:#f87171;
-  --r2:7px; --fm:ui-monospace,SFMono-Regular,Menlo,monospace;
+  --r2:7px; 
   --ez:cubic-bezier(.4,0,.2,1);
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+body{background:var(--bg);color:var(--tx);font-family:var(--fs);
   font-size:13px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 
 /* 顶栏 */
 .top{display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid var(--ln);
   background:var(--bg1);flex:0 0 auto}
 .mk{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,#22d3ee,#0891b2);
-  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#04222a}
+  display:flex;align-items:center;justify-content:center;font-size:var(--fz);font-weight:700;color:#04222a}
 .ttl{font-size:13px;font-weight:600}
-.sub{font-size:10.5px;color:var(--tx3);margin-left:auto}
+.sub{font-size:var(--fz);color:var(--tx3);margin-left:auto}
 
 /* 布局 */
 .main{display:flex;flex:1;min-height:0}
@@ -34,23 +36,23 @@ body{background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"S
   box-shadow:0 14px 44px -14px rgba(0,0,0,.9);transition:filter .06s linear}
 .fig{position:absolute;left:42%;top:18%;width:16%;height:64%;
   background:linear-gradient(175deg,#e8d5bd,#a8825c);border-radius:42% 42% 20% 20%/16% 16% 8% 8%}
-.tag{font-size:10px;color:var(--tx3)}
+.tag{font-size:var(--fz);color:var(--tx3)}
 .panel{width:330px;flex:0 0 330px;border-left:1px solid var(--ln);background:var(--bg1);
   padding:14px 16px;overflow-y:auto}
 .panel::-webkit-scrollbar{width:6px}
 .panel::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:3px}
 
-.sec{font-size:10px;color:var(--tx3);letter-spacing:.05em;margin:13px 0 8px;
+.sec{font-size:var(--fz);color:var(--tx3);letter-spacing:.05em;margin:13px 0 8px;
   display:flex;align-items:center;gap:7px}
 .sec:first-child{margin-top:0}
-.sec2{opacity:.7;font-size:9px}
+.sec2{opacity:.7;font-size:var(--fz)}
 .row{display:flex;align-items:center;gap:9px;margin-bottom:8px}
-.l{font-size:11px;color:var(--tx2);flex:0 0 44px}
+.l{font-size:var(--fz);color:var(--tx2);flex:0 0 44px}
 input[type=range]{flex:1;min-width:0;-webkit-appearance:none;appearance:none;height:3px;
   background:var(--ln2);border-radius:2px;outline:none;cursor:pointer}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;
   border-radius:50%;background:var(--ac);cursor:grab;box-shadow:0 0 0 2px rgba(34,211,238,.2)}
-.v{font-size:10px;font-family:var(--fm);color:var(--ac);flex:0 0 56px;text-align:right}
+.v{font-size:var(--fz);font-family:var(--fm);color:var(--ac);flex:0 0 56px;text-align:right}
 
 .curvewrap{background:var(--bg2);border:1px solid var(--ln);border-radius:6px;padding:6px}
 svg.curve{width:100%;display:block;cursor:crosshair}
@@ -59,38 +61,38 @@ svg.curve{width:100%;display:block;cursor:crosshair}
 .path{fill:none;stroke:var(--ac);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .dot{fill:var(--ac);stroke:var(--bg1);stroke-width:1.5;cursor:grab}
 .dot.on{fill:#fff;r:6}
-.hint{font-size:9px;color:var(--tx3);margin-top:5px;text-align:center}
+.hint{font-size:var(--fz);color:var(--tx3);margin-top:5px;text-align:center}
 
 .chs{display:inline-flex;gap:2px;margin-left:4px}
-.ch{font-size:9px;padding:1px 7px;border-radius:3px;cursor:pointer;background:var(--s2);
+.ch{font-size:var(--fz);padding:1px 7px;border-radius:3px;cursor:pointer;background:var(--s2);
   border:1px solid var(--ln2);color:var(--tx3);font-family:inherit}
 .ch.on{color:var(--ac);border-color:var(--acl);background:var(--acs)}
 .ch.r.on{color:#f87171;border-color:rgba(248,113,113,.5);background:rgba(248,113,113,.12)}
 .ch.g.on{color:#34d399;border-color:rgba(52,211,153,.5);background:rgba(52,211,153,.12)}
 .ch.b.on{color:#60a5fa;border-color:rgba(96,165,250,.5);background:rgba(96,165,250,.12)}
-.reset{margin-left:auto;font-size:9px;color:var(--ac);background:transparent;
+.reset{margin-left:auto;font-size:var(--fz);color:var(--ac);background:transparent;
   border:1px solid var(--acl);border-radius:3px;padding:1px 7px;cursor:pointer;font-family:inherit}
 
 /* 底部能力对照 */
 .capbar{border-top:1px solid var(--ln);background:var(--s1);padding:11px 16px;flex:0 0 auto}
 .capbar-h{display:flex;align-items:center;gap:8px;margin-bottom:7px}
-.capbar-t{font-size:10.5px;color:var(--tx2)}
-.capbar-k{font-size:9.5px;font-family:var(--fm);color:var(--ac);background:var(--acs);
+.capbar-t{font-size:var(--fz);color:var(--tx2)}
+.capbar-k{font-size:var(--fz);font-family:var(--fm);color:var(--ac);background:var(--acs);
   border:1px solid var(--acl);border-radius:3px;padding:1px 6px}
 .capbar-r{display:flex;gap:16px;flex-wrap:wrap}
-.cr{display:flex;align-items:center;gap:7px;font-size:10px;color:var(--tx3)}
-.cr-b{font-size:8.5px;border-radius:3px;padding:1px 5px}
+.cr{display:flex;align-items:center;gap:7px;font-size:var(--fz);color:var(--tx3)}
+.cr-b{font-size:var(--fz);border-radius:3px;padding:1px 5px}
 .cr-b.l2{color:var(--ac);background:var(--acs)}
 .cr-b.l3{color:var(--wn);background:rgba(251,191,36,.12)}
-.cr-arrow{color:var(--tx3);font-size:11px}
-.cr-same{color:var(--ok);font-size:9px}
+.cr-arrow{color:var(--tx3);font-size:var(--fz)}
+.cr-same{color:var(--ok);font-size:var(--fz)}
 .foot{display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid var(--ln);
   background:var(--bg1);flex:0 0 auto}
-.cost{font-size:11px;color:var(--tx2)}
+.cost{font-size:var(--fz);color:var(--tx2)}
 .cost b{color:var(--ok);font-family:var(--fm);font-size:15px}
-.costn{font-size:9.5px;color:var(--tx3);margin-left:6px}
+.costn{font-size:var(--fz);color:var(--tx3);margin-left:6px}
 .acts{margin-left:auto;display:flex;gap:7px}
-.btn{font-size:10.5px;padding:7px 14px;border-radius:6px;cursor:pointer;
+.btn{font-size:var(--fz);padding:7px 14px;border-radius:6px;cursor:pointer;
   border:1px solid var(--ln2);background:var(--s2);color:var(--tx2);font-family:inherit}
 .btn:hover{color:var(--tx);background:var(--s3)}
 .btn.pri{color:#04222a;background:var(--ac);border-color:var(--ac);font-weight:600}
@@ -178,7 +180,7 @@ svg.curve{width:100%;display:block;cursor:crosshair}
       <span class="cr-same">同一个能力 · 同一套参数</span>
     </span>
   </div>
-  <div style="font-size:9.5px;color:var(--tx3);line-height:1.6">
+  <div style="font-size:var(--fz);color:var(--tx3);line-height:1.6">
     🔴 <b style="color:var(--tx2)">页面与节点是兄弟</b> ——
     不是"画布调用页面"，也不是"页面提取成节点"。两者都调 <code style="color:var(--ac);font-family:var(--fm)">POST /api/v1/images/adjust</code>，
     各自有各自的壳：这里是一页表单，画布里是一个节点。
@@ -391,5 +393,6 @@ function applyIt(){
 
 renderAll();
 </script>
+<script src="../shared/proto-nav.js?v=202611072335"></script>
 </body>
 </html>
