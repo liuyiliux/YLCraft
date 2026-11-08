@@ -456,7 +456,9 @@ async function runNode(id){
     n.sub = cost ? ('完成 · ⚡' + cost) : '完成 · 免费';
     renderGraph();
     if (isShot){ renderShots(); renderTimeline(); renderMeta(); }
-    showNodeParams(id);
+    /* 参数表已降级成「完整参数」二级入口：跑完别自动弹回来，
+       只有用户主动打开着的时候才刷新它（2026-11-08 两级结构）。 */
+    if (typeof paramsFor !== 'undefined' && paramsFor === id) showNodeParams(id);
     if (typeof renderUserChip === 'function') renderUserChip();
 
     const moneyTxt = bill

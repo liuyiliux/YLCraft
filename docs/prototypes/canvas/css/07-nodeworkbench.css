@@ -1,0 +1,96 @@
+/* 07-nodeworkbench.css — 点节点后的「两级信息结构」（2026-11-08，对齐即梦选中态）
+ *
+ * 常态：卡片只有「图 + 分镜标题 + 图上角标」，不常驻运行按钮 / 参数表。
+ * 选中：节点上方浮工具条、下方浮对话生成框，内容仍在中间（节点本体可见）。
+ *
+ * 为什么浮层挂 body 而不是 .ginner：.ginner 会被 31-zoom.js 整体 scale，
+ * 挂进去工具字会跟着缩到 12px 以下。挂 body 用 fixed + 逐帧量节点屏幕坐标，
+ * 缩放 / 平移 / 拖节点都能跟上，字号下限 var(--fz) 才守得住。
+ */
+
+.nwb{position:fixed;inset:0;z-index:210;pointer-events:none}
+/* 记忆坑：设过 display 会盖掉 hidden，必须自己补一条 */
+.nwb[hidden]{display:none!important}
+.nwb-tools,.nwb-chat{position:absolute;pointer-events:auto;
+  background:rgba(16,16,19,.97);backdrop-filter:blur(20px);
+  border:1px solid var(--ln2);box-shadow:var(--sh3);animation:nwbPop .18s var(--ez)}
+@keyframes nwbPop{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+
+/* ---------- 上：按节点类型浮出的工具条 ---------- */
+.nwb-tools{display:flex;align-items:center;gap:2px;padding:5px 6px;border-radius:999px;
+  white-space:nowrap;max-width:calc(100vw - 32px);overflow-x:auto;scrollbar-width:none}
+.nwb-tools::-webkit-scrollbar{display:none}
+.nwb-tb{display:inline-flex;align-items:center;gap:5px;font-family:inherit;font-size:var(--fz);
+  color:var(--tx2);background:transparent;border:0;border-radius:999px;padding:5px 9px;
+  cursor:pointer;line-height:1.4;white-space:nowrap}
+.nwb-tb:hover{background:var(--s3);color:var(--tx)}
+.nwb-tb .ic{width:13px;height:13px}
+.nwb-tb.on{color:var(--ac);background:var(--acs)}
+.nwb-sep{width:1px;height:16px;background:var(--ln2);margin:0 4px;flex:0 0 auto}
+.nwb-tb.run{color:#04222a;background:var(--ac);font-weight:600}
+.nwb-tb.run:hover{filter:brightness(1.12);color:#04222a}
+.nwb-tb.close{color:var(--tx3);padding:5px 7px}
+.nwb-tb.close:hover{color:var(--dg)}
+
+/* ---------- 下：对话 / 生成框 ---------- */
+.nwb-chat{width:min(460px,calc(100vw - 32px));border-radius:var(--r3);padding:10px 12px 11px}
+.nwb-hd{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.nwb-hd .t{font-size:var(--fz);color:var(--tx2);font-weight:600;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.nwb-hd .t b{color:var(--tx)}
+.nwb-hd .sp{flex:1}
+.nwb-hd .cost{font-family:var(--fm);font-size:var(--fz);color:var(--ac)}
+.nwb-chips{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:8px}
+.nwb-chip{display:inline-flex;align-items:center;gap:4px;font-family:inherit;font-size:var(--fz);
+  color:var(--tx3);background:var(--s2);border:1px solid var(--ln);border-radius:999px;
+  padding:3px 9px;cursor:pointer;white-space:nowrap}
+.nwb-chip:hover{color:var(--tx2);border-color:var(--ln2)}
+.nwb-chip.on{color:var(--ac);border-color:var(--acl);background:var(--acs)}
+.nwb-chip .cv{color:var(--tx3);font-size:var(--fz)}
+.nwb-chips .nwb-sep{margin:0 2px}
+#nwbTa{display:block;width:100%;min-height:44px;max-height:92px;
+  background:var(--bg2);border:1px solid var(--ln2);border-radius:var(--r2);
+  color:var(--tx);font-family:inherit;font-size:13px;line-height:1.55;
+  padding:8px 10px;resize:none;outline:none}
+#nwbTa::placeholder{color:var(--tx3)}
+#nwbTa:focus{border-color:var(--acl)}
+.nwb-foot{display:flex;align-items:center;gap:6px;margin-top:8px}
+.nwb-op{display:inline-flex;align-items:center;gap:4px;font-family:inherit;font-size:var(--fz);
+  color:var(--tx2);background:transparent;border:1px solid var(--ln);border-radius:var(--r2);
+  padding:4px 8px;cursor:pointer;white-space:nowrap}
+.nwb-op:hover{border-color:var(--ln2);color:var(--tx)}
+.nwb-foot .sp{flex:1}
+.nwb-send{display:inline-flex;align-items:center;gap:5px;font-family:inherit;font-size:var(--fz);
+  font-weight:600;color:#04222a;background:var(--ac);border:0;border-radius:var(--r2);
+  padding:5px 12px;cursor:pointer}
+.nwb-send:hover{filter:brightness(1.12)}
+.nwb-log{font-size:var(--fz);color:var(--ac);line-height:1.6;margin-top:7px}
+.nwb-log:empty{display:none}
+
+/* ---------- 卡片瘦身：属性收进图内角标，不再常驻运行按钮 ---------- */
+.gnode.hasimg .gimg .gmeta{position:absolute;right:4px;top:4px;z-index:3;
+  font-size:var(--fz);font-family:var(--fm);color:var(--tx);
+  background:rgba(8,8,10,.72);border:1px solid var(--ln2);border-radius:4px;
+  padding:0 4px;line-height:16px;white-space:nowrap;
+  max-width:calc(100% - 8px);overflow:hidden;text-overflow:ellipsis}
+.gnode.hasimg .gimg .gmeta.err{color:var(--dg);border-color:rgba(248,113,113,.45)}
+
+/* ---------- 右侧 420px 全局智能体栏：默认收起，点竖条展开 ----------
+   收起不是删除：.ag / #agb / #ta 仍在 DOM，send() / agAdd() / mountAgentTabs()
+   全部照常可用；只是把 420px 让给画布，节点级的「下对话框」成为主交互。 */
+body:not(.ag-open) .ag{display:none}
+#agPeek{position:fixed;right:0;top:52px;bottom:0;width:34px;z-index:26;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
+  background:var(--s1);border-left:1px solid var(--ln);color:var(--tx3);
+  font-family:inherit;font-size:var(--fz);cursor:pointer}
+#agPeek:hover{color:var(--ac);background:var(--s2)}
+#agPeek .pk-t{writing-mode:vertical-rl;letter-spacing:.18em}
+#agPeek .pk-ar{font-size:var(--fz);opacity:.7}
+body.ag-open #agPeek{display:none}
+.ag-fold{margin-left:6px;flex:0 0 auto;font-family:inherit;font-size:var(--fz);
+  color:var(--tx3);background:transparent;border:1px solid var(--ln);
+  border-radius:var(--r2);padding:3px 8px;cursor:pointer}
+.ag-fold:hover{color:var(--tx);border-color:var(--ln2)}
+/* 折叠态别让右下角的小地图 / 缩放牌被竖条压住 */
+body:not(.ag-open) .gmap{right:46px}
+body:not(.ag-open) .zoom-badge{right:46px}
