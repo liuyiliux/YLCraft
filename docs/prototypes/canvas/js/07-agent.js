@@ -171,41 +171,38 @@ function agDeliverCanvas(){
   const nodes = (typeof GRAPH !== 'undefined' && GRAPH.nodes) ? GRAPH.nodes.length : 18;
   const edges = (typeof GRAPH !== 'undefined' && GRAPH.edges) ? GRAPH.edges.length : 29;
   const shots = (typeof DOC !== 'undefined') ? DOC.items.length : 12;
-  agAdd('ai', `画布已经建好了，<b>不是发你一条消息就完事</b> —— 这张画布你可以直接接管。<br>
+  agAdd('ai', `画布已经建好了，<b>不是发你一条消息就完事</b> —— 点一下就进这张画布。<br>
     <div class="dl-card">
-      <div class="dl-h"><span class="dl-t">我的短剧 / 第 3 集 · 可接管</span>
+      <div class="dl-h"><span class="dl-t">我的短剧 / 第 3 集 · 可直接打开</span>
         <span class="dl-tag">本地实例</span></div>
       <div class="dl-url">${esc(url)}</div>
-      <div class="dl-m">${nodes} 节点 / ${edges} 连线 / ${shots} 镜 · 链接指向你本机的 YLCraft，不上传云端</div>
+      <div class="dl-m">${nodes} 节点 / ${edges} 连线 / ${shots} 镜 · 上面是本地实例地址（只读，不用复制），不上传云端</div>
       <div class="dl-a">
-        <button class="dl-btn pri" onclick="takeoverCanvas('${id}')">接管这张画布</button>
-        <button class="dl-btn" onclick="copyCanvasUrl(this)">复制链接</button>
+        <button class="dl-btn pri" onclick="takeoverCanvas('${id}')">打开画布 ↗</button>
       </div>
     </div>
     <span class="myown">开源自用口径：这里的 projectUrl 是<b>本地实例地址</b>，不是云端分享链接；
-    真实现要带本机可访问的 project id 与鉴权，不能把画布传到外部服务。</span>`);
+    只有一个实例，所以不给地址做复制动作 —— 按钮直接跳进连线图。真实现要带本机可访问的
+    project id 与鉴权，不能把画布传到外部服务。</span>`);
 }
 
 function takeoverCanvas(id){
-  /* 接管 = 切到这份画布的副本；不挂模板快照（它不是从模板来的） */
+  /* 点按钮 = 直接进这张画布的连线图，不是复制地址再自己粘（2026-11-08 用户纠偏）。
+     demoFill 用 quiet 填数据但不切模式，随后显式落到 flow + graph。 */
   currentTplRef = null;
   if (typeof renderTplRefBar === 'function') renderTplRefBar();
-  if (typeof demoFill === 'function') demoFill('script', 12);
+  if (typeof demoFill === 'function') demoFill('script', 12, {quiet:true});
+  if (typeof clearEdgeFocus === 'function') clearEdgeFocus();
+  if (typeof setFlowView === 'function') setFlowView('graph');
+  if (typeof setMode === 'function') setMode('flow');
   const el = document.getElementById('canvasName');
-  if (el) el.textContent = '我的短剧 / 第 3 集 · 已接管';
-  toast('已接管画布 ' + esc(id) + ' · 现在改的是你自己的副本');
-  agAdd('ai', `已切到 <b>${esc(id)}</b>。节点、连线和镜头都在，直接改就是你的；
+  if (el) el.textContent = '我的短剧 / 第 3 集 · 已打开';
+  agAdd('ai', `已打开 <b>${esc(id)}</b> 的连线图。节点、连线和镜头都在，直接改就是你的；
     原画布不会被覆盖。<br><br><span class="myown">原型用示例数据重建这张画布；
     真实现要按 canvas id 读画布文档并切换当前工作区。</span>`);
-}
-
-function copyCanvasUrl(btn){
-  const card = btn.closest('.dl-card');
-  const u = card ? card.querySelector('.dl-url').textContent : '';
-  if (navigator.clipboard && navigator.clipboard.writeText){
-    navigator.clipboard.writeText(u).catch(()=>{});
-  }
-  toast('已复制本地画布链接');
+  /* 进画布就把右侧智能体栏收起来，别让 420px 挤窄画布；消息留着，展开还能看 */
+  if (typeof toggleAg === 'function') toggleAg(false);
+  toast('已打开画布 ' + esc(id) + ' · 连线图');
 }
 
 function esc(s){ return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
