@@ -2,6 +2,8 @@
 /* ================= 模式切换 ================= */
 function setMode(m){
   mode = m;
+  /* 离开画布视图就收掉节点浮层，别让工具条飘到镜头墙上 */
+  if (m!=='flow' && typeof clearEdgeFocus === 'function') clearEdgeFocus();
   document.getElementById('mShots').classList.toggle('on', m==='shots');
   document.getElementById('mFree').classList.toggle('on', m==='free');
   document.getElementById('mFlow').classList.toggle('on', m==='flow');
@@ -359,6 +361,8 @@ function renderFlow(){
 let flowView = 'graph';
 function setFlowView(v){
   flowView = v;
+  /* 切到「步骤」时节点已隐藏，浮层不能留在屏幕上（2026-11-08） */
+  if (v!=='graph' && typeof clearEdgeFocus === 'function') clearEdgeFocus();
   document.getElementById('ftbSteps').classList.toggle('on', v==='steps');
   document.getElementById('ftbGraph').classList.toggle('on', v==='graph');
   document.getElementById('flowStepsView').classList.toggle('hidden', v!=='steps');
@@ -547,7 +551,8 @@ function clearEdgeFocus(){
   document.querySelectorAll('#gnodes .gnode').forEach(el=>el.classList.remove('sel','multi','rel'));
   if (typeof gMulti !== 'undefined' && gMulti.size) gMulti.clear();
   if (typeof renderGroupBar === 'function') renderGroupBar();
-  if (typeof closeParams === 'function') closeParams();
+  if (typeof closeNodeWb === 'function') closeNodeWb();
+  else if (typeof closeParams === 'function') closeParams();
   setFocusHint('');
 }
 
@@ -588,10 +593,11 @@ function renderGraph(){
       <div class="ghd"><span class="gt">${n.t}</span><span class="gd" style="background:${dot}"></span></div>
       ${shot ? `<div class="gimg" style="${imgStyle}">`
         + (shot.shotSz ? `<span class="sz">${esc(shot.shotSz)}</span>` : '')
-        + `</div>` : ''}
-      <div class="gbd">${n.sub}</div>
+        /* 卡片瘦身（2026-11-08 两级结构）：时长 / 分辨率收进图内角标，
+           不再占卡片底部一整行；运行按钮移到点节点后的上方工具条。 */
+        + `<span class="gmeta${n.st==='err'?' err':''}">${esc(n.sub)}</span>`
+        + `</div>` : `<div class="gbd">${n.sub}</div>`}
       ${outs}
-      ${capKeyOfNode(n)?`<button class="grun" data-run="${n.id}" title="运行这个节点（会先过门禁）">▶</button>`:''}
     </div>`;
   }).join('');
 
@@ -626,6 +632,8 @@ function bindGraph(){
         if (gMulti.has(id)) gMulti.delete(id); else gMulti.add(id);
         el.classList.toggle('multi', gMulti.has(id));
         renderGroupBar();
+        /* 多选是「一组节点」的操作，不该留着单节点的工作台浮层 */
+        if (typeof closeNodeWb === 'function') closeNodeWb();
         focusEdges(gMulti);            // 多选：所有选中节点的相连线一起亮
         return;
       }
@@ -635,7 +643,9 @@ function bindGraph(){
       // 只改选中态，绝不 renderGraph（否则正在拖的节点被重建，拖不动）
       document.querySelectorAll('.gnode').forEach(x=>x.classList.toggle('sel', x.dataset.id===id));
       focusEdges(id);                // 相连的连线亮起来（只切 class，不重画路径）
-      showNodeParams(id);
+      /* 两级信息结构（2026-11-08）：选中不再默认弹右侧 10 行参数表，
+         改为在节点上方浮工具条、下方浮对话框；完整参数降为二级入口。 */
+      if (typeof openNodeWb === 'function') openNodeWb(id);
     });
     el.addEventListener('pointermove', e=>{
       if (!gDrag || gDrag.id !== el.dataset.id) return;
@@ -712,13 +722,8 @@ function bindGraph(){
     });
   });
 
-  // 运行单节点
-  document.querySelectorAll('.grun').forEach(b=>{
-    b.addEventListener('click', e=>{
-      e.stopPropagation();
-      runNode(b.dataset.run);
-    });
-  });
+  /* 运行单节点（2026-11-08 两级结构）：卡片上不再常驻 .grun 按钮，
+     入口迁到 36-nodeworkbench.js 上方工具条的「运行」；runNode() 与门禁链路不变。 */
 }
 
 function onLinkMove(e){
