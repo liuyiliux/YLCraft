@@ -111,6 +111,17 @@ function send(){
     setTimeout(()=>{ wsOpenRefCombo(t); }, 420);
     return;
   }
+  /* 2026-11-08 第 2 批 ⑨⑩：Agent 交付与委托都由对话触发，不另造一套入口。
+     ⑩ 放前面，避免「委托它自己跑」被后面的「生成」分支抢走。 */
+  if (/(设计委托|委托|定时跑|自己跑|托管|排程)/.test(t)
+      && typeof openDelegate === 'function'){
+    setTimeout(()=>{ openDelegate(); }, 380);
+    return;
+  }
+  if (/(项目链接|画布链接|projectUrl|可接管|接管|给我.{0,4}地址|开个?画布|建个?画布|做个?项目|把画布给我)/i.test(t)){
+    setTimeout(()=>{ agDeliverCanvas(); }, 420);
+    return;
+  }
   if (DOC.items.length===0){
     setTimeout(()=>{ demoFill('talk'); }, 500);
     return;
@@ -144,10 +155,59 @@ function send(){
         + `两个新镜头都是<b>待生成</b>。<br><br>要我接着生成这两镜吗？<b>会花两镜的钱。</b>`);
       document.getElementById('hintBar').innerHTML = `第 ${m[1]} 镜已拆成两镜 · 镜号已重排`;
     } else {
-      agAdd('ai', '收到。这版原型只演示了「拆镜头」和「换顺序」，你说"把第 2 镜拆成中景和特写"试试。');
+      agAdd('ai', '收到。这版原型只演示了「拆镜头」和「换顺序」，你说"把第 2 镜拆成中景和特写"试试。'
+        + '<br><br>也可以说「<b>给我项目链接</b>」看 Agent 怎么交一张可接管的画布，'
+        + '或说「<b>委托它自己跑</b>」设定时与成本上限。');
     }
   }, 500);
 }
+
+/* ===== ⑨ Agent 交付：可接管的画布，不是一条消息（2026-11-08） =====
+   开源自用口径：projectUrl = 本机 YLCraft 实例地址，不是云端分享链接。 */
+function agDeliverCanvas(){
+  const id = 'cv-' + (typeof DOC !== 'undefined' ? DOC.items.length : 12)
+           + '-' + Date.now().toString(36).slice(-4);
+  const url = location.origin + location.pathname + '?canvas=' + encodeURIComponent(id);
+  const nodes = (typeof GRAPH !== 'undefined' && GRAPH.nodes) ? GRAPH.nodes.length : 18;
+  const edges = (typeof GRAPH !== 'undefined' && GRAPH.edges) ? GRAPH.edges.length : 29;
+  const shots = (typeof DOC !== 'undefined') ? DOC.items.length : 12;
+  agAdd('ai', `画布已经建好了，<b>不是发你一条消息就完事</b> —— 这张画布你可以直接接管。<br>
+    <div class="dl-card">
+      <div class="dl-h"><span class="dl-t">我的短剧 / 第 3 集 · 可接管</span>
+        <span class="dl-tag">本地实例</span></div>
+      <div class="dl-url">${esc(url)}</div>
+      <div class="dl-m">${nodes} 节点 / ${edges} 连线 / ${shots} 镜 · 链接指向你本机的 YLCraft，不上传云端</div>
+      <div class="dl-a">
+        <button class="dl-btn pri" onclick="takeoverCanvas('${id}')">接管这张画布</button>
+        <button class="dl-btn" onclick="copyCanvasUrl(this)">复制链接</button>
+      </div>
+    </div>
+    <span class="myown">开源自用口径：这里的 projectUrl 是<b>本地实例地址</b>，不是云端分享链接；
+    真实现要带本机可访问的 project id 与鉴权，不能把画布传到外部服务。</span>`);
+}
+
+function takeoverCanvas(id){
+  /* 接管 = 切到这份画布的副本；不挂模板快照（它不是从模板来的） */
+  currentTplRef = null;
+  if (typeof renderTplRefBar === 'function') renderTplRefBar();
+  if (typeof demoFill === 'function') demoFill('script', 12);
+  const el = document.getElementById('canvasName');
+  if (el) el.textContent = '我的短剧 / 第 3 集 · 已接管';
+  toast('已接管画布 ' + esc(id) + ' · 现在改的是你自己的副本');
+  agAdd('ai', `已切到 <b>${esc(id)}</b>。节点、连线和镜头都在，直接改就是你的；
+    原画布不会被覆盖。<br><br><span class="myown">原型用示例数据重建这张画布；
+    真实现要按 canvas id 读画布文档并切换当前工作区。</span>`);
+}
+
+function copyCanvasUrl(btn){
+  const card = btn.closest('.dl-card');
+  const u = card ? card.querySelector('.dl-url').textContent : '';
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(u).catch(()=>{});
+  }
+  toast('已复制本地画布链接');
+}
+
 function esc(s){ return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function toast(t){
   const old=document.querySelector('.toast'); if(old) old.remove();
@@ -396,28 +456,53 @@ const TPLS = [
 ];
 let tplSel = 0;
 
+/* 作品广场（2026-11-08 原型收口第 1 批 ③）
+   画面核销结论：模板只做了「存 / 用」，没做「流通」。
+   WorkRally 已给形态：流通单位是**画布**，每个作品带「复制创作画布」，
+   排序信号是复制次数（RESEARCH_LEDGER 6.4）。 */
+const PLAZA = [
+  {id:'p1', n:'雨夜便利店 · 12 镜', author:'林间', used:1240, nodes:18, edges:29,
+   shots:12, fill:'script', cat:'短剧',
+   cover:'linear-gradient(140deg,#1b2b45,#0b1424 60%,#3a2140)',
+   d:'冷蓝霓虹 + 手持跟拍，色温和机位都定好了，直接改台词就能用'},
+  {id:'p2', n:'秋日颐和园 · 人物片', author:'阿禾', used:876, nodes:14, edges:21,
+   shots:9, fill:'script', cat:'人物',
+   cover:'linear-gradient(140deg,#6b4b25,#2b1d12 60%,#b08a3c)',
+   d:'下午四点侧逆光，角色档案、景别和拍摄计划都在画布里'},
+  {id:'p3', n:'产品发布 · 无角色宣传片', author:'YLCraft 示例', used:512, nodes:12, edges:17,
+   shots:8, fill:'promo', cat:'宣传片',
+   cover:'linear-gradient(140deg,#1d2b2e,#0a1113 60%,#2f6b73)',
+   d:'建筑 / 产品 / 特效，没有角色 —— 空镜也走同一套节点'},
+  {id:'p4', n:'角色三视图 · 固定形象', author:'小满', used:308, nodes:9, edges:12,
+   shots:6, fill:'character', cat:'角色',
+   cover:'linear-gradient(140deg,#3a2440,#160f1b 60%,#7d4a86)',
+   d:'指定角色的六个角度，脸按角色档案锁死、不进随机池'}
+];
+let tplTab = 'tpl';
+
 /* 当前画布用的模板（用模板创建后记下） */
 let currentTplRef = null;   // { id, ver }
 
 function openTpl(){
   closeCtx();
+  tplTab = 'tpl';   // 每次打开默认落在模板 Tab，标题和内容才不会打架
   document.getElementById('overlayHost').innerHTML =
    `<div class="ov" onclick="if(event.target===this)closeTpl()"><div class="tpl">
-      <div class="th2"><div class="t">新建画布 · 选一个起点</div>
-        <div class="s">模板就是一套连好的流程，选完可以直接用，也能改</div></div>
-      <div class="cats">
-        <button class="on">全部</button><button>漫剧</button><button>修图</button><button>电商</button><button>我的</button>
-      </div>
+      <div class="th2"><div class="t" id="tplTitle">新建画布 · 选一个起点</div>
+        <div class="s" id="tplSub">模板就是一套连好的流程，选完可以直接用，也能改</div></div>
+      <div class="cats" id="tplCats"></div>
       <div class="tbody" id="tplBody"></div>
-      <div class="tf"><span class="info" id="tplInfo"></span>
-        <button class="b" onclick="closeTpl()">取消</button>
-        <button class="b solid" onclick="useTpl()">用这个模板</button></div>
+      <div class="tf" id="tplFoot"></div>
     </div></div>`;
   renderTpl();
-  showHint('选一个模板 → 点「用这个模板」· 用了以后模板更新不会自动改你的画布', 7000);
+  showHint('模板是一套流程；作品广场里是别人做好的整张画布，点「复制创作画布」直接拿一份', 7000);
 }
 
 function renderTpl(){
+  renderTplCats();
+  const body = document.getElementById('tplBody');
+  if (body) body.classList.toggle('pz-mode', tplTab === 'plaza');
+  if (tplTab === 'plaza'){ renderPlaza(); renderTplFoot(); return; }
   let html = TPLS.map((t,i)=>{
     const mini = t.seq.map((c,k)=>`<i class="${c?'c':''}"></i>${k<t.seq.length-1?'<span class="ar"></span>':''}`).join('');
     const newer = t.latest > t.ver;
@@ -434,14 +519,79 @@ function renderTpl(){
       <div class="ti"><div class="tn">空白画布</div><div class="tm">从零搭</div></div></div>`;
   document.getElementById('tplBody').innerHTML = html;
 
+  renderTplFoot();
+}
+
+/* ---------- 作品广场：Tab / 卡片 / 复制创作画布 ---------- */
+function setTplTab(k){
+  tplTab = k === 'plaza' ? 'plaza' : 'tpl';
+  const t = document.getElementById('tplTitle'), s = document.getElementById('tplSub');
+  if (t) t.textContent = tplTab === 'plaza' ? '作品广场 · 复制一张画布' : '新建画布 · 选一个起点';
+  if (s) s.textContent = tplTab === 'plaza'
+    ? '别人做好的整张画布，复制一份就是你的，改了不影响原作'
+    : '模板就是一套连好的流程，选完可以直接用，也能改';
+  renderTpl();
+}
+
+function renderTplCats(){
+  const el = document.getElementById('tplCats');
+  if (!el) return;
+  el.innerHTML = [['tpl','模板'],['plaza','作品广场']].map(([k,n])=>
+    `<button class="${tplTab===k?'on':''}" onclick="setTplTab('${k}')">${n}</button>`).join('');
+}
+
+function renderTplFoot(){
+  const el = document.getElementById('tplFoot');
+  if (!el) return;
+  if (tplTab === 'plaza'){
+    el.innerHTML = `<span class="info">按复制次数排序 · 复制的是整张画布，不是模板快照</span>
+      <button class="b" onclick="closeTpl()">关闭</button>`;
+    return;
+  }
+  let info;
   if (tplSel >= 0){
-    const t = TPLS[tplSel];
-    const newer = t.latest > t.ver;
-    document.getElementById('tplInfo').innerHTML =
-      `选中「${t.n}」v${t.latest} · ${t.nodes} 步 · 其中 ${Math.max(1,t.nodes-2)} 步会花钱`
-      + (newer ? ` · <b style="color:var(--wn)">这个模板刚更新过</b>` : '');
-  } else {
-    document.getElementById('tplInfo').textContent = '空白画布 · 自己开始';
+    const t = TPLS[tplSel], newer = t.latest > t.ver;
+    info = `选中「${t.n}」v${t.latest} · ${t.nodes} 步 · 其中 ${Math.max(1,t.nodes-2)} 步会花钱`
+         + (newer ? ` · <b style="color:var(--wn)">这个模板刚更新过</b>` : '');
+  } else info = '空白画布 · 自己开始';
+  el.innerHTML = `<span class="info" id="tplInfo">${info}</span>
+    <button class="b" onclick="closeTpl()">取消</button>
+    <button class="b solid" onclick="useTpl()">用这个模板</button>`;
+}
+
+function renderPlaza(){
+  const list = PLAZA.slice().sort((a,b)=>b.used - a.used);
+  document.getElementById('tplBody').innerHTML =
+    `<div class="pz-note">流通单位是<b>画布</b>，不是文件 —— 照 WorkRally 的形态（调研台账 6.4）</div>
+     <div class="pz-grid">` + list.map(w=>`
+      <div class="pz-card">
+        <div class="pz-cover" style="background:${w.cover}"><span class="pz-cat">${esc(w.cat)}</span></div>
+        <div class="pz-info">
+          <div class="pz-n">${esc(w.n)}</div>
+          <div class="pz-m">@${esc(w.author)} · ${w.nodes} 节点 / ${w.edges} 连线 · ${w.shots} 镜</div>
+          <div class="pz-d">${esc(w.d)}</div>
+        </div>
+        <div class="pz-foot">
+          <span class="pz-used">复制 ${w.used} 次</span>
+          <button class="pz-copy" onclick="clonePlaza('${w.id}')">复制创作画布</button>
+        </div>
+      </div>`).join('') + `</div>`;
+}
+
+function clonePlaza(id){
+  const w = PLAZA.find(x=>x.id===id);
+  if (!w) return;
+  closeTpl();
+  /* 复制画布 ≠ 用模板：不记模板快照版本，顶栏不挂「有新版」 */
+  currentTplRef = null;
+  if (typeof renderTplRefBar === 'function') renderTplRefBar();
+  if (typeof demoFill === 'function') demoFill(w.fill, w.shots);
+  toast(`已复制「${w.n}」· ${w.nodes} 节点 / ${w.edges} 连线 · 改这份不影响原作`);
+  if (typeof agAdd === 'function'){
+    agAdd('ai', `从作品广场复制了 <b>${esc(w.n)}</b>（@${esc(w.author)}）的画布。`
+      + `<br><br>节点、连线、镜头和参数都是一份副本，<b>跟原作断开</b>，随便改。`
+      + `<br><br><span class="myown">原型里用示例数据重建这张画布；真实实现要复制画布文档 + 节点 + 连线，`
+      + `并把新 owner 指向你。</span>`);
   }
 }
 

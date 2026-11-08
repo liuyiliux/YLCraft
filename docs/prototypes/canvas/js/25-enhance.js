@@ -119,10 +119,13 @@ const COLOR_MATCH_MODES = [
     use:'场景差异大、极限换天（夜转昼）',
     pros:['还原度最高','可凭空生成复杂光影'],
     cons:['仅 4K 输出','不支持程度调节'],
-    cost:16, out:'仅 4K' }
+    cost:16, out:'仅 4K', noDegree:true }
 ];
 
 let MATCH_PICK = 'match2light';
+/* 2026-11-08：原来「程度滑杆 0-100」只写在追光模式的卖点文案里，
+   面板上没有任何控件 —— 画面核销抓到的假功能。现在它是真的值。 */
+let MATCH_DEGREE = 70;
 
 function openColorMatch(id){
   const sid = id || selId || (DOC.items[0] && DOC.items[0].id);
@@ -186,6 +189,21 @@ function openColorMatch(id){
             </div>
           </div>
 
+          <!-- 2026-11-08 画面核销补的：真控件，不再只是卖点文案 -->
+          <div class="cm-deg" id="cmDegWrap">
+            <div class="cm-deg-h">
+              <span class="ex-st">改多少</span>
+              <span class="cm-deg-v" id="cmDegVal">${MATCH_DEGREE}%</span>
+            </div>
+            <input type="range" class="le-r cm-deg-r" id="cmDeg" min="0" max="100" step="5"
+                   value="${MATCH_DEGREE}" ${cur.noDegree?'disabled':''}
+                   style="--deg:${MATCH_DEGREE}%"
+                   oninput="setMatchDegree(this.value)">
+            <div class="cm-deg-tip" id="cmDegTip">${cur.noDegree
+              ? '「' + cur.n + '」一次到底 —— 它要重塑整个场景，不能只改一半'
+              : '0% = 完全保留原图 · 100% = 完全跟样片一个调 · 拖动只改数值，不重建面板'}</div>
+          </div>
+
           <div class="ex-key" style="margin-top:12px">
             🔴 <b>这张表照抄像素蛋糕</b> —— 同一个需求「跟样片一个调」，
             按你场景的<b>变化量</b>选模型，价格和效果差一个档。
@@ -211,10 +229,19 @@ function openColorMatch(id){
 }
 
 function setMatchMode(k){ MATCH_PICK = k; openColorMatch(selId); }
+/* 只改数值与 CSS 变量，绝不重建面板 —— 拖动滑杆不能被打断 */
+function setMatchDegree(v){
+  MATCH_DEGREE = Math.max(0, Math.min(100, Number(v) || 0));
+  const val = document.getElementById('cmDegVal');
+  if (val) val.textContent = MATCH_DEGREE + '%';
+  const bar = document.getElementById('cmDeg');
+  if (bar) bar.style.setProperty('--deg', MATCH_DEGREE + '%');
+}
 function closeColorMatch(){ document.getElementById('overlayHost').innerHTML = ''; }
 
 async function doColorMatch(){
   const m = COLOR_MATCH_MODES.find(x=>x.k===MATCH_PICK);
+  const deg = m.noDegree ? null : MATCH_DEGREE;
   closeColorMatch();
 
   /* 🔴 门禁：追场景不可调，一次到底，花前必须批 */
@@ -226,6 +253,7 @@ async function doColorMatch(){
         '模式：' + m.n + '（' + m.sub + '）',
         '能做：' + m.pros.join('、'),
         '做不到：' + m.cons.join('、'),
+        '程度：' + (deg === null ? '不支持（一次到底）' : deg + '%'),
         '输出：' + m.out
       ],
       cost: m.cost,
@@ -235,7 +263,8 @@ async function doColorMatch(){
     if (!ok) return;
   }
   if (typeof agAdd === 'function'){
-    agAdd('ai', `用「<b>${m.n}</b>」追了色，花了 <b>⚡${m.cost}</b>。<br><br>`
+    agAdd('ai', `用「<b>${m.n}</b>」追了色，花了 <b>⚡${m.cost}</b>`
+      + (deg === null ? '' : `，程度 <b>${deg}%</b>`) + `。<br><br>`
       + `它做的是：${m.pros.join('、')}。<br>`
       + `<span class="myown">限制是：${m.cons.join('、')} —— 这是模型本身的能力边界，不是我选择不做。</span><br><br>`
       + (m.k === 'match1'
@@ -244,5 +273,5 @@ async function doColorMatch(){
           ? `这个会重算光照方向 —— 所以能"阴天变晴天"，但色彩和影调就不能单独调了。`
           : `这个能凭空重塑场景，还原度最高，但它不支持程度调节，一次到底。`));
   }
-  toast(`追色完成 · ⚡${m.cost}`);
+  toast(`追色完成 · ⚡${m.cost}` + (deg === null ? '' : ` · ${deg}%`));
 }

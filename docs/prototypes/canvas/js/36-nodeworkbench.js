@@ -21,6 +21,7 @@
     play:'<path d="M5 3l14 9-14 9z"/>',
     cube:'<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/>',
     text:'<path d="M4 6h16M4 12h10M4 18h7"/>',
+    compare:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16M7 9l-2 3 2 3M17 9l2 3-2 3"/>',
     more:'<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>'
   };
   const T = (n,i,d)=>({n:n,i:i,d:d});
@@ -94,6 +95,9 @@
       `<button class="nwb-tb" data-wb="tool" data-label="${escTxt(t.n)}" title="${escTxt(t.d)}">`
       + svg(ICON[t.i]||ICON.more) + escTxt(t.n) + '</button>').join('');
     wbTools.innerHTML = tools
+      + (setKey(n)==='image'
+          ? `<button class="nwb-tb" data-wb="compare" title="原图 / 生成图对比 · 拖动分割或并排">${svg(ICON.compare)}对比</button>`
+          : '')
       + '<span class="nwb-sep"></span>'
       + `<button class="nwb-tb" data-wb="params" title="完整参数（二级入口，原来默认弹的那张表）">${svg(ICON.edit)}完整参数</button>`
       + (canRun ? `<button class="nwb-tb run" data-wb="run" title="运行这个节点（会先过门禁）">${svg(ICON.play)}运行</button>` : '')
@@ -187,6 +191,11 @@
     }
     if (act === 'run'){
       if (typeof runNode === 'function') runNode(wbId);
+      return;
+    }
+    if (act === 'compare'){
+      /* 原图 / 生成图对比：从节点工具条进日常路径，不再只藏在精调深层面板 */
+      if (typeof openCompare === 'function') openCompare(wbId);
       return;
     }
     if (act === 'tool'){
