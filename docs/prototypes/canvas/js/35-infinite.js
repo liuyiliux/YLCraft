@@ -22,7 +22,7 @@
       /* 节点 / 端口 / 连线 / 参数浮层 / 小地图 / 提示条 —— 都不是背景 */
       if (!t) return false;
       /* 节点工作台浮层 / 右侧折叠竖条也是前景，点它们不该触发平移或取消选中 */
-      if (t.closest('.gnode, .gmap, .gparams, #groupBar, .ghint, .nodelib, .nwb, #agPeek')) return false;
+      if (t.closest('.gnode, .gmap, .gparams, #groupBar, .ghint, .nodelib, .nwb, #agPeek, .cmp-ov, .dg-ov')) return false;
       if (t.tagName === 'path' || t.closest('svg.gedges')) return false;
       return true;
     }

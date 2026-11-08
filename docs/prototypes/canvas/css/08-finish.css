@@ -1,0 +1,155 @@
+/* 08-finish.css — 原型收口第 1 批（2026-11-08）
+   ① 追色真 0-100 程度滑杆  ② 原图 / 生成图对比  ③ 作品广场 · 复制创作画布
+   全部复用 01-base.css 的变量，字号下限 var(--fz)，不写死白字。 */
+
+/* 保险：设过 display 的元素，hidden 属性仍要能盖掉 */
+[hidden]{display:none!important}
+
+/* ===== ① 追色程度滑杆 ===== */
+.cm-deg{margin-top:12px;background:var(--bg2);border:1px solid var(--ln);
+        border-radius:var(--r2);padding:10px 12px}
+.cm-deg-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.cm-deg-v{font-family:var(--fm);font-size:14px;font-weight:600;color:var(--ac)}
+.cm-deg-r{width:100%;height:18px;accent-color:var(--ac);cursor:pointer}
+.cm-deg-r:disabled{opacity:.34;cursor:not-allowed}
+.cm-deg-tip{margin-top:6px;font-size:var(--fz);color:var(--tx3);line-height:1.5}
+
+/* ===== ② 原图 / 生成图对比 ===== */
+.cmp-ov{position:fixed;top:0;left:0;right:0;bottom:0;z-index:400;
+        background:rgba(0,0,0,.72);display:flex;align-items:center;
+        justify-content:center;padding:24px}
+.cmp-w{width:min(920px,94vw);max-height:90vh;display:flex;flex-direction:column;
+       background:var(--bg2);border:1px solid var(--ln2);border-radius:var(--r3);
+       box-shadow:var(--sh3);overflow:hidden}
+.cmp-hd{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;
+        padding:14px 16px;border-bottom:1px solid var(--ln)}
+.cmp-t{font-size:15px;font-weight:600;color:var(--tx)}
+.cmp-s{font-size:var(--fz);color:var(--tx3);margin-top:3px}
+.cmp-hd-r{display:flex;gap:6px;flex:0 0 auto}
+.cmp-btn{font-size:var(--fz);padding:5px 10px;border-radius:var(--r2);
+         background:var(--s1);border:1px solid var(--ln2);color:var(--tx2);cursor:pointer}
+.cmp-btn:hover{color:var(--tx);border-color:var(--ln3)}
+.cmp-btn.on{border-color:var(--acl);color:var(--ac);background:var(--acs)}
+.cmp-body{padding:14px 16px;overflow:auto}
+.cmp-stage{position:relative;height:min(52vh,440px);border-radius:var(--r2);
+           overflow:hidden;border:1px solid var(--ln2);background:var(--s1);
+           touch-action:none;cursor:ew-resize}
+.cmp-img{position:absolute;top:0;left:0;width:100%;height:100%;
+         background-size:cover;background-position:center}
+.cmp-new{filter:saturate(1.2) contrast(1.06) hue-rotate(-5deg) brightness(1.05)}
+.cmp-old{clip-path:inset(0 50% 0 0);z-index:2}
+.cmp-line{position:absolute;top:0;bottom:0;left:50%;width:2px;z-index:4;
+          background:var(--ac);cursor:ew-resize}
+.cmp-handle{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+            width:30px;height:30px;border-radius:50%;background:var(--ac);
+            color:#04141a;display:flex;align-items:center;justify-content:center;
+            font-size:14px;font-weight:700}
+.cmp-tag{position:absolute;top:10px;z-index:5;font-size:var(--fz);padding:3px 9px;
+         border-radius:999px;background:var(--s2);color:var(--tx2);
+         border:1px solid var(--ln2)}
+.cmp-tag.l{left:10px}
+.cmp-tag.r{right:10px}
+/* 并排模式：两层各占一半，分割线和角标收起 */
+.cmp-stage.side{display:flex;gap:8px;height:min(46vh,380px);
+                background:transparent;border:0;cursor:default}
+.cmp-stage.side .cmp-img{position:relative;width:50%;height:100%;
+  flex:0 0 calc(50% - 4px);border-radius:var(--r2);border:1px solid var(--ln2);
+  clip-path:none!important}
+.cmp-stage.side .cmp-line,.cmp-stage.side .cmp-tag{display:none}
+.cmp-ft{display:flex;align-items:center;justify-content:space-between;gap:12px;
+        padding:12px 16px;border-top:1px solid var(--ln);
+        font-size:var(--fz);color:var(--tx3);line-height:1.5}
+
+/* ===== ③ 作品广场 · 复制创作画布 ===== */
+/* .tpl .tbody 原本是 3 列网格（给模板卡片用）。作品广场必须占满整行，
+   否则 .pz-grid 会变成其中一个格子，卡片被压成竖排文字、按钮被裁。 */
+.tpl .tbody.pz-mode{display:block}
+.tpl .tbody.pz-mode .pz-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.pz-note{font-size:var(--fz);color:var(--tx3);padding:2px 2px 8px}
+.pz-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.pz-card{display:flex;flex-direction:column;background:var(--s1);
+         border:1px solid var(--ln);border-radius:var(--r2);overflow:hidden}
+.pz-cover{height:74px;position:relative;background-size:cover;background-position:center}
+.pz-cat{position:absolute;left:8px;top:8px;font-size:var(--fz);padding:2px 8px;
+        border-radius:999px;background:var(--s2);color:var(--tx2);border:1px solid var(--ln2)}
+.pz-info{padding:9px 11px 4px}
+.pz-n{font-size:13px;font-weight:600;color:var(--tx)}
+.pz-m{font-size:var(--fz);color:var(--tx3);margin-top:3px}
+.pz-d{font-size:var(--fz);color:var(--tx2);margin-top:6px;line-height:1.5}
+.pz-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;
+         padding:8px 11px 11px;margin-top:auto}
+.pz-used{font-family:var(--fm);font-size:var(--fz);color:var(--wn)}
+.pz-copy{font-size:var(--fz);padding:5px 10px;border-radius:var(--r2);
+         background:var(--acs);border:1px solid var(--acl);color:var(--ac);
+         cursor:pointer;white-space:nowrap}
+.pz-copy:hover{background:var(--ac);color:#04141a}
+@media (max-width:720px){.pz-grid{grid-template-columns:1fr}}
+
+/* ===== ⑨ Agent 交付：可接管的本地画布 ===== */
+.dl-card{margin:10px 0 8px;background:var(--bg2);border:1px solid var(--ln2);
+         border-radius:var(--r2);padding:10px}
+.dl-h{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.dl-t{font-size:13px;font-weight:600;color:var(--tx)}
+.dl-tag{font-size:var(--fz);color:var(--ac);border:1px solid var(--acl);
+        border-radius:999px;padding:1px 7px;white-space:nowrap}
+.dl-url{margin-top:7px;font-family:var(--fm);font-size:var(--fz);color:var(--tx2);
+        word-break:break-all;background:var(--s2);border:1px solid var(--ln);
+        border-radius:var(--r1);padding:5px 7px}
+.dl-m{margin-top:6px;font-size:var(--fz);color:var(--tx3);line-height:1.5}
+.dl-a{display:flex;gap:6px;margin-top:9px}
+.dl-btn{font-size:var(--fz);padding:5px 10px;border-radius:var(--r2);
+        background:var(--s2);border:1px solid var(--ln2);color:var(--tx2);cursor:pointer}
+.dl-btn.pri{background:var(--acs);border-color:var(--acl);color:var(--ac)}
+.dl-btn:hover{border-color:var(--ac)}
+
+/* ===== ⑩ 设计委托（定时 + 成本上限） ===== */
+.dg-ov{position:fixed;top:0;left:0;right:0;bottom:0;z-index:400;
+       background:rgba(0,0,0,.72);display:flex;align-items:center;
+       justify-content:center;padding:24px}
+.dg-w{width:min(680px,94vw);max-height:88vh;display:flex;flex-direction:column;
+      background:var(--bg2);border:1px solid var(--ln2);border-radius:var(--r3);
+      box-shadow:var(--sh3);overflow:hidden}
+.dg-hd{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;
+       padding:14px 16px;border-bottom:1px solid var(--ln)}
+.dg-t{font-size:15px;font-weight:600;color:var(--tx)}
+.dg-s{font-size:var(--fz);color:var(--tx3);margin-top:3px}
+.dg-x{font-size:13px;background:transparent;border:0;color:var(--tx3);cursor:pointer}
+.dg-body{padding:14px 16px;overflow:auto}
+.dg-sec{font-size:var(--fz);color:var(--tx3);margin:12px 0 7px}
+.dg-sec:first-child{margin-top:0}
+.dg-jobs{display:grid;gap:6px}
+.dg-job{display:flex;flex-direction:column;gap:2px;text-align:left;padding:8px 10px;
+        border-radius:var(--r2);background:var(--s1);border:1px solid var(--ln);
+        color:var(--tx2);cursor:pointer}
+.dg-job b{font-size:13px;color:var(--tx);font-weight:600}
+.dg-job span{font-size:var(--fz);color:var(--tx3)}
+.dg-job.on{border-color:var(--acl);background:var(--acs)}
+.dg-job.on b{color:var(--ac)}
+.dg-times{display:flex;gap:6px;flex-wrap:wrap}
+.dg-time{font-size:var(--fz);padding:5px 11px;border-radius:999px;background:var(--s1);
+         border:1px solid var(--ln2);color:var(--tx2);cursor:pointer}
+.dg-time.on{border-color:var(--acl);color:var(--ac);background:var(--acs)}
+.dg-cap{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dg-cap input{width:96px;font-size:13px;font-family:var(--fm);padding:5px 8px;
+              border-radius:var(--r2);background:var(--s1);border:1px solid var(--ln2);color:var(--tx)}
+.dg-unit{font-size:13px;color:var(--wn)}
+.dg-cap-tip{font-size:var(--fz);color:var(--tx3)}
+.dg-sum{margin-top:9px;font-size:var(--fz);color:var(--tx2);background:var(--s1);
+        border:1px solid var(--ln);border-radius:var(--r2);padding:7px 9px}
+.dg-warn{color:var(--wn)}
+.dg-list{display:grid;gap:6px}
+.dg-empty{font-size:var(--fz);color:var(--tx3);padding:8px 0}
+.dg-item{position:relative;padding:8px 74px 8px 10px;background:var(--s1);
+         border:1px solid var(--ln);border-radius:var(--r2)}
+.dg-it-n{font-size:13px;color:var(--tx)}
+.dg-st{font-size:var(--fz);color:var(--ok);margin-left:8px}
+.dg-it-m{font-size:var(--fz);color:var(--tx3);margin-top:3px}
+.dg-del{position:absolute;right:8px;top:50%;transform:translateY(-50%);
+        font-size:var(--fz);padding:4px 8px;border-radius:var(--r1);
+        background:transparent;border:1px solid var(--ln2);color:var(--tx3);cursor:pointer}
+.dg-ft{display:flex;align-items:center;gap:8px;padding:12px 16px;
+       border-top:1px solid var(--ln);font-size:var(--fz);color:var(--tx3)}
+.dg-sp{flex:1}
+.dg-btn{font-size:var(--fz);padding:6px 12px;border-radius:var(--r2);
+        background:var(--s1);border:1px solid var(--ln2);color:var(--tx2);cursor:pointer}
+.dg-btn.pri{background:var(--acs);border-color:var(--acl);color:var(--ac)}
