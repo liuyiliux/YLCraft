@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" href="data:,">
 <title>学习手册 · 摄影原型</title>
-<link rel="stylesheet" href="../shared/theme.css?v=202611072335">
+<link rel="stylesheet" href="../shared/theme.css?v=202611220022">
 <style>
 /* ==================== 主题系统（对齐摄影原型 index.html） ==================== */
 :root{
@@ -14,7 +14,7 @@
   --ff:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
   /* 字号：h1 32 / h2 24 / h3 20 / h4 18 / body 16 / caption 14 / small 12（12 为最小值） */
   --fs-h1:32px; --fs-h2:24px; --fs-h3:20px; --fs-h4:18px;
-  --fs-body:16px; --fs-cap:14px; --fs-xs:12px;
+  --fs-body:16px; --fs-cap:14px; --fs-xs:var(--fz);
   --lh-h:1.35; --lh-b:1.55;
 }
 /* Deep（深海）· 默认 */
@@ -2762,7 +2762,7 @@ function doSearch(qRaw) {
     resline.appendChild(t);
     const b = document.createElement('button');
     b.className = 'btn';
-    b.style.cssText = 'padding:4px 10px;font-size:12px;margin-left:auto';
+    b.style.cssText = 'padding:4px 10px;font-size:var(--fz);margin-left:auto';
     b.textContent = '清空搜索';
     b.onclick = clearSearch;
     resline.appendChild(b);
@@ -2865,6 +2865,6 @@ window.addEventListener('scroll', () => {
   });
 }, { passive: true });
 </script>
-<script src="../shared/proto-nav.js?v=202611072335"></script>
+<script src="../shared/proto-nav.js?v=202611220022"></script>
 </body>
 </html>

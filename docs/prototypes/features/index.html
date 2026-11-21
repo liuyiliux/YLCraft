@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<meta name="color-scheme" content="dark">
+<title>原项目功能原型 · YLCraft</title>
+<link rel="stylesheet" href="../shared/theme.css?v=202611220022">
+<link rel="stylesheet" href="app.css?v=202611220022">
+<style>
+/* 2026-11-22：背景跟随三主题（原来写死深色，dawn 亮底下文字用 --tx 变深，整块糊成一片） */
+.hero{padding:20px 22px;background:linear-gradient(120deg,var(--greet),var(--s1) 62%);
+  border:1px solid var(--ln2);border-radius:var(--r);margin-bottom:16px}
+.hero h2{font-size:20px;font-weight:680;letter-spacing:.01em}
+.hero p{font-size:var(--fz);color:var(--tx2);line-height:1.85;margin-top:7px;max-width:70em}
+.hero p b{color:var(--ac);font-weight:600}
+.stats{display:flex;gap:26px;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid var(--ln)}
+.stat .n{font-size:21px;font-weight:700;color:var(--tx);font-family:var(--fm),monospace}
+.stat .n b{color:var(--ac);font-weight:700}
+.stat .l{font-size:var(--fz);color:var(--tx3);margin-top:1px}
+.sec-t{font-size:13px;font-weight:650;margin:22px 0 10px;display:flex;align-items:center;gap:8px}
+.sec-t span{font-size:var(--fz);color:var(--tx3);font-weight:400}
+.fgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:11px}
+a.fcard{display:block;padding:15px 16px;background:var(--s1);border:1px solid var(--ln);
+  border-radius:var(--r);transition:border-color .18s,transform .18s}
+a.fcard:hover{border-color:var(--ac);transform:translateY(-2px)}
+a.fcard .ic{width:32px;height:32px;border-radius:8px;background:var(--acbg);
+  display:flex;align-items:center;justify-content:center;margin-bottom:11px}
+a.fcard .ic svg{width:17px;height:17px;stroke:var(--ac);fill:none;stroke-width:1.7;
+  stroke-linecap:round;stroke-linejoin:round}
+a.fcard .t{font-size:14px;font-weight:650}
+a.fcard .r{font-size:var(--fz);color:var(--ac);font-family:var(--fm),monospace;margin-top:2px}
+a.fcard .d{font-size:var(--fz);color:var(--tx3);line-height:1.75;margin-top:9px}
+a.fcard .ft{display:flex;align-items:center;gap:6px;margin-top:11px;padding-top:9px;
+  border-top:1px solid var(--ln);font-size:var(--fz);color:var(--tx2)}
+a.fcard .ft em{font-style:normal;margin-left:auto;color:var(--ac)}
+.cov{width:100%;border-collapse:collapse;font-size:var(--fz)}
+.cov th{text-align:left;color:var(--tx3);font-weight:500;padding:9px 12px;border-bottom:1px solid var(--ln2)}
+.cov td{padding:9px 12px;border-bottom:1px solid var(--ln);color:var(--tx2)}
+.cov tr:last-child td{border-bottom:0}
+.cov td b{color:var(--tx);font-weight:600}
+.cov td code{font-family:var(--fm),monospace;color:var(--ac);font-size:var(--fz)}
+.cov .st{white-space:nowrap}
+@media (max-width:1000px){.fgrid{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:600px){.fgrid{grid-template-columns:1fr}.stats{gap:16px}}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html"><i>◈</i> YLCraft 原型</a>
+  <span class="crumb">原项目功能</span>
+  <span class="spacer"></span>
+  <span class="hintbar">按真代码补的页面 · 不接后端</span>
+</header>
+
+<main class="page">
+
+  <div class="hero">
+    <h2>原项目功能 → 原型页面</h2>
+    <p>真实的 YLCraft 是一条完整链路：<b>创作项目 → 素材库 → AI 生成 → 任务观测 → 平台账号 → 发布</b>。
+      之前三个活原型只覆盖中间的「摄影参考 / 画布 / Agent 对话」一段。这里按
+      <code class="mono" style="color:var(--tx2)">frontend/src/App.tsx</code> 的真实功能补页面，
+      <b>沿用画布那套令牌与字号规则</b>，不另造视觉，也不伪装成已实现。</p>
+    <div class="stats">
+      <div class="stat"><div class="n">46</div><div class="l">真实前端页面目录</div></div>
+      <div class="stat"><div class="n">60</div><div class="l">后端路由组（main.py）</div></div>
+      <div class="stat"><div class="n"><b>6</b></div><div class="l">本批新增功能原型</div></div>
+      <div class="stat"><div class="n">3</div><div class="l">原有活原型</div></div>
+      <div class="stat"><div class="n">12</div><div class="l">已梳理功能域</div></div>
+    </div>
+  </div>
+
+  <div class="sec-t">本批新增 <span>点卡片进入 · 每页都能点得动</span></div>
+  <div class="fgrid">
+    <a class="fcard" href="gen-wall.html">
+      <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17.5h7m-3.5-3.5v7"/></svg></div>
+      <div class="t">AI 生成结果墙</div>
+      <div class="r">/image-gen · /video-gen · /model-3d</div>
+      <div class="d">三页并排对照：生图网格 / 视频 Timeline / 3D 网格 + 历史 Tab，各自带真实表单字段与端点</div>
+      <div class="ft"><span class="tag ac">主链路</span><span class="mute">本批新增</span><em>进入 →</em></div>
+    </a>
+    <a class="fcard" href="characters.html">
+      <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/><path d="M3 12a9 9 0 0 1 18 0"/></svg></div>
+      <div class="t">角色工作台</div>
+      <div class="r">/characters</div>
+      <div class="d">紧凑名册 + 完善度 9 项 + 两栏详情 + 圆形关系图 + 世界覆盖 + Prompt 资产包；脸按档案锁死</div>
+      <div class="ft"><span class="tag ac">主链路</span><span class="mute">本批新增</span><em>进入 →</em></div>
+    </a>
+    <a class="fcard" href="story-desk.html">
+      <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h9a3 3 0 0 1 3 3v11H7a3 3 0 0 1-3-3z"/><path d="M16 8h4v11H7"/></svg></div>
+      <div class="t">创作项目工作台</div>
+      <div class="r">/story</div>
+      <div class="d">项目列表 + 证据支撑的生产阶段轨（大纲→章节→正文→脚本→分镜）+ Writer Room 候选、连续性事实、伏笔台账</div>
+      <div class="ft"><span class="tag ac">主链路</span><span class="mute">本批新增</span><em>进入 →</em></div>
+    </a>
+    <a class="fcard" href="assets-home.html">
+      <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg></div>
+      <div class="t">素材工作台 → 素材库</div>
+      <div class="r">/assets/home → /assets</div>
+      <div class="d">先看整个库的状态（时间 / 分类统计 / 7 天导入趋势 / 整理概览 / 最近导入），再进单位是「一份素材」的管理页：筛选网格 + 版本 / 血缘</div>
+      <div class="ft"><span class="tag ac">主链路</span><span class="mute">本批新增</span><em>进入 →</em></div>
+    </a>
+    <a class="fcard" href="tasks.html">
+      <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v5l3 2"/><circle cx="12" cy="12" r="9"/><path d="M5 3 3 5m18-2 2 2"/></svg></div>
+      <div class="t">任务中心</div>
+      <div class="r">/tasks</div>
+      <div class="d">任务列表（诊断字段 / 失败原因说人话）+ 结构化事件时间线 + 运行日志三个 Tab，失败可重试 / 取消</div>
+      <div class="ft"><span class="tag ac">主链路</span><span class="mute">本批新增</span><em>进入 →</em></div>
+    </a>
+    <a class="fcard" href="accounts.html">
+      <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></div>
+      <div class="t">账号中心 · 平台连接</div>
+      <div class="r">/accounts</div>
+      <div class="d">平台连接卡（登录态 / 体检红绿灯 / 历史成功率）+ 扫码登录弹层 + 浏览器缓存占用清理</div>
+      <div class="ft"><span class="tag ac">主链路</span><span class="mute">本批新增</span><em>进入 →</em></div>
+    </a>
+  </div>
+
+  <div class="sec-t">功能域覆盖表 <span>依据 App.tsx 路由 + AppLayout 菜单 + API_SURFACE.md，不是原型臆造</span></div>
+  <div class="card">
+    <div class="card-b tight scroll" role="region" tabindex="0" aria-labelledby="cov-cap" style="overflow-x:auto">
+      <table class="cov" style="min-width:760px">
+        <caption id="cov-cap" class="sr-only">真实功能域与原型覆盖对照表</caption>
+        <thead><tr><th scope="col" style="width:150px">功能域</th><th scope="col" style="width:190px">真实页面 / 路由</th><th scope="col">用户要做的事</th><th scope="col" style="width:130px" class="st">原型覆盖</th></tr></thead>
+        <tbody>
+          <tr><td><b>创作项目 / 叙事</b></td><td><code>/story</code></td><td>大纲、章节、正文、脚本、分镜逐阶段生成与回看</td><td class="st"><span class="tag ac">✅ 本批</span></td></tr>
+          <tr><td><b>素材 / 资产中枢</b></td><td><code>/assets/home</code> → <code>/assets</code></td><td>先看库的状态（工作台首页），再找素材、看版本与血缘、送进画布</td><td class="st"><span class="tag ac">✅ 本批</span></td></tr>
+          <tr><td><b>任务与观测</b></td><td><code>/tasks</code></td><td>看进度、查失败原因、重试、翻事件与运行日志</td><td class="st"><span class="tag ac">✅ 本批</span></td></tr>
+          <tr><td><b>平台连接 / 账号</b></td><td><code>/accounts</code></td><td>登录态、体检、Cookie、缓存清理</td><td class="st"><span class="tag ac">✅ 本批</span></td></tr>
+          <tr><td><b>创作画布</b></td><td><code>/canvas</code></td><td>节点连线、出图改图、镜头墙</td><td class="st"><span class="tag ok">✅ 已有</span></td></tr>
+          <tr><td><b>Agent 对话</b></td><td><code>/agent</code></td><td>对话协作、工具轨迹、产物</td><td class="st"><span class="tag ok">✅ 已有</span></td></tr>
+          <tr><td><b>摄影参考</b></td><td>—（原型侧设计）</td><td>看片子、记偷师点、做拍摄计划</td><td class="st"><span class="tag ok">✅ 已有</span></td></tr>
+          <tr><td><b>3D 导演预演</b></td><td><code>/previs</code></td><td>场景、机位、截图回流</td><td class="st"><span class="tag wn">🟡 子原型</span></td></tr>
+          <tr><td><b>图片编辑</b></td><td><code>/image-editor</code></td><td>图层、参数、AI 建议</td><td class="st"><span class="tag wn">🟡 子原型</span></td></tr>
+          <tr><td><b>AI 生图 / 视频 / 3D</b></td><td><code>/image-gen</code> <code>/video-gen</code> <code>/model-3d</code></td><td>填提示词、选模型、看结果墙（三页结果区形态不同）</td><td class="st"><span class="tag ac">✅ 本批</span></td></tr>
+          <tr><td><b>角色工作台</b></td><td><code>/characters</code></td><td>角色名册、两栏详情、立绘版本、关系</td><td class="st"><span class="tag ac">✅ 本批</span></td></tr>
+          <tr><td><b>采集 / 下载 / 发布</b></td><td><code>/crawler</code> <code>/download</code> <code>/publish</code></td><td>搜内容、下载、导入、发布</td><td class="st"><span class="tag">🔲 待补</span></td></tr>
+          <tr><td><b>设置 / AI 连接器</b></td><td><code>/settings</code></td><td>Provider、模型发现、密钥、路径</td><td class="st"><span class="tag">🔲 待补</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="note" style="margin-top:16px">
+    <span>ⓘ</span>
+    <div><b>边界</b>：这一组页面证明的是「真实功能该长什么样的信息结构」，不是功能验收。
+      数据都是本地示例，不请求任何后端；按钮只演示形态与状态流转。
+      「成本 / 配额」「独立知识库」「监控大盘」在真实实现里<b>没有独立页面</b>（只有 API 字段或 spec），
+      所以没有编造成「已有功能」补进来。</div>
+  </div>
+
+  <div class="protofoot">
+    证据：<code>frontend/src/App.tsx</code>（路由）、<code>frontend/src/components/layout/AppLayout.tsx</code>（菜单分组）、
+    <code>backend/app/main.py</code>（路由注册）、<code>docs/architecture/API_SURFACE.md</code>（端点）、
+    <code>openspec/specs/*/spec.md</code>（33 份规格）。<br>
+    样式：<code>shared/theme.css</code> + <code>features/app.css</code>，字号下限 12px；顶栏「原型 ▾」可回到其它原型。
+    原型不是实现事实，落地前看真代码。
+  </div>
+</main>
+
+<script src="../shared/proto-nav.js?v=202611220022"></script>
+<script src="app.js?v=202611220022"></script>
+<script src="theme-switch.js?v=202611220022"></script>
+</body>
+</html>

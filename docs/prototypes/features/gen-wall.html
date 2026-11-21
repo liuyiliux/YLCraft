@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<meta name="color-scheme" content="dark">
+<title>AI 生成结果墙 · YLCraft 原型</title>
+<link rel="stylesheet" href="../shared/theme.css?v=202611220022">
+<link rel="stylesheet" href="app.css?v=202611220022">
+<style>
+/* ===== 顶部视图切换（三段，对应真实三个独立页面） ===== */
+.views{display:flex;align-items:center;gap:4px;border-bottom:1px solid var(--ln2);
+  margin-bottom:14px;overflow-x:auto}
+.vtab{position:relative;height:38px;padding:0 16px;font-size:var(--fz);
+  color:var(--tx3);white-space:nowrap}
+.vtab:hover{color:var(--tx2)}
+.vtab[aria-selected="true"]{color:var(--ac)}
+.vtab[aria-selected="true"]::after{content:"";position:absolute;left:10px;right:10px;
+  bottom:-1px;border-bottom:2px solid currentColor}
+.vtab .ep{font-family:var(--fm),monospace;color:var(--tx3);margin-left:5px;font-size:var(--fz)}
+.vtab[aria-selected="true"] .ep{color:var(--acbg)}
+
+/* ===== 两栏：左表单 / 右结果 ===== */
+.gen2{display:grid;grid-template-columns:minmax(290px,344px) minmax(0,1fr);
+  gap:12px;align-items:start}
+.formb{padding:13px 14px}
+.formb .lbl{margin-top:11px}
+.formb .lbl:first-child{margin-top:0}
+.formb .field{width:100%}
+textarea.field{min-height:58px}
+.seg{display:inline-flex;align-items:center;gap:3px;padding:3px;border:1px solid var(--ln2);
+  border-radius:var(--r2);background:var(--s2);width:100%}
+.seg button{flex:1;height:25px;border-radius:5px;color:var(--tx3);font-size:var(--fz)}
+.seg button[aria-pressed="true"]{background:var(--acbg);color:var(--ac);font-weight:600}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mini{font-size:var(--fz);color:var(--tx3);line-height:1.6}
+.drop{border:1px dashed var(--ln2);border-radius:var(--r2);padding:11px;
+  color:var(--tx3);font-size:var(--fz);text-align:center;line-height:1.7}
+.drop .lnk{color:var(--ac)}
+.range-row{display:flex;align-items:center;gap:9px}
+input[type="range"]{flex:1;min-width:0;accent-color:var(--ac)}
+.range-row .v{font-family:var(--fm),monospace;color:var(--ac);min-width:32px;text-align:right}
+details.adv{border-top:1px solid var(--ln);margin-top:12px;padding-top:9px}
+details.adv summary{font-size:var(--fz);color:var(--tx2);cursor:pointer}
+details.adv .inner{padding-top:9px;display:flex;flex-direction:column;gap:9px}
+.submit{width:100%;margin-top:13px}
+.costline{font-size:var(--fz);color:var(--tx3);margin-top:8px;line-height:1.7}
+.costline b{color:var(--wn)}
+
+/* ===== 生图：响应式网格卡（真实是 Row/Col xs24 sm12 md8） ===== */
+.ggrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(158px,1fr));
+  gap:10px;padding:13px 14px}
+.gcard{border:1px solid var(--ln);border-radius:var(--r2);background:var(--s2);overflow:hidden}
+.gcard img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--s3)}
+.gcard .body{padding:8px 9px}
+.gcard .p{font-size:var(--fz);color:var(--tx2);line-height:1.5;min-height:36px}
+.gcard .tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
+.gcard .seed{font-family:var(--fm),monospace;font-size:var(--fz);color:var(--tx3);margin-top:6px}
+.gcard .ops{display:flex;gap:4px;border-top:1px solid var(--ln);padding:7px 9px}
+.gcard .ops .btn{flex:1;min-width:0;height:23px;padding:0 3px;font-size:var(--fz);white-space:nowrap}
+
+/* ===== 视频：Timeline 列表（真实是 Timeline，最多 10 条） ===== */
+.vlist{padding:9px 14px 14px}
+.vrow{position:relative;padding:11px 0 11px 22px;border-bottom:1px dashed var(--ln)}
+.vrow:last-child{border-bottom:0}
+.vrow:before{content:"";position:absolute;left:4px;top:17px;width:8px;height:8px;
+  border-radius:50%;background:var(--s4);border:1px solid var(--tx3)}
+.vrow.run:before{background:var(--ac);border-color:var(--ac)}
+.vrow.err:before{background:var(--er);border-color:var(--er)}
+.vrow:after{content:"";position:absolute;left:8px;top:27px;bottom:-11px;width:1px;background:var(--ln2)}
+.vrow:last-child:after{display:none}
+.vrow .meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.vrow .pr{font-size:var(--fz);color:var(--tx);margin-top:5px;line-height:1.6}
+.vrow .bar{height:4px;border-radius:99px;background:var(--s3);margin-top:8px;overflow:hidden}
+.vrow .bar i{display:block;height:100%;background:var(--ac);border-radius:99px}
+.vrow .errmsg{font-size:var(--fz);color:var(--er);margin-top:5px}
+
+/* ===== 3D：素材库网格 + 生成历史 Tab ===== */
+.d3res{padding-bottom:6px}
+.filt{display:flex;align-items:center;gap:5px;padding:10px 14px 0;flex-wrap:wrap}
+.d3grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+  gap:10px;padding:11px 14px}
+.d3card{border:1px solid var(--ln);border-radius:var(--r2);background:var(--s2);overflow:hidden;
+  cursor:pointer}
+.d3card:hover{border-color:var(--ac)}
+.d3card img{display:block;width:100%;aspect-ratio:1/1;object-fit:cover;background:var(--s3)}
+.d3card .b{padding:8px 9px}
+.d3card .n{font-size:var(--fz);color:var(--tx);font-weight:600;line-height:1.5}
+.d3card .m{font-size:var(--fz);color:var(--tx3);margin-top:5px;font-family:var(--fm),monospace}
+.hrow{padding:10px 14px;border-bottom:1px dashed var(--ln);display:flex;
+  align-items:flex-start;gap:9px;flex-wrap:wrap}
+.hrow:last-child{border-bottom:0}
+.hrow .prompt{flex:1;min-width:180px;font-size:var(--fz);color:var(--tx2);line-height:1.6}
+.hrow .prompt b{color:var(--tx);font-weight:600}
+.hrow .st{font-size:var(--fz);color:var(--tx3);margin-top:4px;font-family:var(--fm),monospace}
+.hrow .st.err{color:var(--er)}
+@media (max-width:1080px){.gen2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html"><i>◈</i> 原项目功能</a>
+  <span class="crumb">AI 生成 <span class="mono">/image-gen · /video-gen · /model-3d</span></span>
+  <span class="spacer"></span>
+  <span class="hintbar">真实三页的信息结构 · 一个页面并排对照</span>
+</header>
+
+<main class="page wide">
+  <div class="phead">
+    <div>
+      <h1>AI 生成结果墙</h1>
+      <div class="sub">真实实现里这是三个独立页面；这里并排对照——三种结果区形态本来就不一样。</div>
+    </div>
+    <div class="right"><span class="tag ac">三页并排</span><a class="btn ghost" href="assets.html">去素材库 →</a></div>
+  </div>
+
+  <div class="views" role="tablist" aria-label="生成类型">
+    <button class="vtab" type="button" role="tab" id="vtab-img" data-view="img" aria-selected="true" tabindex="0" aria-controls="vpane-img">生图<span class="ep">/image-gen</span></button>
+    <button class="vtab" type="button" role="tab" id="vtab-vid" data-view="vid" aria-selected="false" tabindex="-1" aria-controls="vpane-vid">视频<span class="ep">/video-gen</span></button>
+    <button class="vtab" type="button" role="tab" id="vtab-d3" data-view="d3" aria-selected="false" tabindex="-1" aria-controls="vpane-d3">3D<span class="ep">/model-3d</span></button>
+  </div>
+
+  <!-- ============ 生图 ============ -->
+  <div id="vpane-img" role="tabpanel" aria-labelledby="vtab-img" data-vpane="img">
+    <div class="gen2">
+      <section class="card">
+        <div class="card-h"><span class="t">生成设置</span><span class="right"><span class="s">文生图 / 图生图</span></span></div>
+        <div class="formb">
+          <div class="seg" role="group" aria-label="生图模式">
+            <button type="button" data-seg="imgmode" data-val="t2i" aria-pressed="true">文生图</button>
+            <button type="button" data-seg="imgmode" data-val="i2i" aria-pressed="false">图生图</button>
+          </div>
+          <label class="lbl" for="imgPrompt">提示词</label>
+          <textarea class="field" id="imgPrompt" placeholder="描述你想要画面里出现什么">雨夜的便利店门口，中景，冷调霓虹，浅景深</textarea>
+          <div class="row wrap" style="margin-top:6px">
+            <button class="btn sm ghost" type="button" data-toast="Prompt 参考库（原型不拉真模板）">Prompt 参考库</button>
+            <button class="btn sm ghost" type="button" data-toast="AI 优化（原型不真调模型）">AI 优化</button>
+          </div>
+          <label class="lbl" for="imgNeg">反向提示词（可选）</label>
+          <input class="field" id="imgNeg" type="text" placeholder="不想要的内容" value="">
+          <label class="lbl">参考图片 <span class="mini">· 最多 3 张；图生图时必填</span></label>
+          <div class="drop">从素材库选择 · 粘贴图片 URL · 拖拽上传 <span class="lnk">（原型不真传，点「从素材库选择」跳过去）</span></div>
+          <div class="row wrap" style="margin-top:6px">
+            <button class="btn sm ghost" type="button" data-toast="从素材库选择（原型跳页占位）">从素材库选择</button>
+          </div>
+          <label class="lbl" for="imgSize">尺寸 / 比例</label>
+          <select class="field" id="imgSize">
+            <option>1:1 · 1024×1024</option><option selected>3:4 · 896×1152</option>
+            <option>16:9 · 1280×720</option><option>9:16 · 720×1280</option>
+          </select>
+          <div class="row2">
+            <div><label class="lbl" for="imgVendor">厂商</label>
+              <select class="field" id="imgVendor"><option>腾讯混元</option><option>即梦</option><option>Stability</option></select></div>
+            <div><label class="lbl" for="imgModel">模型（N 个部署配置）</label>
+              <select class="field" id="imgModel"><option>hunyuan-image</option><option>jimeng-v4</option></select></div>
+          </div>
+          <label class="lbl" for="imgN">批量数量</label>
+          <div class="range-row"><input type="range" id="imgN" min="1" max="4" value="2"><span class="v" id="imgNv">2</span></div>
+          <label class="lbl" for="imgSeed">随机种子（可选）</label>
+          <input class="field" id="imgSeed" type="number" placeholder="留空则随机" value="">
+          <div class="row" style="margin-top:12px">
+            <label class="sw-wrap"><input class="sw" type="checkbox" switch role="switch" id="imgMotion" aria-label="生成动图"><span class="mini" style="margin-left:8px">生成动图（多格图，不是视频）</span></label>
+          </div>
+          <button class="btn pri submit" type="button" id="imgGo">开始生成</button>
+          <div class="costline">真实端点 <code>POST /api/v1/images/generate</code>；提交会过成本门禁，<b>原型不真调模型、不扣费</b>。</div>
+        </div>
+      </section>
+      <section class="card">
+        <div class="card-h"><span class="t">生成结果</span><span class="right"><span class="tag" id="imgCount">6 张</span>
+          <button class="btn sm ghost" type="button" id="imgClear">清空</button></span></div>
+        <div class="ggrid" id="imgGrid"></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ============ 视频 ============ -->
+  <div id="vpane-vid" role="tabpanel" aria-labelledby="vtab-vid" data-vpane="vid" hidden>
+    <div class="gen2">
+      <section class="card">
+        <div class="card-h"><span class="t">生成设置</span><span class="right"><span class="s">文生视频 / 图生视频</span></span></div>
+        <div class="formb">
+          <div class="seg" role="group" aria-label="视频模式">
+            <button type="button" data-seg="vidmode" data-val="t2v" aria-pressed="true">文生视频</button>
+            <button type="button" data-seg="vidmode" data-val="i2v" aria-pressed="false">图生视频</button>
+          </div>
+          <label class="lbl" for="vidPrompt">提示词</label>
+          <textarea class="field" id="vidPrompt" placeholder="描述镜头运动与内容">雨夜街角，镜头从灯牌缓缓推近便利店门口</textarea>
+          <div class="row wrap" style="margin-top:6px">
+            <select class="field" id="vidTpl" style="width:auto"><option>选择视频提示词模板</option><option>推镜 · 悬念</option><option>环绕 · 展示</option></select>
+            <button class="btn sm ghost" type="button" data-toast="管理模板（原型不存模板）">管理模板</button>
+          </div>
+          <label class="lbl">首帧图片 <span class="mini">· 仅图生视频</span></label>
+          <div class="drop">上传 / 粘贴 URL / 从素材库选择</div>
+          <div class="row2" style="margin-top:10px">
+            <div><label class="lbl" for="vidProvider">Provider</label>
+              <select class="field" id="vidProvider"><option>可灵</option><option>即梦</option></select></div>
+            <div><label class="lbl" for="vidModel">模型</label>
+              <select class="field" id="vidModel"><option>kling-v2</option><option>jimeng-video</option></select></div>
+          </div>
+          <div class="row2">
+            <div><label class="lbl" for="vidRes">分辨率</label>
+              <select class="field" id="vidRes"><option>720p</option><option selected>2K</option><option>4K</option></select></div>
+            <div><label class="lbl" for="vidRatio">画幅比例</label>
+              <select class="field" id="vidRatio"><option selected>9:16 竖版</option><option>16:9 横版</option><option>1:1 方形</option></select></div>
+          </div>
+          <label class="lbl" for="vidDur">时长</label>
+          <div class="range-row"><input type="range" id="vidDur" min="3" max="10" value="5"><span class="v" id="vidDURV">5 秒</span></div>
+          <label class="lbl" for="vidSeed">随机种子（可选）</label>
+          <input class="field" id="vidSeed" type="number" placeholder="留空则随机" value="">
+          <div class="row" style="margin-top:12px">
+            <label class="sw-wrap"><input class="sw" type="checkbox" switch role="switch" id="vidAudio" aria-label="自动生成音频" checked><span class="mini" style="margin-left:8px">自动生成音频</span></label>
+          </div>
+          <button class="btn pri submit" type="button" id="vidGo">开始生成</button>
+          <div class="costline">真实端点 <code>POST /api/v1/videos/generate</code>；<b>原型不真调模型、不扣费</b>。</div>
+        </div>
+      </section>
+      <section class="card">
+        <div class="card-h"><span class="t">生成队列</span><span class="right">
+          <span class="tag" id="vidTotal">4 条</span><span class="tag wn" id="vidRunning">1 生成中</span>
+          <button class="btn sm ghost" type="button" id="vidClear">清空</button></span></div>
+        <div class="vlist" id="vidList"></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ============ 3D ============ -->
+  <div id="vpane-d3" role="tabpanel" aria-labelledby="vtab-d3" data-vpane="d3" hidden>
+    <div class="gen2">
+      <section class="card">
+        <div class="card-h"><span class="t">模型生成</span><span class="right"><span class="s">创建模型 / 绑骨蒙皮</span></span></div>
+        <div class="formb">
+          <div class="seg" role="group" aria-label="3D 步骤">
+            <button type="button" data-seg="d3step" data-val="create" aria-pressed="true">创建模型</button>
+            <button type="button" data-seg="d3step" data-val="rig" aria-pressed="false">绑骨蒙皮</button>
+          </div>
+          <div class="row2" style="margin-top:11px">
+            <div><label class="lbl" for="d3Vendor">供应商</label>
+              <select class="field" id="d3Vendor"><option>腾讯混元</option><option>Tripo</option></select></div>
+            <div><label class="lbl" for="d3Model">模型</label>
+              <select class="field" id="d3Model"><option>hunyuan-3d</option><option>tripo-v2</option></select></div>
+          </div>
+          <div class="seg" role="group" aria-label="3D 生成方式" style="margin-top:11px">
+            <button type="button" data-seg="d3mode" data-val="t3" aria-pressed="true">文生 3D</button>
+            <button type="button" data-seg="d3mode" data-val="i3" aria-pressed="false">图生 3D</button>
+          </div>
+          <label class="lbl">参考图片 <span class="mini">· 图生 3D 时 1 张</span></label>
+          <div class="drop">从素材库选 · 上传参考图片 · 粘贴图片 URL</div>
+          <label class="lbl" for="d3Prompt">文生 3D 描述</label>
+          <textarea class="field" id="d3Prompt" placeholder="描述主体与形态">茶饮罐白模，圆柱体，简洁工业设计</textarea>
+          <details class="adv"><summary>高级参数</summary><div class="inner">
+            <div><label class="lbl" for="d3Type">生成类型</label>
+              <select class="field" id="d3Type"><option>Normal</option><option>LowPoly</option><option>Geometry</option><option>Sketch</option></select></div>
+            <div><label class="lbl" for="d3Faces">模型面数</label>
+              <input class="field" id="d3Faces" type="number" value="30000" min="3000" max="1500000"></div>
+            <div><label class="lbl" for="d3Fmt">导出格式</label>
+              <select class="field" id="d3Fmt"><option>GLB</option><option>STL</option><option>USDZ</option><option>FBX</option></select></div>
+            <label class="sw-wrap"><input class="sw" type="checkbox" switch role="switch" id="d3Pbr" aria-label="PBR 材质" checked><span class="mini" style="margin-left:8px">PBR 材质</span></label>
+          </div></details>
+          <button class="btn pri submit" type="button" id="d3Go">生成 3D 模型</button>
+          <div class="costline">真实端点 <code>POST /api/v1/model-3d/generate</code>；<b>原型不真调模型、不扣费</b>。</div>
+        </div>
+      </section>
+      <section class="card d3res">
+        <div class="card-h"><span class="t">3D 素材与历史</span><span class="right"><span class="s">完成即入素材库</span></span></div>
+        <div class="tabs" data-tabs role="tablist" aria-label="3D 结果分区" style="padding:0 12px">
+          <button class="tab" type="button" role="tab" data-tab="d3assets" aria-selected="true" tabindex="0">素材库 <span id="d3AssetN">6</span></button>
+          <button class="tab" type="button" role="tab" data-tab="d3hist" aria-selected="false" tabindex="-1">生成历史 <span id="d3HistN">5</span></button>
+        </div>
+        <div data-pane="d3assets" role="tabpanel">
+          <div class="filt" role="group" aria-label="3D 素材筛选">
+            <button class="chip on" type="button" data-f3="全部" aria-pressed="true">全部</button>
+            <button class="chip" type="button" data-f3="静态" aria-pressed="false">静态</button>
+            <button class="chip" type="button" data-f3="已绑骨" aria-pressed="false">已绑骨</button>
+            <button class="chip" type="button" data-f3="带动画" aria-pressed="false">带动画</button>
+          </div>
+          <div class="d3grid" id="d3Grid"></div>
+        </div>
+        <div data-pane="d3hist" role="tabpanel" hidden>
+          <div id="d3Hist" style="padding:8px 0 12px"></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="note" style="margin-top:16px"><span>ⓘ</span><div>
+    <b>原型口径</b>：这是「真实页面该长什么样」的信息结构对照，不接后端、不真生成。结果卡上的
+    状态 / provider / seed / 时长 / 比例 / 进度 / 错误都是示例；<b>成本金额、帧率、耗时、人民币价格
+    没有画上去</b>——真实前端没渲染这些（后端返回里有 <code>cost</code> 也不等于页面有）。
+  </div></div>
+  <div class="protofoot">
+    证据：<code>frontend/src/pages/image-gen/index.tsx</code>、<code>video-gen/index.tsx</code>、
+    <code>model-3d/index.tsx</code>、<code>backend/app/api/v1/images.py</code> /
+    <code>videos.py</code> / <code>model3d_workspace.py</code>。
+    三个结果区按真实形态分别做：生图网格、视频 Timeline、3D 网格 + 生成历史 Tab。
+  </div>
+</main>
+
+<script src="../shared/proto-nav.js?v=202611220022"></script>
+<script src="app.js?v=202611220022"></script>
+<script src="theme-switch.js?v=202611220022"></script>
+<script>
+(function(){
+  var $ = FP.$, $$ = FP.$$, esc = FP.esc;
+  var T = '../canvas/assets/thumbs/';
+
+  var IMGS = [
+    {p:'雨夜便利店门口，中景，冷调霓虹', v:'腾讯混元', s:28417, w:true, img:'story-01'},
+    {p:'伞骨滴水特写，浅景深，蓝紫光', v:'腾讯混元', s:91026, w:true, img:'story-02'},
+    {p:'街角灯牌全景，湿地面反射', v:'即梦', s:0, w:false, img:'story-05'},
+    {p:'便利店冰柜内部，冷白光', v:'即梦', s:55120, w:true, img:'story-03'},
+    {p:'角色定妆 · 雨衣与红围巾', v:'腾讯混元', s:77331, w:false, img:'char-02'},
+    {p:'茶饮罐商业静物，柔光', v:'Stability', s:10042, w:true, img:'promo-02'}
+  ];
+  var VIDS = [
+    {st:'已完成', v:'可灵', d:5, r:'9:16', p:'雨夜街角，镜头从灯牌缓缓推近便利店门口', tag:'短剧 / 第3集 · 分镜04', inlib:true, prog:100},
+    {st:'已完成', v:'即梦', d:8, r:'16:9', p:'茶饮罐环绕展示，柔光与缓慢旋转', tag:'宣传片 · 镜头02', inlib:true, prog:100},
+    {st:'生成中', v:'可灵', d:5, r:'9:16', p:'雨中伞下近景，人物转头看向光源', tag:'短剧 / 第3集 · 分镜07', inlib:false, prog:62},
+    {st:'失败', v:'即梦', d:5, r:'1:1', p:'俯拍路面水洼，霓虹倒影', tag:'未入项目', inlib:false, prog:0,
+     err:'供应商排队超时，任务已终止 · 可重试'}
+  ];
+  var D3S = [
+    {n:'茶饮罐 · 白模', k:'静态', v:'腾讯混元', m:'hunyuan-3d', img:'promo-02'},
+    {n:'雨衣角色 · 绑定骨架', k:'已绑骨', v:'Tripo', m:'tripo-v2', img:'char-01'},
+    {n:'便利店门头', k:'静态', v:'腾讯混元', m:'hunyuan-3d', img:'story-08'},
+    {n:'红围巾角色 · 待机动画', k:'带动画', v:'Tripo', m:'tripo-v2', img:'char-03'},
+    {n:'伞骨道具', k:'静态', v:'腾讯混元', m:'hunyuan-3d', img:'story-11'},
+    {n:'招牌灯牌', k:'已绑骨', v:'Tripo', m:'tripo-v2', img:'promo-05'}
+  ];
+  var D3H = [
+    {p:'茶饮罐白模，圆柱体，简洁工业设计', k:'生成', st:'已完成', v:'腾讯混元 · hunyuan-3d'},
+    {p:'雨衣角色，绑定骨架，用于分镜调度', k:'绑骨', st:'已完成', v:'Tripo · tripo-v2'},
+    {p:'便利店门头，玻璃与灯箱', k:'生成', st:'已完成', v:'腾讯混元 · hunyuan-3d'},
+    {p:'伞骨道具，结构精细', k:'生成', st:'处理中 45%', v:'腾讯混元 · hunyuan-3d'},
+    {p:'角色待机动画，循环 3 秒', k:'绑骨', st:'失败：面数超出上限', v:'Tripo · tripo-v2'}
+  ];
+  var f3 = '全部';
+
+  /* ---- 顶层三视图：aria-selected 唯一状态源 + hidden + 方向键 ---- */
+  var vtabs = $$('.vtab'), vp = $$('[data-vpane]');
+  function selectView(tab, focus){
+    vtabs.forEach(function(t){
+      var on = t === tab;
+      t.setAttribute('aria-selected', on?'true':'false');
+      t.tabIndex = on?0:-1;
+    });
+    vp.forEach(function(x){ x.hidden = x.dataset.vpane !== tab.dataset.view; });
+    if (focus) tab.focus();
+  }
+  $$('.views').forEach(function(box){
+    box.addEventListener('click', function(e){
+      var t = e.target.closest('.vtab'); if (t) selectView(t, false);
+    });
+    box.addEventListener('keydown', function(e){
+      var i = vtabs.indexOf(document.activeElement); if (i<0) return;
+      var n = -1;
+      if (e.key==='ArrowRight') n=(i+1)%vtabs.length;
+      else if (e.key==='ArrowLeft') n=(i-1+vtabs.length)%vtabs.length;
+      else if (e.key==='Home') n=0; else if (e.key==='End') n=vtabs.length-1;
+      if (n<0) return; e.preventDefault(); selectView(vtabs[n], true);
+    });
+  });
+
+  /* ---- segmented（模式切换，aria-pressed） ---- */
+  document.addEventListener('click', function(e){
+    var s = e.target.closest('[data-seg]');
+    if (s){
+      $$('[data-seg="'+s.dataset.seg+'"]').forEach(function(b){
+        b.setAttribute('aria-pressed', b===s?'true':'false');
+      });
+      /* 图生视频 / 图生 3D 的参考图提示跟着变 */
+      if (s.dataset.seg==='vidmode'||s.dataset.seg==='d3mode'){
+        var need = s.dataset.val==='i2v'||s.dataset.val==='i3';
+        var note = s.parentNode.parentNode.querySelector('.drop');
+        if (note) note.style.borderColor = need ? 'var(--ac)' : '';
+      }
+      return;
+    }
+    var t = e.target.closest('[data-toast]');
+    if (t) FP.toast(t.dataset.toast);
+  });
+
+  /* ---- 生图 ---- */
+  function renderImg(){
+    $('#imgCount').textContent = IMGS.length+' 张';
+    $('#imgGrid').innerHTML = IMGS.length ? IMGS.map(function(x,i){
+      return '<article class="gcard">'
+        + '<img src="'+T+x.img+'.svg" alt="" loading="lazy">'
+        + '<div class="body"><div class="p">'+esc(x.p)+'</div><div class="tags">'
+        + '<span class="tag">'+esc(x.v)+'</span>'
+        + (x.w?'<span class="tag ok">已回写项目</span>':'')
+        + '</div><div class="seed">seed: '+(x.s||'随机')+'</div></div>'
+        + '<div class="ops">'
+        + '<button class="btn sm" type="button" data-img-open="'+i+'">详情</button>'
+        + '<button class="btn sm ghost" type="button" data-img-copy="'+i+'" title="复制提示词" aria-label="复制提示词">复制</button>'
+        + '<button class="btn sm ghost" type="button" data-img-del="'+i+'">删除</button>'
+        + '</div></article>';
+    }).join('') : '<div class="empty">结果为空 · 点「开始生成」加一张示例</div>';
+  }
+  $('#imgN').addEventListener('input', function(){ $('#imgNv').textContent=this.value; });
+  $('#imgGo').addEventListener('click', function(){
+    var imgs = ['story-06','story-07','story-09','story-10','char-04','promo-03'];
+    var n = +$('#imgN').value;
+    for (var i=0;i<n;i++) IMGS.unshift({p:$('#imgPrompt').value||'（空提示词）',
+      v:$('#imgVendor').value, s:0, w:false, img:imgs[(IMGS.length+i)%imgs.length]});
+    renderImg(); FP.toast('已加入 '+n+' 张结果（原型不真调模型、不扣费）');
+  });
+  $('#imgClear').addEventListener('click', function(){ IMGS=[]; renderImg(); FP.toast('结果已清空'); });
+
+  /* ---- 视频：Timeline ---- */
+  function renderVid(){
+    var run = VIDS.filter(function(x){return x.st==='生成中';}).length;
+    $('#vidTotal').textContent = VIDS.length+' 条';
+    $('#vidRunning').textContent = run+' 生成中';
+    $('#vidRunning').hidden = run===0;
+    $('#vidList').innerHTML = VIDS.length ? VIDS.slice(0,10).map(function(x,i){
+      var cls = x.st==='生成中'?'run':(x.st==='失败'?'err':'');
+      return '<div class="vrow '+cls+'">'
+        + '<div class="meta"><span class="tag '+(x.st==='失败'?'er':x.st==='生成中'?'ac':'ok')+'">'+esc(x.st)+'</span>'
+        + '<span class="tag">'+esc(x.v)+'</span>'
+        + '<span class="mono" style="font-size:var(--fz);color:var(--tx3)">'+x.d+'s · '+esc(x.r)+'</span>'
+        + (x.inlib?'<span class="tag ok">已入素材库</span>':'')
+        + '<button class="btn sm ghost" type="button" data-vid-del="'+i+'" style="margin-left:auto">删除</button></div>'
+        + '<div class="pr">'+esc(x.p)+'</div>'
+        + '<div class="mini">'+esc(x.tag)+'</div>'
+        + (x.st==='生成中'?'<div class="bar"><i style="width:'+x.prog+'%"></i></div>':'')
+        + (x.err?'<div class="errmsg">'+esc(x.err)+'</div>':'')
+        + '</div>';
+    }).join('') : '<div class="empty">队列为空 · 点「开始生成」加一条示例</div>';
+  }
+  $('#vidDur').addEventListener('input', function(){ $('#vidDURV').textContent=this.value+' 秒'; });
+  $('#vidGo').addEventListener('click', function(){
+    VIDS.unshift({st:'已完成', v:$('#vidProvider').value, d:+$('#vidDur').value,
+      r:$('#vidRatio').value.split(' ')[0], p:$('#vidPrompt').value||'（空提示词）',
+      tag:'原型示例 · 未入项目', inlib:false, prog:100});
+    renderVid(); FP.toast('已加入生成队列（原型不真调模型、不扣费）');
+  });
+  $('#vidClear').addEventListener('click', function(){ VIDS=[]; renderVid(); FP.toast('队列已清空'); });
+
+  /* ---- 3D ---- */
+  function renderD3(){
+    var arr = D3S.filter(function(x){return f3==='全部'||x.k===f3;});
+    $('#d3AssetN').textContent=D3S.length; $('#d3HistN').textContent=D3H.length;
+    $('#d3Grid').innerHTML = arr.length ? arr.map(function(x){
+      var i = D3S.indexOf(x);
+      return '<article class="d3card" data-d3-open="'+i+'">'
+        + '<img src="'+T+x.img+'.svg" alt="" loading="lazy">'
+        + '<div class="b"><div class="n">'+esc(x.n)+'</div>'
+        + '<div class="row wrap" style="margin-top:5px"><span class="tag">'+esc(x.k)+'</span></div>'
+        + '<div class="m" style="margin-top:6px">'+esc(x.v)+' · '+esc(x.m)+'</div></div></article>';
+    }).join('') : '<div class="empty">这个筛选下没有素材</div>';
+    $('#d3Hist').innerHTML = D3H.map(function(x){
+      return '<div class="hrow"><div class="prompt"><b>'+esc(x.k)+'</b> · '+esc(x.p)+'</div>'
+        + '<span class="tag">'+esc(x.k)+'</span>'
+        + '<span class="tag '+(x.st.indexOf('失败')>=0?'er':x.st.indexOf('处理中')>=0?'wn':'ok')+'">'+esc(x.st)+'</span>'
+        + '<div class="st">'+esc(x.v)+'</div></div>';
+    }).join('');
+  }
+  document.addEventListener('click', function(e){
+    var b = e.target.closest('[data-f3]');
+    if (b){ f3=b.dataset.f3;
+      $$('[data-f3]').forEach(function(x){ var on=x===b; x.classList.toggle('on',on); x.setAttribute('aria-pressed',on?'true':'false'); });
+      renderD3(); return; }
+  });
+  $('#d3Go').addEventListener('click', function(){
+    var imgs=['promo-04','char-05','story-12','promo-06'];
+    var n = $('#d3Prompt').value||'（空描述）';
+    D3S.push({n:n.slice(0,18), k:'静态', v:$('#d3Vendor').value, m:$('#d3Model').value,
+      img:imgs[D3S.length%imgs.length]});
+    D3H.unshift({p:n, k:'生成', st:'已完成', v:$('#d3Vendor').value+' · '+$('#d3Model').value});
+    renderD3(); FP.toast('已加入素材库与生成历史（原型不真调模型）');
+  });
+
+  /* ---- 详情 dialog（原生语义） ---- */
+  function openImgDetail(i){
+    var x = IMGS[i]; if (!x) return;
+    FP.openDialog('<dialog class="modal" closedby="any" aria-labelledby="gdTitle">'
+      + '<div class="mh"><span class="t" id="gdTitle">生成结果详情</span>'
+      + '<button class="x" type="button" data-close-ov aria-label="关闭">✕</button></div>'
+      + '<div class="mb"><img src="'+T+x.img+'.svg" alt="" style="width:100%;border-radius:7px">'
+      + '<div class="kv"><span class="k">提示词</span><span class="v">'+esc(x.p)+'</span></div>'
+      + '<div class="kv"><span class="k">provider</span><span class="v">'+esc(x.v)+'</span></div>'
+      + '<div class="kv"><span class="k">seed</span><span class="v mono">'+(x.s||'随机')+'</span></div>'
+      + '<div class="kv"><span class="k">回写</span><span class="v">'+(x.w?'已回写项目':'未回写')+'</span></div>'
+      + '<div class="mini" style="margin-top:9px">这些字段都是真实前端渲染过的；'
+      + '模型名与 cost 在真实生图卡上不显示，这里也不画。</div></div>'
+      + '<div class="mf"><button class="btn" type="button" data-close-ov>关闭</button></div></dialog>');
+  }
+  function openD3Detail(i){
+    var x = D3S[i]; if (!x) return;
+    FP.openDialog('<dialog class="modal" closedby="any" aria-labelledby="d3dTitle">'
+      + '<div class="mh"><span class="t" id="d3dTitle">3D 素材详情</span>'
+      + '<button class="x" type="button" data-close-ov aria-label="关闭">✕</button></div>'
+      + '<div class="mb"><img src="'+T+x.img+'.svg" alt="" style="width:100%;border-radius:7px">'
+      + '<div class="kv"><span class="k">名称</span><span class="v">'+esc(x.n)+'</span></div>'
+      + '<div class="kv"><span class="k">状态</span><span class="v">'+esc(x.k)+'</span></div>'
+      + '<div class="kv"><span class="k">来源</span><span class="v">'+esc(x.v)+' · '+esc(x.m)+'</span></div></div>'
+      + '<div class="mf"><button class="btn" type="button" data-close-ov>关闭</button></div></dialog>');
+  }
+
+  document.addEventListener('click', function(e){
+    var o = e.target.closest('[data-img-open]'); if (o){ openImgDetail(+o.dataset.imgOpen); return; }
+    var d = e.target.closest('[data-img-del]'); if (d){ IMGS.splice(+d.dataset.imgDel,1); renderImg(); return; }
+    var c = e.target.closest('[data-img-copy]');
+    if (c){
+      var x = IMGS[+c.dataset.imgCopy];
+      if (x && navigator.clipboard) navigator.clipboard.writeText(x.p).catch(function(){});
+      FP.toast('提示词已复制（原型）'); return;
+    }
+    var vd = e.target.closest('[data-vid-del]'); if (vd){ VIDS.splice(+vd.dataset.vidDel,1); renderVid(); return; }
+    var d3 = e.target.closest('[data-d3-open]'); if (d3){ openD3Detail(+d3.dataset.d3Open); return; }
+  });
+
+  renderImg(); renderVid(); renderD3();
+})();
+</script>
+</body>
+</html>

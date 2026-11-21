@@ -42,13 +42,13 @@
     background:var(--s1);border:1px solid var(--ln);flex:0 0 auto}
   .brand .mk{width:20px;height:20px;border-radius:var(--r1);background:var(--ac);
     display:flex;align-items:center;justify-content:center;color:#04222a;font-weight:800;font-size:var(--fz)}
-  .crumb{font-size:12px;color:var(--tx3);flex:0 0 auto}
+  .crumb{font-size:var(--fz);color:var(--tx3);flex:0 0 auto}
   .crumb b{color:var(--tx2);font-weight:500}
   .saved{display:inline-flex;align-items:center;gap:5px;font-size:var(--fz);color:var(--tx3);flex:0 0 auto}
   .saved .d{width:5px;height:5px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px var(--oks)}
   /* 三模式切换 */
   .seg{display:flex;gap:1px;padding:3px;background:var(--s1);border:1px solid var(--ln);border-radius:999px}
-  .seg button{font-size:12px;color:var(--tx3);background:0;border:0;padding:4px 12px;
+  .seg button{font-size:var(--fz);color:var(--tx3);background:0;border:0;padding:4px 12px;
     border-radius:999px;cursor:pointer;transition:all .26s var(--ez);display:flex;align-items:center;gap:6px;
     /* 1440 宽下顶部挤爆，「镜头墙」会被压成竖排 —— 不许换行（2026-11-02 实测） */
     white-space:nowrap;flex:0 0 auto}
@@ -67,7 +67,7 @@
   .moremenu.hidden{display:none}
   /* 菜单里不要每项都描边，会花 */
   .moremenu .b{border-color:transparent!important;justify-content:flex-start;
-    font-size:12px;padding:7px 9px}
+    font-size:var(--fz);padding:7px 9px}
   /* 原来 icononly 的按钮只有图标，进了菜单必须带文字，否则看不出是什么 */
   .moremenu .b.icononly{padding:7px 9px;width:auto}
   .moremenu .b:hover{background:var(--s3);color:var(--tx)}

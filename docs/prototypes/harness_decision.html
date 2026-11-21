@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" href="data:,">
 <title>Harness 架构决策 · 原型</title>
-<link rel="stylesheet" href="shared/theme.css?v=202611072335">
+<link rel="stylesheet" href="shared/theme.css?v=202611220022">
 <style>
 :root{
   --bg:#09090b; --bgCard:#121216; --bgInput:#17171c; --bgHover:#1d1d24;
@@ -80,18 +80,18 @@ body{
 .fi.hl{border-color:var(--photo);color:var(--photo);background:rgba(251,191,36,.1)}
 .fi.our{border-color:var(--info);color:var(--info);background:rgba(34,211,238,.08)}
 .fi.dsh{border-color:var(--purple);color:var(--purple);background:rgba(167,139,250,.1)}
-.fa{color:var(--tx3);font-size:12px}
+.fa{color:var(--tx3);font-size:var(--fz)}
 
 /* 权衡条 */
 .cost{display:flex;flex-direction:column;gap:6px}
 .cr{display:flex;align-items:center;gap:9px;font-size:13px}
-.cr-k{color:var(--tx3);min-width:72px;font-size:12.5px}
+.cr-k{color:var(--tx3);min-width:72px;font-size:var(--fz)}
 .bar{flex:1;height:5px;border-radius:3px;background:var(--bgInput);overflow:hidden;max-width:150px}
 .bar i{display:block;height:100%;border-radius:3px}
 .bar i.lo{background:var(--ok);width:22%}
 .bar i.mid{background:var(--warn);width:58%}
 .bar i.hi{background:var(--err);width:90%}
-.cr-v{font-size:12px;color:var(--tx3);font-family:var(--fm)}
+.cr-v{font-size:var(--fz);color:var(--tx3);font-family:var(--fm)}
 
 /* 详情区 */
 .detail{
@@ -114,7 +114,7 @@ body{
 /* 架构图 */
 .arch{
   background:var(--bg);border:1px solid var(--bd);border-radius:var(--r);
-  padding:22px;font-family:var(--fm);font-size:12.5px;line-height:1.9;
+  padding:22px;font-family:var(--fm);font-size:var(--fz);line-height:1.9;
   overflow-x:auto;white-space:pre;color:var(--tx2);
 }
 .arch .c-our{color:var(--info)}
@@ -164,7 +164,7 @@ body{
 .q:last-child{border-bottom:none;padding-bottom:0}
 .q-n{
   width:24px;height:24px;border-radius:50%;background:var(--bgInput);
-  border:1px solid var(--bd2);color:var(--photo);font-size:12px;font-family:var(--fm);
+  border:1px solid var(--bd2);color:var(--photo);font-size:var(--fz);font-family:var(--fm);
   display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;
 }
 .q-t{font-size:14.5px;color:var(--tx);margin-bottom:3px;font-weight:500}
@@ -398,6 +398,6 @@ function pick(k){
 
 render();
 </script>
-<script src="shared/proto-nav.js?v=202611072335"></script>
+<script src="shared/proto-nav.js?v=202611220022"></script>
 </body>
 </html>

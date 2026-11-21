@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<meta name="color-scheme" content="dark">
+<title>素材库 · 资产中枢 · YLCraft 原型</title>
+<link rel="stylesheet" href="../shared/theme.css?v=202611220022">
+<link rel="stylesheet" href="app.css?v=202611220022">
+<style>
+.filters{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 13px;
+  background:var(--s1);border:1px solid var(--ln);border-radius:var(--r);margin-bottom:13px}
+.filters .field{width:172px}
+.filters .spacer{flex:1}
+.cols2{display:grid;grid-template-columns:minmax(0,1fr) 322px;gap:12px;align-items:start}
+/* 详情抽屉跟随滚动，内部自己滚：900px 高的视口里版本/血缘不该被页面裁掉 */
+.detail{position:sticky;top:64px;max-height:calc(100vh - 78px);display:flex;flex-direction:column}
+.detail .card-b{overflow-y:auto;min-height:0}
+.agrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.acard{position:relative;border:1px solid var(--ln);border-radius:var(--r2);overflow:hidden;
+  background:var(--s2);cursor:pointer;transition:border-color .16s}
+.acard:hover{border-color:var(--ln2)}
+.acard.on{border-color:var(--ac);box-shadow:0 0 0 1px var(--ac) inset}
+.acard .im{position:relative;height:118px;background:var(--s3)}
+.acard .im img{width:100%;height:100%;object-fit:cover;display:block}
+.acard .im .tp{position:absolute;left:7px;bottom:7px}
+.acard .im .ck{position:absolute;right:7px;top:7px;width:18px;height:18px;
+  accent-color:var(--ac);cursor:pointer;background:var(--s1);border-radius:4px}
+.acard .c{padding:8px 9px 10px}
+.acard .n{font-size:var(--fz);font-weight:600;color:var(--tx);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.acard .m{font-size:var(--fz);color:var(--tx3);margin-top:3px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+/* 列表视图 */
+.alist{display:flex;flex-direction:column;gap:6px}
+.arow{display:flex;align-items:center;gap:10px;padding:7px 10px;border:1px solid var(--ln);
+  border-radius:var(--r2);background:var(--s2);cursor:pointer}
+.arow:hover{border-color:var(--ln2)} .arow.on{border-color:var(--ac)}
+.arow img{width:52px;height:34px;object-fit:cover;border-radius:4px;flex:0 0 auto}
+.arow .n{font-size:var(--fz);color:var(--tx);font-weight:600;flex:1;min-width:0}
+.arow .m{font-size:var(--fz);color:var(--tx3);flex:0 0 130px}
+.arow input{accent-color:var(--ac);width:16px;height:16px;flex:0 0 auto}
+/* 详情抽屉 */
+.detail .big{width:100%;height:150px;object-fit:cover;border-radius:var(--r2);display:block}
+.sec{font-size:var(--fz);color:var(--tx3);font-weight:600;margin:14px 0 7px;
+  padding-bottom:5px;border-bottom:1px solid var(--ln)}
+.lineage{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.ln{display:inline-flex;align-items:center;padding:5px 8px;border:1px solid var(--ln2);
+  border-radius:var(--r2);background:var(--s2);font-size:var(--fz);color:var(--tx2);white-space:nowrap}
+.ln.me{border-color:var(--ac);color:var(--ac);background:var(--acbg)}
+.arrow{color:var(--tx3);font-size:var(--fz)}
+/* 底部批量条 */
+.batch{position:fixed;left:50%;bottom:20px;transform:translateX(-50%) translateY(80px);
+  display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:999px;
+  background:var(--modal);border:1px solid var(--ln2);box-shadow:0 16px 44px -12px var(--shade);
+  z-index:600;opacity:0;transition:opacity .18s,transform .18s;white-space:nowrap}
+.batch.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.batch .n{font-size:var(--fz);color:var(--tx)}
+.batch .n b{color:var(--ac)}
+@media (max-width:1240px){.agrid{grid-template-columns:repeat(3,1fr)}}
+@media (max-width:1000px){.cols2{grid-template-columns:1fr}.detail{grid-column:1}}
+@media (max-width:680px){.agrid{grid-template-columns:repeat(2,1fr)}.filters .field{width:130px}}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html"><i>◈</i> 原项目功能</a>
+  <span class="crumb"><a href="assets-home.html" style="color:var(--ac)">← 素材工作台</a> · 素材库 <span class="mono">/assets</span></span>
+  <span class="spacer"></span>
+  <span class="hintbar">一份素材 · 多版本 · 有出处</span>
+</header>
+
+<main class="page wide">
+  <div class="phead">
+    <div><h1>素材库</h1><div class="sub">找得到、说得清来源、能送进画布。版本和血缘挂在素材上，不散在文件夹里。</div></div>
+    <div class="right"><span class="tag ac" id="totalTag">12 份素材</span>
+      <a class="btn ghost" href="../canvas/index.html">去画布 →</a></div>
+  </div>
+
+  <div class="filters">
+    <div class="chips" id="typeChips">
+      <button class="chip on" data-type="全部">全部</button>
+      <button class="chip" data-type="图片">图片</button>
+      <button class="chip" data-type="视频">视频</button>
+      <button class="chip" data-type="音频">音频</button>
+      <button class="chip" data-type="3D">3D</button>
+    </div>
+    <label class="sr-only" for="srcSel">按来源筛选</label>
+    <select class="field" id="srcSel">
+      <option value="全部">全部来源</option>
+      <option value="画布产出">画布产出</option>
+      <option value="本地上传">本地上传</option>
+      <option value="B 站">B 站</option>
+      <option value="小红书">小红书</option>
+      <option value="公众号">公众号</option>
+    </select>
+    <label class="sr-only" for="kw">搜索素材</label>
+    <input class="field" type="search" id="kw" placeholder="搜素材名 / 标签" autocomplete="off">
+    <span class="tag ac" id="dayChip" hidden></span>
+    <span class="spacer"></span>
+    <button class="btn sm" id="viewBtn">切到列表</button>
+    <button class="btn sm ghost" id="clearBtn">清空筛选</button>
+  </div>
+
+  <div class="cols2">
+    <div id="grid"></div>
+
+    <section class="card detail">
+      <div class="card-h"><span class="t">素材详情</span><span class="right"><span class="s" id="detailId">—</span></span></div>
+      <div class="card-b" id="detail"></div>
+    </section>
+  </div>
+
+  <div class="note" style="margin-top:16px"><span>ⓘ</span><div>
+    <b>原型口径</b>：缩略图用的是画布那 24 张本地 SVG 占位片，不是真素材；
+    版本、来源归一、血缘都是示例数据。「加入画布」只演示跨页入口，不会真的写画布文档。
+    真实实现里素材是项目的长期记忆，删除是软删、可恢复。
+  </div></div>
+  <div class="protofoot">
+    对应真实功能：<code>/assets</code>、<code>/asset-hub/nodes</code>、<code>/assets/{id}/provenance-clean</code>、
+    <code>/search/hybrid</code>（向量检索）、<code>/lineage</code>（血缘）。规格见 <code>asset-library</code>、<code>asset-canvas-loop</code>。
+  </div>
+</main>
+
+<div class="batch" id="batch">
+  <span class="n">已选 <b id="batchN">0</b> 项</span>
+  <button class="btn sm pri" id="batchGo">加入画布</button>
+  <button class="btn sm ghost" id="batchPack">存为素材包</button>
+  <button class="btn sm ghost" id="batchClear">取消选择</button>
+</div>
+
+<script src="../shared/proto-nav.js?v=202611220022"></script>
+<script src="app.js?v=202611220022"></script>
+<script src="theme-switch.js?v=202611220022"></script>
+<script>
+(function(){
+  var $ = FP.$, $$ = FP.$$, esc = FP.esc;
+  var SRC = ['画布产出','画布产出','本地上传','B 站','小红书','画布产出','公众号','本地上传','画布产出','B 站','小红书','画布产出'];
+  var TYPE = ['图片','图片','图片','视频','图片','视频','图片','音频','3D','图片','图片','图片'];
+  var NAME = ['雨夜门口 · 中景','便利店冰柜 · 特写','伞骨滴水 · 近景','第 3 场粗剪 v2','街角灯牌 · 全景',
+              '片头动效 6s','秋日茶饮 · 静物','环境雨声 32s','茶饮罐 · 白模','旧照片 · 半张',
+              '路灯坏掉的夜','招牌关灯 · 空镜'];
+  var TAG = ['夜景, 中景','特写, 冷光','近景, 雨','剪辑, v2','全景, 街景','动效, 片头',
+             '静物, 商业','环境音, 雨','3D, 白模','道具, 伏笔','空镜, 夜','空镜, 结尾'];
+  var DAY = ['11-20','11-20','11-19','11-19','11-18','11-18','11-17','11-16','11-15','11-14','11-20','11-14'];
+  var ITEMS = NAME.map(function(n,i){
+    var num = i+1 < 10 ? '0'+(i+1) : String(i+1);
+    var img = i === 8 ? 'promo-02' : i === 10 ? 'promo-04' : 'story-'+num;
+    return {id:'AS-'+(2410+i), n:n, t:TYPE[i], src:SRC[i], tag:TAG[i], day:DAY[i],
+            ver:[2,3,1,2,1,4,1,1,2,1,1,1][i], size:['2.4 MB','1.8 MB','3.1 MB','48 MB','2.0 MB',
+              '12 MB','1.4 MB','860 KB','6.2 MB','980 KB','1.7 MB','1.2 MB'][i],
+            img:'../canvas/assets/thumbs/'+img+'.svg'};
+  });
+  var type = '全部', src = '全部', day = '全部', kw = '', list = false, cur = 0, picked = {};
+
+  function filtered(){
+    return ITEMS.filter(function(x){
+      return (type==='全部'||x.t===type) && (src==='全部'||x.src===src)
+        && (day==='全部'||x.day===day)
+        && (!kw || (x.n+x.tag+x.src).toLowerCase().indexOf(kw)>=0);
+    });
+  }
+  function renderGrid(){
+    var arr = filtered();
+    $('#totalTag').textContent = arr.length + ' 份素材';
+    if (!arr.length){ $('#grid').innerHTML = '<div class="card"><div class="empty">没有符合条件的素材 · 点「清空筛选」重来</div></div>'; return; }
+    if (list){
+      $('#grid').innerHTML = '<div class="alist">' + arr.map(function(x){
+        var i = ITEMS.indexOf(x);
+        return '<div class="arow'+(cur===i?' on':'')+'" data-i="'+i+'">'
+          + '<input type="checkbox" data-ck="'+i+'"'+(picked[i]?' checked':'')+' aria-label="选择素材">'
+          + '<img src="'+x.img+'" alt=""><span class="n">'+esc(x.n)+'</span>'
+          + '<span class="m">'+esc(x.src)+' · v'+x.ver+'</span>'
+          + '<span class="tag'+(x.t==='3D'?' ac':'')+'">'+esc(x.t)+'</span></div>';
+      }).join('') + '</div>';
+    } else {
+      $('#grid').innerHTML = '<div class="agrid">' + arr.map(function(x){
+        var i = ITEMS.indexOf(x);
+        return '<div class="acard'+(cur===i?' on':'')+'" data-i="'+i+'">'
+          + '<div class="im"><img src="'+x.img+'" alt="'+esc(x.n)+'">'
+          + '<span class="tp tag'+(x.t==='3D'?' ac':'')+'">'+esc(x.t)+'</span>'
+          + '<input class="ck" type="checkbox" data-ck="'+i+'"'+(picked[i]?' checked':'')+' aria-label="选择素材"></div>'
+          + '<div class="c"><div class="n">'+esc(x.n)+'</div>'
+          + '<div class="m">'+esc(x.src)+' · v'+x.ver+' · '+esc(x.size)+'</div></div></div>';
+      }).join('') + '</div>';
+    }
+  }
+  function renderDetail(){
+    var x = ITEMS[cur];
+    $('#detailId').textContent = x.id;
+    $('#detail').innerHTML =
+      '<img class="big" src="'+x.img+'" alt="'+esc(x.n)+'">'
+      + '<div style="font-size:14px;font-weight:650;margin-top:11px">'+esc(x.n)+'</div>'
+      + '<div class="row wrap" style="margin-top:7px"><span class="tag ac">'+esc(x.t)+'</span>'
+      + '<span class="tag">'+esc(x.src)+'</span><span class="tag">v'+x.ver+'</span></div>'
+      + '<div class="sec">基本信息</div>'
+      + '<div class="kv"><span class="k">标签</span><span class="v">'+esc(x.tag)+'</span></div>'
+      + '<div class="kv"><span class="k">大小</span><span class="v">'+esc(x.size)+'</span></div>'
+      + '<div class="kv"><span class="k">归属项目</span><span class="v"><b>'+(cur%3===0?'我在废土开便利店':cur%3===1?'雨夜送伞的人':'茶饮新品 · 秋日篇')+'</b></span></div>'
+      + '<div class="sec">版本时间线</div>'
+      + '<div class="tl">'
+      + Array.from({length:x.ver},function(_,k){
+          var v = x.ver-k;
+          return '<div class="tl-row'+(k===0?' ac':'')+'"><div class="tl-t">11-0'+(8-k)+' 14:2'+k+'</div>'
+            + '<div class="tl-b"><b>v'+v+'</b> · '+(k===0?'当前版本 · 画布第 3 次生成':k===x.ver-1?'原始导入':'追色后另存')+'</div></div>';
+        }).join('')
+      + '</div>'
+      + '<div class="sec">来源归一</div>'
+      + '<div class="kv"><span class="k">平台水印</span><span class="v">'+(x.src==='本地上传'?'不适用':'已清理')+'</span></div>'
+      + '<div class="kv"><span class="k">元数据</span><span class="v">已保留原拍摄参数</span></div>'
+      + '<div class="kv"><span class="k">AI 标记</span><span class="v">'+(x.src==='画布产出'?'已标注为 AI 生成':'无')+'</span></div>'
+      + '<div class="sec">血缘 · 这份素材从哪来、到哪去</div>'
+      + '<div class="lineage"><span class="ln">'+(x.src==='画布产出'?'画布 · 分镜 04':'原始截帧')+'</span>'
+      + '<span class="arrow">→</span><span class="ln me">'+esc(x.n)+'</span><span class="arrow">→</span>'
+      + '<span class="ln">分镜 04</span><span class="ln">海报 v2</span><span class="ln">剪辑轨 1</span></div>'
+      + '<div class="row" style="margin-top:15px"><button class="btn pri" id="toCanvas" style="flex:1">加入画布</button></div>'
+      + '<div class="mute" style="font-size:var(--fz);margin-top:8px;line-height:1.7">'
+      + '「不适用」和「没有」是分开的：本地上传的素材本来就没有平台水印可清。</div>';
+  }
+  function renderBatch(){
+    var n = Object.keys(picked).filter(function(k){return picked[k];}).length;
+    $('#batchN').textContent = n;
+    $('#batch').classList.toggle('on', n>0);
+  }
+
+  $$('#typeChips .chip').forEach(function(b){
+    b.addEventListener('click', function(){
+      $$('#typeChips .chip').forEach(function(x){x.classList.toggle('on',x===b);});
+      type = b.dataset.type; renderGrid();
+    });
+  });
+  $('#srcSel').addEventListener('change', function(){ src = this.value; renderGrid(); });
+  $('#kw').addEventListener('input', function(){ kw = this.value.trim().toLowerCase(); renderGrid(); });
+  $('#clearBtn').addEventListener('click', function(){
+    type='全部'; src='全部'; day='全部'; kw=''; $('#kw').value=''; $('#srcSel').value='全部';
+    $('#dayChip').hidden = true;
+    $$('#typeChips .chip').forEach(function(x){x.classList.toggle('on',x.dataset.type==='全部');});
+    renderGrid(); FP.toast('筛选已清空');
+  });
+  $('#viewBtn').addEventListener('click', function(){
+    list = !list; this.textContent = list ? '切到网格' : '切到列表'; renderGrid();
+  });
+
+  document.addEventListener('click', function(e){
+    var ck = e.target.closest('[data-ck]');
+    if (ck){ e.stopPropagation();
+      var i = +ck.dataset.ck; picked[i] = ck.checked;
+      if (!picked[i]) delete picked[i];
+      ck.closest('.acard,.arow').querySelectorAll('[data-ck]').forEach(function(x){x.checked=picked[i];});
+      renderBatch(); return; }
+    var card = e.target.closest('[data-i]');
+    if (card){ cur = +card.dataset.i; renderGrid(); renderDetail(); return; }
+  });
+  $('#batchClear').addEventListener('click', function(){
+    picked = {}; renderGrid(); renderBatch();
+  });
+  $('#batchPack').addEventListener('click', function(){
+    FP.toast('已存成素材包（示例）· 原型不会真的打包文件');
+  });
+  function goCanvas(n){
+    FP.toast(n + ' 份素材已送进画布（示例）');
+    setTimeout(function(){ location.href = '../canvas/index.html?from=assets&n='+n; }, 620);
+  }
+  $('#batchGo').addEventListener('click', function(){
+    goCanvas(Object.keys(picked).filter(function(k){return picked[k];}).length);
+  });
+  $('#detail').addEventListener('click', function(e){
+    if (e.target.closest('#toCanvas')) goCanvas(1);
+  });
+
+  /* 从「素材工作台」点进来时按 type / day 先筛一次；字体在示例里就是 0 份 */
+  try {
+    var q = new URLSearchParams(location.search).get('type');
+    if (q && ['图片','视频','音频','3D','字体'].indexOf(q) >= 0) {
+      type = q;
+      $$('#typeChips .chip').forEach(function(x){ x.classList.toggle('on', x.dataset.type === q); });
+    }
+    var dd = new URLSearchParams(location.search).get('day');
+    if (dd && /^11-\d{2}$/.test(dd)) {
+      day = dd;
+      var chip = $('#dayChip'); chip.textContent = '11 月 ' + (+dd.slice(3)) + ' 日导入'; chip.hidden = false;
+      chip.title = '从工作台「最近导入」点进来 · 点清空筛选去掉';
+      chip.style.cursor = 'pointer';
+      chip.addEventListener('click', function(){ day='全部'; chip.hidden=true; renderGrid(); });
+    }
+  } catch (e) {}
+
+  renderGrid(); renderDetail(); renderBatch();
+})();
+</script>
+</body>
+</html>

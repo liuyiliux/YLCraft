@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <link rel="icon" href="data:,">
 <title>现场 · 脚本手机版</title>
-<link rel="stylesheet" href="../shared/theme.css?v=202611072335">
+<link rel="stylesheet" href="../shared/theme.css?v=202611220022">
 <style>
 :root{
   --bg:#09090b; --card:#16161a; --elev:#1f1f27; --input:#111116;
@@ -81,7 +81,7 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 .params{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
   background:var(--bd2);border-bottom:1px solid var(--bd2)}
 .pm{background:var(--card);padding:14px 8px;text-align:center}
-.pm-k{font-size:12px;color:var(--tx3);margin-bottom:4px}
+.pm-k{font-size:var(--fz);color:var(--tx3);margin-bottom:4px}
 .pm-v{font-size:19px;font-family:var(--fm);color:var(--pri);font-weight:600}
 
 /* 曝光面板：小直方图 + -3~+3EV 指示条（原型：静态示例数据） */
@@ -91,7 +91,7 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 .expo-t{font-size:13px;color:var(--tx3);font-family:var(--fm);
   text-transform:uppercase;letter-spacing:.06em}
 .expo-spacer{flex:1}
-.expo-tag{font-size:12px;padding:2px 8px;border-radius:6px;
+.expo-tag{font-size:var(--fz);padding:2px 8px;border-radius:6px;
   background:var(--elev);color:var(--tx2);border:1px solid var(--bd2);
   font-family:var(--fm)}
 .expo-tag.hot{color:var(--warn);
@@ -116,12 +116,12 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
   box-shadow:0 0 8px color-mix(in srgb,var(--photo) 70%,transparent);
   transform:translateX(-50%)}
 .ev-ticks{display:flex;justify-content:space-between;padding:0 2px;
-  font-size:12px;color:var(--tx3);font-family:var(--fm)}
-.ev-note{font-size:12px;color:var(--tx3);margin-top:9px;font-family:var(--fm)}
+  font-size:var(--fz);color:var(--tx3);font-family:var(--fm)}
+.ev-note{font-size:var(--fz);color:var(--tx3);margin-top:9px;font-family:var(--fm)}
 .tip{margin-top:12px;padding:11px 13px;border-radius:10px;
   background:color-mix(in srgb,var(--photo) 10%,var(--card));
   border:1px solid color-mix(in srgb,var(--photo) 30%,transparent)}
-.tip-k{font-size:12px;color:var(--photo);font-family:var(--fm);
+.tip-k{font-size:var(--fz);color:var(--photo);font-family:var(--fm);
   letter-spacing:.06em;margin-bottom:5px}
 .tip-x{font-size:14px;color:var(--tx1);line-height:1.6}
 .tip-x b{color:var(--photo)}
@@ -158,7 +158,7 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
   border:1px solid var(--bd2);font-size:17px;color:var(--tx2);
   display:flex;flex-direction:column;align-items:center;gap:4px}
 .ab b{font-size:16px;color:var(--tx1);font-weight:600}
-.ab span{font-size:12px;color:var(--tx3)}
+.ab span{font-size:var(--fz);color:var(--tx3)}
 .ab.ok{background:color-mix(in srgb,var(--ok) 22%,transparent);
   border-color:color-mix(in srgb,var(--ok) 45%,transparent)}
 .ab.ok b{color:var(--ok)}
@@ -555,6 +555,6 @@ document.addEventListener('touchend',e=>{
 
 render();
 </script>
-<script src="../shared/proto-nav.js?v=202611072335"></script>
+<script src="../shared/proto-nav.js?v=202611220022"></script>
 </body>
 </html>

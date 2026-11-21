@@ -471,7 +471,7 @@
 .skillpop-s input:focus{border-color:rgba(34,211,238,.4)}
 .sk-k{
   width:24px;height:24px;border-radius:6px;flex:0 0 auto;display:flex;
-  align-items:center;justify-content:center;font-size:12px;font-weight:600;
+  align-items:center;justify-content:center;font-size:var(--fz);font-weight:600;
   color:var(--ac);background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.22);
 }
 .sk-tag{

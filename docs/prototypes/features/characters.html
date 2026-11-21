@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<meta name="color-scheme" content="dark">
+<title>角色库 · YLCraft 原型</title>
+<link rel="stylesheet" href="../shared/theme.css?v=202611220022">
+<link rel="stylesheet" href="app.css?v=202611220022">
+<style>
+/* 版式：窄角色栏 + 细线分区 + 双列折叠 + 下方世界使用；不放大标题和统计卡 */
+/* 这一页是「三栏工作区」，宽度上限照原版 shell（frontend: .character-detail-shell{max-width:1600px}，
+   里面含 260px 侧栏 → 内容 1322）。我们侧栏 190，等比换算取 1720 → 内容 1494；
+   再宽下去三栏只能靠拉宽 Bible 去填，行会变得又长又空 */
+main.page.wide{max-width:1720px}
+.views2{display:flex;align-items:center;gap:4px;border-bottom:1px solid var(--ln2);margin-bottom:10px}
+.vtab2{position:relative;height:34px;padding:0 13px;font-size:var(--fz);color:var(--tx3);white-space:nowrap}
+.vtab2[aria-selected="true"]{color:var(--ac)}
+.vtab2[aria-selected="true"]::after{content:"";position:absolute;left:8px;right:8px;bottom:-1px;border-bottom:2px solid currentColor}
+
+/* 左：紧凑角色栏（约 1/8 宽），细线分隔，不套卡片 */
+.layout{display:grid;grid-template-columns:190px minmax(0,1fr);gap:0;align-items:start}
+.slots{min-width:0}
+.roster{position:sticky;top:56px;padding:8px 11px 12px 0;border-right:1px solid var(--ln);min-width:0}
+.rowbtn{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.rowbtn .t{font-size:var(--fz);font-weight:650}
+.filters2{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:6px}
+.filters2 .field{width:100%;height:26px}
+.crow{display:flex;gap:7px;padding:6px 5px;border:1px solid transparent;border-radius:var(--r2);cursor:pointer}
+.crow:hover{background:var(--s2)}
+.crow.on{border-color:var(--ac);background:var(--acbg)}
+.crow.thin{border-style:dashed;opacity:.72}
+.crow .av{width:30px;height:30px;border-radius:6px;object-fit:cover;background:var(--s3);flex:0 0 auto;border:1px solid var(--ln)}
+.crow .info{min-width:0;flex:1}
+.crow .nm{display:flex;align-items:center;gap:4px;font-size:var(--fz);font-weight:600}
+.crow .nm .star{margin-left:auto;color:var(--wn)}
+.crow .role{font-size:var(--fz);color:var(--tx3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crow .bar{height:2px;border-radius:99px;background:var(--s4);margin-top:4px;overflow:hidden}
+.crow .bar i{display:block;height:100%;background:var(--ac)}
+.crow .meta{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px}
+.tag.mini2{height:16px;font-size:var(--fz);padding:0 4px}
+.crow .want{font-size:var(--fz);color:var(--tx3);margin-top:2px;line-height:1.5}
+
+/* 右：详情直接落在页底，细线分区，不套大卡 */
+.maincol{padding:0 0 0 16px;min-width:0}
+/* 头部压到一行：名字 + 状态 + 操作；不再占两屏行高，主图因此能进首屏 */
+.dhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:1px 0 8px;border-bottom:1px solid var(--ln)}
+.dhead .idline{display:flex;align-items:center;gap:9px;flex-wrap:wrap;min-width:0}
+.dhead .nm{font-size:15px;font-weight:650;letter-spacing:.01em;line-height:1.3}
+.dhead .tags{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.dhead .tags .tag{height:19px;padding:0 6px}
+.dhead .spacer{flex:1}
+/* 世界视角：一行 chips + 覆盖差异，说明压成一句小字（原两行说明段占位） */
+.wbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:7px 0;border-bottom:1px solid var(--ln)}
+.wbar .l{font-size:var(--fz);color:var(--tx3);white-space:nowrap}
+.wbar .chip{height:24px;padding:0 10px}
+#wdiff{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0}
+#wdiff .tag{height:19px;padding:0 6px}
+/* 说明收进一个 ? 圆点：点开才说「世界视角是什么」，不再常驻一行小字 */
+.wq{flex:0 0 auto;margin-left:auto;width:19px;height:19px;border-radius:50%;border:1px solid var(--ln2);
+  color:var(--tx3);display:inline-flex;align-items:center;justify-content:center;line-height:1}
+.wq:hover{color:var(--ac);border-color:var(--ac)}
+
+/* 三栏详情：细竖线分隔，不用卡片间隙。比例照原版（frontend character-detail/styles.css）：
+   主视图固定、视图矩阵吃剩余、Bible 定宽（原版 flex:0 0 320px）——
+   三列都 1fr 会让 Bible 在 1920 被拉到 600 宽，右边全是空行 */
+.tri3{display:grid;grid-template-columns:minmax(0,clamp(380px,32vw,460px)) minmax(0,1fr) minmax(0,clamp(300px,24vw,336px));gap:0;border-bottom:1px solid var(--ln)}
+.col{min-width:0;padding:11px 13px;border-right:1px solid var(--ln);display:flex;flex-direction:column}
+.col:last-child{border-right:0}
+/* 底部收尾块贴底：空白收到栏内中部，不留右下角空槽 */
+.col .colfoot{margin-top:auto;padding-top:12px}
+/* Bible 下方的档案完整度 */
+.bsum{border-top:1px solid var(--ln)}
+.bs-h{display:flex;align-items:center;font-size:var(--fz);color:var(--tx2)}
+.bs-h b{margin-left:auto;color:var(--ac);font-family:var(--fm),monospace}
+.bs-bar{height:4px;border-radius:99px;background:var(--s4);margin-top:7px;overflow:hidden}
+.bs-bar i{display:block;height:100%;background:var(--ac)}
+.bs-legend{display:flex;gap:11px;flex-wrap:wrap;margin-top:8px;font-size:var(--fz);color:var(--tx3)}
+.bs-legend span{display:inline-flex;align-items:center;gap:5px}
+.bs-legend i{width:6px;height:6px;border-radius:50%;flex:0 0 auto}
+.bs-legend i.set{background:var(--ok)}
+.bs-legend i.ai{background:var(--wn)}
+.bs-legend i.none{background:var(--tx3)}
+.bs-tip{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:var(--fz);color:var(--tx3);line-height:1.6}
+.bs-tip .btn{margin-left:auto;flex:0 0 auto}
+/* 出场镜头：右栏下半段用真实内容占住，不留空槽；也是巡检的入口 */
+.shots{margin-top:10px;border-top:1px solid var(--ln);padding-top:8px}
+.shots-h{display:flex;align-items:center;font-size:var(--fz);color:var(--tx2)}
+.shots-h span{margin-left:auto;color:var(--tx3)}
+.shot{display:flex;align-items:center;gap:7px;font-size:var(--fz);padding:5px 0;border-bottom:1px dashed var(--ln);cursor:pointer}
+.shot:last-child{border-bottom:0}
+.shot.none{cursor:default;color:var(--tx3);border-bottom:0}
+.shot:hover{color:var(--ac)}
+.shot .n{flex:0 0 21px;height:19px;border-radius:4px;background:var(--s3);color:var(--tx2);
+  display:inline-flex;align-items:center;justify-content:center;font-family:var(--fm),monospace}
+.shot .t{flex:1;min-width:0;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.shot .s{flex:0 0 auto}
+.shot .s.ok{color:var(--ok)}
+.shot .s.wn{color:var(--wn)}
+/* 右栏页脚：字段来源 / 巡检状态 */
+.bmeta{margin-top:10px;border-top:1px solid var(--ln);padding-top:7px}
+.bm-row{display:flex;gap:8px;align-items:baseline;font-size:var(--fz);padding:3px 0;line-height:1.6}
+.bm-k{flex:0 0 62px;color:var(--tx3)}
+.bm-v{flex:1;min-width:0;color:var(--tx2);word-break:break-word}
+/* Bible 行：加细分隔线 + 呼吸，让右栏有结构感，不靠空槽撑高 */
+#bible .kv{padding:9px 0;border-bottom:1px dashed var(--ln)}
+#bible .kv:last-child{border-bottom:0}
+/* 中栏底部：出图参数 */
+.mp{border-top:1px solid var(--ln);padding-bottom:9px}
+.mp-h{display:flex;align-items:center;font-size:var(--fz);color:var(--tx2);padding-top:9px;margin-bottom:2px}
+.mp-h span{margin-left:auto;color:var(--tx3);font-weight:400}
+/* 生成参数与控制收在一处：模型 / 尺寸 / 开关跟负向词同一套 kv 节奏 */
+.mp .kv{align-items:center}
+.mpsel{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+/* 两个模型选择不做等分：名字长的模型宁可各占一行，也别截断成 qwen-image-plu… */
+.mpsel .field{height:26px;padding:0 7px;min-width:0;max-width:100%}
+.col .ct{font-size:var(--fz);font-weight:650;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.col .ct .spacer{flex:1}
+/* 提示词预设：主视图 / 三视图 / 设定板 / 身份板 / 九宫格 —— 换的是示意图 + 提示词 + 负向词 + 画幅 */
+.ptabs{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin:0 0 8px}
+.ptab{height:24px;padding:0 9px;border:1px solid var(--ln2);border-radius:999px;color:var(--tx3);font-size:var(--fz);white-space:nowrap}
+.ptab:hover{color:var(--tx2)}
+.ptab[aria-pressed="true"]{color:var(--ac);border-color:var(--ac);background:var(--acbg);font-weight:600}
+.psub{display:none;align-items:center;gap:4px;margin:-5px 0 8px}
+.psub.on{display:flex}
+.psub .ptab{height:22px;padding:0 8px}
+/* 示意图的三种形态：单张 / 三格 / 九格 */
+.sh1{display:flex;justify-content:center;padding:10px 8px}
+.sh1 .box{width:124px;aspect-ratio:4/5;border:1px dashed var(--ln2);border-radius:6px;background:var(--acbg);
+  display:flex;align-items:center;justify-content:center;color:var(--tx3);font-size:var(--fz);
+  text-align:center;line-height:1.7;padding:6px}
+.sh3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:9px;max-width:470px;margin:0 auto}
+.sh3 div{aspect-ratio:1/1.9;border:1px dashed var(--ln2);border-radius:5px;display:flex;align-items:flex-end;
+  justify-content:center;padding:6px;color:var(--tx3);font-size:var(--fz)}
+.sh9{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;padding:8px;max-width:330px;margin:0 auto}
+.sh9 div{aspect-ratio:1;border:1px dashed var(--ln2);border-radius:4px;display:flex;align-items:center;
+  justify-content:center;color:var(--tx3);font-size:var(--fz)}
+.ibstrip{padding:6px 8px;border-top:1px solid var(--ln);font-size:var(--fz);color:var(--tx3);line-height:1.7}
+.pnote{margin:7px 0 0;color:var(--tx3);line-height:1.7}
+.pnote b{color:var(--tx2)}
+.pmain{width:100%;aspect-ratio:4/5;background:var(--s2);border:1px solid var(--ln);border-radius:var(--r2);
+  display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+.pmain img{width:100%;height:100%;object-fit:cover}
+/* 来源角标：这张图是哪条 preset 出的（图本身是深色剪影，角标用深底浅字，两种主题都可读） */
+.pbadge{position:absolute;top:8px;right:8px;height:20px;padding:0 7px;border-radius:5px;
+  background:rgba(0,0,0,.62);color:#e9e9ee;font-size:var(--fz);display:inline-flex;align-items:center;gap:5px}
+.vers{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-top:7px}
+.vers button{border:1px solid var(--ln2);border-radius:6px;background:var(--s2);padding:0;overflow:hidden;cursor:pointer;position:relative}
+.vers button[aria-pressed="true"]{border-color:var(--ac);box-shadow:0 0 0 1px var(--ac)}
+.vers img{width:100%;aspect-ratio:1/1;object-fit:cover;display:block}
+.vers .pb{position:absolute;top:3px;right:3px;height:18px;padding:0 4px;border-radius:4px;
+  background:rgba(0,0,0,.62);color:#e9e9ee;font-size:var(--fz);line-height:18px;pointer-events:none}
+.vers .lb{font-size:var(--fz);color:var(--tx3);padding:2px 0;text-align:center;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.sheet{border:1px solid var(--ln2);border-radius:var(--r2);overflow:hidden;background:var(--s2)}
+.sheet .row{display:grid;grid-template-columns:26% 74%;min-height:88px;overflow:hidden}
+.sheet .zone{border:1px solid var(--ln);padding:6px;font-size:var(--fz);color:var(--tx3);line-height:1.6}
+.sheet .zone b{color:var(--tx2);font-weight:600}
+.sheet .z-left{background:var(--acbg);display:flex;flex-direction:column;justify-content:space-between}
+.sheet .z-left .face{height:34px;border-radius:5px;background:var(--s4);display:flex;align-items:center;justify-content:center;color:var(--tx2)}
+.sheet .z-right{display:grid;grid-template-rows:1.2fr .8fr .8fr;gap:4px}
+.sheet .zr{display:flex;align-items:center;gap:5px}
+.sheet .zr span{flex:1;text-align:center;border:1px dashed var(--ln2);border-radius:4px;padding:5px 2px;color:var(--tx3);font-size:var(--fz)}
+.sheet .cap{padding:6px 8px;border-top:1px solid var(--ln);font-size:var(--fz);color:var(--tx3);line-height:1.7}
+.promptbox{margin-top:8px;padding:8px 9px;border:1px solid var(--ln);border-radius:var(--r2);background:var(--s2);
+  font-family:var(--fm),monospace;font-size:var(--fz);color:var(--tx3);line-height:1.65;max-height:128px;overflow:auto;
+  white-space:pre-wrap}
+.tag.src{height:17px;font-size:var(--fz);padding:0 5px}
+.tag.src.ai{color:var(--wn);border-color:var(--wnbd);background:var(--wnbg)}
+.tag.src.set{color:var(--ok);border-color:var(--okbd);background:var(--okbg)}
+
+/* 折叠长面板：屏幕上收、纸上全展开 */
+details.panel{border-bottom:1px solid var(--ln)}
+details.panel>summary{list-style:none;cursor:pointer;padding:8px 2px;font-size:var(--fz);color:var(--tx2);
+  display:flex;align-items:center;gap:8px}
+details.panel>summary::-webkit-details-marker{display:none}
+details.panel>summary:before{content:"▸";color:var(--tx3)}
+details.panel[open]>summary:before{content:"▾"}
+details.panel>summary:hover{color:var(--ac)}
+details.panel>summary .badge{margin-left:auto;font-size:var(--fz);color:var(--tx3)}
+details.panel .pb{padding:0 2px 10px 18px;font-size:var(--fz);color:var(--tx2);line-height:1.8}
+
+/* 关系图 */
+.graph{position:relative;height:210px;border:1px solid var(--ln);border-radius:var(--r2);background:var(--s2);overflow:hidden}
+.graph svg{width:100%;height:100%}
+.graph .edge{stroke:var(--ln2);stroke-width:1.2;fill:none;transition:stroke .15s,stroke-width .15s}
+.graph .edge.hi{stroke:var(--ac);stroke-width:2}
+.graph .node{cursor:pointer}
+.graph .node circle{fill:var(--s3);stroke:var(--ln2);stroke-width:1.2}
+.graph .node.hot circle{stroke:var(--ac);stroke-width:2}
+.graph .node.self circle{fill:var(--acbg);stroke:var(--ac)}
+.graph .node text{font-size:var(--fz);fill:var(--tx2)}
+.graph .node.hot text,.graph .node.self text{fill:var(--ac)}
+
+/* 一致性梯度（调研补充） */
+.cons .row{display:flex;align-items:center;gap:7px;font-size:var(--fz);color:var(--tx2);padding:4px 0;border-bottom:1px dashed var(--ln)}
+.cons .row:last-child{border-bottom:0}
+.cons .row .lv{flex:0 0 52px;font-family:var(--fm),monospace;color:var(--tx3)}
+.cons .row .nm{flex:1;min-width:0}
+.cons .row .cost{flex:0 0 auto;color:var(--tx3)}
+.cons .row.best{color:var(--ac)}
+.cons .row.best .lv{color:var(--ac)}
+.cons .row.use{background:var(--acbg);border-radius:5px;padding-left:6px;padding-right:6px}
+.locknote{display:flex;align-items:flex-start;gap:8px;padding:9px 11px;border-radius:var(--r2);
+  border:1px solid var(--acbg);background:var(--acbg);font-size:var(--fz);color:var(--tx2);line-height:1.7}
+.locknote b{color:var(--ac)}
+.locknote .ic{color:var(--ac)}
+.pack{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.pack .p{border:1px solid var(--ln);border-radius:var(--r2);padding:9px 10px;background:var(--s2)}
+.pack .p .t{display:flex;align-items:center;font-size:var(--fz);font-weight:600}
+.pack .p .t button{margin-left:auto}
+.pack .p .code{font-family:var(--fm),monospace;font-size:var(--fz);color:var(--tx3);line-height:1.6;margin-top:6px;max-height:42px;overflow:hidden}
+
+/* 详情底部：宽面板通栏，短字段双列细线（和自定义标签同一套节奏） */
+.fieldgrid{display:grid;grid-template-columns:1fr 1fr;column-gap:34px}
+.fieldgrid>.panel{min-width:0}
+.fieldgrid>.panel .pb{padding-left:18px}
+
+/* 自定义标签视图：双列细线铺满，世界使用在下方左侧，右侧留白 */
+.tagsview{display:block}
+.taghead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0 9px;border-bottom:1px solid var(--ln2)}
+.taghead .nm{font-size:var(--fz);font-weight:650}
+.taghead .spacer{flex:1}
+.tagfold{display:grid;grid-template-columns:1fr 1fr;column-gap:34px;padding:8px 0 2px}
+.tagfold>div{min-width:0}
+.wuwrap{padding:14px 0 0;border-top:1px solid var(--ln2);margin-top:10px}
+#worldUse{max-width:380px}
+.worldcard2{border:1px solid var(--ln);border-radius:var(--r2);padding:10px 11px;background:var(--s2);margin-bottom:8px}
+.worldcard2 .wt{font-size:var(--fz);font-weight:600}
+.worldcard2 .wd{font-size:var(--fz);color:var(--tx3);line-height:1.7;margin-top:5px}
+.worldcard2 .ops{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+@media (max-width:1240px){.layout{grid-template-columns:1fr}.roster{position:static;border-right:0;border-bottom:1px solid var(--ln);padding:8px 0 12px}
+  .maincol{padding:10px 0 0}.tri3{grid-template-columns:1fr}.col{border-right:0;border-bottom:1px solid var(--ln)}
+  .tagfold,.fieldgrid{grid-template-columns:1fr}#worldUse{max-width:none}}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html"><i>◈</i> 原项目功能</a>
+  <span class="crumb">角色库 <span class="mono">/characters</span></span>
+  <span class="spacer"></span>
+  <span class="hintbar">屏幕上收 · 纸上全展开 · 视觉卡是唯一事实来源</span>
+</header>
+
+<main class="page wide">
+  <div class="views2" role="tablist" aria-label="角色库视图">
+    <button class="vtab2" type="button" role="tab" id="vtab-detail" data-v="detail" aria-selected="true" tabindex="0" aria-controls="vp-detail">角色详情</button>
+    <button class="vtab2" type="button" role="tab" id="vtab-tags" data-v="tags" aria-selected="false" tabindex="-1" aria-controls="vp-tags">自定义标签</button>
+  </div>
+
+  <div class="layout">
+    <div class="roster">
+        <div class="rowbtn"><span class="t">角色列表</span><span class="spacer"></span>
+          <button class="btn sm" type="button" data-toast="新建角色（原型不落库）">+ 新建</button></div>
+        <div class="filters2">
+          <select class="field" id="fPos" aria-label="全部定位"><option>全部定位</option><option>主角</option><option>配角</option><option>龙套</option></select>
+          <select class="field" id="fFlow" aria-label="全部流程"><option>全部流程</option><option>已定妆</option><option>设定中</option></select>
+          <select class="field" id="fSrc" aria-label="全部提取来源"><option>全部提取来源</option><option>小说提取</option><option>手动创建</option></select>
+          <select class="field" id="fExtra" aria-label="其他筛选"><option>全部</option><option>有立绘</option><option>无立绘</option></select>
+        </div>
+        <input class="field" type="search" id="cSearch" placeholder="搜索角色" aria-label="搜索角色" style="margin-bottom:6px">
+        <div class="chips" role="group" aria-label="快捷筛选">
+          <button class="chip on" type="button" data-f="全部" aria-pressed="true">全部</button>
+          <button class="chip" type="button" data-f="已定妆" aria-pressed="false">已定妆</button>
+          <button class="chip" type="button" data-f="无立绘" aria-pressed="false">无立绘</button>
+          <button class="chip" type="button" data-f="收藏" aria-pressed="false">仅收藏</button>
+        </div>
+        <div id="roster"></div>
+    </div>
+
+    <div class="slots">
+      <div id="vp-detail" role="tabpanel" aria-labelledby="vtab-detail" data-vp="detail">
+      <div class="maincol">
+        <div class="dhead">
+          <div class="idline"><span class="nm" id="dName">春生</span>
+            <span class="tags"><span class="tag ok">设定完成</span><span class="tag">通过 2 次</span>
+              <span class="tag wn">AI 推断</span><span class="tag" id="dPos">主角 · 小镇青年</span></span></div>
+          <span class="spacer"></span>
+          <button class="btn sm pri" type="button" id="editBtn">编辑角色</button>
+          <button class="btn sm" type="button" id="aiBtn">AI 补全</button>
+          <button class="btn sm ghost" type="button" data-toast="统一重写（原型占位）">统一重写</button>
+          <button class="btn sm ghost" type="button" id="moreBtn">更多 ▾</button>
+        </div>
+
+        <div class="wbar">
+          <span class="l">世界视角</span>
+          <div class="chips" id="worlds" role="group" aria-label="世界视角">
+            <button class="chip on" type="button" data-w="base" aria-pressed="true">基准设定</button>
+            <button class="chip" type="button" data-w="rain" aria-pressed="false">雨夜之城</button>
+            <button class="chip" type="button" data-w="ads" aria-pressed="false">广告片 · 现代</button>
+          </div>
+          <div id="wdiff"></div>
+          <button class="wq" type="button" aria-label="世界视角说明"
+            data-toast="每个世界可以展示「角色」+「该项目是世界的」设定；切到具体世界看覆盖后的有效设定。">?</button>
+        </div>
+
+        <div class="tri3">
+          <div class="col">
+            <div class="ct">角色视觉参考 <span class="spacer"></span><span style="color:var(--tx3);font-size:var(--fz)">主视图 / 身份基准图</span></div>
+            <div class="pmain"><img id="mainImg" src="../canvas/assets/thumbs/char-01.svg" alt="角色主视图">
+              <span class="pbadge" id="pBadge">主视图</span></div>
+            <div class="vers" id="vers" role="group" aria-label="立绘版本"></div>
+            <div class="row wrap" style="margin-top:8px">
+              <button class="btn sm ghost" type="button" id="refBtn">从素材库加入</button>
+              <button class="btn sm ghost" type="button" id="gradeBtn">设为主版本</button>
+            </div>
+            <div class="mini" id="verInfo" style="margin-top:6px">当前：基准 v3 · 主视图 · 世界专属立绘 2 张</div>
+          </div>
+
+          <div class="col">
+            <div class="ct">图像提示 <span class="spacer"></span><span class="mono" id="pId" style="color:var(--tx3)"
+              title="POST /api/v1/characters/{id}/portrait/prompt-preview（preset 参数切换）">main_portrait</span></div>
+            <div class="ptabs" id="ptabs" role="group" aria-label="提示词预设"></div>
+            <div class="psub" id="psub" role="group" aria-label="九宫格类型">
+              <button class="ptab" type="button" data-ps="gridE" aria-pressed="true">表情 9 格</button>
+              <button class="ptab" type="button" data-ps="gridP" aria-pressed="false">动作 9 格</button>
+            </div>
+            <div id="pSheet"></div>
+            <div class="pnote mini" id="pNote"></div>
+            <div class="promptbox" id="pPrompt"></div>
+            <div class="mp">
+              <div class="mp-h">出图参数 <span>随提示词一起提交</span></div>
+              <div class="kv"><span class="k">性能组</span><span class="v mpsel">
+                <select class="field" aria-label="性能组模型一"><option>qwen-image-edit</option><option>qwen-image-plus</option></select>
+                <select class="field" aria-label="性能组模型二"><option>qwen-image-plus</option><option>即梦</option></select></span></div>
+              <div class="kv"><span class="k">尺寸</span><span class="v mpsel">
+                <select class="field" aria-label="生成尺寸" id="pSize"></select>
+                <label class="sw-wrap"><input class="sw" type="checkbox" switch role="switch" id="randGen" aria-label="随机生成"><span style="color:var(--tx3)">随机生成</span></label></span></div>
+              <div class="kv"><span class="k">画幅</span><span class="v" id="pRatio"></span></div>
+              <div class="kv"><span class="k">负向词</span><span class="v" id="pNeg"></span></div>
+              <div class="kv"><span class="k">seed</span><span class="v">锁脸靠 Bible，不靠固定 seed</span></div>
+            </div>
+            <div class="row wrap">
+              <button class="btn sm" type="button" id="sheetBtn">出主视图</button>
+              <button class="btn sm ghost" type="button" id="copyPrompt">复制提示词</button>
+              <button class="btn sm ghost" type="button" data-toast="AI 优化（原型不真调模型）">AI 优化</button>
+            </div>
+          </div>
+
+          <div class="col">
+            <div class="ct">角色 Bible <span class="spacer"></span><span style="color:var(--tx3);font-size:var(--fz)">来源标记</span></div>
+            <div class="bible" id="bible"></div>
+            <div class="bsum" id="bibleSum"></div>
+            <div class="shots" id="shots"></div>
+            <div class="bmeta">
+              <div class="bm-row"><span class="bm-k">字段来源</span><span class="bm-v" id="bmSource"></span></div>
+              <div class="bm-row"><span class="bm-k">一致性</span><span class="bm-v" id="bmScanState">未巡检</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <details class="panel"><summary>人物摘要 <span class="badge">外貌 / 服装 / 性格 / 背景</span></summary>
+            <div class="pb" id="summaryBox"></div></details>
+          <details class="panel"><summary>关系 <span class="badge" id="relBadge">暂无关系</span></summary>
+            <div class="pb">
+              <div class="row wrap" style="margin-bottom:8px"><button class="btn sm" type="button" id="addRel">+ 添加关系</button>
+                <span class="mini">关系类型 / 描述 / 来源 · 单向或双向</span></div>
+              <div class="graph" id="graph"></div>
+              <div class="mini" style="margin-top:7px">悬停高亮关系线，点击节点切到该角色；主角实心、配角空心、路人小点。</div>
+            </div></details>
+          <details class="panel"><summary>一致性方案（原型补充 · 来自调研）</summary>
+            <div class="pb">
+              <div class="locknote" style="margin-bottom:8px"><span class="ic">◆</span><span>
+                <b>脸按角色档案锁死</b>，不参与推荐、不进随机池。上传参考照片只为锁脸，换的是衣橱不是脸；
+                负向词写死「脸部漂移 / 衣服漂移 / 新增配饰」。</span></div>
+              <div class="cons">
+                <div class="row"><span class="lv">最强</span><span class="nm">角色 LoRA 训练</span><span class="cost">需训练集</span></div>
+                <div class="row best use"><span class="lv">中高</span><span class="nm">详细描述锚点（本项目：角色卡 Bible）</span><span class="cost">成本低</span></div>
+                <div class="row"><span class="lv">中</span><span class="nm">同种子 + 相似提示词</span><span class="cost">易漂移</span></div>
+                <div class="row"><span class="lv">辅助</span><span class="nm">图生图精修</span><span class="cost">改细节</span></div>
+                <div class="row"><span class="lv">弱</span><span class="nm">提示词里放参考图</span><span class="cost">不稳</span></div>
+              </div>
+            </div></details>
+          <details class="panel"><summary>Prompt 资产包 <span class="badge">4 项 · 均可复制</span></summary>
+            <div class="pb"><div class="pack" id="pack"></div></div></details>
+          <div class="fieldgrid">
+          <details class="panel"><summary>身份设定</summary><div class="pb" id="pbIdentity"></div></details>
+          <details class="panel"><summary>说话方式</summary><div class="pb" id="pbSpeech"></div></details>
+          <details class="panel"><summary>试读方式</summary><div class="pb" id="pbRead"></div></details>
+          <details class="panel"><summary>能力设定</summary><div class="pb" id="pbAbility"></div></details>
+          <details class="panel"><summary>角色定位</summary><div class="pb" id="pbRole"></div></details>
+          <details class="panel"><summary>背设与使用</summary><div class="pb" id="pbUse"></div></details>
+          </div>
+          <details class="panel"><summary>一致性巡检（原型补充 · 来自调研）</summary><div class="pb">
+            <button class="btn sm pri" type="button" id="scanBtn">开始巡检</button>
+            <div id="scan" class="mini" style="margin-top:8px">扫一整套图，指出哪张、哪部分漂了。</div></div></details>
+        </div>
+      </div>
+      </div>
+
+  <div id="vp-tags" role="tabpanel" aria-labelledby="vtab-tags" data-vp="tags" hidden>
+    <div class="tagsview">
+      <div class="taghead"><span class="nm">自定义标签</span>
+        <span class="mini">给角色册加自定义维度，折叠收纳</span><span class="spacer"></span>
+        <span class="mini">已有</span><span class="tag ac">场记单</span><span class="tag ac">第一幕</span>
+        <button class="btn sm" type="button" id="newTag">+ 新增</button></div>
+      <div class="tagfold">
+        <div>
+          <details class="panel"><summary>角色关系图谱 <span class="badge">5 条关系</span></summary><div class="pb">
+            <div class="graph" id="graph2"></div><div class="mini" style="margin-top:6px">与详情里的关系图同一份数据，圆形布局。</div></div></details>
+          <details class="panel"><summary>Prompt 资产包 <span class="badge">2</span></summary><div class="pb" id="tagPack"></div></details>
+          <details class="panel"><summary>身份设定</summary><div class="pb" id="tagIdentity"></div></details>
+          <details class="panel"><summary>说话方式</summary><div class="pb" id="tagSpeech"></div></details>
+          <details class="panel"><summary>试读方式</summary><div class="pb" id="tagRead"></div></details>
+        </div>
+        <div>
+          <details class="panel"><summary>能力设定</summary><div class="pb" id="tagAbility"></div></details>
+          <details class="panel"><summary>角色定位</summary><div class="pb" id="tagRole"></div></details>
+          <details class="panel"><summary>背设与使用</summary><div class="pb" id="tagUse"></div></details>
+          <details class="panel"><summary>切镜记录 <span class="badge">1</span></summary><div class="pb" id="tagCut"></div></details>
+          <details class="panel"><summary>字段来源 <span class="badge">2</span></summary><div class="pb" id="tagSource"></div></details>
+        </div>
+      </div>
+      <div class="wuwrap">
+        <div class="taghead"><span class="nm">世界使用</span>
+          <span class="mini">这个角色被哪些世界使用、各自改写了什么</span><span class="spacer"></span>
+          <button class="btn sm" type="button" id="addWorld">+ 添加世界</button></div>
+        <div id="worldUse"></div>
+        <div class="row wrap" style="margin-top:8px">
+          <button class="btn sm ghost" type="button" data-toast="从当前项目生成世界（原型占位）">从当前项目生成世界</button>
+          <button class="btn sm ghost" type="button" data-toast="打开世界项目按钮（原型占位）">打开世界项目按钮</button>
+        </div>
+      </div>
+    </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="../shared/proto-nav.js?v=202611220022"></script>
+<script src="app.js?v=202611220022"></script>
+<script src="theme-switch.js?v=202611220022"></script>
+<script>
+(function(){
+  var $ = FP.$, $$ = FP.$$, esc = FP.esc, T = '../canvas/assets/thumbs/';
+  var CH = [
+    {n:'春生', role:'主角 · 小镇青年', pos:'主角', pct:89, fav:true, thin:false, img:'char-01', status:'已定妆',
+     identity:'小镇青年 / 调查者', motivation:'查清父亲旧案', fear:'自己也是局中人', form:'克制、先观察再开口',
+     constrain:'不主动透露调查身份', speech:'低、慢、句尾收住', death:'不详', one:'把证据交出去的人', arc:'从旁观者到当事人'},
+    {n:'陈家移', role:'配角 · 警官', pos:'配角', pct:78, fav:false, thin:false, img:'char-02', status:'已定妆',
+     identity:'刑侦大队警官', motivation:'结案', fear:'错判', form:'话少，问问题不绕弯',
+     constrain:'不走私人关系', speech:'中低音、语速慢', death:'—', one:'把规则放在人情前面', arc:'从怀疑到协作'},
+    {n:'梁构', role:'配角 · 便利店老板', pos:'配角', pct:67, fav:false, thin:false, img:'char-03', status:'已定妆',
+     identity:'便利店老板', motivation:'守住这条街', fear:'店被拆', form:'热情、话多、记性好',
+     constrain:'不撒谎', speech:'语速快、尾音上扬', death:'—', one:'知道所有人秘密的人', arc:'从旁观到帮忙藏证据'},
+    {n:'阿澈', role:'龙套 · 线人', pos:'龙套', pct:44, fav:false, thin:true, img:'char-04', status:'设定中',
+     identity:'', motivation:'', fear:'', form:'', constrain:'', speech:'', death:'', one:'', arc:''},
+    {n:'龙', role:'非人角色 · 意象', pos:'龙套', pct:56, fav:true, thin:false, img:'char-05', status:'已定妆',
+     identity:'意象 / 非人角色', motivation:'—', fear:'—', form:'不说话，行为即态度',
+     constrain:'不拟人化台词', speech:'无台词（吼声做音效）', death:'—', one:'贯穿全片的意象', arc:'从远处盘旋到落地'},
+    {n:'福贵父亲', role:'配角 · 长辈', pos:'配角', pct:22, fav:false, thin:true, img:'char-06', status:'设定中',
+     identity:'', motivation:'', fear:'', form:'', constrain:'', speech:'', death:'', one:'', arc:''}
+  ];
+  var sel=0, filter='全部';
+  /* 版本 = 某条 preset + 某个世界覆盖的产物：角标要能对上中栏的提示词 tab */
+  var VERS=[
+    {n:'基准 v3',img:'char-01',p:'main',w:'基准设定'},
+    {n:'雨夜版',img:'char-02',p:'main',w:'雨夜之城'},
+    {n:'广告版',img:'char-03',p:'main',w:'广告片'},
+    {n:'三视图',img:'char-04',p:'view',w:'基准设定'}
+  ];
+  var PSHORT={main:'主视图',view:'三视图',sheet:'设定板',board:'身份板',gridE:'九宫格',gridP:'九宫格'};
+  function verLine(v){
+    var parts=[v.n];
+    if(PSHORT[v.p]!==v.n) parts.push(PSHORT[v.p]);
+    parts.push(v.w==='基准设定'?'全局设定':v.w+'覆盖');
+    return '当前：'+parts.join(' · ');
+  }
+  var WORLDS={
+    base:{diff:[]},
+    rain:{diff:[['别名','阿生'],['本世界身份','暗访记者'],['服装覆盖','加旧雨衣'],['Prompt 标签','wet-hair, neon'],['OOC 约束','不主动透露身份']]},
+    ads:{diff:[['阵营','品牌合作方'],['服装覆盖','红围巾换品牌丝巾'],['出模约束','不接受侧脸特写']]}
+  };
+  var RELS=[
+    {n:'陈家移',img:'char-02',x:.5,y:.10,edge:'solid'},
+    {n:'梁构',img:'char-03',x:.90,y:.38,edge:'solid'},
+    {n:'阿澈',img:'char-04',x:.76,y:.82,edge:'dash'},
+    {n:'福贵父亲',img:'char-06',x:.22,y:.82,edge:'solid'},
+    {n:'龙',img:'char-05',x:.10,y:.38,edge:'dash'}
+  ];
+  var PACK=[
+    {t:'出图提示词（含反向）',c:'春生，小镇青年，短发，旧雨衣，冷调霓虹，浅景深；负面：脸部漂移、衣服漂移、新增配饰'},
+    {t:'设定图提示词（16:9 身份板）',c:'左 1/4 身份区 + 右 3/4 三视图 / 姿态 / 表情 / 细节，纯白底，同一人…'},
+    {t:'音色提示词（TTS）',c:'低音，语速慢，句尾收住，克制、观察者语气…'},
+    {t:'完整角色 JSON',c:'{"name":"春生","identity":"小镇青年 / 调查者","arc":"从旁观者到当事人"}'}
+  ];
+  /* 出场镜头：真实角色才有，薄角色空着（别给没立绘的角色编「一致」状态） */
+  var SHOTS={
+    '春生':[[2,'街角灯牌 · 红围巾锚点','ok','一致'],[5,'便利店冰柜 · 正面半身','wn','脸漂'],
+           ['广','广告版主视觉 · 棚拍灰底','wn','多配饰'],[8,'巷口回望 · 远景剪影','ok','一致']],
+    '陈家移':[[3,'派出所走廊 · 侧逆光','ok','一致'],[7,'雨里追人 · 全身','ok','一致']],
+    '梁构':[[5,'便利店柜台 · 中景','ok','一致']],
+    '龙':[[1,'开场云层 · 远景','ok','一致'],[8,'巷口落地 · 剪影','ok','一致']]
+  };
+  function renderShots(c){
+    var arr=SHOTS[c.n]||[];
+    $('#shots').innerHTML='<div class="shots-h">出场镜头 <span>'+(arr.length?arr.length+' · 一致性状态':'0')+'</span></div>'
+      + (arr.length?arr.map(function(s){
+          return '<div class="shot" data-toast="打开第 '+s[0]+' 镜（原型占位）">'
+            +'<span class="n">'+esc(String(s[0]))+'</span><span class="t">'+esc(s[1])+'</span>'
+            +'<span class="s '+s[2]+'">'+esc(s[3])+'</span></div>';
+        }).join('')
+        : '<div class="shot none">还没进过镜头 · 从分镜里引入</div>');
+  }
+
+  /* ---------------- 提示词预设 ----------------
+     真项目是 backend/app/services/character/portrait_prompt.py 的 PRESET_* 那套：
+     主视图 main_portrait / 三视图 multi_view_sheet / 设定板 character_sheet_16_9 /
+     身份板 identity_board_16_9（v2 已改成摘要板）/ 表情·动作九宫格 *_grid_3x3。
+     换 preset 同时换：意图段落、负向词、画幅与尺寸、按钮文案 —— 不是同一句话改标题。 */
+  var SHEETS={
+    sh1:function(){return '<div class="sheet"><div class="sh1"><div class="box">全身 / 膝上<br>角色居中</div></div>'
+      +'<div class="cap">单人 · 姿态自然 · 纯色或柔和灰白底 · 服装与标志物清楚可辨</div></div>';},
+    sh3:function(){return '<div class="sheet"><div class="sh3"><div>正面全身</div><div>侧面全身</div><div>背面全身</div></div>'
+      +'<div class="cap">中性姿态 · 同一头身比 / 肩宽 / 服装结构 / 固有色 · 视图间留空隙 · 不裁头脚</div></div>';},
+    cs:function(){return '<div class="sheet"><div class="row" style="grid-template-columns:34% 66%">'
+      +'<div class="zone z-left"><b>左 34%</b><span>半身主立绘</span><div class="face">气质 / 核心服装</div></div>'
+      +'<div class="z-right zone"><div class="zr"><span>正面</span><span>侧面</span><span>背面</span></div>'
+      +'<div class="zr"><span>细节 ×3–5</span><span>发丝 / 衣领</span></div>'
+      +'<div class="zr"><span>吊坠 / 疤痕 / 道具</span></div></div></div>'
+      +'<div class="cap">设定板：左半身主立绘 + 右三视图 + 少量细节条；不塞大段文字，不塞九宫格表情。</div></div>';},
+    ib:function(){return '<div class="sheet"><div class="row" style="grid-template-columns:36% 64%">'
+      +'<div class="zone z-left"><b>信息区</b><span>姓名 / 身份 / 阵营</span><span>一句话人设</span>'
+      +'<span>标志性外貌特征</span><div class="face">代表道具 · 版本状态</div></div>'
+      +'<div class="zone" style="display:flex;align-items:center;justify-content:center;text-align:center">'
+      +'高质量主立绘<br>气质 / 核心服装 / 代表道具</div></div>'
+      +'<div class="ibstrip">缩略预览：三视图 · 表情 ≤3 · 关键细节 3–5（只作摘要，不精细）</div>'
+      +'<div class="cap">v2 摘要板：企划 / 编剧 / 导演快速查阅用，不是作画生产图纸。</div></div>';},
+    sh9:function(p){return '<div class="sheet"><div class="sh9">'
+      +p.cells.map(function(x){return '<div>'+x+'</div>';}).join('')+'</div>'
+      +'<div class="cap">严格 3×3 · 九格等宽等高 · 白线分隔 · 人物不跨格 · 出图后按网格切成 9 张子素材</div></div>';}
+  };
+  var PRESETS={
+    main:{id:'main_portrait',n:'主视图',ratio:'4:5 · 单人立绘',sizes:['1024×1280','896×1152'],btn:'出主视图',sheet:'sh1',
+      note:'<b>用途</b> · 角色库封面 + 后续一致性参考图，先出它。',
+      neg:'多人、脸部崩坏、五官漂移、服装不一致、发型变化、肢体畸形、复杂背景、多视角拼贴、九宫格、重复人物',
+      intent:['输出主立绘，单人、清晰脸部、全身或膝上构图，姿态自然，服装和标志物清楚可辨。',
+        '简洁纯色或柔和灰白背景，适合作为角色库封面和后续一致性参考图。']},
+    view:{id:'multi_view_sheet',n:'三视图',ratio:'16:9 · Turnaround',sizes:['1536×864','1344×768'],btn:'出三视图',sheet:'sh3',
+      note:'<b>生产基准</b> · 正 / 侧 / 背全身、中性姿态，后续所有镜头拿它对齐。',
+      neg:'多人、脸部崩坏、服装不一致、视图重叠、姿态合并、正侧背不一致、比例漂移、隐藏四肢',
+      intent:['输出标准 Turnaround 三视图角色模型表，作为生产执行基准。',
+        '包含正面、侧面、背面三个全身视图，姿态中性，清楚展示服装结构和配饰位置。',
+        '统一头身比、肩宽、躯干四肢长度、五官位置、线条粗细和固有色。',
+        '纯白背景，无氛围光影、无场景、无动态倾斜；视图之间留明确空隙，不重叠、不遮挡、不裁切头脚。']},
+    sheet:{id:'character_sheet_16_9',n:'设定板',ratio:'16:9 · Character Sheet',sizes:['1536×864'],btn:'出设定板',sheet:'cs',
+      note:'<b>设定板</b> · 左 34% 半身主立绘 + 右侧三视图与少量细节条。',
+      neg:'文字乱码、密集说明文字、角色重叠、姿态合并、跨区遮挡、三视图比例不一致',
+      intent:['输出 16:9 角色设定板 Character Sheet，左侧约 34% 放半身主立绘，右侧放正面 / 侧面 / 背面三视图与少量细节条。',
+        '右侧三视图采用中性站姿，视图之间留出清晰间隔，不重叠、不遮挡、不裁切头脚。',
+        '底部或侧边只放少量视觉细节缩略图，例如发丝、衣领、吊坠、疤痕、武器或标志配饰。',
+        '不要生成大段说明文字；文字标签由系统后续在页面或导出时叠加。']},
+    board:{id:'identity_board_16_9',n:'身份板',ratio:'16:9 · Summary Board',sizes:['1536×864'],btn:'出身份板',sheet:'ib',
+      note:'<b>v2 已改口径</b> · 摘要板：企划 / 导演快速查阅，不作为作画生产基准。',
+      neg:'文字乱码、密集说明文字、蓝图网格、商品目录排版、角色重叠、姿态合并、跨区遮挡',
+      intent:['输出 16:9 角色总览身份板 Summary Board，定位是企划 / 编剧 / 导演快速查阅，不作为作画生产基准。',
+        '画面中心或右侧放一张高质量主立绘，展示角色气质、核心服装和代表道具。',
+        '左侧或上方预留精简信息区：姓名、身份、阵营、一句话人设、标志性外貌特征、代表道具、版本状态。',
+        '三视图 / 典型表情 / 关键道具只作极小缩略预览，不要完整精细的生产图纸。']},
+    gridE:{id:'expression_grid_3x3',n:'九宫格',ratio:'1:1 · 3×3 网格',sizes:['1536×1536','1024×1024'],btn:'出九宫格',sheet:'sh9',
+      note:'<b>先锁脸再切图</b> · 不建议当第一张锁脸图；有主视图 / 三视图时以参考图优先。',
+      neg:'非九宫格、格子大小不一、人物跨格、表情重复、脸型变化、发型变化、瞳色变化、配饰变化、文字标签',
+      cells:['中性','微笑','愤怒','悲伤','震惊','害羞','疑惑','冷笑','哭泣'],
+      intent:['输出单角色表情九宫格，严格 3x3 grid，九个等宽等高格子，白色留白分隔线，整齐边距。',
+        '每格一个正面头像表情，按顺序：中性、微笑、愤怒、悲伤、震惊、害羞、疑惑、冷笑、哭泣。',
+        '九个格子必须是同一角色，不重新设计人物，不改变年龄、气质、脸型或任何标志性特征。',
+        '严格保持一致：五官比例、眼型、瞳色、眉形、鼻梁、唇厚、下巴、发际线、发型、肤色、配饰与服装领口。']},
+    gridP:{id:'pose_grid_3x3',n:'九宫格',ratio:'1:1 · 3×3 网格',sizes:['1536×1536','1024×1024'],btn:'出九宫格',sheet:'sh9',
+      note:'<b>动作素材</b> · 身份稳定后再做；以站姿为主，避开复杂道具。',
+      neg:'非九宫格、格子大小不一、人物跨格、动作重复、服装变化、身体比例变化、姿态重叠、动作融合、肢体缺失',
+      cells:['自然站立','双手插兜','双臂交叉','整理领带','单手示意','双手背后','微微侧身','回头站姿','近景动作'],
+      intent:['输出单角色动作姿态九宫格，严格 3x3 grid，九个等宽等高格子，白色留白分隔线。',
+        '每格一个完整身体动作，按顺序：自然站立、双手插兜、双臂交叉、整理领带、单手示意、双手背后、微微侧身、回头站姿、近景动作。',
+        '以站姿或轻微身体变化为主，不要坐下 / 蹲下 / 奔跑 / 打斗，也不要加复杂道具。',
+        '同一张脸、同一服装结构、同一身体比例；人物不跨格，四肢完整，不裁头脚。']}
+  };
+  /* Tab 是「组」：九宫格组里再分表情 / 动作两个真 preset */
+  var PTABS=[['main','主视图'],['view','三视图'],['sheet','设定板'],['board','身份板'],['grid','九宫格']];
+  var curP='main', curSub='gridE';
+
+  function commonPrompt(c){
+    return [
+      '单人角色：'+c.n,
+      c.identity?'身份简述：'+c.identity:'',
+      '外貌/脸部识别点：'+(c.thin?'待补':(c.n==='福贵父亲'?'老年男性，鬓角花白，脸上有旧疤':'冷白皮，齐耳短发，眉眼清淡，左耳小银环')),
+      '发型：'+(c.thin?'待补':'齐耳短发，发尾微内扣'),
+      '服装：'+(c.thin?'待补':'旧雨衣 + 红围巾'),
+      '配饰：'+(c.thin?'待补':'左耳小银环'),
+      '标志物：'+(c.thin?'待补':'红围巾'),
+      '一致性规则：同一张脸、同一发型、同一服装结构、同一身体比例',
+      '画风：高质量角色设定图，干净线条，专业角色设计',
+      '语言要求：中文开头、主体中文；只允许末尾保留少量英文模型关键词。',
+      '必须保持同一个角色身份、同一张脸、同一服装结构、同一身体比例。'
+    ].filter(Boolean);
+  }
+  /* 从版本角标反切中栏提示词：点是九宫格那条就切到九宫格组 */
+  function applyPreset(k){
+    if(k==='gridE'||k==='gridP'){curP='grid';curSub=k;}else{curP=k;}
+    renderPrompt();
+  }
+  function renderPrompt(){
+    var k=(curP==='grid'?curSub:curP), p=PRESETS[k], c=CH[sel];    $('#pId').textContent=p.id;
+    $('#pRatio').textContent=p.ratio;
+    $('#pNeg').textContent=p.neg;
+    $('#pSize').innerHTML=p.sizes.map(function(s){return '<option>'+s+'</option>';}).join('');
+    $('#sheetBtn').textContent=p.btn;
+    $('#pNote').innerHTML=p.note;
+    $('#pSheet').innerHTML=SHEETS[p.sheet](p);
+    $('#pPrompt').textContent=[].concat(p.intent,commonPrompt(c)).join('\n');
+    $$('#ptabs .ptab').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.p===curP?'true':'false');});
+    $('#psub').classList.toggle('on',curP==='grid');
+    $$('#psub .ptab').forEach(function(b){b.setAttribute('aria-pressed',b.dataset.ps===curSub?'true':'false');});
+  }
+  $('#ptabs').innerHTML=PTABS.map(function(t){
+    return '<button class="ptab" type="button" data-p="'+t[0]+'" aria-pressed="false">'+t[1]+'</button>';
+  }).join('');
+
+  var vt=$$('.vtab2'), vp=$$('[data-vp]');
+  function selectView(tab,focus){
+    vt.forEach(function(t){var on=t===tab;t.setAttribute('aria-selected',on?'true':'false');t.tabIndex=on?0:-1;});
+    vp.forEach(function(x){x.hidden=x.dataset.vp!==tab.dataset.v;});
+    if(focus)tab.focus();
+  }
+  $$('.views2').forEach(function(box){
+    box.addEventListener('click',function(e){var t=e.target.closest('.vtab2');if(t)selectView(t,false);});
+    box.addEventListener('keydown',function(e){
+      var i=vt.indexOf(document.activeElement);if(i<0)return;var n=-1;
+      if(e.key==='ArrowRight')n=(i+1)%vt.length;else if(e.key==='ArrowLeft')n=(i-1+vt.length)%vt.length;
+      if(n<0)return;e.preventDefault();selectView(vt[n],true);
+    });
+  });
+
+  function renderRoster(){
+    var kw=($('#cSearch').value||'').trim().toLowerCase();
+    var pos=$('#fPos').value, flow=$('#fFlow').value, src=$('#fSrc').value, ex=$('#fExtra').value;
+    var arr=CH.filter(function(c){
+      var ok=filter==='全部'||(filter==='收藏'&&c.fav)||(filter==='无立绘'&&c.thin)||(filter==='已定妆'&&c.status==='已定妆');
+      if(!ok)return false;
+      if(pos!=='全部定位'&&c.pos!==pos)return false;
+      if(flow!=='全部流程'&&c.status!==flow)return false;
+      if(src==='小说提取'&&c.pos==='龙套')return false;
+      if(ex==='无立绘'&&!c.thin)return false;
+      if(ex==='有立绘'&&c.thin)return false;
+      return !kw||(c.n+c.role).toLowerCase().indexOf(kw)>=0;
+    });
+    $('#roster').innerHTML=arr.length?arr.map(function(c){
+      var i=CH.indexOf(c),miss=9-Math.round(c.pct/100*9);
+      return '<div class="crow'+(i===sel?' on':'')+(c.thin?' thin':'')+'" data-c="'+i+'" tabindex="0">'
+        +'<img class="av" src="'+T+c.img+'.svg" alt="">'
+        +'<div class="info"><div class="nm">'+esc(c.n)+'<span class="star">'+(c.fav?'★':'☆')+'</span></div>'
+        +'<div class="role">'+esc(c.role)+' · 完善度 '+c.pct+'%</div>'
+        +'<div class="bar"><i style="width:'+c.pct+'%"></i></div>'
+        +'<div class="meta"><span class="tag mini2">'+esc(c.pos)+'</span>'
+        +(c.thin?'<span class="tag mini2">无立绘</span>':'<span class="tag mini2 ok">已定妆</span>')
+        +'<span class="tag mini2">缺 '+miss+' 项</span></div>'
+        +(c.thin?'<div class="want">'+esc(c.want)+'</div>':'')
+        +'</div></div>';
+    }).join(''):'<div class="empty">没有匹配的角色</div>';
+  }
+  function renderDetail(){
+    var c=CH[sel];
+    $('#dName').textContent=c.n;
+    $('#dPos').textContent=c.role;
+    $('#mainImg').src=T+c.img+'.svg';
+    $('#pBadge').textContent=PSHORT[VERS[0].p];
+    $('#verInfo').textContent=verLine(VERS[0]);
+    $('#vers').innerHTML=VERS.map(function(v,i){
+      return '<button type="button" data-v="'+i+'" aria-pressed="'+(i===0?'true':'false')+'"'
+        +' aria-label="'+esc(v.n)+'（'+PSHORT[v.p]+'）'+'">'
+        +'<img src="'+T+v.img+'.svg" alt=""><span class="pb">'+PSHORT[v.p]+'</span>'
+        +'<div class="lb">'+esc(v.n)+'</div></button>';
+    }).join('');
+    var rows=[['身份',c.identity,2],['核心欲望',c.motivation,1],['深层恐惧',c.fear,1],
+      ['形成方式',c.form,2],['行为约束',c.constrain,2],['说话方式',c.speech,1],
+      ['死型',c.death,0],['一句话',c.one,1]];
+    /* 空值一律算「未设置」——字段名义来源是原文/AI，但角色没填就不能挂「原文」徽标 */
+    var isEmpty=function(r){ return !r[1] || r[1]==='—'; };
+    function srcTag(r){
+      if(isEmpty(r)||r[2]===0) return '<span class="tag src">未设置</span>';
+      return r[2]===2?'<span class="tag src set">原文</span>':'<span class="tag src ai">AI 推断</span>';
+    }
+    $('#bible').innerHTML=rows.map(function(r){
+      return '<div class="kv"><span class="k">'+r[0]+'</span><span class="v">'+(esc(r[1])||'—')+srcTag(r)+'</span></div>';
+    }).join('');
+    /* 档案完整度：与角色列表「缺 N 项」同源 —— 8 个字段里空值数 = 缺口，基线 9 项（含未展示的第 9 项） */
+    var filled = rows.filter(function(r){ return !isEmpty(r); }).length;
+    var srcSet = rows.filter(function(r){ return !isEmpty(r) && r[2]===2; }).length;
+    var srcAi  = rows.filter(function(r){ return !isEmpty(r) && r[2]===1; }).length;
+    var srcNone= rows.filter(function(r){ return isEmpty(r) || r[2]===0; }).length;
+    var pct = Math.min(100, Math.round(filled/9*100));
+    var miss = rows.filter(function(r){ return isEmpty(r) || r[2]===0; }).map(function(r){ return r[0]; });
+    $('#bibleSum').innerHTML =
+      '<div class="bs-h"><span>档案完整度</span><b>'+filled+'/9 · '+pct+'%</b></div>'
+      + '<div class="bs-bar"><i style="width:'+pct+'%"></i></div>'
+      + '<div class="bs-legend"><span><i class="set"></i>原文 '+srcSet+'</span>'
+      + '<span><i class="ai"></i>AI 推断 '+srcAi+'</span>'
+      + '<span><i class="none"></i>待确认 '+srcNone+'</span></div>'
+      + (miss.length
+          ? '<div class="bs-tip"><span>待补：'+esc(miss.slice(0,3).join('、'))+(miss.length>3?' 等 '+miss.length+' 项':'')+'</span>'
+            + '<button class="btn sm ghost" type="button" data-toast="AI 补全缺失字段（原型不真调）">AI 补全</button></div>'
+          : '<div class="bs-tip"><span>字段已齐全，可直接出图</span></div>');
+    $('#summaryBox').innerHTML=[['外貌',c.thin?'—':'冷白皮，齐耳短发，眉眼清淡，左耳小银环'],['服装',c.thin?'—':'旧雨衣 + 红围巾（世界可覆盖）'],
+      ['性格',c.form||'—'],['背景',c.thin?'—':'调查一桩旧案回到雨夜之城，住在便利店楼上']].map(function(r){
+      return '<div class="kv"><span class="k">'+r[0]+'</span><span class="v">'+esc(r[1])+'</span></div>';
+    }).join('');
+    renderShots(c);
+    renderPrompt();
+    var other=[['身份设定',c.identity],['说话方式',c.speech],['试读方式','按第 2、5、8 镜试读，检查语气与信息量'],
+      ['能力设定','观察、记录、推理；不格斗'],['角色定位',c.role],['背设与使用',c.one],
+      ['切镜记录','第 2 镜 · 街角灯牌（红围巾锚点）'],['字段来源','appearance=原文；motivation=ai_inferred']];
+    ['#pbIdentity','#pbSpeech','#pbRead','#pbAbility','#pbRole','#pbUse'].forEach(function(id,i){
+      $(id).innerHTML='<div class="kv"><span class="k">'+other[i][0]+'</span><span class="v">'+esc(other[i][1]||'—')+'</span></div>';
+    });
+    /* 字段来源留在右栏页脚；最近切镜已由「出场镜头」列表承担，不再重复 */
+    $('#bmSource').textContent = other[7][1];
+    var tids=['#tagIdentity','#tagSpeech','#tagRead','#tagAbility','#tagRole','#tagUse','#tagCut','#tagSource'];
+    tids.forEach(function(id,i){
+      $(id).innerHTML='<div class="kv"><span class="k">'+other[i][0]+'</span><span class="v">'+esc(other[i][1]||'—')+'</span></div>';
+    });
+    $('#relBadge').textContent=RELS.length+' 条关系';
+    renderGraph('#graph'); renderGraph('#graph2');
+  }
+  function renderWorld(){
+    var w=WORLDS[$('#worlds .chip.on').dataset.w]||WORLDS.base;
+    $('#wdiff').innerHTML=w.diff.map(function(r){
+      return '<span class="tag wn">'+esc(r[0])+'：'+esc(r[1])+'</span>';
+    }).join('');
+  }
+  function renderGraph(target){
+    var W=680,H=210,self={x:.5,y:.52};
+    var edges=RELS.map(function(r){return '<line class="edge" data-to="'+esc(r.n)+'" x1="'+(self.x*W)+'" y1="'+(self.y*H)
+      +'" x2="'+(r.x*W)+'" y2="'+(r.y*H)+'"'+(r.edge==='dash'?' stroke-dasharray="4 4"':'')+'/>';}).join('');
+    var nodes='<g class="node self" data-n="本人"><circle cx="'+(self.x*W)+'" cy="'+(self.y*H)+'" r="20"/>'
+      +'<text x="'+(self.x*W)+'" y="'+(self.y*H+4)+'" text-anchor="middle">本人</text></g>'
+      +RELS.map(function(r){return '<g class="node" data-n="'+esc(r.n)+'"><circle cx="'+(r.x*W)+'" cy="'+(r.y*H)+'" r="16"/>'
+        +'<text x="'+(r.x*W)+'" y="'+(r.y*H+4)+'" text-anchor="middle">'+esc(r.n)+'</text></g>';}).join('');
+    $(target).innerHTML='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" role="img" aria-label="角色关系图谱">'+edges+nodes+'</svg>';
+  }
+  function renderWorldUse(){
+    var items=[{t:'一、现代（全书）',d:'春生：小镇青年。1985 年，显式叙事立场；档案严格遵循设定，字段由原文与 AI 推断混合。',tag:'基准世界'},
+      {t:'雨夜之城',d:'角色在《雨夜之城》中作为暗访记者出现，加旧雨衣、湿发冷光，不主动透露身份。',tag:'局部覆盖'},
+      {t:'广告片 · 现代',d:'红围巾换成品牌丝巾，不接受侧脸特写，背景改棚拍灰底。',tag:'视觉覆盖'}];
+    $('#worldUse').innerHTML=items.map(function(x,i){
+      return '<div class="worldcard2"><div class="wt">'+esc(x.t)+'</div>'
+        +'<div class="wd">'+esc(x.d)+'</div><div class="row wrap" style="margin-top:6px"><span class="tag mini2">'+esc(x.tag)+'</span></div>'
+        +'<div class="ops"><button class="btn sm ghost" type="button" data-wedit="'+i+'">编辑</button>'
+        +'<button class="btn sm ghost" type="button" data-wdel="'+i+'">删除</button>'
+        +'<button class="btn sm" type="button" data-wopen="'+i+'">打开世界项目按钮</button></div></div>';
+    }).join('');
+  }
+  function renderPack(){
+    $('#pack').innerHTML=PACK.map(function(p,i){
+      return '<div class="p"><div class="t">'+esc(p.t)+'<button class="btn sm ghost" type="button" data-pack="'+i+'">复制</button></div>'
+        +'<div class="code">'+esc(p.c)+'</div></div>';
+    }).join('');
+    $('#tagPack').innerHTML='<div class="mini">设定图提示词 · 完整角色 JSON（详情里共 4 项，均可复制）</div>';
+  }
+
+  document.addEventListener('click',function(e){
+    var pt=e.target.closest('#ptabs .ptab');
+    if(pt){curP=pt.dataset.p;renderPrompt();return;}
+    var ps=e.target.closest('#psub .ptab');
+    if(ps){curSub=ps.dataset.ps;renderPrompt();return;}
+    var c=e.target.closest('[data-c]');
+    if(c){sel=+c.dataset.c;renderRoster();renderDetail();return;}
+    var f=e.target.closest('[data-f]');
+    if(f){filter=f.dataset.f;$$('[data-f]').forEach(function(x){var on=x===f;x.classList.toggle('on',on);x.setAttribute('aria-pressed',on?'true':'false');});renderRoster();return;}
+    /* 注意：视图 Tab 也带 data-v（tags/detail），必须限定在 #vers 内，否则 +dataset.v 会拿到 NaN */
+    var v=e.target.closest('#vers [data-v]');
+    if(v){$$('#vers [data-v]').forEach(function(x){x.setAttribute('aria-pressed',x===v?'true':'false');});
+      var vv=VERS[+v.dataset.v];
+      $('#mainImg').src=T+vv.img+'.svg';
+      $('#pBadge').textContent=PSHORT[vv.p];
+      $('#verInfo').textContent=verLine(vv);
+      applyPreset(vv.p);   /* 点到哪张图，中栏就切到出这张图的那条提示词 */
+      return;}
+    var w=e.target.closest('[data-w]');
+    if(w){$$('[data-w]').forEach(function(x){var on=x===w;x.classList.toggle('on',on);x.setAttribute('aria-pressed',on?'true':'false');});renderWorld();return;}
+    var pk=e.target.closest('[data-pack]');
+    if(pk){var x=PACK[+pk.dataset.pack];if(navigator.clipboard)navigator.clipboard.writeText(x.c).catch(function(){});FP.toast('已复制「'+x.t+'」');return;}
+    var gn=e.target.closest('.node[data-n]');
+    if(gn&&gn.dataset.n!=='本人'){
+      var i=CH.map(function(x){return x.n;}).indexOf(gn.dataset.n);
+      if(i>=0){sel=i;renderRoster();renderDetail();FP.toast('已切到 '+CH[i].n);}return;}
+    var tt=e.target.closest('[data-toast]');if(tt){FP.toast(tt.dataset.toast);return;}
+    var we=e.target.closest('[data-wedit]');if(we){FP.toast('编辑世界（原型占位）');return;}
+    var wd=e.target.closest('[data-wdel]');if(wd){FP.toast('删除世界（原型不落库）');return;}
+    var wo=e.target.closest('[data-wopen]');if(wo){FP.toast('打开世界项目按钮（原型占位）');return;}
+  });
+  document.addEventListener('mouseover',function(e){
+    var n=e.target.closest('.node[data-n]');if(!n)return;
+    $$('.graph .edge').forEach(function(x){x.classList.toggle('hi',x.dataset.to===n.dataset.n);});
+    $$('.graph .node').forEach(function(x){x.classList.toggle('hot',x.dataset.n===n.dataset.n);});
+  });
+  document.addEventListener('mouseout',function(e){
+    if(e.target.closest&&e.target.closest('.node')){
+      $$('.graph .edge').forEach(function(x){x.classList.remove('hi');});
+      $$('.graph .node').forEach(function(x){x.classList.remove('hot');});}
+  });
+  ['#cSearch','#fPos','#fFlow','#fSrc','#fExtra'].forEach(function(id){
+    $(id).addEventListener(id==='#cSearch'?'input':'change',renderRoster);
+  });
+  $('#moreBtn').addEventListener('click',function(){
+    FP.openDialog('<dialog class="modal" closedby="any" aria-labelledby="cmTitle"><div class="mh"><span class="t" id="cmTitle">更多操作 · '+esc(CH[sel].n)+'</span>'
+      +'<button class="x" type="button" data-close-ov aria-label="关闭">✕</button></div><div class="mb">'
+      +['以此角色新建项目','进入创作项目','关系图谱','冻结 / 解冻外观设定','升级到资产中枢','删除角色（软删）']
+        .map(function(x){return '<div class="kv"><span class="v">'+x+'</span></div>';}).join('')
+      +'</div><div class="mf"><button class="btn" type="button" data-close-ov>关闭</button></div></dialog>');
+  });
+  $('#editBtn').addEventListener('click',function(){FP.toast('编辑角色（原型不落库）');});
+  $('#aiBtn').addEventListener('click',function(){FP.toast('AI 补全缺失字段（原型不真调）');});
+  $('#refBtn').addEventListener('click',function(){FP.toast('从素材库加入参考（原型跳页占位）');});
+  $('#gradeBtn').addEventListener('click',function(){FP.toast('已设为主版本（原型不落库）');});
+  $('#sheetBtn').addEventListener('click',function(){
+    var p=PRESETS[curP==='grid'?curSub:curP];
+    FP.toast('按 '+p.id+' 出图 · '+p.ratio+'（原型不生成）');
+  });
+  $('#copyPrompt').addEventListener('click',function(){
+    var t=$('#pPrompt').textContent;
+    if(navigator.clipboard)navigator.clipboard.writeText(t).catch(function(){});
+    FP.toast('已复制 '+(curP==='grid'?curSub:curP)+' 的提示词（原型本地）');
+  });
+  $('#addRel').addEventListener('click',function(){FP.toast('新增关系（原型不落库）');});
+  $('#newTag').addEventListener('click',function(){FP.toast('新增自定义标签（原型不落库）');});
+  $('#addWorld').addEventListener('click',function(){FP.toast('添加世界（原型不落库）');});
+  $('#scanBtn').addEventListener('click',function(){
+    $('#scan').innerHTML='<div style="color:var(--tx);line-height:1.9"><div>· <b>第 2 镜 · 街角灯牌</b>：红围巾变绿，第 3 行右侧。</div>'
+      +'<div>· <b>第 5 镜 · 便利店冰柜</b>：脸部骨相轻微漂移，与身份基准图 v3 不一致。</div>'
+      +'<div>· <b>广告版主视觉</b>：新增角色档案里没有的银色胸针。</div></div>'
+      +'<div class="mini" style="margin-top:6px">调研补充功能：扫整套图并定位到具体图的具体部分。</div>';
+    FP.toast('巡检完成 · 3 处不一致');
+    $('#bmScanState').textContent = '3 处漂移 · 第 2/5 镜 + 广告版';
+  });
+
+  renderRoster();renderDetail();renderWorld();renderWorldUse();renderPack();
+})();
+</script>
+</body>
+</html>

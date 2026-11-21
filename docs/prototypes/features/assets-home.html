@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<meta name="color-scheme" content="dark">
+<title>素材工作台 · YLCraft 原型</title>
+<link rel="stylesheet" href="../shared/theme.css?v=202611220022">
+<link rel="stylesheet" href="app.css?v=202611220022">
+<style>
+/* ===== 顶部三张大卡 ===== */
+.top3{display:grid;grid-template-columns:1.45fr 1fr 1fr;gap:12px;margin-bottom:12px}
+.greet{position:relative;overflow:hidden;min-height:190px;
+  background:var(--greet)}
+.greet .arc{position:absolute;right:-60px;bottom:-120px;width:320px;height:320px;
+  border-radius:50%;border:1px solid var(--ln2);pointer-events:none}
+.greet .arc:before{content:"";position:absolute;inset:28px;border-radius:50%;
+  border:1px solid var(--ln)}
+.greet .inner{position:relative;padding:18px 20px;height:100%;display:flex;flex-direction:column}
+.g-date{font-size:var(--fz);color:var(--tx2)}
+.g-lunar{font-size:var(--fz);color:var(--tx3);margin-top:2px}
+.g-clock{font-family:var(--fm),monospace;font-size:38px;font-weight:650;
+  letter-spacing:.01em;margin-top:14px;line-height:1.1;color:var(--tx)}
+.g-hello{font-size:14px;font-weight:600;margin-top:10px}
+.g-desc{font-size:var(--fz);color:var(--tx3);margin-top:3px}
+.g-chips{display:flex;gap:6px;margin-top:auto;padding-top:12px;flex-wrap:wrap}
+.g-chips a{font-size:var(--fz);color:var(--tx2);background:var(--shade);
+  border:1px solid var(--ln);border-radius:999px;padding:2px 10px}
+.g-chips a:hover{border-color:var(--ac);color:var(--ac)}
+/* 甜甜圈 */
+.donut{width:96px;height:96px;border-radius:50%;flex:0 0 auto;
+  background:conic-gradient(var(--ac) 0 79.7%, #a78bfa 79.7% 83.1%,
+    var(--wn) 83.1% 99.7%, var(--er) 99.7% 99.9%, var(--s4) 99.9% 100%);
+  display:flex;align-items:center;justify-content:center;position:relative}
+.donut:after{content:"";position:absolute;inset:13px;border-radius:50%;background:var(--s2)}
+.donut .n{position:relative;z-index:1;font-size:20px;font-weight:700;font-family:var(--fm),monospace;color:var(--tx)}
+.statbody{display:flex;align-items:center;gap:15px;padding:14px 16px}
+.legend{flex:1;min-width:0}
+.lg{display:flex;align-items:center;gap:7px;font-size:var(--fz);padding:2px 0;color:var(--tx2)}
+.lg i{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
+.lg .v{margin-left:auto;font-family:var(--fm),monospace;color:var(--tx)}
+.lg .p{color:var(--tx3);width:42px;text-align:right;font-family:var(--fm),monospace}
+/* 最近 7 天导入趋势（替换日历：单位是「库的导入活跃度」，不是「今天几号」） */
+.trend{padding:13px 14px}
+.tr-h{display:flex;align-items:baseline;gap:8px;margin-bottom:4px}
+.tr-h .big{font-size:25px;font-weight:700;font-family:var(--fm),monospace;color:var(--ac)}
+.tr-h .unit{font-size:var(--fz);color:var(--tx3)}
+.tr-h .spacer{flex:1}
+.tr-h .cmp{font-size:var(--fz);color:var(--tx3)}
+.tr-bars{display:flex;align-items:flex-end;gap:5px;height:74px;margin-top:11px;
+  padding-bottom:16px;position:relative}
+.tr-bar{flex:1;min-width:0;position:relative;height:100%;display:flex;align-items:flex-end;
+  border:0;background:none;padding:0;cursor:pointer}
+.tr-bar .fill{width:100%;background:var(--s4);border-radius:4px 4px 0 0;
+  transition:background .16s,height .3s;min-height:4px}
+.tr-bar:hover .fill{background:var(--acbg);border:1px solid var(--ac)}
+.tr-bar.hot .fill{background:var(--ac)}
+.tr-bar .lb{position:absolute;bottom:-15px;left:0;right:0;text-align:center;
+  font-size:var(--fz);color:var(--tx3);white-space:nowrap}
+.tr-bar.hot .lb{color:var(--ac);font-weight:600}
+.tr-bar .cnt{position:absolute;top:-15px;left:0;right:0;text-align:center;
+  font-size:var(--fz);color:var(--tx3);font-family:var(--fm),monospace;opacity:0}
+.tr-bar:hover .cnt,.tr-bar.hot .cnt{opacity:1}
+.tr-f{font-size:var(--fz);color:var(--tx3);border-top:1px solid var(--ln);
+  padding-top:8px;line-height:1.6}
+/* ===== 第二排三张小卡 ===== */
+.mid3{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px;margin-bottom:12px}
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:13px 14px}
+.act{display:flex;flex-direction:column;align-items:flex-start;gap:2px;cursor:pointer;
+  border:1px solid var(--ln2);border-radius:var(--r2);padding:8px 9px;
+  background:var(--s2);text-align:left}
+.act:hover{border-color:var(--ac);background:var(--acbg)}
+.act .t{font-size:var(--fz);color:var(--tx);font-weight:600}
+.act .d{font-size:var(--fz);color:var(--tx3)}
+.act.hot .t{color:var(--ac)}
+.tidy{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:15px 14px;text-align:center}
+.tidy .n{font-size:25px;font-weight:700;font-family:var(--fm),monospace;color:var(--wn)}
+.tidy .l{font-size:var(--fz);color:var(--tx3);margin-top:4px;line-height:1.5}
+.recent{display:flex;gap:8px;padding:13px 14px;overflow-x:auto}
+.rec{width:62px;flex:0 0 auto;cursor:pointer}
+.rec .art{width:62px;height:52px;border-radius:6px;display:flex;align-items:center;
+  justify-content:center;font-size:19px;background:var(--s3);border:1px solid var(--ln)}
+.rec .t{font-size:var(--fz);color:var(--tx3);margin-top:5px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.rec:hover .t{color:var(--ac)}
+/* ===== 底部素材列表区 ===== */
+.assets-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:16px 0 11px}
+.assets-head h2{font-size:14px;font-weight:650}
+.assets-head .s{font-size:var(--fz);color:var(--tx3)}
+.tools{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:11px}
+.tools .field{width:270px}
+.recent-tbl{width:100%;border-collapse:collapse;font-size:var(--fz)}
+.recent-tbl th{text-align:left;color:var(--tx3);font-weight:500;padding:9px 12px;
+  border-bottom:1px solid var(--ln2);white-space:nowrap}
+.recent-tbl td{padding:9px 12px;border-bottom:1px solid var(--ln);color:var(--tx2)}
+.recent-tbl tr:last-child td{border-bottom:0}
+.recent-tbl tbody tr:hover{background:var(--s2)}
+.recent-tbl .acts{text-align:right}
+.recent-tbl .thumb{width:46px;height:30px;object-fit:cover;border-radius:4px;vertical-align:middle;margin-right:9px}
+@media (max-width:1180px){.top3,.mid3{grid-template-columns:1fr 1fr}.greet{grid-column:1/-1}}
+@media (max-width:720px){.top3,.mid3{grid-template-columns:1fr}.acts{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html"><i>◈</i> 原项目功能</a>
+  <span class="crumb">素材工作台 <span class="mono">/assets/home</span></span>
+  <span class="spacer"></span>
+  <span class="hintbar">整个素材库的状态 · 点卡片下钻</span>
+</header>
+
+<main class="page wide">
+  <div class="phead">
+    <div>
+      <h1>本地素材工作台</h1>
+      <div class="sub">让每一份灵感，都有自己的位置。</div>
+    </div>
+    <div class="right">
+      <span class="tag ok"><span class="dot ok"></span>素材库已连接</span>
+      <a class="btn ghost" href="assets.html">进入素材库 →</a>
+    </div>
+  </div>
+
+  <!-- 顶部三张大卡 -->
+  <div class="top3">
+    <section class="card greet">
+      <div class="arc"></div>
+      <div class="inner">
+        <div class="g-date" id="gDate">11月20日 星期五</div>
+        <div class="g-lunar" id="gLunar">农历十月初一 · 阴转晴 11°C</div>
+        <div class="g-clock" id="gClock">16:27:20</div>
+        <div class="g-hello" id="gHello">下午好，创作顺利</div>
+        <div class="g-desc">已收录 651 份素材，随时开启下一份灵感。</div>
+        <div class="g-chips">
+          <a href="assets.html?type=图片" data-go="图片">图片 520</a>
+          <a href="assets.html?type=视频" data-go="视频">视频 22</a>
+          <a href="assets.html?type=音频" data-go="音频">音频 108</a>
+          <a href="assets.html?type=字体" data-go="字体">字体 0</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-h"><span class="t">素材分类统计</span><span class="right"><span class="s">共 651 份</span></span></div>
+      <div class="statbody">
+        <div class="donut" role="img" aria-label="分类占比：图片 79.7%，音频 16.6%，视频 3.4%，剪辑工程 0.2%，字体 0%"><span class="n">651</span></div>
+        <div class="legend" id="legend"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-h"><span class="t">最近 7 天导入</span><span class="right"><span class="s">点某天看当天素材</span></span></div>
+      <div class="trend">
+        <div class="tr-h"><span class="big" id="trTotal">57</span><span class="unit">份 / 7 天</span>
+          <span class="spacer"></span><span class="cmp">比上周 +18%</span></div>
+        <div class="tr-bars" id="trBars"></div>
+        <div class="tr-f">柱子越高，那天导入越多。<b style="color:var(--tx2)">点任意一天</b> → 素材库只看那天导入的。</div>
+      </div>
+    </section>
+  </div>
+
+  <!-- 第二排三张小卡 -->
+  <div class="mid3">
+    <section class="card">
+      <div class="card-h"><span class="t">常用动作</span><span class="right"><span class="s">最高频的四件事</span></span></div>
+      <div class="acts" id="acts"></div>
+    </section>
+    <section class="card">
+      <div class="card-h"><span class="t">整理概览</span><span class="right"><span class="s">待处理</span></span></div>
+      <div class="tidy">
+        <div><div class="n">531</div><div class="l">未分类</div></div>
+        <div><div class="n">651</div><div class="l">未标记关键字</div></div>
+        <div><div class="n">0</div><div class="l">重复文件</div></div>
+      </div>
+      <div style="padding:0 14px 13px;font-size:var(--fz);color:var(--tx3);line-height:1.7">
+        <a href="assets.html" style="color:var(--ac)">去补标签 →</a> · 补完才能在画布里按场景找到它。
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-h"><span class="t">最近导入</span><span class="right"><span class="s">5 项</span></span></div>
+      <div class="recent" id="recent"></div>
+    </section>
+  </div>
+
+  <!-- 底部列表 -->
+  <div class="assets-head">
+    <h2>我的素材</h2><span class="s">651 份素材，都在这里</span>
+    <span class="spacer"></span>
+    <span class="tag">按最近添加</span>
+  </div>
+  <div class="tools">
+    <label class="sr-only" for="homeSearch">搜索素材</label>
+    <input class="field" type="search" id="homeSearch" placeholder="搜索名称 / 标签 / 备注..." autocomplete="off">
+    <button class="btn sm" type="button" id="gridBtn">查看全部 →</button>
+    <button class="btn sm ghost" type="button" id="refreshBtn">刷新</button>
+    <span class="spacer"></span>
+    <button class="btn sm ghost" type="button" data-toast="关联文件夹（原型不真扫描磁盘）">关联文件夹</button>
+    <button class="btn sm ghost" type="button" data-toast="更多导入（原型不真读本地文件）">更多导入</button>
+    <button class="btn sm pri" type="button" data-toast="添加文件（原型不开系统文件框）">添加文件</button>
+  </div>
+
+  <div class="card scroll" role="region" tabindex="0" aria-labelledby="recCap" style="overflow-x:auto">
+    <table class="recent-tbl" style="min-width:720px">
+      <caption id="recCap" class="sr-only">最近添加的素材</caption>
+      <thead><tr><th scope="col">素材</th><th scope="col">类型</th><th scope="col">来源</th>
+        <th scope="col">添加时间</th><th scope="col">大小</th><th scope="col" class="acts">操作</th></tr></thead>
+      <tbody id="recRows"></tbody>
+    </table>
+  </div>
+
+  <div class="note" style="margin-top:16px"><span>ⓘ</span><div>
+    <b>原型口径</b>：这是素材库的<b>工作台首页</b>，单位是「整个素材库的状态」；点分类、导入趋势的某天
+    或「进入素材库」，才到单位是「一份素材」的管理页（筛选 / 详情 / 血缘）。数据全是本地示例，时钟会走但不联网；
+    添加文件、从画布送入、去采集都只演示入口，不会真的打开本机应用或读磁盘。
+  </div></div>
+  <div class="protofoot">
+    信息结构参考一张第三方素材管理截图，但按素材库的真实用途做了取舍：<b>删掉了节日日历</b>（跟素材无关），
+    换成「最近 7 天导入趋势」（点某天真能筛）；<b>删掉了 WPS / 微信等外部应用启动</b>，换成四件跟素材有关的常用动作。
+    主题三套（深海 / 月光 / 晨曦）由顶栏开关切换，记在本机；画布页不跟着切（它用大量白色半透明文字，亮底会看不见）。
+    对应真实功能：<code>/assets</code> 与 <code>/asset-hub/nodes</code>。
+  </div>
+</main>
+
+<script src="../shared/proto-nav.js?v=202611220022"></script>
+<script src="app.js?v=202611220022"></script>
+<script src="theme-switch.js?v=202611220022"></script>
+<script>
+(function(){
+  var $ = FP.$, $$ = FP.$$, esc = FP.esc;
+  var STAT = [
+    {n:'图片', c:'#22d3ee', v:520, p:'79.7%'},
+    {n:'视频', c:'#a78bfa', v:22,  p:'3.4%'},
+    {n:'音频', c:'#fbbf24', v:108, p:'16.6%'},
+    {n:'字体', c:'#71717a', v:0,   p:'0.0%'},
+    {n:'剪辑工程', c:'#f87171', v:1, p:'0.2%'}
+  ];
+  var TREND = [
+    {d:'11-14', n:6}, {d:'11-15', n:4}, {d:'11-16', n:9},
+    {d:'11-17', n:5}, {d:'11-18', n:12}, {d:'11-19', n:11}, {d:'11-20', n:10}
+  ];
+  var ACTS = [
+    {t:'添加文件', d:'从本机导入', go:'', toast:'添加文件（原型不开系统文件框）'},
+    {t:'从画布送入', d:'收下生成结果', go:'../canvas/index.html', hot:true},
+    {t:'补标签', d:'531 份未分类', go:'assets.html', hot:true},
+    {t:'去采集', d:'平台素材下载', go:'accounts.html'}
+  ];
+  var RECS = [
+    {e:'♫', t:'夏夜渐弱'}, {e:'♬', t:'下一站'}, {e:'♪', t:'午后蝉鸣'},
+    {e:'♩', t:'无声的底噪'}, {e:'♫', t:'咖啡馆走廊'}
+  ];
+  var ROWS = [
+    {n:'雨夜门口 · 中景', t:'图片', s:'画布产出', d:'11-20 14:12', z:'2.4 MB', img:'../canvas/assets/thumbs/story-01.svg'},
+    {n:'便利店冰柜 · 特写', t:'图片', s:'画布产出', d:'11-20 11:03', z:'1.8 MB', img:'../canvas/assets/thumbs/story-02.svg'},
+    {n:'街角灯牌 · 全景', t:'图片', s:'B 站', d:'11-19 21:40', z:'2.0 MB', img:'../canvas/assets/thumbs/story-05.svg'},
+    {n:'环境雨声 32s', t:'音频', s:'本地上传', d:'11-19 18:22', z:'860 KB', img:''},
+    {n:'第 3 场粗剪 v2', t:'视频', s:'画布产出', d:'11-19 15:47', z:'48 MB', img:'../canvas/assets/thumbs/story-04.svg'},
+    {n:'茶饮罐 · 白模', t:'3D', s:'本地上传', d:'11-18 09:31', z:'6.2 MB', img:'../canvas/assets/thumbs/promo-02.svg'}
+  ];
+  function tick(){
+    var now = new Date();
+    var h = now.getHours();
+    var pad = function(x){ return String(x).padStart(2,'0'); };
+    $('#gClock').textContent = pad(h)+':'+pad(now.getMinutes())+':'+pad(now.getSeconds());
+    $('#gDate').textContent = (now.getMonth()+1)+'月'+now.getDate()+'日 星期'+'日一二三四五六'[now.getDay()];
+    $('#gHello').textContent = h<6?'夜深了，注意休息':h<12?'早上好，创作顺利':h<18?'下午好，创作顺利':'晚上好，创作顺利';
+  }
+  function renderLegend(){
+    $('#legend').innerHTML = STAT.map(function(x){
+      return '<div class="lg"><i style="background:'+x.c+'"></i><span>'+esc(x.n)+'</span>'
+        + '<span class="v">'+x.v+'</span><span class="p">'+x.p+'</span></div>';
+    }).join('');
+  }
+  function renderTrend(){
+    var max = Math.max.apply(null, TREND.map(function(x){return x.n;}));
+    var total = TREND.reduce(function(s,x){return s+x.n;},0);
+    $('#trTotal').textContent = total;
+    $('#trBars').innerHTML = TREND.map(function(x){
+      var hot = x.d==='11-20';
+      var h = Math.max(6, Math.round(x.n/max*100));
+      return '<button class="tr-bar'+(hot?' hot':'')+'" type="button"'
+        + ' data-day="'+x.d+'" title="11 月 '+(+x.d.slice(3))+' 日导入 '+x.n+' 份"'
+        + ' aria-label="11 月 '+(+x.d.slice(3))+' 日导入 '+x.n+' 份，查看当天素材">'
+        + '<span class="cnt">'+x.n+'</span>'
+        + '<span class="fill" style="height:'+h+'%"></span>'
+        + '<span class="lb">'+(hot?'今天':(+x.d.slice(3))+'日')+'</span></button>';
+    }).join('');
+  }
+  function renderActs(){
+    $('#acts').innerHTML = ACTS.map(function(a){
+      var tag = a.go ? 'a href="'+a.go+'"' : 'button type="button" data-toast="'+esc(a.toast)+'"';
+      var close = a.go ? 'a' : 'button';
+      return '<'+tag+' class="act'+(a.hot?' hot':'')+'">'
+        + '<span class="t">'+esc(a.t)+'</span><span class="d">'+esc(a.d)+'</span></'+close+'>';
+    }).join('');
+  }
+  function renderRecent(){
+    $('#recent').innerHTML = RECS.map(function(r){
+      return '<div class="rec" data-rec="'+esc(r.t)+'"><div class="art">'+r.e+'</div>'
+        + '<div class="t">'+esc(r.t)+'</div></div>';
+    }).join('');
+  }
+  function renderRows(kw){
+    kw = (kw||'').trim().toLowerCase();
+    var arr = ROWS.filter(function(r){
+      return !kw || (r.n+r.t+r.s).toLowerCase().indexOf(kw)>=0;
+    });
+    $('#recRows').innerHTML = arr.length ? arr.map(function(r,i){
+      return '<tr><td><b>'+(r.img?'<img class="thumb" src="'+r.img+'" alt="">':'')
+        + esc(r.n)+'</b></td><td>'+esc(r.t)+'</td><td>'+esc(r.s)+'</td>'
+        + '<td class="mono">'+esc(r.d)+'</td><td>'+esc(r.z)+'</td>'
+        + '<td class="acts"><button class="btn sm" data-open="'+ROWS.indexOf(r)+'">查看</button></td></tr>';
+    }).join('') : '<tr><td colspan="6" class="empty">没有匹配的素材 · 换个关键词试试</td></tr>';
+  }
+
+  document.addEventListener('click', function(e){
+    var d = e.target.closest('[data-day]');
+    if (d){ location.href = 'assets.html?day='+encodeURIComponent(d.dataset.day); return; }
+    var rc = e.target.closest('[data-rec]');
+    if (rc){ FP.toast('打开「'+rc.dataset.rec+'」（原型示例）'); return; }
+    var op = e.target.closest('[data-open]');
+    if (op){ location.href = 'assets.html'; return; }
+    var tt = e.target.closest('[data-toast]');
+    if (tt){ FP.toast(tt.dataset.toast); return; }
+    var go = e.target.closest('[data-go]');
+    if (go){ FP.toast('筛选「'+go.dataset.go+'」进入素材库'); return; }
+  });
+  $('#gridBtn').addEventListener('click', function(){
+    location.href = 'assets.html';
+  });
+  $('#refreshBtn').addEventListener('click', function(){
+    tick(); renderRows($('#homeSearch').value); FP.toast('已刷新（示例数据）');
+  });
+  $('#homeSearch').addEventListener('input', function(){ renderRows(this.value); });
+
+  renderLegend(); renderTrend(); renderActs(); renderRecent(); renderRows('');
+  tick(); setInterval(tick, 1000);
+})();
+</script>
+</body>
+</html>

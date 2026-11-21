@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <link rel="icon" href="data:,">
 <title>图片编辑 v2 · AI 建议 → 图层</title>
-<link rel="stylesheet" href="../shared/theme.css?v=202611072335">
+<link rel="stylesheet" href="../shared/theme.css?v=202611220022">
 <style>
 :root{
   /* ⭐ 照片优先：界面全部中性灰，只用一处强调色，且不在画布附近 */
@@ -54,7 +54,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--fs);
 
 /* 对比遮罩 */
 .cmpbar{position:fixed;top:0;left:0;right:0;z-index:99;padding:9px 20px;
-  background:rgba(251,191,36,.94);color:#1a1205;font-size:12.5px;font-weight:600;
+  background:rgba(251,191,36,.94);color:#1a1205;font-size:var(--fz);font-weight:600;
   text-align:center;display:none}
 .cmpbar.on{display:block}
 
@@ -75,7 +75,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--fs);
 .sg-dot{width:13px;height:13px;border-radius:50%;border:2px solid var(--ln3);
   flex-shrink:0;margin-top:2px;transition:.16s}
 .sg.adopted .sg-dot{background:var(--ok);border-color:var(--ok)}
-.sg-t{flex:1;font-size:12.5px;color:var(--tx);line-height:1.5;font-weight:500}
+.sg-t{flex:1;font-size:var(--fz);color:var(--tx);line-height:1.5;font-weight:500}
 .sg.ignored .sg-t{text-decoration:line-through;color:var(--tx3)}
 .sg-kind{font-size:var(--fz);padding:1px 6px;border-radius:3px;font-family:var(--fm);
   background:var(--s2);color:var(--tx3);flex-shrink:0}
@@ -102,7 +102,7 @@ body{background:var(--bg);color:var(--tx);font-family:var(--fs);
 .ly-n{flex:1;font-size:var(--fz);color:var(--tx)}
 .ly-r{font-size:var(--fz);font-family:var(--fm);color:var(--tx3);
   padding:1px 6px;border-radius:3px;background:var(--s2)}
-.ly-x{font-size:12px;color:var(--tx3);cursor:pointer;padding:0 3px;background:none;
+.ly-x{font-size:var(--fz);color:var(--tx3);cursor:pointer;padding:0 3px;background:none;
   border:none;font-family:inherit;transition:.16s}
 .ly-x:hover{color:#f87171}
 .empty{font-size:var(--fz);color:var(--tx3);line-height:1.7;padding:14px 4px;text-align:center}
@@ -691,6 +691,6 @@ renderLayers();
 renderManual();
 preview();
 </script>
-<script src="../shared/proto-nav.js?v=202611072335"></script>
+<script src="../shared/proto-nav.js?v=202611220022"></script>
 </body>
 </html>

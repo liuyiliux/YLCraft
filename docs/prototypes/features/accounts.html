@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<meta name="color-scheme" content="dark">
+<title>账号中心 · 平台连接 · YLCraft 原型</title>
+<link rel="stylesheet" href="../shared/theme.css?v=202611220022">
+<link rel="stylesheet" href="app.css?v=202611220022">
+<style>
+.pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:11px}
+.pcard{background:var(--s1);border:1px solid var(--ln);border-radius:var(--r);padding:14px}
+.pcard.off{opacity:.62}
+.pcard .top{display:flex;align-items:center;gap:10px}
+.avatar{width:34px;height:34px;border-radius:9px;background:var(--s3);display:flex;
+  align-items:center;justify-content:center;font-size:var(--fz);font-weight:700;color:var(--ac);flex:0 0 auto}
+.pcard .n{font-size:13px;font-weight:650}
+.pcard .id{font-size:var(--fz);color:var(--tx3);margin-top:1px}
+.pcard .top .right{margin-left:auto}
+/* 开关样式已移到 app.css：用原生 <input type="checkbox" switch> + role="switch"，
+   不再用 button 手搓。 */
+.health{display:flex;align-items:center;gap:8px;margin-top:13px;padding:9px 10px;
+  border:1px solid var(--ln);border-radius:var(--r2);background:var(--s2)}
+.health .big{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+.health .big.ok{background:var(--ok);box-shadow:0 0 0 4px var(--okbg)}
+.health .big.wn{background:var(--wn);box-shadow:0 0 0 4px var(--wnbg)}
+.health .big.er{background:var(--er);box-shadow:0 0 0 4px var(--erbg)}
+.health .t{font-size:var(--fz);color:var(--tx2);line-height:1.6;flex:1;min-width:0}
+.health .t b{color:var(--tx);font-weight:600}
+.rate{margin-top:11px}
+.rate .l{display:flex;justify-content:space-between;font-size:var(--fz);color:var(--tx3)}
+.rate .l b{color:var(--tx2);font-weight:600}
+.bar{height:5px;border-radius:3px;background:var(--s3);margin-top:6px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ac);border-radius:3px;transition:width .3s}
+.bar i.wn{background:var(--wn)} .bar i.er{background:var(--er)}
+.pcard .acts{display:flex;gap:7px;margin-top:13px}
+.pcard .acts .btn{flex:1}
+.cache{display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:center}
+.cache .n{font-size:22px;font-weight:700;font-family:var(--fm),monospace;color:var(--wn)}
+.qrwrap{display:flex;gap:16px;align-items:flex-start}
+.qr{width:168px;height:168px;flex:0 0 auto;background:#fff;border-radius:8px;padding:8px}
+.qr svg{width:100%;height:100%;display:block}
+.qsteps{flex:1;min-width:0}
+.qstep{display:flex;align-items:center;gap:8px;padding:8px 0;font-size:var(--fz);color:var(--tx3)}
+.qstep.on{color:var(--ac);font-weight:600} .qstep.done{color:var(--ok)}
+.qstep i{font-style:normal;width:18px;height:18px;border-radius:50%;border:1px solid var(--ln2);
+  display:flex;align-items:center;justify-content:center;font-size:var(--fz);flex:0 0 auto}
+.qstep.on i{border-color:var(--ac)} .qstep.done i{border-color:var(--ok);background:var(--okbg)}
+@media (max-width:1060px){.pgrid{grid-template-columns:repeat(2,1fr)}.cache{grid-template-columns:1fr}}
+@media (max-width:680px){.pgrid{grid-template-columns:1fr}.qrwrap{flex-direction:column}.qr{align-self:center}}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html"><i>◈</i> 原项目功能</a>
+  <span class="crumb">账号中心 · 平台连接 <span class="mono">/accounts</span></span>
+  <span class="spacer"></span>
+  <span class="hintbar">登录态 · 体检 · 缓存</span>
+</header>
+
+<main class="page">
+  <div class="phead">
+    <div><h1>平台连接</h1><div class="sub">采集、发布都要靠这些连接。登录态过没过期、最近体检好不好，进门就能看见。</div></div>
+    <div class="right"><span class="tag ac">6 个平台</span>
+      <button class="btn ghost" id="checkAll">全部体检</button></div>
+  </div>
+
+  <div class="pgrid" id="pgrid"></div>
+
+  <div class="sec-t" style="font-size:13px;font-weight:650;margin:22px 0 10px">采集浏览器缓存</div>
+  <div class="card">
+    <div class="card-b cache">
+      <div>
+        <div class="mute" style="font-size:var(--fz)">本机浏览器配置缓存占用</div>
+        <div class="n" id="cacheSize">1.84 GB</div>
+        <div class="mute" style="font-size:var(--fz);line-height:1.8;margin-top:6px">
+          可释放 <b style="color:var(--ok)" id="freeSize">620 MB</b> · 正在被 2 个连接使用的配置不会被删（下面列了原因）。
+        </div>
+        <div class="row" style="margin-top:12px"><button class="btn pri" id="cleanBtn">清理可释放的缓存</button></div>
+      </div>
+      <div>
+        <div class="kv"><span class="k">会清理</span><span class="v">3 个 7 天没用过的临时配置</span></div>
+        <div class="kv"><span class="k">跳过</span><span class="v">B 站 · 正在被采集中</span></div>
+        <div class="kv"><span class="k">跳过</span><span class="v">公众号 · 正在扫码</span></div>
+        <div class="kv"><span class="k">不动</span><span class="v">已保存的登录态与 Cookie</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note" style="margin-top:16px"><span>ⓘ</span><div>
+    <b>原型口径</b>：二维码是本地画出的示意图案，<b>不联网、不能真扫</b>；体检与清理只改示例状态。
+    真实实现里登录走平台自己的流程（二维码 / 多步验证），连接可启停、可测试、有历史健康度统计。
+    「登录态过期」和「没连过」是两件事，界面上分开写。
+  </div></div>
+  <div class="protofoot">
+    对应真实功能：<code>/accounts</code>、<code>/platforms</code>、<code>/platforms/{platform}/health</code>、
+    <code>/cookie_acquisition</code>、<code>/browser_profile_cache</code>、<code>/telegram-login</code>。
+  </div>
+</main>
+
+<script src="../shared/proto-nav.js?v=202611220022"></script>
+<script src="app.js?v=202611220022"></script>
+<script src="theme-switch.js?v=202611220022"></script>
+<script>
+(function(){
+  var $ = FP.$, $$ = FP.$$, esc = FP.esc;
+  var P = [
+    {n:'哔哩哔哩', short:'B', id:'@ylcraft_素材', login:'ok', on:true, h:'ok',
+     ht:'正常 · 10 分钟前体检', rate:98, last:'11-08 18:52'},
+    {n:'抖音', short:'抖', id:'@ylcraft', login:'ok', on:true, h:'wn',
+     ht:'变慢了 · 平均响应 3.2s', rate:81, last:'11-08 18:50'},
+    {n:'小红书', short:'红', id:'未登录', login:'no', on:false, h:'none',
+     ht:'还没有连接过', rate:0, last:'—'},
+    {n:'微信公众号', short:'微', id:'登录态已过期', login:'expired', on:true, h:'er',
+     ht:'登录态过期 · 需要重新扫码', rate:64, last:'11-08 18:44'},
+    {n:'番茄小说', short:'番', id:'@ylcraft_writer', login:'ok', on:true, h:'ok',
+     ht:'正常 · 20 分钟前体检', rate:96, last:'11-08 18:42'},
+    {n:'Telegram', short:'TG', id:'+86 ···· 2048', login:'ok', on:false, h:'none',
+     ht:'已停用 · 保留登录态', rate:92, last:'11-07 22:10'}
+  ];
+  var LOGIN = {ok:['ok','已登录'],expired:['er','登录态过期'],no:['','未连接']};
+  var HL = {ok:['正常','ok'],wn:['变慢','wn'],er:['异常','er'],none:['未检查','']};
+  var step = 0, qrFor = 3, cleaned = false;
+
+  function qrSvg(seed){
+    var N = 21, cells = [], i, j;
+    function on(x,y){
+      if ((x<7&&y<7)||(x>N-8&&y<7)||(x<7&&y>N-8)) return true;
+      return ((x*31 + y*17 + seed*13 + (x*y)%7) % 11) < 4;
+    }
+    function finder(ox,oy){
+      return '<rect x="'+ox+'" y="'+oy+'" width="7" height="7" fill="#0b0b0e"/>'
+        + '<rect x="'+(ox+1)+'" y="'+(oy+1)+'" width="5" height="5" fill="#fff"/>'
+        + '<rect x="'+(ox+2)+'" y="'+(oy+2)+'" width="3" height="3" fill="#0b0b0e"/>';
+    }
+    for (j=0;j<N;j++) for (i=0;i<N;i++){
+      var inF = (i<7&&j<7)||(i>N-8&&j<7)||(i<7&&j>N-8);
+      if (!inF && on(i,j)) cells.push('<rect x="'+i+'" y="'+j+'" width="1" height="1" fill="#0b0b0e"/>');
+    }
+    return '<svg viewBox="0 0 21 21" shape-rendering="crispEdges" aria-label="示意二维码">'
+      + '<rect width="21" height="21" fill="#fff"/>' + cells.join('')
+      + finder(0,0) + finder(14,0) + finder(0,14) + '</svg>';
+  }
+  function render(){
+    $('#pgrid').innerHTML = P.map(function(p,i){
+      var l = LOGIN[p.login], h = HL[p.h];
+      var barCls = p.rate>=90 ? '' : p.rate>=75 ? 'wn' : 'er';
+      return '<div class="pcard'+(p.on?'':' off')+'">'
+        + '<div class="top"><div class="avatar">'+p.short+'</div><div><div class="n">'+esc(p.n)+'</div>'
+        + '<div class="id">'+esc(p.id)+'</div></div>'
+        + '<div class="right"><label class="sw-wrap"><span class="sr-only">启用 '+esc(p.n)+' 连接</span>'
+        + '<input class="sw" type="checkbox" switch role="switch" data-sw="'+i+'"'
+        + (p.on ? ' checked' : '') + ' aria-checked="' + (p.on ? 'true' : 'false')
+        + '" title="启停连接"></label></div></div>'
+        + '<div class="row wrap" style="margin-top:11px"><span class="tag '+l[0]+'">'+l[1]+'</span>'
+        + '<span class="tag stopped'+(p.on?' hide':'')+'">已停用</span>'
+        + '<span class="mute" style="font-size:var(--fz)">最近体检 '+p.last+'</span></div>'
+        + '<div class="health"><span class="big '+h[1]+'"></span><span class="t"><b>'+h[0]+'</b> · '+esc(p.ht)+'</span></div>'
+        + '<div class="rate"><div class="l"><span>近 30 天成功率</span><b>'+p.rate+'%</b></div>'
+        + '<div class="bar"><i class="'+barCls+'" style="width:'+p.rate+'%"></i></div></div>'
+        + '<div class="acts"><button class="btn sm" data-check="'+i+'">体检</button>'
+        + '<button class="btn sm'+(p.login==='ok'?'':' pri')+'" data-login="'+i+'">'
+        + (p.login==='ok'?'重新登录':'去登录')+'</button></div></div>';
+    }).join('');
+    FP.bindSwitches($('#pgrid'));
+  }
+  function openQr(i){
+    qrFor = +i; step = 0;
+    var p = P[qrFor];
+    var html = '<dialog class="modal" closedby="any" aria-labelledby="qr-title" style="width:min(500px,calc(100% - 40px))">'
+      + '<div class="mh"><span class="t" id="qr-title">登录 '+esc(p.n)+'</span>'
+      + '<button class="x" type="button" data-close-ov aria-label="关闭">✕</button></div>'
+      + '<div class="mb"><div class="qrwrap"><div class="qr" id="qrbox">'+qrSvg(qrFor+1)+'</div>'
+      + '<div class="qsteps" id="qsteps"></div></div>'
+      + '<div class="note" style="margin-top:14px"><span>ⓘ</span><div>这是<b>示意图案</b>，原型不联网、不能真扫。'
+      + '真实流程会拿到平台下发的二维码 / 会话，再轮询扫码状态。</div></div></div>'
+      + '<div class="mf"><button class="btn ghost" type="button" data-close-ov>取消</button>'
+      + '<button class="btn pri" type="button" id="qnext">模拟下一步</button></div></dialog>';
+    FP.openDialog(html);
+    renderSteps();
+  }
+  function renderSteps(){
+    var p = P[qrFor];
+    var S = [
+      ['用 '+p.n+' 的 App 扫这个码', '等待扫码'],
+      ['手机上点「确认登录」', '已扫码，等确认'],
+      ['连接已恢复，可以关掉这个窗口', '登录完成']
+    ];
+    $('#qsteps').innerHTML = S.map(function(s,i){
+      var cls = i<step ? 'done' : i===step ? 'on' : '';
+      return '<div class="qstep '+cls+'"><i>'+(i<step?'✓':i+1)+'</i><span><b>'+esc(s[0])+'</b><br>'
+        + '<span style="font-weight:400;color:var(--tx3)">'+esc(s[1])+'</span></span></div>';
+    }).join('');
+    var b = $('#qnext');
+    if (b) b.textContent = step>=2 ? '完成' : '模拟下一步';
+    var q = $('#qrbox');
+    if (q) q.style.opacity = step>=2 ? '.35' : '1';
+  }
+
+  /* 开关走 change 而非 click：原生 checkbox 自己管键盘 / 表单语义；
+     只同步数据与卡片态，不重建整块 DOM，避免键盘焦点丢失。 */
+  document.addEventListener('change', function(e){
+    var sw = e.target.closest('input[data-sw]');
+    if (!sw) return;
+    var i = +sw.dataset.sw;
+    P[i].on = sw.checked;
+    sw.setAttribute('aria-checked', sw.checked ? 'true' : 'false');
+    var card = sw.closest('.pcard');
+    if (card){
+      card.classList.toggle('off', !P[i].on);
+      var tag = card.querySelector('.stopped');
+      if (tag) tag.classList.toggle('hide', P[i].on);
+    }
+    FP.toast(P[i].n + (P[i].on?' 已启用':' 已停用')+'（登录态保留）');
+  });
+  document.addEventListener('click', function(e){
+    var ck = e.target.closest('[data-check]');
+    if (ck){ var k = +ck.dataset.check; P[k].h = P[k].login==='ok' ? 'ok' : 'er';
+      P[k].ht = P[k].login==='ok' ? '正常 · 刚刚体检' : '登录态不可用 · 刚刚体检';
+      P[k].last = '刚刚'; render(); FP.toast(P[k].n+' 体检完成'); return; }
+    var lg = e.target.closest('[data-login]');
+    if (lg){ openQr(+lg.dataset.login); return; }
+    var nx = e.target.closest('#qnext');
+    if (nx){
+      if (step>=2){
+        P[qrFor].login='ok'; P[qrFor].h='ok'; P[qrFor].ht='正常 · 刚刚重新登录';
+        P[qrFor].id='@ylcraft'; P[qrFor].rate=97; P[qrFor].last='刚刚'; P[qrFor].on=true;
+        render(); FP.closeOv();
+        /* 卡片被重建，原生 dialog 返回的焦点会落在已移除的旧按钮上，这里补回等价元素 */
+        requestAnimationFrame(function(){
+          var back = $('[data-login="'+qrFor+'"]');
+          if (back) back.focus();
+        });
+        FP.toast(P[qrFor].n+' 登录态已恢复'); return;
+      }
+      step++; renderSteps(); return;
+    }
+  });
+  $('#checkAll').addEventListener('click', function(){
+    P.forEach(function(p){ if (p.login==='ok' && p.on){ p.h='ok'; p.ht='正常 · 刚刚体检'; p.last='刚刚'; } });
+    render(); FP.toast('已体检 6 个连接 · 1 个过期、1 个未连接保留原状态');
+  });
+  $('#cleanBtn').addEventListener('click', function(){
+    if (cleaned) return;
+    cleaned = true; $('#cacheSize').textContent = '1.22 GB';
+    $('#freeSize').textContent = '0 MB'; $('#cleanBtn').textContent = '已清理';
+    $('#cleanBtn').disabled = true;
+    FP.toast('释放 620 MB · 2 个正在使用的配置已跳过');
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

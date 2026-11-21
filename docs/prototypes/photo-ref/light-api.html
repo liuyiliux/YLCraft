@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <link rel="icon" href="data:,">
 <title>地点光线 · 原型</title>
-<link rel="stylesheet" href="../shared/theme.css?v=202611072335">
+<link rel="stylesheet" href="../shared/theme.css?v=202611220022">
 <style>
 :root{
   --bgPage:#09090b; --bgCard:#16161a; --bgElev:#1f1f27; --bgInput:#111116; --bgHover:#1c1c22;
@@ -61,7 +61,7 @@ input{font:inherit}
 .card{padding:18px 20px;border-radius:var(--rMD);background:var(--bgCard);
   border:1px solid var(--bd2)}
 .card h3{font-size:17px;margin-bottom:14px;display:flex;align-items:center;gap:9px}
-.card h3 .badge{font-size:12px;padding:2px 9px;border-radius:4px;font-family:var(--fm);
+.card h3 .badge{font-size:var(--fz);padding:2px 9px;border-radius:4px;font-family:var(--fm);
   background:color-mix(in srgb,var(--ok) 17%,transparent);color:var(--ok);font-weight:400}
 
 .kv{display:grid;grid-template-columns:120px 1fr;gap:9px 12px;font-size:15px}
@@ -78,7 +78,7 @@ input{font:inherit}
 .arc svg{width:100%;height:100%}
 .sun-dot{position:absolute;width:12px;height:12px;border-radius:50%;
   background:var(--warn);box-shadow:0 0 12px rgba(251,191,36,.8);transform:translate(-50%,-50%)}
-.sun-t{position:absolute;font-size:12px;color:var(--warn);font-family:var(--fm);
+.sun-t{position:absolute;font-size:var(--fz);color:var(--warn);font-family:var(--fm);
   transform:translateX(-50%);white-space:nowrap}
 
 /* 方向罗盘 */
@@ -88,7 +88,7 @@ input{font:inherit}
 
 /* 表格 */
 table{width:100%;border-collapse:collapse;font-size:14px}
-th{text-align:left;padding:10px 12px;font-size:12px;color:var(--tx3);font-family:var(--fm);
+th{text-align:left;padding:10px 12px;font-size:var(--fz);color:var(--tx3);font-family:var(--fm);
   text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--bd2);font-weight:400}
 td{padding:11px 12px;border-bottom:1px solid var(--bd);color:var(--tx2)}
 tr:last-child td{border-bottom:none}
@@ -117,11 +117,11 @@ td.bad{color:var(--err)}
 .p-why{padding:11px 13px;border-radius:6px;background:var(--bgInput);
   font-size:14px;color:var(--tx2);line-height:1.7;margin-bottom:8px}
 .p-why b{color:var(--photo)}
-.p-why .t{display:block;font-size:12px;color:var(--pri);font-family:var(--fm);margin-bottom:5px}
+.p-why .t{display:block;font-size:var(--fz);color:var(--pri);font-family:var(--fm);margin-bottom:5px}
 .p-risk{padding:9px 13px;border-radius:6px;font-size:14px;color:var(--tx2);
   background:color-mix(in srgb,var(--warn) 7%,transparent);
   border:1px solid color-mix(in srgb,var(--warn) 22%,transparent);line-height:1.6}
-.p-risk .t{display:block;font-size:12px;color:var(--warn);font-family:var(--fm);margin-bottom:4px}
+.p-risk .t{display:block;font-size:var(--fz);color:var(--warn);font-family:var(--fm);margin-bottom:4px}
 
 /* 来源徽章 */
 .badge.src-api{background:color-mix(in srgb,var(--ok) 17%,transparent);color:var(--ok)}
@@ -132,9 +132,9 @@ td.bad{color:var(--err)}
 .tip{padding:13px 15px;border-radius:var(--rSM);background:var(--bgInput);
   border-left:3px solid var(--warn)}
 .tip-h{display:flex;align-items:center;gap:9px;margin-bottom:7px}
-.tip-src{font-size:12px;padding:2px 8px;border-radius:4px;font-family:var(--fm);
+.tip-src{font-size:var(--fz);padding:2px 8px;border-radius:4px;font-family:var(--fm);
   background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn)}
-.tip-date{font-size:12px;color:var(--tx3);font-family:var(--fm)}
+.tip-date{font-size:var(--fz);color:var(--tx3);font-family:var(--fm)}
 .tip-b{font-size:14px;color:var(--tx2);line-height:1.75;margin-bottom:8px}
 .tip-b b{color:var(--tx1)}
 .tip-use{padding:9px 12px;border-radius:6px;font-size:13px;color:var(--tx2);
@@ -154,7 +154,7 @@ td.bad{color:var(--err)}
   background:var(--bgCard);border:1px solid var(--bd2);font-size:14px;color:var(--tx2);transition:.15s}
 .jl:hover{border-color:var(--drama);color:var(--tx1)}
 .jl b{color:var(--tx1);font-weight:600}
-.jl span{font-size:12px;color:var(--tx3)}
+.jl span{font-size:var(--fz);color:var(--tx3)}
 .jump-note{margin-top:11px;font-size:13px;color:var(--tx3);line-height:1.65}
 
 .api{display:flex;flex-direction:column;gap:8px}
@@ -620,6 +620,6 @@ function loadWeather(){
 document.addEventListener('DOMContentLoaded',function(){runQuery();loadWeather();});
 document.getElementById('qDate').addEventListener('change',runQuery);
 </script>
-<script src="../shared/proto-nav.js?v=202611072335"></script>
+<script src="../shared/proto-nav.js?v=202611220022"></script>
 </body>
 </html>

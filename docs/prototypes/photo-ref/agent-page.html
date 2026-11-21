@@ -21,7 +21,7 @@
   ⚠️ 真实现前必读 docs/architecture/FRONTEND_SHARED_COMPONENTS.md
      （模型选择有统一实现，不许手写第三份）
 -->
-<link rel="stylesheet" href="../shared/theme.css?v=202611072335">
+<link rel="stylesheet" href="../shared/theme.css?v=202611220022">
 <style>
 /* =========================================================
    基座：和画布原型同一套变量与字号
@@ -61,12 +61,12 @@ brand{}
   background:linear-gradient(135deg,var(--ac),var(--purple));display:block}
 .nav{display:flex;gap:2px;margin-left:10px}
 .nav a{
-  font-size:12.5px;color:var(--tx2);text-decoration:none;padding:5px 11px;
+  font-size:var(--fz);color:var(--tx2);text-decoration:none;padding:5px 11px;
   border-radius:var(--r2);transition:.15s;white-space:nowrap;
 }
 .nav a:hover{background:var(--s3);color:var(--tx)}
 .nav a.on{background:rgba(34,211,238,.13);color:var(--ac)}
-.top-r{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:12px;color:var(--tx3)}
+.top-r{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:var(--fz);color:var(--tx3)}
 .avatar{width:22px;height:22px;border-radius:50%;background:var(--s4);display:block}
 
 /* ---------- 主体：三栏 ---------- */
@@ -86,7 +86,7 @@ brand{}
 .newbtn{
   margin:0 13px 11px;padding:8px 12px;border-radius:var(--r2);
   background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.28);
-  color:var(--ac);font-size:12.5px;cursor:pointer;display:flex;
+  color:var(--ac);font-size:var(--fz);cursor:pointer;display:flex;
   align-items:center;justify-content:center;gap:6px;transition:.15s;
   font-family:inherit;flex:0 0 auto;
 }
@@ -110,7 +110,7 @@ brand{}
   /* flex:1 + min-width:0 才让省略号生效；否则长标题会把右边的状态挤出可视区
      （2026-11-01 实测：第一项「生成一张只露坐姿的全身照」的状态被裁掉）*/
   flex:1;min-width:0;
-  font-size:12.5px;color:var(--tx2);line-height:1.45;
+  font-size:var(--fz);color:var(--tx2);line-height:1.45;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
 .sitem.on .sitem-t{color:var(--tx)}
@@ -150,7 +150,7 @@ brand{}
 .empty-d{font-size:13px;color:var(--tx3);line-height:1.7;margin-bottom:22px}
 .sugs{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;max-width:620px;margin:0 auto}
 .sug{
-  font-size:12px;padding:7px 13px;border-radius:var(--r3);background:var(--s1);
+  font-size:var(--fz);padding:7px 13px;border-radius:var(--r3);background:var(--s1);
   border:1px solid var(--ln2);color:var(--tx2);cursor:pointer;transition:.15s;
 }
 .sug:hover{border-color:rgba(34,211,238,.4);color:var(--ac);background:var(--s2)}
@@ -173,7 +173,7 @@ brand{}
 }
 .ecard:hover{border-color:rgba(34,211,238,.4);background:var(--s2)}
 .ecard:active{transform:translateY(1px)}
-.ecard-t{font-size:12.5px;color:var(--tx);line-height:1.45}
+.ecard-t{font-size:var(--fz);color:var(--tx);line-height:1.45}
 .ecard-d{font-size:var(--fz);color:var(--tx3);line-height:1.5}
 .empty-hint{margin-top:18px;font-size:var(--fz);color:var(--tx3);font-family:var(--fm)}
 
@@ -202,7 +202,7 @@ brand{}
 .ans p{margin-bottom:10px}
 .ans b, .ans strong{color:var(--tx);font-weight:600}
 .ans code{
-  font-family:var(--fm);font-size:12px;background:var(--s2);
+  font-family:var(--fm);font-size:var(--fz);background:var(--s2);
   border:1px solid var(--ln);padding:1px 5px;border-radius:var(--r1);color:var(--photo);
 }
 .ans ul{margin:0 0 10px 0;padding-left:17px}
@@ -255,7 +255,7 @@ brand{}
 .proc-hd:hover{background:var(--s2)}
 .proc-ar{font-size:var(--fz);color:var(--tx3);transition:.2s;flex-shrink:0}
 .proc.open .proc-ar{transform:rotate(90deg)}
-.proc-t{font-size:12px;color:var(--tx2);flex:1}
+.proc-t{font-size:var(--fz);color:var(--tx2);flex:1}
 .proc-t b{color:var(--tx);font-weight:600}
 .proc-badge{
   font-size:var(--fz);padding:1px 7px;border-radius:8px;font-family:var(--fm);
@@ -275,7 +275,7 @@ brand{}
 }
 
 .step{
-  display:flex;gap:10px;padding:6px 0;font-size:12px;line-height:1.6;
+  display:flex;gap:10px;padding:6px 0;font-size:var(--fz);line-height:1.6;
 }
 .step-i{
   width:16px;height:16px;border-radius:50%;flex-shrink:0;margin-top:1px;
@@ -306,10 +306,10 @@ brand{}
 .confirm-ico{
   width:22px;height:22px;border-radius:6px;flex-shrink:0;
   background:rgba(245,165,36,.17);display:flex;align-items:center;
-  justify-content:center;font-size:12px;
+  justify-content:center;font-size:var(--fz);
 }
 .confirm-t{font-size:13px;font-weight:600;color:var(--warn)}
-.confirm-b{padding:0 15px 12px;font-size:12.5px;color:var(--tx2);line-height:1.65}
+.confirm-b{padding:0 15px 12px;font-size:var(--fz);color:var(--tx2);line-height:1.65}
 
 /* 确认卡里的「要花什么」 */
 .costbox{
@@ -339,7 +339,7 @@ brand{}
   display:flex;gap:9px;padding:0 15px 14px;align-items:center;
 }
 .cbtn{
-  font-size:12.5px;padding:7px 18px;border-radius:var(--r2);cursor:pointer;
+  font-size:var(--fz);padding:7px 18px;border-radius:var(--r2);cursor:pointer;
   font-family:inherit;transition:.15s;border:1px solid var(--ln2);
   background:transparent;color:var(--tx2);
 }
@@ -355,7 +355,7 @@ brand{}
 .done-strip{
   display:flex;align-items:center;gap:8px;padding:8px 13px;margin:10px 0;
   border-radius:var(--r2);background:rgba(52,211,153,.07);
-  border:1px solid rgba(52,211,153,.2);font-size:12px;color:var(--tx2);
+  border:1px solid rgba(52,211,153,.2);font-size:var(--fz);color:var(--tx2);
 }
 .done-strip .di{color:var(--ok);font-size:var(--fz)}
 
@@ -402,7 +402,7 @@ brand{}
 .skpop-s{padding:0 12px 9px;border-bottom:1px solid var(--ln)}
 .skpop-s input{
   width:100%;box-sizing:border-box;background:var(--s2);border:1px solid var(--ln2);
-  border-radius:var(--r2);padding:6px 9px;font-family:inherit;font-size:12px;
+  border-radius:var(--r2);padding:6px 9px;font-family:inherit;font-size:var(--fz);
   color:var(--tx);outline:none;
 }
 .skpop-s input::placeholder{color:var(--tx3)}
@@ -418,11 +418,11 @@ brand{}
 .skpop-i.sel{background:var(--s2);border-color:rgba(34,211,238,.32)}
 .sk-k{
   width:24px;height:24px;border-radius:6px;flex:0 0 auto;display:flex;
-  align-items:center;justify-content:center;font-size:12px;font-weight:600;
+  align-items:center;justify-content:center;font-size:var(--fz);font-weight:600;
   color:var(--ac);background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.22);
 }
 .sk-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
-.sk-txt b{font-size:12px;color:var(--tx);font-weight:500}
+.sk-txt b{font-size:var(--fz);color:var(--tx);font-weight:500}
 .sk-txt i{font-style:normal;font-size:var(--fz);color:var(--tx3);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sk-tag{
@@ -462,7 +462,7 @@ brand{}
   display:flex;align-items:center;gap:8px;padding:10px 14px;
   border-bottom:1px solid var(--ln);flex:0 0 auto;
 }
-.agh .t{font-size:12px;font-weight:600}
+.agh .t{font-size:var(--fz);font-weight:600}
 .agh .m{margin-left:auto;font-size:var(--fz);color:var(--tx3);font-family:var(--fm)}
 .agh .ico{width:15px;height:15px;color:var(--ac)}
 
@@ -472,13 +472,13 @@ brand{}
 .msg.me .bubble{
   background:var(--s3);border:1px solid var(--ln);
   border-radius:var(--r2) var(--r2) 3px var(--r2);padding:9px 12px;
-  font-size:12.5px;color:var(--tx);line-height:1.65;max-width:300px;
+  font-size:var(--fz);color:var(--tx);line-height:1.65;max-width:300px;
 }
 .msg.ai .who2{font-size:var(--fz);color:var(--tx3);margin-bottom:5px}
 .msg.ai .bubble{
   background:var(--s2);border:1px solid var(--ln);
   border-radius:var(--r2) var(--r2) var(--r2) 3px;padding:11px 13px;
-  font-size:12.5px;color:var(--tx2);line-height:1.75;
+  font-size:var(--fz);color:var(--tx2);line-height:1.75;
 }
 .msg.ai .bubble b{color:var(--tx);font-weight:600}
 .msg.ai .bubble code{
@@ -508,7 +508,7 @@ brand{}
 .cmp .row1{display:flex;align-items:center;gap:8px}
 .cmp textarea{
   flex:1;background:0;border:0;color:var(--tx);font-family:inherit;
-  font-size:12.5px;resize:none;outline:none;line-height:1.6;max-height:56px;
+  font-size:var(--fz);resize:none;outline:none;line-height:1.6;max-height:56px;
 }
 .cmp textarea::placeholder{color:var(--tx3)}
 .cmp .snd{width:26px;height:26px;border-radius:var(--r2)}
@@ -645,7 +645,7 @@ brand{}
 .po.on .po-r::after{
   content:"";position:absolute;inset:2.5px;border-radius:50%;background:var(--ac);
 }
-.po-k{font-size:12px;color:var(--tx2);line-height:1.5}
+.po-k{font-size:var(--fz);color:var(--tx2);line-height:1.5}
 .po.on .po-k{color:var(--tx)}
 .po-d{
   display:block;font-size:var(--fz);color:var(--tx3);margin-top:1px;
@@ -732,7 +732,7 @@ brand{}
 /* ============ 主操作 ============ */
 .acts{display:flex;gap:7px;margin-top:13px}
 .ab{
-  font-size:12px;padding:6px 14px;border-radius:var(--r2);
+  font-size:var(--fz);padding:6px 14px;border-radius:var(--r2);
   border:1px solid var(--ln2);background:transparent;color:var(--tx2);
   cursor:pointer;transition:.15s;font-family:inherit;
 }
@@ -763,7 +763,7 @@ brand{}
 }
 .cm-i:hover{background:var(--s3)}
 .cm-i.on{background:rgba(34,211,238,.1)}
-.cm-k{display:block;font-size:12px;color:var(--tx2)}
+.cm-k{display:block;font-size:var(--fz);color:var(--tx2)}
 .cm-i.on .cm-k{color:var(--ac)}
 .cm-d{display:block;font-size:var(--fz);color:var(--tx3);margin-top:1px}
 .cm-sep{height:1px;background:var(--ln);margin:5px 0}
@@ -780,7 +780,7 @@ brand{}
 .pj-sec-t{font-size:var(--fz);color:var(--tx3);margin-bottom:7px;font-family:var(--fm)}
 .pj-item{
   display:flex;align-items:center;gap:8px;padding:7px 9px;
-  border-radius:5px;font-size:12px;color:var(--tx2);cursor:pointer;
+  border-radius:5px;font-size:var(--fz);color:var(--tx2);cursor:pointer;
   transition:.15s;
 }
 .pj-item:hover{background:var(--s2)}
@@ -802,7 +802,7 @@ brand{}
   padding:10px 12px;border-radius:7px;background:var(--s2);
   border:1px solid var(--ln);margin-bottom:8px;
 }
-.tk-hd{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--tx2);
+.tk-hd{display:flex;align-items:center;gap:7px;font-size:var(--fz);color:var(--tx2);
   margin-bottom:4px}
 .tk-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
 .tk-item.run .tk-dot{background:var(--ac);animation:pulse 1.4s infinite}
@@ -833,7 +833,7 @@ brand{}
 }
 .cf-l{flex:1;min-width:0}
 .cf-k{font-size:var(--fz);color:var(--tx3);font-family:var(--fm);margin-bottom:2px}
-.cf-v{font-size:12px;color:var(--tx);margin-bottom:1px;
+.cf-v{font-size:var(--fz);color:var(--tx);margin-bottom:1px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cf-sub{font-size:var(--fz);color:var(--tx3)}
 .cf-b{
@@ -848,7 +848,7 @@ brand{}
 .side-new{
   margin-left:auto;width:20px;height:20px;border-radius:5px;
   border:1px solid var(--ln2);background:transparent;color:var(--tx3);
-  font-size:12px;cursor:pointer;transition:.15s;line-height:1;
+  font-size:var(--fz);cursor:pointer;transition:.15s;line-height:1;
   display:flex;align-items:center;justify-content:center;
 }
 .side-new:hover{border-color:var(--ac);color:var(--ac)}
@@ -943,7 +943,7 @@ brand{}
      查几何是 .chat-body 滚动区的裁切线正好落在 649px，与状态条顶边重合 ——
      是滚动裁切，不是遮挡，所以不需要拿背景色去盖。 */
   background:none;border:0;
-  font-size:12px;color:var(--tx2);transition:.2s;
+  font-size:var(--fz);color:var(--tx2);transition:.2s;
 }
 /* 状态分级只换圆点颜色，不铺底色 */
 .sb-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;background:var(--ac)}
@@ -965,7 +965,7 @@ brand{}
 /* 动作并进句子：用 · 隔着，不再是一个个方块按钮 */
 .sb-acts::before{content:"·";color:var(--tx3);margin-right:4px}
 .sb-b{
-  font-size:12px;padding:0;border:0;background:transparent;
+  font-size:var(--fz);padding:0;border:0;background:transparent;
   color:var(--tx);cursor:pointer;font-family:inherit;line-height:1.2;
   /* 虚线才是"能点"的暗示 —— 比实心按钮轻，仍看得懂 */
   border-bottom:1px dashed var(--ln3);
@@ -1091,7 +1091,7 @@ brand{}
 .maHint{font-size:var(--fz);color:var(--tx3)}
 .maGo{
   margin-left:auto;padding:8px 22px;border-radius:6px;border:none;
-  background:var(--tx);color:#0a0a0c;font-size:12.5px;font-weight:600;
+  background:var(--tx);color:#0a0a0c;font-size:var(--fz);font-weight:600;
   cursor:pointer;transition:.15s;font-family:inherit;
 }
 .maGo:hover{filter:brightness(.92)}
@@ -1389,7 +1389,7 @@ brand{}
           </div>
 
           <div class="ans" style="margin-top:12px">
-            <p style="font-size:12.5px;color:var(--tx3)">
+            <p style="font-size:var(--fz);color:var(--tx3)">
               想调的话直接说 —— 「再亮一点」「换横构图」「去掉背景杂光」。
             </p>
           </div>
@@ -1907,7 +1907,7 @@ function openDetail(){
           <div style="flex:1;aspect-ratio:3/4;border-radius:5px;background:linear-gradient(150deg,#2f2a34,#100e14)"></div>
         </div>
         <div class="pj-sec-t">图片提示词</div>
-        <div style="font-size:12px;color:var(--tx2);line-height:1.65;margin-bottom:10px">
+        <div style="font-size:var(--fz);color:var(--tx2);line-height:1.65;margin-bottom:10px">
           秋天颐和园，靠窗侧坐，浅色毛呢大衣，自然光，皮肤真实
         </div>
         <div style="font-size:var(--fz);color:var(--tx3);font-family:var(--fm);margin-bottom:14px">
@@ -2550,6 +2550,6 @@ maRenderDirs();
   </div>
 </div>
 
-<script src="../shared/proto-nav.js?v=202611072335"></script>
+<script src="../shared/proto-nav.js?v=202611220022"></script>
 </body>
 </html>

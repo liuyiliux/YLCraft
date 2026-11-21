@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<meta name="color-scheme" content="dark">
+<title>创作项目工作台 · YLCraft 原型</title>
+<link rel="stylesheet" href="../shared/theme.css?v=202611220022">
+<link rel="stylesheet" href="app.css?v=202611220022">
+<style>
+.gate{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:11px 14px;
+  border:1px solid rgba(251,191,36,.25);background:var(--wnbg);border-radius:var(--r);margin-bottom:14px}
+.gate .ttl{font-size:var(--fz);font-weight:600;color:var(--wn)}
+.gate .txt{font-size:var(--fz);color:var(--tx2);line-height:1.7}
+.gate .spacer{flex:1}
+.cols3{display:grid;grid-template-columns:236px minmax(0,1fr) 320px;gap:12px;align-items:start}
+.plist{display:flex;flex-direction:column;gap:8px;padding:10px}
+.pitem{text-align:left;width:100%;padding:10px 11px;border:1px solid var(--ln);
+  border-radius:var(--r2);background:var(--s2);transition:border-color .16s}
+.pitem:hover{border-color:var(--ln2)}
+.pitem.on{border-color:var(--ac);background:var(--acbg)}
+.pitem .n{font-size:var(--fz);font-weight:650;color:var(--tx);text-align:left}
+.pitem.on .n{color:var(--ac)}
+.pitem .m{font-size:var(--fz);color:var(--tx3);margin-top:4px;text-align:left;line-height:1.6}
+/* 生产阶段轨 */
+.rail{display:flex;align-items:stretch;gap:0;padding:14px;overflow-x:auto}
+.step{flex:1;min-width:112px;text-align:left;position:relative;padding:0 8px 0 0}
+.step:not(:last-child):after{content:"";position:absolute;right:6px;top:13px;width:14px;height:1px;background:var(--ln2)}
+.step .bar{height:3px;border-radius:2px;background:var(--s4);margin-bottom:9px}
+.step.done .bar{background:var(--ok)} .step.now .bar{background:var(--ac)}
+.step .n{font-size:var(--fz);font-weight:600;color:var(--tx2);text-align:left}
+.step.now .n{color:var(--ac)} .step.done .n{color:var(--tx)}
+.step .m{font-size:var(--fz);color:var(--tx3);margin-top:3px;text-align:left}
+.step:hover .n{color:var(--ac)}
+/* 内容区 */
+.chap{display:flex;align-items:center;gap:10px;padding:10px 13px;border-bottom:1px solid var(--ln)}
+.chap:last-child{border-bottom:0}
+.chap:hover{background:var(--s2)}
+.chap .no{font-family:var(--fm),monospace;font-size:var(--fz);color:var(--tx3);flex:0 0 46px}
+.chap .t{font-size:var(--fz);color:var(--tx);font-weight:600;flex:1;min-width:0}
+.chap .s{font-size:var(--fz);color:var(--tx3)}
+.para{padding:12px 14px;border:1px solid var(--ln);border-radius:var(--r2);
+  background:var(--s2);font-size:var(--fz);color:var(--tx2);line-height:1.9;margin-bottom:9px}
+.para b{color:var(--tx);font-weight:600}
+.bullets{display:flex;flex-direction:column;gap:8px}
+.bullet{display:flex;gap:9px;align-items:flex-start;font-size:var(--fz);color:var(--tx2);line-height:1.75}
+.bullet i{font-style:normal;color:var(--ac);flex:0 0 auto}
+.shotgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.shot{border:1px solid var(--ln);border-radius:var(--r2);overflow:hidden;background:var(--s2)}
+.shot img{display:block;width:100%;height:92px;object-fit:cover}
+.shot .c{padding:7px 9px;font-size:var(--fz);color:var(--tx2)}
+.shot .c b{display:block;color:var(--tx);font-weight:600}
+/* 右侧候选 / 事实 */
+.cand{padding:10px 11px;border:1px solid var(--ln);border-radius:var(--r2);
+  background:var(--s2);margin-bottom:9px}
+.cand .h{display:flex;align-items:center;gap:7px;margin-bottom:7px}
+.cand .h .t{font-size:var(--fz);font-weight:600}
+.cand .p{font-size:var(--fz);color:var(--tx2);line-height:1.8}
+.cand .why{font-size:var(--fz);color:var(--tx3);line-height:1.7;margin-top:7px;
+  padding-top:7px;border-top:1px dashed var(--ln)}
+.cand .f{display:flex;justify-content:flex-end;margin-top:8px}
+.fact{padding:9px 10px;border-left:2px solid var(--s4);background:var(--s2);
+  border-radius:0 var(--r2) var(--r2) 0;margin-bottom:8px;font-size:var(--fz);
+  color:var(--tx2);line-height:1.75}
+.fact.orig{border-left-color:var(--ac)} .fact.ai{border-left-color:var(--wn)}
+.fact.user{border-left-color:var(--ok)}
+.fact .src{font-size:var(--fz);color:var(--tx3);margin-top:4px}
+@media (max-width:1180px){.cols3{grid-template-columns:210px minmax(0,1fr)}.side{grid-column:1/-1}}
+@media (max-width:760px){.cols3{grid-template-columns:1fr}.shotgrid{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html"><i>◈</i> 原项目功能</a>
+  <span class="crumb">创作项目工作台 <span class="mono">/story</span></span>
+  <span class="spacer"></span>
+  <span class="hintbar">证据支撑的生产阶段轨</span>
+</header>
+
+<main class="page wide">
+  <div class="phead">
+    <div><h1>创作项目</h1><div class="sub">一个项目从大纲走到分镜，每一步都能回看依据；AI 给的候选由人拍板。</div></div>
+    <div class="right"><span class="tag ac">示例数据</span><a class="btn ghost" href="../canvas/index.html">去画布 →</a></div>
+  </div>
+
+  <!-- 写作门禁：全页只有这一个「批准并生成」 -->
+  <div class="gate">
+    <span class="dot wn"></span><span class="ttl">下一步要花钱</span>
+    <span class="txt" id="gateTxt">生成第 4 章正文 · 预计 ⚡56 · 本次上限 40（到上限会停）</span>
+    <span class="spacer"></span>
+    <button class="btn pri" id="gateBtn">批准并生成</button>
+  </div>
+
+  <div class="cols3">
+    <!-- 左：项目列表 -->
+    <section class="card">
+      <div class="card-h"><span class="t">我的项目</span><span class="right"><span class="s">3 个</span></span></div>
+      <div class="plist" id="plist"></div>
+    </section>
+
+    <!-- 中：阶段轨 + 阶段内容 -->
+    <section>
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-h"><span class="t">生产阶段</span><span class="s" id="stageHint">点阶段看该步的产物</span>
+          <span class="right"><span class="tag" id="projSrc">小说改编</span></span></div>
+        <div class="rail" id="rail"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><span class="t" id="paneTitle">章节</span>
+          <span class="s" id="paneCount"></span>
+          <span class="right"><button class="btn sm" id="rerunBtn">只重做这一段</button></span></div>
+        <div class="card-b" id="paneBody"></div>
+      </div>
+    </section>
+
+    <!-- 右：Writer Room / 连续性 / 伏笔 -->
+    <section class="card side">
+      <div class="card-h" style="padding-bottom:0;border-bottom:0">
+        <div class="tabs" data-tabs role="tablist" aria-label="项目侧栏"
+             focusgroup="tablist nomemory" style="width:100%;border-bottom:0">
+          <button class="tab" type="button" role="tab" id="tab-room" data-tab="room"
+                  aria-selected="true" tabindex="0">Writer Room</button>
+          <button class="tab" type="button" role="tab" id="tab-facts" data-tab="facts"
+                  aria-selected="false" tabindex="-1">连续性</button>
+          <button class="tab" type="button" role="tab" id="tab-hooks" data-tab="hooks"
+                  aria-selected="false" tabindex="-1">伏笔</button>
+        </div>
+      </div>
+      <div class="card-b" role="tabpanel" aria-labelledby="tab-room" data-pane="room" id="paneRoom"></div>
+      <div class="card-b" role="tabpanel" aria-labelledby="tab-facts" data-pane="facts" id="paneFacts" hidden="until-found"></div>
+      <div class="card-b" role="tabpanel" aria-labelledby="tab-hooks" data-pane="hooks" id="paneHooks" hidden="until-found"></div>
+    </section>
+  </div>
+
+  <div class="note" style="margin-top:16px"><span>ⓘ</span><div>
+    <b>原型口径</b>：阶段状态、证据条数、候选采纳都是本地示例，不会真的生成文字、不会扣积分。
+    真实实现里「写作门禁」是服务端强制的（没有批准记录就不许进入完成态）；
+    这里只演它在界面上出现在哪、点了之后状态怎么变。
+  </div></div>
+  <div class="protofoot">
+    对应真实功能：<code>/story</code>（创作项目）、<code>/creative-projects/*</code> API、
+    <code>story-production-desk</code> / <code>writing-guardrails</code> / <code>creative-project-dynamic-state</code> 规格。
+    界面用用户语言，不暴露内部字段名。
+  </div>
+</main>
+
+<script src="../shared/proto-nav.js?v=202611220022"></script>
+<script src="app.js?v=202611220022"></script>
+<script src="theme-switch.js?v=202611220022"></script>
+<script>
+(function(){
+  var $ = FP.$, $$ = FP.$$, esc = FP.esc;
+  var STAGES = ['大纲','章节','正文','脚本','分镜'];
+  var PROJECTS = [
+    {id:'p1', n:'我在废土开便利店', src:'小说改编', now:2, upd:'10 分钟前', ch:12, shots:0,
+     gate:'生成第 4 章正文 · 预计 ⚡56 · 本次上限 40（到上限会停）'},
+    {id:'p2', n:'雨夜送伞的人', src:'原创短片', now:4, upd:'昨天 21:40', ch:6, shots:18,
+     gate:'补齐第 3 场分镜 · 预计 ⚡32 · 本次上限 60'},
+    {id:'p3', n:'茶饮新品 · 秋日篇', src:'商业委托', now:0, upd:'11-06', ch:0, shots:0,
+     gate:'起草大纲 · 预计 ⚡18 · 本次上限 40'}
+  ];
+  var CAND = [
+    {t:'候选 A · 克制版', p:'她把伞立在门边，水顺着伞骨往下淌，在地砖上积成一小片。店里没人说话。',
+     why:'为什么给这条：第 2 章已经写过「她不喜欢解释」，这里不写心理，只写动作。'},
+    {t:'候选 B · 推进版', p:'她把伞立在门边，说：「我这次不走了。」柜台后的收音机刚好播到整点报时。',
+     why:'为什么给这条：能顺手接上第 5 章的伏笔，但会提前透露人物决定。'}
+  ];
+  var FACTS = [
+    {c:'台词：林夏从不叫对方名字，只说「喂」。', s:'来源：第 1 章原文 · 已确认', k:'orig'},
+    {c:'便利店门口的路灯是坏的，夜里只有冰柜的光。', s:'来源：AI 从第 3 章推断 · 待你确认', k:'ai'},
+    {c:'故事发生在初秋，不是盛夏。', s:'来源：你改过 · 写进设定', k:'user'}
+  ];
+  var HOOKS = [
+    {n:'冰箱里多出的一把钥匙', c:'第 2 章埋下', s:'未回收'},
+    {n:'收音机每晚 21:00 的杂音', c:'第 3 章埋下', s:'第 6 章回收'},
+    {n:'她说过的那句「等雨停」', c:'第 1 章埋下', s:'未回收'}
+  ];
+  var cur = 0, stage = 2, adopted = -1, approved = false, rerun = 0;
+
+  function renderProjects(){
+    $('#plist').innerHTML = PROJECTS.map(function(p,i){
+      return '<button class="pitem'+(i===cur?' on':'')+'" data-p="'+i+'">'
+        + '<div class="n">'+esc(p.n)+'</div>'
+        + '<div class="m">'+esc(p.src)+' · '+esc(STAGES[p.now])+'阶段 · '+esc(p.upd)+'</div></button>';
+    }).join('');
+  }
+  function renderRail(){
+    var p = PROJECTS[cur];
+    $('#rail').innerHTML = STAGES.map(function(s,i){
+      var cls = i < p.now ? 'done' : i === p.now ? 'now' : '';
+      var m = i < p.now ? (3 + i * 2) + ' 条依据' : i === p.now ? '进行中' : '未开始';
+      return '<button class="step '+cls+'" data-s="'+i+'">'
+        + '<div class="bar"></div><div class="n">'+esc(s)+'</div><div class="m">'+m+'</div></button>';
+    }).join('');
+    $('#projSrc').textContent = p.src;
+  }
+  function renderPane(){
+    var p = PROJECTS[cur], names = ['大纲要点','章节','正文片段','脚本片段','分镜'];
+    $('#paneTitle').textContent = names[stage];
+    var html = '', cnt = '';
+    if (stage === 0){
+      cnt = '5 条要点';
+      html = '<div class="bullets">'
+        + ['一个不想被找到的人，在废土边缘开了家 24 小时便利店。',
+           '主线：每来一位客人，就还掉一段过去。',
+           '中段转折：第 6 章，冰箱里多出的钥匙指向她自己。',
+           '结尾：雨停，她第一次把招牌的灯关掉。',
+           '调性：克制的、不解释的；不写大段心理活动。'].map(function(x){
+          return '<div class="bullet"><i>◆</i><span>'+esc(x)+'</span></div>';
+        }).join('') + '</div>';
+    } else if (stage === 1){
+      cnt = '12 章';
+      var chapters = ['雨夜来客','不找零的罐头','坏掉的路灯','冰柜的光','第二把伞',
+        '冰箱里的钥匙','收音机 21:00','他没有名字','半张旧照片','把灯留着','等雨停','关灯'];
+      html = chapters.map(function(c,i){
+        var st = i < 3 ? '<span class="tag ok">已定稿</span>' : i === 3 ? '<span class="tag ac">写作中</span>' : '<span class="tag">待写</span>';
+        return '<div class="chap"><span class="no">'+String(i+1).padStart(2,'0')+'</span>'
+          + '<span class="t">'+esc(c)+'</span><span class="s">'+((i+1)*420+180)+' 字</span>'+st+'</div>';
+      }).join('');
+      $('#paneBody').className = 'card-b tight';
+    } else if (stage === 2){
+      cnt = '第 4 章 · 3 段';
+      var lines = [
+        '<b>冰柜的光</b>把她的影子拉得很长，一直铺到门口。她没回头，只把找零推过来，硬币在玻璃台上转了两圈才停。',
+        '外面还在下雨。他把伞收起来，水顺着伞骨往下淌，在地砖上积成一小片。<b>两个人谁都没有先开口。</b>',
+        (rerun ? '收音机忽然响了一声，是整点报时的前奏，然后又哑了。她抬了下眼，仍旧没说话。'
+               : '她抬眼看了看钟，又把视线移回冰柜，像是在等一个不会来的人。')
+      ];
+      html = lines.map(function(x){ return '<div class="para">'+x+'</div>'; }).join('');
+      $('#paneBody').className = 'card-b';
+    } else if (stage === 3){
+      cnt = '第 4 章 · 2 场';
+      html = '<div class="para"><b>内景 · 便利店 · 夜</b><br>冰柜的冷光。硬币在玻璃台转动。<br>'
+        + '<span class="mute">镜头建议：特写硬币 → 摇到两人的手，别切脸。</span></div>'
+        + '<div class="para"><b>内景 · 门口 · 连续</b><br>伞立在门边，水积成一小片。<br>'
+        + '<span class="mute">声音：雨声压低，留出两秒静默。</span></div>';
+      $('#paneBody').className = 'card-b';
+    } else {
+      cnt = '18 个分镜';
+      html = '<div class="shotgrid">' + Array.from({length:6},function(_,i){
+        var n = (i+1) < 10 ? '0'+(i+1) : (i+1);
+        return '<div class="shot"><img src="../canvas/assets/thumbs/story-'+n+'.svg" alt="分镜占位图">'
+          + '<div class="c"><b>镜 '+(i+1)+'</b>'+['中景 · 冰柜','特写 · 硬币','全景 · 门口','近景 · 伞','中景 · 两人','空镜 · 雨'][i]+'</div></div>';
+      }).join('') + '</div><div class="mute" style="margin-top:9px;font-size:var(--fz)">占位片来自画布的 24 张本地 SVG，不是真生成结果。</div>';
+      $('#paneBody').className = 'card-b';
+    }
+    $('#paneCount').textContent = cnt;
+    $('#paneBody').innerHTML = html;
+    $('#rerunBtn').textContent = stage === 2 ? '只重做这一段' : '只重做这一步';
+  }
+  function renderSide(){
+    $('#paneRoom').innerHTML = '<div class="note" style="margin-bottom:11px"><span>✎</span><div>'
+      + 'AI 给了两段写法，<b>由你选</b>。采纳只改这一段，不重跑整章。</div></div>'
+      + CAND.map(function(c,i){
+        return '<div class="cand"><div class="h"><span class="t">'+esc(c.t)+'</span>'
+          + (adopted===i?'<span class="tag ok">已采纳</span>':'')+'</div>'
+          + '<div class="p">'+esc(c.p)+'</div><div class="why">'+esc(c.why)+'</div>'
+          + '<div class="f"><button class="btn sm" data-adopt="'+i+'"'+(adopted===i?' disabled':'')+'>'
+          + (adopted===i?'已采纳':'采纳这一段')+'</button></div></div>';
+      }).join('');
+    $('#paneFacts').innerHTML = '<div class="note" style="margin-bottom:11px"><span>✓</span><div>'
+      + '每次生成自动带入的事实，<b>标了出处</b>：青色＝原文、黄色＝AI 推断待确认、绿色＝你改过。</div></div>'
+      + FACTS.map(function(f){
+        return '<div class="fact '+f.k+'">'+esc(f.c)+'<div class="src">'+esc(f.s)+'</div></div>';
+      }).join('');
+    $('#paneHooks').innerHTML = '<div class="note" style="margin-bottom:11px"><span>⌁</span><div>'
+      + '伏笔台账：埋在哪、收在哪，<b>没回收的会拦住结项</b>。</div></div>'
+      + '<div class="scroll" role="region" tabindex="0" aria-labelledby="hook-cap">'
+      + '<table class="tbl"><caption id="hook-cap" class="sr-only">伏笔台账</caption>'
+      + '<thead><tr><th scope="col">伏笔</th><th scope="col">埋点</th><th scope="col">状态</th></tr></thead><tbody>'
+      + HOOKS.map(function(h){
+        var t = h.s==='未回收' ? '<span class="tag wn">未回收</span>' : '<span class="tag ok">已回收</span>';
+        return '<tr><td><b>'+esc(h.n)+'</b></td><td>'+esc(h.c)+'</td><td>'+t+'</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+
+  document.addEventListener('click', function(e){
+    var p = e.target.closest('[data-p]');
+    if (p){ cur = +p.dataset.p; stage = PROJECTS[cur].now; adopted = -1; approved = false;
+      renderProjects(); renderRail(); renderPane(); renderSide();
+      $('#gateTxt').textContent = PROJECTS[cur].gate;
+      $('#gateBtn').textContent = '批准并生成'; $('#gateBtn').disabled = false;
+      FP.toast('切到「'+PROJECTS[cur].n+'」'); return; }
+    var s = e.target.closest('[data-s]');
+    if (s){ stage = +s.dataset.s; renderPane(); return; }
+    var a = e.target.closest('[data-adopt]');
+    if (a){ adopted = +a.dataset.adopt; renderSide(); FP.toast('已采纳候选 '+(adopted?'B':'A')+' · 只替换这一段'); return; }
+  });
+  $('#rerunBtn').addEventListener('click', function(){
+    rerun = (rerun+1)%2;
+    if (stage===2) renderPane();
+    FP.toast('只重做了当前这一段，其余 '+(PROJECTS[cur].ch||0)+' 章没动');
+  });
+  $('#gateBtn').addEventListener('click', function(){
+    if (approved) return;
+    approved = true; this.textContent = '已批准 · 排队中'; this.disabled = true;
+    FP.toast('已批准：预计 ⚡56，到 40 会停下等你确认');
+  });
+
+  renderProjects(); renderRail(); renderPane(); renderSide();
+  $('#gateTxt').textContent = PROJECTS[0].gate;
+})();
+</script>
+</body>
+</html>

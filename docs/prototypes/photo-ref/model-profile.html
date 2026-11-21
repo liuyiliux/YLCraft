@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <link rel="icon" href="data:,">
 <title>模特档案 · 原型</title>
-<link rel="stylesheet" href="../shared/theme.css?v=202611072335">
+<link rel="stylesheet" href="../shared/theme.css?v=202611220022">
 <style>
 :root{
   --bgPage:#09090b; --bgCard:#16161a; --bgElev:#1f1f27; --bgInput:#111116; --bgHover:#1c1c22;
@@ -58,15 +58,15 @@ input,textarea,select{font:inherit}
   justify-content:center;font-size:15px;color:var(--tx2)}
 .p-info{flex:1;min-width:0}
 .p-nm{font-size:15px;color:var(--tx1);font-weight:500}
-.p-sub{font-size:12px;color:var(--tx3);margin-top:2px}
-.p-cnt{font-size:12px;color:var(--tx3);font-family:var(--fm);flex-shrink:0}
+.p-sub{font-size:var(--fz);color:var(--tx3);margin-top:2px}
+.p-cnt{font-size:var(--fz);color:var(--tx3);font-family:var(--fm);flex-shrink:0}
 
 /* 右：详情 */
 .detail{display:flex;flex-direction:column;gap:16px}
 .card{background:var(--bgCard);border:1px solid var(--bd2);border-radius:var(--rMD);
   padding:18px 20px}
 .card h3{font-size:17px;margin-bottom:14px;display:flex;align-items:center;gap:9px}
-.card h3 .src{font-size:12px;padding:2px 9px;border-radius:4px;font-family:var(--fm);
+.card h3 .src{font-size:var(--fz);padding:2px 9px;border-radius:4px;font-family:var(--fm);
   font-weight:400}
 .src.me{background:color-mix(in srgb,var(--photo) 16%,transparent);color:var(--photo)}
 .src.obs{background:color-mix(in srgb,var(--pri) 16%,transparent);color:var(--pri)}
@@ -133,7 +133,7 @@ input,textarea,select{font:inherit}
 .tl{position:relative;margin-bottom:14px}
 .tl::before{content:'';position:absolute;left:-20px;top:6px;width:9px;height:9px;
   border-radius:50%;background:var(--coser)}
-.tl-d{font-size:12px;color:var(--tx3);font-family:var(--fm);margin-bottom:3px}
+.tl-d{font-size:var(--fz);color:var(--tx3);font-family:var(--fm);margin-bottom:3px}
 .tl-t{font-size:14px;color:var(--tx2);line-height:1.65}
 .tl-t b{color:var(--tx1)}
 
@@ -242,7 +242,7 @@ input,textarea,select{font:inherit}
         <h3>这个人该怎么拍 <span class="src me">你的判断</span></h3>
         <div class="act">
           <div class="act-c on">
-            <div class="act-h">🎭 本色出演 <span style="font-size:12px;color:var(--ok)">推荐</span></div>
+            <div class="act-h">🎭 本色出演 <span style="font-size:var(--fz);color:var(--ok)">推荐</span></div>
             <div class="act-b">
               她不需要演。<b>给她空间和环境，让她自己做事情</b>就行——
               她发呆、走路、整理头发的时候最好看。
@@ -414,6 +414,6 @@ function fake(msg){
   window._tt=setTimeout(()=>d.style.display='none',2600);
 }
 </script>
-<script src="../shared/proto-nav.js?v=202611072335"></script>
+<script src="../shared/proto-nav.js?v=202611220022"></script>
 </body>
 </html>

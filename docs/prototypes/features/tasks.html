@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<meta name="color-scheme" content="dark">
+<title>任务中心 · YLCraft 原型</title>
+<link rel="stylesheet" href="../shared/theme.css?v=202611220022">
+<link rel="stylesheet" href="app.css?v=202611220022">
+<style>
+.stats4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:13px}
+.statcard{background:var(--s1);border:1px solid var(--ln);border-radius:var(--r);padding:12px 14px}
+.statcard .l{font-size:var(--fz);color:var(--tx3)}
+.statcard .n{font-size:22px;font-weight:700;font-family:var(--fm),monospace;margin-top:3px}
+.statcard .n.ok{color:var(--ok)} .statcard .n.ac{color:var(--ac)}
+.statcard .n.er{color:var(--er)} .statcard .n.wn{color:var(--wn)}
+.statcard .m{font-size:var(--fz);color:var(--tx3);margin-top:2px}
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:var(--fz);white-space:nowrap}
+.badge.ok{color:var(--ok)} .badge.ac{color:var(--ac)}
+.badge.er{color:var(--er)} .badge.wn{color:var(--wn)} .badge.mu{color:var(--tx3)}
+.diag{font-size:var(--fz);color:var(--tx2);line-height:1.65;max-width:290px}
+.diag .why{color:var(--er)}
+.ev{margin-left:8px;font-size:var(--fz);color:var(--tx3);cursor:pointer;user-select:none}
+.ev:hover{color:var(--ac)}
+.ev-more{margin-top:6px;padding:8px 10px;border-radius:var(--r2);background:var(--s2);
+  border:1px solid var(--ln);font-size:var(--fz);color:var(--tx2);line-height:1.7}
+/* 日志区跟随主题，dawn 亮底下不再深底配深字 */
+.logbox{height:330px;overflow:auto;background:var(--s2);border:1px solid var(--ln);
+  border-radius:var(--r2);padding:11px 13px;font-family:var(--fm),monospace;
+  font-size:var(--fz);line-height:1.85;color:var(--tx2);white-space:pre-wrap;word-break:break-word}
+.logbox .t{color:var(--tx3)} .logbox .I{color:var(--tx2)}
+.logbox .W{color:var(--wn)} .logbox .E{color:var(--er)} .logbox .A{color:var(--ac)}
+.mrow{display:flex;gap:10px;padding:9px 0;border-bottom:1px dashed var(--ln);font-size:var(--fz)}
+.mrow:last-child{border-bottom:0}
+.mrow .k{flex:0 0 88px;color:var(--tx3)}
+.mrow .v{flex:1;color:var(--tx2);word-break:break-word}
+.mrow .v b{color:var(--tx);font-weight:600}
+@media (max-width:820px){.stats4{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html"><i>◈</i> 原项目功能</a>
+  <span class="crumb">任务中心 <span class="mono">/tasks</span></span>
+  <span class="spacer"></span>
+  <span class="hintbar">失败原因说人话 · 不甩堆栈</span>
+</header>
+
+<main class="page wide">
+  <div class="phead">
+    <div><h1>任务中心</h1><div class="sub">「实际做出了什么」看这里：任务状态、失败诊断、事件经过、运行日志，三处能对上。</div></div>
+    <div class="right"><span class="tag ac">示例数据</span>
+      <button class="btn ghost" id="refreshBtn">刷新状态</button></div>
+  </div>
+
+  <div class="stats4" id="stats"></div>
+
+  <section class="card">
+    <div class="card-h" style="padding-bottom:0;border-bottom:0">
+      <div class="tabs" data-tabs role="tablist" aria-label="任务中心视图"
+           focusgroup="tablist nomemory">
+        <button class="tab" type="button" role="tab" id="tab-jobs" data-tab="jobs"
+                aria-selected="true" tabindex="0">任务</button>
+        <button class="tab" type="button" role="tab" id="tab-events" data-tab="events"
+                aria-selected="false" tabindex="-1">事件日志</button>
+        <button class="tab" type="button" role="tab" id="tab-logs" data-tab="logs"
+                aria-selected="false" tabindex="-1">运行日志</button>
+      </div>
+      <span class="right" style="padding-bottom:8px"><span class="s" id="tabHint">8 条任务</span></span>
+    </div>
+
+    <div class="card-b tight" role="tabpanel" aria-labelledby="tab-jobs" data-pane="jobs"
+         tabindex="0" style="overflow-x:auto">
+      <table class="tbl" style="min-width:940px">
+        <caption class="sr-only">任务列表与诊断结果</caption>
+        <thead><tr><th scope="col" style="width:210px">任务</th><th scope="col" style="width:96px">类型</th>
+          <th scope="col" style="width:100px">状态</th><th scope="col">诊断 / 结果</th><th scope="col" style="width:82px">耗时</th><th scope="col" class="acts" style="width:150px">操作</th></tr></thead>
+        <tbody id="jobs"></tbody>
+      </table>
+    </div>
+
+    <div class="card-b" role="tabpanel" aria-labelledby="tab-events" data-pane="events" hidden="until-found">
+      <div class="note" style="margin-bottom:13px"><span>ⓘ</span><div>
+        每条事件都挂在它所属的任务上，点「展开」看当时发生了什么。<b>对话负责沟通，这里负责事实。</b>
+      </div></div>
+      <div class="tl" id="events"></div>
+    </div>
+
+    <div class="card-b" role="tabpanel" aria-labelledby="tab-logs" data-pane="logs" hidden="until-found">
+      <div class="row wrap" style="margin-bottom:10px">
+        <div class="chips" id="lvChips">
+          <button class="chip on" data-lv="全部">全部</button>
+          <button class="chip" data-lv="E">错误</button>
+          <button class="chip" data-lv="W">警告</button>
+          <button class="chip" data-lv="I">信息</button>
+        </div><span class="spacer"></span><span class="mute" id="logCount"></span>
+      </div>
+      <div class="logbox" id="logbox"></div>
+    </div>
+  </section>
+
+  <div class="note" style="margin-top:16px"><span>ⓘ</span><div>
+    <b>原型口径</b>：状态推进、重试、取消都是本地模拟，不会真的调模型、不会真的扣积分。
+    真实实现里任务详情有诊断字段与结构化事件时间线（见 <code class="mono">task-observability</code> 规格），
+    失败原因必须给人看，不能把 SQL、堆栈或内部异常类名甩到界面上。
+  </div></div>
+  <div class="protofoot">
+    对应真实功能：<code>/tasks</code>（列表 / 详情 / 重试 / 取消）、<code>/logs</code>、平台事件日志与运行日志三个 Tab。
+    规格见 <code>task-observability</code>、<code>platform-event-logging</code>。
+  </div>
+</main>
+
+<script src="../shared/proto-nav.js?v=202611220022"></script>
+<script src="app.js?v=202611220022"></script>
+<script src="theme-switch.js?v=202611220022"></script>
+<script>
+(function(){
+  var $ = FP.$, $$ = FP.$$, esc = FP.esc;
+  var JOBS = [
+    {id:'T-2418', n:'第 4 章正文 · 冰柜的光', t:'文字生成', st:'run', d:'正在写第 2 段 · 已完成 1/3', dur:'00:42', why:'', retry:0, model:'deepseek-v4 · 文本'},
+    {id:'T-2417', n:'分镜 04 · 雨夜门口', t:'图片生成', st:'done', d:'已产出 1 张图，自检通过（非黑帧、尺寸 1536×1024）', dur:'01:18', why:'', retry:0, model:'即梦 3.0 · 图像'},
+    {id:'T-2416', n:'第 3 场粗剪 · 拼接', t:'视频剪辑', st:'fail', d:'', why:'第 2 段素材读不出来：文件在上次导出后被移动过。把素材放回原位置，或重新选一份再试。', dur:'00:09', retry:2, model:'本地剪辑 · ffmpeg'},
+    {id:'T-2415', n:'参考片下载 · B 站', t:'下载', st:'done', d:'已存进素材库，来源归一完成', dur:'02:31', why:'', retry:0, model:'yt-dlp · B 站'},
+    {id:'T-2414', n:'秋日茶饮 · 主视觉', t:'图片生成', st:'queue', d:'排队中 · 前面还有 1 个任务', dur:'—', why:'', retry:0, model:'即梦 3.0 · 图像'},
+    {id:'T-2413', n:'第 2 章 · 追色 1.0', t:'图片精修', st:'done', d:'程度 70 · 已另存为新图层，原图没动', dur:'00:36', why:'', retry:0, model:'本地追色 · 色彩'},
+    {id:'T-2412', n:'片头动效 6s', t:'视频生成', st:'fail', d:'', why:'这次模型返回的不是视频，而是一张静帧。已经拦下，没有当成成品展示；重跑会换一个供应商。', dur:'01:52', retry:1, model:'可灵 1.6 · 视频'},
+    {id:'T-2411', n:'环境雨声 · 配乐混音', t:'音频', st:'cancel', d:'你取消了这次混音，曲目没被改动', dur:'00:05', why:'', retry:0, model:'本地混音'}
+  ];
+  var EV = [
+    {t:'11-08 19:02:14', b:'<b>T-2418</b> 开始写第 4 章正文 · 门禁已批准（上限 ⚡56）', k:'ac', more:'批准人：你 · 批准时间 19:02:02 · 本次预算按 40 封顶，超出会停下来等你确认。'},
+    {t:'11-08 19:01:50', b:'<b>T-2417</b> 产出 1 张图，自检通过', k:'', more:'检查项：文件可读、非黑帧、尺寸符合 1536×1024、无静音/削波（不适用）。自检不过不会展示。'},
+    {t:'11-08 19:01:31', b:'<b>T-2416</b> 第 2 次重试仍失败，停在诊断态', k:'er', more:'失败原因：素材文件路径失效。已把「需要人处理」标出来，没有自动重试第三次，避免无限循环。'},
+    {t:'11-08 19:00:02', b:'<b>T-2412</b> 产出被自审拦下，未展示', k:'wn', more:'自审发现返回的是静帧而非视频；按规矩不予呈现，任务标为失败并写清原因。'},
+    {t:'11-08 18:58:40', b:'<b>T-2415</b> 进入队列 · 前面 1 个任务', k:'', more:'队列只影响开始时间，不锁住界面；期间可以继续挑素材、改提示词。'},
+    {t:'11-08 18:57:11', b:'<b>T-2413</b> 追色结果另存为新图层', k:'', more:'非破坏编辑：原图保留，新图层可单独隐藏 / 锁定 / 调整顺序。'}
+  ];
+  var LOGS = [
+    ['19:02:14','I','task T-2418 stage=writing progress=1/3 model=deepseek-v4'],
+    ['19:02:02','A','gate approved task=T-2418 budget=56 cap=40 by=you'],
+    ['19:01:50','I','task T-2417 done output=1 image selfcheck=pass 1536x1024'],
+    ['19:01:31','E','task T-2416 retry=2 failed reason=source-file-moved'],
+    ['19:01:30','W','task T-2416 source path no longer readable; waiting for human'],
+    ['19:00:02','W','task T-2412 output rejected by selfcheck: still image, expected video'],
+    ['18:58:40','I','task T-2415 queued position=2'],
+    ['18:57:11','A','task T-2413 saved as new layer; original untouched'],
+    ['18:56:02','I','worker heartbeat ok queue=2 running=1'],
+    ['18:55:47','E','task T-2412 attempt=1 provider=keling-1.6 returned no video stream'],
+    ['18:54:20','I','asset AS-2414 provenance-clean done watermark=removed'],
+    ['18:53:09','I','session started local instance 127.0.0.1']
+  ];
+  var ST = {run:['ac','运行中'],done:['ok','已完成'],fail:['er','失败'],queue:['wn','排队中'],cancel:['mu','已取消']};
+  var lv = '全部';
+
+  function renderStats(){
+    var c = {run:0,done:0,fail:0,queue:0};
+    JOBS.forEach(function(j){ c[j.st] = (c[j.st]||0)+1; });
+    $('#stats').innerHTML = [
+      ['运行中',c.run,'ac','当前占用 1 个生成位'],['已完成',c.done,'ok','今天 4 条产物'],
+      ['失败',c.fail,'er','2 条等人处理'],['今日消耗','⚡ 96','wn','上限 40 / 次 · 到顶会停']
+    ].map(function(s){
+      return '<div class="statcard"><div class="l">'+s[0]+'</div><div class="n '+s[2]+'">'+s[1]+'</div>'
+        + '<div class="m">'+s[3]+'</div></div>';
+    }).join('');
+    $('#tabHint').textContent = JOBS.length + ' 条任务';
+  }
+  function renderJobs(){
+    $('#jobs').innerHTML = JOBS.map(function(j,i){
+      var s = ST[j.st];
+      var diag = j.why ? '<div class="diag"><span class="why">'+esc(j.why)+'</span></div>'
+        : '<div class="diag">'+esc(j.d)+'</div>';
+      var acts = '<button class="btn sm" data-detail="'+i+'">诊断</button> ';
+      if (j.st==='fail') acts += '<button class="btn sm pri" data-retry="'+i+'">重试</button>';
+      else if (j.st==='run'||j.st==='queue') acts += '<button class="btn sm danger" data-cancel="'+i+'">取消</button>';
+      else acts += '<span class="mute" style="font-size:var(--fz)">—</span>';
+      return '<tr><td><b>'+esc(j.n)+'</b><br><span class="mono mute" style="font-size:var(--fz)">'+j.id+'</span></td>'
+        + '<td>'+esc(j.t)+'</td><td><span class="badge '+s[0]+'"><span class="dot '+s[0]+'"></span>'+s[1]+'</span></td>'
+        + '<td>'+diag+'</td><td class="mono">'+j.dur+'</td><td class="acts">'+acts+'</td></tr>';
+    }).join('');
+  }
+  function renderEvents(){
+    $('#events').innerHTML = EV.map(function(e,i){
+      return '<div class="tl-row '+e.k+'"><div class="tl-t">'+e.t+'</div>'
+        + '<div class="tl-b">'+e.b+' <span class="ev" data-ev="'+i+'">展开 ▾</span></div>'
+        + '<div class="ev-more hide" data-evmore="'+i+'">'+esc(e.more)+'</div></div>';
+    }).join('');
+  }
+  function renderLogs(){
+    var arr = LOGS.filter(function(l){ return lv==='全部'||l[1]===lv; });
+    $('#logCount').textContent = arr.length + ' 行';
+    $('#logbox').innerHTML = arr.map(function(l){
+      return '<span class="t">'+l[0]+'</span>  <span class="'+l[1]+'">'+l[1]+'</span>  <span class="I">'+esc(l[2])+'</span>';
+    }).join('\n');
+  }
+  function detail(i){
+    var j = JOBS[i], s = ST[j.st];
+    var html = '<dialog class="modal" closedby="any" aria-labelledby="diag-title">'
+      + '<div class="mh"><span class="t" id="diag-title">任务诊断 · '+j.id+'</span>'
+      + '<button class="x" type="button" data-close-ov aria-label="关闭">✕</button></div>'
+      + '<div class="mb">'
+      + '<div class="mrow"><span class="k">任务</span><span class="v"><b>'+esc(j.n)+'</b></span></div>'
+      + '<div class="mrow"><span class="k">状态</span><span class="v"><span class="badge '+s[0]+'">'+s[1]+'</span></span></div>'
+      + '<div class="mrow"><span class="k">用了谁</span><span class="v">'+esc(j.model)+'</span></div>'
+      + '<div class="mrow"><span class="k">耗时 / 重试</span><span class="v">'+j.dur+' · 已重试 '+j.retry+' 次</span></div>'
+      + '<div class="mrow"><span class="k">结果</span><span class="v">'+(j.why
+          ? '<span style="color:var(--er)">'+esc(j.why)+'</span>' : esc(j.d))+'</span></div>'
+      + (j.why?'<div class="note er" style="margin-top:11px"><span>!</span><div>这条要人处理：<b>先把素材路径修好</b>，再重试。原型不会自动帮你改文件。</div></div>':'')
+      + '</div><div class="mf"><button class="btn ghost" type="button" data-close-ov>关闭</button></div></dialog>';
+    FP.openDialog(html);
+  }
+
+  document.addEventListener('click', function(e){
+    var r = e.target.closest('[data-retry]');
+    if (r){ var i = +r.dataset.retry; JOBS[i].st='queue'; JOBS[i].d='重新排队 · 会换一个供应商再试';
+      renderStats(); renderJobs(); FP.toast('已重新排队：'+JOBS[i].id); return; }
+    var c = e.target.closest('[data-cancel]');
+    if (c){ var k = +c.dataset.cancel; JOBS[k].st='cancel'; JOBS[k].d='你取消了这次任务';
+      renderStats(); renderJobs(); FP.toast('已取消：'+JOBS[k].id); return; }
+    var dt = e.target.closest('[data-detail]');
+    if (dt){ detail(+dt.dataset.detail); return; }
+    var ev = e.target.closest('[data-ev]');
+    if (ev){ var box = $('[data-evmore="'+ev.dataset.ev+'"]');
+      box.classList.toggle('hide'); ev.textContent = box.classList.contains('hide') ? '展开 ▾' : '收起 ▴'; return; }
+  });
+  $$('#lvChips .chip').forEach(function(b){
+    b.addEventListener('click', function(){
+      $$('#lvChips .chip').forEach(function(x){x.classList.toggle('on',x===b);});
+      lv = b.dataset.lv; renderLogs();
+    });
+  });
+  $('#refreshBtn').addEventListener('click', function(){
+    var j = JOBS.find(function(x){return x.st==='run';});
+    if (j) { j.d = '正在写第 3 段 · 已完成 2/3'; renderJobs(); FP.toast('状态已刷新（本地示例）'); }
+    else FP.toast('当前没有运行中的任务');
+  });
+
+  renderStats(); renderJobs(); renderEvents(); renderLogs();
+})();
+</script>
+</body>
+</html>

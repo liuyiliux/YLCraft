@@ -311,7 +311,7 @@ function openSkillForm(id){
       <div class="th2" style="display:flex;align-items:center;gap:10px">
         <div class="skic sm">${s.ic}</div>
         <div><div class="t">${s.n}</div><div class="s">${s.d}</div></div>
-        <span style="margin-left:auto;color:var(--ac);font-family:var(--fm);font-size:12px">${skillCost(s)}</span>
+        <span style="margin-left:auto;color:var(--ac);font-family:var(--fm);font-size:var(--fz)">${skillCost(s)}</span>
       </div>
       <div class="skfields">
         ${s.fields.map(f=>`

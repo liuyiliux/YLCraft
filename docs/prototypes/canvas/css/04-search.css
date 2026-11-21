@@ -1,7 +1,7 @@
 /* 04-search.css - split from canvas_unified_v14.html (lines 451-508) */
   /* 生成型搜索（画布内） */
-  .srch{font-size:12px}
-  .srch-h{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--tx2);margin-bottom:9px}
+  .srch{font-size:var(--fz)}
+  .srch-h{display:flex;align-items:center;gap:7px;font-size:var(--fz);color:var(--tx2);margin-bottom:9px}
   .srch-h b{color:var(--tx)}
   .srch-spin{width:11px;height:11px;border-radius:50%;border:1.5px solid var(--acl);
     border-top-color:var(--ac);animation:sp .8s linear infinite;flex:0 0 auto}
