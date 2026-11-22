@@ -680,3 +680,58 @@ python -m http.server 8901 --bind 127.0.0.1 --directory F:\PycharmProjects\YLCra
 - 底部提示会让位：`.jm-on .ghint{display:none}`、`#hintBar{bottom:72px}`，避免压住底部工具条。
 - 验收：`ylcraft_verify_font13.py` OK（22 页 × 1440/1920 零小字/溢出）；画布切模式、点节点、
   右键加节点、点工具条、缩放共 7 步 0 报错；画布页 `?v` bump 到 `202611222030`（50 处）。
+
+
+**11-22 晚 · 画布外壳二改（用户「参考项目配色更舒服、双击出现节点、右键拖拽画布」）**：
+先按 `docs/architecture/CANVAS_TECH_CHOICE.md` + `2026-10-18_canvas_license_audit.md` 的既有结论
+**不整套重构**：真实前端是基于 `basketikun/infinite-canvas`（MIT，逐字重合仅 2.6%）的派生，
+自有端口校验 / WorkflowTrace 等逻辑不在上游；原型层只重构**样式与操作手感**，功能点一个不动。
+- 配色从纯黑改参考图的**深灰阶**：画布 `#1b1b1b` + 24px 细线方格、左栏 / 顶栏 `#1c1c1c`、
+  右键菜单 `rgba(38,38,38,.97)` 半透明 + 衬线图标、底部工具条 / 缩放条同款深灰。
+  🔴 踩坑：原生 `<button>` 不带 `background:transparent;border:0` 会露出浏览器默认**白底凸起**，
+  菜单项和工具条一开始全白，已逐个补齐。
+- 操作按参考对齐：**双击空白**弹「选择节点」浮层（用 capture 抢在 `31-zoom.js` 的双击复位之前；
+  复位入口挪到左下缩放条）；**右键按住拖拽平移**、右键轻点弹菜单、右键拖过不弹（35-infinite.js
+  只管左键平移，本文件补右键那半边，不碰它）。
+- 验收：1440 截图比对深灰阶 / 菜单图标 / 无白底按钮；双击与右键各 1 步弹菜单、拖拽使 scrollTop
+  0→100 且菜单不弹；全站 `ylcraft_verify_font13.py` OK；`?v` 终值 `202611222200`（50 处）。
+
+
+**11-22 深夜 · canvas-oss：直接跑上游无限画布 + 三主题改造**（用户「你去自己研究他有什么功能怎么改造」）：
+- 新建 `docs/prototypes/canvas-oss/`，放完整 `basketikun/infinite-canvas` 源码（507 文件 / 7.3MB，
+  MIT LICENSE 保留），React 19 + Vite 7 原样跑。npm 缓存与依赖都设到 F 盘不碰 C 盘。
+- 三路只读研究（结论见当日工作日志）：上游 6 内置节点（图片/文本/配置/视频/音频/组）+ 插件系统
+  （`registerNodeDefinitions`，复制 template 即加节点）；上游已有 17 项功能我们 16 项有原型；
+  **上游没有**：镜头墙/素材墙双视图、影视分镜模型、本地像素后期 13 JS、门禁、制作实况看板。
+- 对齐结论：第一阶段只做镜头节点插件 + 三主题改造；像素后期 13 JS 第二阶段单独做。
+- 已改（第一阶段主题部分）：
+  - `web/src/stores/use-theme-store.ts`：ThemeName 扩成 deep/moonlight/dawn（+ light/dark 旧别名兼容），
+    persist version 2 + migrate 旧 dark/light。
+  - `web/src/lib/canvas-theme.ts`：三套色板——deep（上游 dark 原值 #181715）、moonlight（紫 #1d1a24）、
+    dawn（亮白 #ffffff）；旧 light/dark 作别名保留。
+  - `web/src/components/canvas/canvas-toolbar.tsx`：外观面板从两按钮改三按钮（深海/月光/晨曦），
+    CanvasThemeButton 改原生 button（AnimatedThemeToggler 只认两套）；阴影判断改暗色三档。
+  - `web/src/components/layout/app-providers.tsx`：`.dark` class 改 `theme !== dawn && theme !== light`；
+    `user-status-actions.tsx`：顶栏按钮映射三主题 ↔ light/dark。
+- 🔴 环境坑：npm optional dependency 连漏 3 个 Windows 原生包（rollup / lightningcss / tailwind oxide）；
+  lightningcss 要把 `.node` 二进制复制进 `node_modules/lightningcss/` 走 fallback；**补完包必须清
+  `node_modules/.vite` + 重启 dev server**，否则页面还显示旧 PostCSS 错误。
+- 验收：`npx tsc --noEmit` 仅剩上游自带 antd 类型错误（model-script-editor:58，与改造无关）；
+  无头 Chrome 实测三主题按钮都在、点月光后画布从暖灰变冷紫、0 报错；截图 `oss_theme_ui.png` /
+  `oss_moon_ui.png`。
+
+**11-23 凌晨 · 镜头节点方案推翻，改做「AI 拆成分镜」**（用户连问「镜头节点和视频节点区别 / 单独存在必要性 /
+即梦应该是文本节点 LLM 写剧本再拆」）：
+- **结论：镜头节点插件砍掉**。上游视频节点本就能生成（`project.tsx:2540`）+ 上传（`:1508`），
+  模型默认 `grok-imagine-video`；ComfyUI 的 Text Split 也只是按 `##` 机械切，不是智能拆分。
+  用户定的流程才对：**文本节点 LLM 写剧本 → AI 拆成 N 个分镜文本节点 → 每镜拖出视频节点 →
+  输入框写「根据这个分镜生成视频」**；上游 `buildNodeGenerationContext` 已把上游文本拼进 prompt，
+  整条链原生支持。分镜不需要成为一种节点，它就是几个文本节点。
+- 新增 `web/src/components/canvas/canvas-node-ai-split-dialog.tsx`：两步式——先调 LLM 出分镜
+  （`requestImageQuestion`，要求返回 JSON 数组），**预览可逐条改标题/描述**，点确认才建节点
+  （用户强偏好：AI 结果先给人确认再落库）。`parseAiShots` 容忍 ```json 包裹 / 前后解释 / 中英文字段名。
+- 接入：文本节点浮条加「AI 拆镜」（仅当节点有内容），`project.tsx` 加 `createAiSplitNodes`
+  照 `splitImageNode` 同构生成 N 个文本节点 + 自动连线到剧本节点 + 全选；中英 i18n 各加一组文案。
+- 验收：`npx tsc --noEmit` 仍只剩上游那个 antd 老错；无头 Chrome 打桩模型返回 3 镜，实测
+  「浮条出现 → 弹窗 → 预览 3 条可编辑 → 确认 → 节点 1→4 + 3 条连线」全通、AI 调用 1 次、0 报错；
+  截图 `ais_dialog.png` / `ais_preview.png` / `ais_done.png`。**未接真实模型密钥**，打桩只验 UI 链路。

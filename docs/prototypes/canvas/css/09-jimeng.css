@@ -1,35 +1,55 @@
-/* 09-jimeng.css — 11-22 照 basketikun/infinite-canvas 抄的画布外壳。
-   只做外壳：节点 / 连线 / 浮层逻辑仍是 01..38，本文件全靠 body.jm-on 生效，
-   不引主题开关的画布页保持原深色。所有文字 >= var(--fz)。 */
+/* 09-jimeng.css — 画布外壳：配色直接取上游 basketikun/infinite-canvas
+   web/src/lib/canvas-theme.ts 的 canvasThemes.dark（2026-11-22 从源码抄定，不再猜）。
+   只做外壳：节点 / 连线 / 工作台逻辑仍是 01..38，靠 body.jm-on 生效。
+   上游原值：canvas #181715 / line rgba(245,245,244,.10) / panel #1f1d1a /
+   stroke #44403c / text #f5f5f4 / toolbar rgba(31,29,26,.96)。 */
 
-/* ---------- 左侧窄节点栏 ---------- */
-.jm-on .nodelib{width:158px;flex:0 0 158px}
-.jm-on .nlh{height:34px;padding:0 10px;font-size:var(--fz);letter-spacing:.02em}
-.jm-on .nlb{padding:6px 6px 10px}
-.jm-on .nlg{font-size:var(--fz);color:var(--tx3);font-weight:600;padding:7px 6px 4px}
+/* ---------- 画布底色与网格：上游 dark 主题（暖灰 + 细线方格） ---------- */
+.jm-on .gcanvas{background:#181715}
+.jm-on #ginner{
+  background-color:#181715;
+  background-image:linear-gradient(to right,rgba(245,245,244,.10) 1px,transparent 1px),
+                   linear-gradient(to bottom,rgba(245,245,244,.10) 1px,transparent 1px);
+  background-size:24px 24px;
+}
+
+/* ---------- 顶栏 / 左栏：同一套暖灰，弱化品牌色块 ---------- */
+.jm-on .top{background:rgba(31,29,26,.96);border-bottom-color:#44403c}
+.jm-on .brand{background:transparent;border-color:transparent}
+.jm-on .brand .mk{background:#292524;color:#f5f5f4}
+.jm-on .seg{background:#1f1d1a;border-color:#44403c}
+.jm-on .seg button.on{background:#e7e5df;color:#1c1917}
+
+.jm-on .nodelib{width:178px;flex:0 0 178px;background:#1f1d1a;
+  border-right:1px solid #44403c}
+.jm-on .nlh{height:34px;padding:0 12px;font-size:var(--fz);letter-spacing:.02em;
+  border-bottom-color:#44403c}
+.jm-on .nlb{padding:6px 8px 10px}
+.jm-on .nlg{font-size:var(--fz);color:#a8a29e;font-weight:600;padding:7px 6px 4px}
 .jm-on .nlg .nlc{display:none}
-.jm-on .nli{height:29px;padding:0 7px;display:flex;align-items:center;gap:8px;
-  border-radius:5px;font-size:var(--fz);color:var(--tx2);cursor:pointer}
-.jm-on .nli:hover{background:var(--s3);color:var(--tx)}
-.jm-on .nli.comp{color:var(--tx3)}
+.jm-on .nli{height:30px;padding:0 8px;display:flex;align-items:center;gap:9px;
+  border-radius:5px;font-size:var(--fz);color:#d6d3d1;cursor:pointer}
+.jm-on .nli:hover{background:#292524;color:#f5f5f4}
+.jm-on .nli.comp{color:#a8a29e}
 .jm-on .nldot{width:7px;height:7px;flex:0 0 7px;border-radius:50%}
 .jm-on .nlnote{display:none}
 
-.jm-tabs{display:flex;gap:2px;padding:6px 6px 2px;border-bottom:1px solid var(--ln)}
-.jm-tabs button{flex:1;height:26px;border-radius:5px;font-size:var(--fz);color:var(--tx3)}
-.jm-tabs button[aria-pressed="true"]{background:var(--s3);color:var(--tx);font-weight:600}
-.jm-tools{padding:7px 7px 3px}
-.jm-tools .tip{font-size:var(--fz);color:var(--tx3);display:block;margin-bottom:5px;white-space:nowrap}
-.jm-tools input{width:100%;height:26px;padding:0 7px;border:1px solid var(--ln2);
-  border-radius:5px;background:var(--s2);color:var(--tx);font-size:var(--fz)}
-.jm-assets{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px 7px}
-.jm-assets button{border:1px solid var(--ln);border-radius:5px;overflow:hidden;padding:0;
-  background:var(--s2);cursor:pointer}
+.jm-tabs{display:flex;gap:0;padding:0 8px;border-bottom:1px solid #44403c}
+.jm-tabs button{flex:1;height:32px;border-radius:0;background:transparent;border:0;
+  border-bottom:2px solid transparent;font-size:var(--fz);color:#a8a29e}
+.jm-tabs button[aria-pressed="true"]{color:#f5f5f4;font-weight:600;border-bottom-color:var(--ac)}
+.jm-tools{padding:8px 9px 4px}
+.jm-tools .tip{font-size:var(--fz);color:#a8a29e;display:block;margin-bottom:6px;white-space:nowrap}
+.jm-tools input{width:100%;height:27px;padding:0 9px;border:1px solid #44403c;
+  border-radius:6px;background:#292524;color:#f5f5f4;font-size:var(--fz)}
+.jm-assets{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px 2px}
+.jm-assets button{border:1px solid #44403c;border-radius:6px;overflow:hidden;padding:0;
+  background:#292524;cursor:pointer}
 .jm-assets img{display:block;width:100%;aspect-ratio:1/1;object-fit:cover}
-.jm-assets span{display:block;padding:3px;font-size:var(--fz);color:var(--tx3);
+.jm-assets span{display:block;padding:3px;font-size:var(--fz);color:#a8a29e;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
-/* ---------- 选中节点：蓝框 + 两侧把手（参考截图） ---------- */
+/* ---------- 选中节点：蓝框 + 两侧把手 ---------- */
 .jm-on #gnodes .gnode.sel{border-color:#3b82f6!important;box-shadow:0 0 0 1px #3b82f6}
 .jm-on #gnodes .gnode.sel::before,.jm-on #gnodes .gnode.sel::after{
   content:"";position:absolute;top:50%;width:9px;height:9px;border-radius:50%;
@@ -37,7 +57,7 @@
 .jm-on #gnodes .gnode.sel::before{left:-5px}
 .jm-on #gnodes .gnode.sel::after{right:-5px}
 
-/* ---------- 选中浮条：浅色胶囊（参考截图） ---------- */
+/* ---------- 选中浮条：浅色胶囊（参考截图白底胶囊） ---------- */
 .jm-on #nodeWb .nwb-tools{background:#fafafa;border:1px solid #e4e4e7;border-radius:999px;
   padding:3px 4px;gap:1px;max-width:calc(100% - 16px);overflow-x:auto;
   box-shadow:0 10px 26px -10px rgba(0,0,0,.55)}
@@ -48,7 +68,7 @@
 .jm-on #nodeWb .nwb-tb.close{color:#71717a}
 .jm-on #nodeWb .nwb-sep{background:#d4d4d8;margin:0 2px}
 
-/* ---------- 节点下方输入框：参考截图的紧凑形态 ---------- */
+/* ---------- 节点下方输入框 ---------- */
 .jm-on #nodeWb .nwb-chat{width:330px}
 .jm-on #nodeWb .nwb-hd .t{font-size:var(--fz)}
 .jm-on #nodeWb .nwb-chips{display:none}
@@ -57,48 +77,44 @@
 .jm-on #nodeWb .nwb-send{width:30px;height:30px;padding:0;border-radius:50%;
   display:grid;place-items:center;font-size:var(--fz)}
 
-/* ---------- 底部居中工具条 ---------- */
+/* ---------- 底部工具条 / 左下缩放条：上游 toolbar.panel ---------- */
 .jm-dock,.jm-zoom{display:none}
 .jm-on .jm-dock,.jm-on .jm-zoom{display:flex}
+.jm-dock,.jm-zoom{
+  background:rgba(31,29,26,.96);border:1px solid #44403c;
+  backdrop-filter:blur(12px);box-shadow:0 14px 34px -12px rgba(0,0,0,.65)}
 .jm-dock{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);
-  align-items:center;gap:2px;padding:5px 7px;border-radius:12px;z-index:21;
-  background:var(--s2);border:1px solid var(--ln2);
-  box-shadow:0 14px 34px -12px rgba(0,0,0,.65)}
+  align-items:center;gap:2px;padding:5px 7px;border-radius:12px;z-index:21}
 .jm-dock button{width:29px;height:29px;display:grid;place-items:center;border-radius:6px;
-  color:var(--tx2);font-size:var(--fz)}
-.jm-dock button:hover{background:var(--s3);color:var(--ac)}
+  background:transparent;border:0;color:#d6d3d1;font-size:var(--fz)}
+.jm-dock button:hover{background:#292524;color:#f5f5f4}
 .jm-dock button.danger:hover{color:var(--er)}
-.jm-dock .sep{width:1px;height:17px;background:var(--ln2);margin:0 3px}
+.jm-dock .sep{width:1px;height:17px;background:#44403c;margin:0 3px}
 .jm-dock svg{width:16px;height:16px}
 
-/* ---------- 左下缩放条 ---------- */
 .jm-zoom{position:absolute;left:14px;bottom:16px;align-items:center;gap:5px;
-  padding:5px 8px;border-radius:12px;z-index:21;
-  background:var(--s2);border:1px solid var(--ln2);
-  box-shadow:0 14px 34px -12px rgba(0,0,0,.65)}
-.jm-zoom button{width:24px;height:24px;border-radius:5px;color:var(--tx2);font-size:var(--fz)}
-.jm-zoom button:hover{background:var(--s3);color:var(--ac)}
+  padding:5px 8px;border-radius:12px;z-index:21}
+.jm-zoom button{width:24px;height:24px;border-radius:5px;background:transparent;border:0;
+  color:#d6d3d1;font-size:var(--fz)}
+.jm-zoom button:hover{background:#292524;color:#f5f5f4}
 .jm-zoom input[type="range"]{width:82px;accent-color:var(--ac)}
-.jm-zoom .pct{font-family:var(--fm),monospace;font-size:var(--fz);color:var(--tx2);
+.jm-zoom .pct{font-family:var(--fm),monospace;font-size:var(--fz);color:#d6d3d1;
   min-width:38px;text-align:right}
 
-/* ---------- 右键「选择节点」浮层 ---------- */
-.jm-ctx{position:fixed;z-index:9999;width:158px;padding:6px;display:none;
-  background:var(--s2);border:1px solid var(--ln2);border-radius:10px;
-  box-shadow:0 20px 48px -14px rgba(0,0,0,.75)}
+/* ---------- 节点创建菜单：上游 NodeCreateMenu（w-240 / rounded-2xl / p-2 / panel） ---------- */
+.jm-ctx{position:fixed;z-index:9999;width:240px;padding:8px;display:none;
+  background:#1f1d1a;border:1px solid #44403c;border-radius:16px;
+  backdrop-filter:blur(14px);box-shadow:0 22px 52px -14px rgba(0,0,0,.8)}
 .jm-ctx.on{display:block}
-.jm-ctx .h{display:flex;align-items:center;padding:3px 6px 6px;font-size:var(--fz);
-  color:var(--tx2);font-weight:600;border-bottom:1px solid var(--ln)}
-.jm-ctx .h button{margin-left:auto;color:var(--tx3);font-size:var(--fz)}
-.jm-ctx button.it{display:flex;align-items:center;gap:8px;width:100%;height:28px;
-  padding:0 7px;border-radius:5px;font-size:var(--fz);color:var(--tx2);text-align:left}
-.jm-ctx button.it:hover{background:var(--s3);color:var(--tx)}
+.jm-ctx .h{display:flex;align-items:center;padding:4px 7px 8px;font-size:var(--fz);
+  color:#a8a29e;border-bottom:1px solid rgba(245,245,244,.1)}
+.jm-ctx .h button{margin-left:auto;color:#a8a29e;font-size:var(--fz);background:transparent;border:0}
+.jm-ctx button.it{display:flex;align-items:center;gap:9px;width:100%;height:32px;
+  padding:0 8px;border-radius:8px;font-size:var(--fz);color:#f5f5f4;text-align:left;
+  background:transparent;border:0}
+.jm-ctx button.it .ico{width:15px;height:15px;flex:0 0 15px;stroke:#a8a29e;fill:none;
+  stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.jm-ctx button.it:hover{background:#292524;color:#f5f5f4}
 
-/* ---------- 底部提示避让 + 右键菜单跟工具条同一套浅色 ---------- */
 .jm-on .ghint{display:none}
 .jm-on #hintBar{bottom:72px}
-.jm-ctx{background:#fafafa;border-color:#e4e4e7}
-.jm-ctx .h{color:#3f3f46;border-bottom-color:#e4e4e7}
-.jm-ctx .h button{color:#71717a}
-.jm-ctx button.it{background:transparent;color:#3f3f46}
-.jm-ctx button.it:hover{background:#eaeaea;color:#18181b}

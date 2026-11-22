@@ -19,9 +19,12 @@
     audio:'<path d="M9 18V5l10-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/>',
     link:'<circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="6" r="2.4"/><path d="M8 16L16 8"/>',
     del:'<path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13"/>',
-    reset:'<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>'
+    reset:'<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>',
+    settings:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/>',
+    plus:'<path d="M12 5v14M5 12h14"/>'
   };
   function svg(p){ return '<svg class="ic sm" viewBox="0 0 24 24">'+p+'</svg>'; }
+  function ico(p){ return '<svg class="ico" viewBox="0 0 24 24">'+p+'</svg>'; }
 
   function toast(t){ if (typeof window.toast === 'function') window.toast(t); }
 
@@ -61,16 +64,21 @@
     var zm = document.createElement('div');
     zm.className = 'jm-zoom';
     zm.innerHTML = '<button type="button" data-jm="reset" title="复位 100%">'+svg(SVG.reset)+'</button>'
+      + '<button type="button" data-jm="settings" title="画布设置（原型占位）">'+svg(SVG.settings)+'</button>'
       + '<input type="range" min="30" max="300" value="100" aria-label="画布缩放">'
-      + '<span class="pct">100%</span>';
+      + '<span class="pct">100%</span>'
+      + '<button type="button" data-jm="zi" title="放大">'+svg(SVG.plus)+'</button>';
     cv.appendChild(zm);
 
     var ctx = document.createElement('div');
     ctx.className = 'jm-ctx'; ctx.id = 'jmCtx';
+    var items = [
+      ['text','文本',SVG.text],['image','图片',SVG.image],['video','视频',SVG.video],
+      ['audio','音频',SVG.audio],['group','组',SVG.link]
+    ];
     ctx.innerHTML = '<div class="h">选择节点 <button type="button" data-jm-close aria-label="关闭">✕</button></div>'
-      + [['text','T　文本'],['image','▧　图片'],['video','▶　视频'],
-         ['audio','♫　音频'],['group','▦　组']].map(function(x){
-          return '<button class="it" type="button" data-jm-add="'+x[0]+'">'+x[1]+'</button>';
+      + items.map(function(x){
+          return '<button class="it" type="button" data-jm-add="'+x[0]+'">'+ico(x[2])+'<span>'+x[1]+'</span></button>';
         }).join('');
     document.body.appendChild(ctx);
 
@@ -120,6 +128,7 @@
       if (a === 'redo'){ redo(); return; }
       if (a === 'del'){ delNode(); return; }
       if (a === 'reset'){ resetZoom(); return; }
+      if (a === 'settings'){ toast('画布设置：网格 / 吸附 / 自动保存（原型占位）'); return; }
       if (a === 'link'){ toast('连线：拖节点边缘的圆点接到另一个节点'); return; }
       if (map[a]){ addNodeFromLib(map[a]); return; }
     });
@@ -132,19 +141,61 @@
     });
   }
 
-  /* ---------- 右键「选择节点」 ---------- */
+  /* ---------- 右键轻点 / 双击空白弹「选择节点」，右键按住拖拽平移 ----------
+     参考项目：右键按下拖动 = 平移画布，右键单击 = 弹菜单；双击空白也弹菜单。
+     35-infinite.js 只接管左键平移，这里补右键那半边，不碰它的实现。
+     31-zoom.js 的「双击复位」被本文件的双击菜单取代；复位入口仍留在左下缩放条。 */
+  function isBg(t){
+    if (!t) return false;
+    if (t.closest('.gnode, .gmap, .gparams, #groupBar, .ghint, .nodelib, .nwb, #agPeek, .cmp-ov, .dg-ov, .jm-dock, .jm-zoom, #jmCtx')) return false;
+    if (t.tagName === 'path' || t.closest('svg.gedges')) return false;
+    return true;
+  }
+  function openCtxAt(x, y){
+    var ctx = $('#jmCtx'); if (!ctx) return;
+    /* 上游 NodeCreateMenu 宽 240px（w-[240px]），定位按它算，别用旧 178 */
+    ctx.style.left = Math.max(8, Math.min(x, window.innerWidth - 250))+'px';
+    ctx.style.top  = Math.max(8, Math.min(y, window.innerHeight - 268))+'px';
+    ctx.classList.add('on');
+  }
   function initCtx(){
     var cv = $('.gcanvas'), ctx = $('#jmCtx');
     if (!cv || !ctx) return;
+    var rp = null;   // right-button pan
     cv.addEventListener('contextmenu', function(e){
-      if (e.target.closest('.gnode') || e.target.closest('#nodeWb')) return;
-      e.preventDefault(); e.stopPropagation();
-      var x = Math.min(e.clientX, window.innerWidth - 170);
-      var y = Math.min(e.clientY, window.innerHeight - 260);
-      ctx.style.left = Math.max(8,x)+'px';
-      ctx.style.top  = Math.max(8,y)+'px';
-      ctx.classList.add('on');
+      if (!isBg(e.target)) return;
+      e.preventDefault(); e.stopPropagation();   // 菜单改在 pointerup 里判断：拖过就不弹
     });
+    cv.addEventListener('pointerdown', function(e){
+      if (e.button !== 2 || !isBg(e.target)) return;
+      rp = { x:e.clientX, y:e.clientY, sl:cv.scrollLeft, st:cv.scrollTop, moved:false };
+      try { cv.setPointerCapture(e.pointerId); } catch(_){}
+    });
+    cv.addEventListener('pointermove', function(e){
+      if (!rp) return;
+      var dx = e.clientX - rp.x, dy = e.clientY - rp.y;
+      if (!rp.moved && Math.abs(dx)+Math.abs(dy) < 5) return;
+      rp.moved = true;
+      cv.classList.add('panning');
+      cv.scrollLeft = rp.sl - dx;
+      cv.scrollTop  = rp.st - dy;
+    });
+    function endRight(e){
+      if (!rp) return;
+      var moved = rp.moved; rp = null;
+      cv.classList.remove('panning');
+      try { cv.releasePointerCapture(e.pointerId); } catch(_){}
+      if (!moved && e.button === 2) openCtxAt(e.clientX, e.clientY);
+    }
+    cv.addEventListener('pointerup', endRight);
+    cv.addEventListener('pointercancel', endRight);
+    /* 双击空白弹同一份菜单（用 capture 抢在 31-zoom 的 document 监听之前） */
+    cv.addEventListener('dblclick', function(e){
+      if (!isBg(e.target)) return;
+      e.preventDefault(); e.stopPropagation();
+      openCtxAt(e.clientX, e.clientY);
+    }, true);
+
     document.addEventListener('click', function(e){
       var it = e.target.closest('[data-jm-add]');
       if (it){ addNodeFromLib(it.dataset.jmAdd); ctx.classList.remove('on'); return; }
@@ -154,7 +205,30 @@
       if (!e.target.closest('#jmCtx')) ctx.classList.remove('on');
     });
     document.addEventListener('keydown', function(e){
-      if (e.key === 'Escape') ctx.classList.remove('on');
+      if (e.key === 'Escape'){ ctx.classList.remove('on'); return; }
+      /* Delete / Backspace 删选中节点：上游 infinite-canvas 也没这套，是用户要的原型手感。
+         ① 只在画布图视图生效 ② 不碰输入框 ③ 从 .gnode.sel 取 id，多选全删。 */
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      if (typeof mode !== 'undefined' && mode !== 'flow') return;
+      if (typeof flowView !== 'undefined' && flowView !== 'graph') return;
+      var t = e.target;
+      if (t && (t.closest('input, textarea, select, [contenteditable="true"]'))) return;
+      var sels = $$('#gnodes .gnode.sel');
+      if (!sels.length) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      sels.forEach(function(el){
+        var id = el.dataset.id;
+        GRAPH.nodes = GRAPH.nodes.filter(function(n){ return n.id !== id; });
+        if (GRAPH.edges) GRAPH.edges = GRAPH.edges.filter(function(ed){
+          return ed.from !== id && ed.to !== id;
+        });
+      });
+      if (typeof closeNodeWb === 'function') closeNodeWb();
+      if (typeof clearEdgeFocus === 'function') clearEdgeFocus();
+      if (typeof renderGraph === 'function') renderGraph();
+      if (typeof updateGmap === 'function') updateGmap();
+      curWbId = null;
+      toast('已删除 ' + sels.length + ' 个节点');
     });
   }
 
