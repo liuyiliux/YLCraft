@@ -48,17 +48,30 @@ details.adv .inner{padding-top:9px;display:flex;flex-direction:column;gap:9px}
 .costline{font-size:var(--fz);color:var(--tx3);margin-top:8px;line-height:1.7}
 .costline b{color:var(--wn)}
 
-/* ===== 生图：响应式网格卡（真实是 Row/Col xs24 sm12 md8） ===== */
-.ggrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(158px,1fr));
-  gap:10px;padding:13px 14px}
-.gcard{border:1px solid var(--ln);border-radius:var(--r2);background:var(--s2);overflow:hidden}
-.gcard img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--s3)}
-.gcard .body{padding:8px 9px}
-.gcard .p{font-size:var(--fz);color:var(--tx2);line-height:1.5;min-height:36px}
-.gcard .tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
-.gcard .seed{font-family:var(--fm),monospace;font-size:var(--fz);color:var(--tx3);margin-top:6px}
-.gcard .ops{display:flex;gap:4px;border-top:1px solid var(--ln);padding:7px 9px}
-.gcard .ops .btn{flex:1;min-width:0;height:23px;padding:0 3px;font-size:var(--fz);white-space:nowrap}
+/* ===== 生图：一张大结果 + 右侧小历史（11-22 按用户截图改） ===== */
+.gresult{display:grid;grid-template-columns:minmax(0,1fr) 300px;grid-template-rows:22px minmax(0,1fr);
+  column-gap:10px;padding:13px 14px;align-items:start}
+.ghero-wrap{grid-column:1;grid-row:1/3;min-width:0}
+.ghero{border:1px solid var(--ln2);border-radius:var(--r2);background:var(--s2);overflow:hidden}
+.ghero .stage{position:relative;background:var(--s3)}
+.ghero .stage img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover}
+.ghero .stage .badge{position:absolute;left:9px;top:9px;padding:3px 8px;border-radius:99px;
+  background:rgba(8,10,14,.72);color:#e4e4e7;font-size:var(--fz);line-height:1.4}
+.ghero .b{padding:9px 11px}
+.ghero .p{font-size:var(--fz);color:var(--tx);line-height:1.6}
+.ghero .meta{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
+.ghero .ops{display:flex;gap:6px;margin-top:9px}
+.ghist-h{grid-column:2;grid-row:1;display:flex;align-items:center;gap:8px;
+  font-size:var(--fz);color:var(--tx2);font-weight:600}
+.ghist{grid-column:2;grid-row:2;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:7px;padding:6px 0 0;max-height:460px;overflow:auto}
+.hc{border:1px solid var(--ln);border-radius:7px;background:var(--s2);overflow:hidden;
+  padding:0;text-align:left;cursor:pointer;min-width:0}
+.hc:hover{border-color:var(--ln2)}
+.hc[aria-pressed="true"]{border-color:var(--ac);box-shadow:0 0 0 1px var(--ac)}
+.hc img{display:block;width:100%;aspect-ratio:1/1;object-fit:cover;background:var(--s3)}
+.hc .t{display:block;padding:4px 6px;font-size:var(--fz);color:var(--tx3);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* ===== 视频：Timeline 列表（真实是 Timeline，最多 10 条） ===== */
 .vlist{padding:9px 14px 14px}
@@ -167,9 +180,14 @@ details.adv .inner{padding-top:9px;display:flex;flex-direction:column;gap:9px}
         </div>
       </section>
       <section class="card">
-        <div class="card-h"><span class="t">生成结果</span><span class="right"><span class="tag" id="imgCount">6 张</span>
+        <div class="card-h"><span class="t">生成结果</span><span class="right">
+          <span class="s">一张大图 · 右侧历史</span>
           <button class="btn sm ghost" type="button" id="imgClear">清空</button></span></div>
-        <div class="ggrid" id="imgGrid"></div>
+        <div class="gresult">
+          <div class="ghero-wrap" id="imgHero"></div>
+          <div class="ghist-h">历史结果 <span class="tag" id="imgCount">6 张</span></div>
+          <div class="ghist" id="imgHist"></div>
+        </div>
       </section>
     </div>
   </div>
@@ -292,7 +310,8 @@ details.adv .inner{padding-top:9px;display:flex;flex-direction:column;gap:9px}
     证据：<code>frontend/src/pages/image-gen/index.tsx</code>、<code>video-gen/index.tsx</code>、
     <code>model-3d/index.tsx</code>、<code>backend/app/api/v1/images.py</code> /
     <code>videos.py</code> / <code>model3d_workspace.py</code>。
-    三个结果区按真实形态分别做：生图网格、视频 Timeline、3D 网格 + 生成历史 Tab。
+    三个结果区按真实形态分别做：生图（原型把最新一张放大、历史缩成小卡，真实前端是 Row/Col 网格）、
+    视频 Timeline、3D 网格 + 生成历史 Tab。
   </div>
 </main>
 
@@ -380,22 +399,30 @@ details.adv .inner{padding-top:9px;display:flex;flex-direction:column;gap:9px}
     if (t) FP.toast(t.dataset.toast);
   });
 
-  /* ---- 生图 ---- */
+  /* ---- 生图：大图 + 小历史；heroIdx 指向当前放大那张 ---- */
+  var heroIdx = 0;
   function renderImg(){
     $('#imgCount').textContent = IMGS.length+' 张';
-    $('#imgGrid').innerHTML = IMGS.length ? IMGS.map(function(x,i){
-      return '<article class="gcard">'
-        + '<img src="'+T+x.img+'.svg" alt="" loading="lazy">'
-        + '<div class="body"><div class="p">'+esc(x.p)+'</div><div class="tags">'
-        + '<span class="tag">'+esc(x.v)+'</span>'
+    if (heroIdx >= IMGS.length) heroIdx = 0;
+    var x = IMGS[heroIdx];
+    $('#imgHero').innerHTML = !x
+      ? '<div class="empty">结果为空 · 点「开始生成」加一张示例</div>'
+      : '<article class="ghero">'
+        + '<div class="stage"><img src="'+T+x.img+'.svg" alt="">'
+        + '<span class="badge">'+(heroIdx===0?'最新生成':'历史结果')+'</span></div>'
+        + '<div class="b"><div class="p">'+esc(x.p)+'</div>'
+        + '<div class="meta"><span class="tag">'+esc(x.v)+'</span>'
         + (x.w?'<span class="tag ok">已回写项目</span>':'')
-        + '</div><div class="seed">seed: '+(x.s||'随机')+'</div></div>'
+        + '<span class="tag">seed: '+(x.s||'随机')+'</span></div>'
         + '<div class="ops">'
-        + '<button class="btn sm" type="button" data-img-open="'+i+'">详情</button>'
-        + '<button class="btn sm ghost" type="button" data-img-copy="'+i+'" title="复制提示词" aria-label="复制提示词">复制</button>'
-        + '<button class="btn sm ghost" type="button" data-img-del="'+i+'">删除</button>'
-        + '</div></article>';
-    }).join('') : '<div class="empty">结果为空 · 点「开始生成」加一张示例</div>';
+        + '<button class="btn sm" type="button" data-img-open="'+heroIdx+'">详情</button>'
+        + '<button class="btn sm ghost" type="button" data-img-copy="'+heroIdx+'" title="复制提示词" aria-label="复制提示词">复制</button>'
+        + '<button class="btn sm ghost" type="button" data-img-del="'+heroIdx+'">删除</button>'
+        + '</div></div></article>';
+    $('#imgHist').innerHTML = IMGS.map(function(h,i){
+      return '<button class="hc" type="button" data-img-hero="'+i+'" aria-pressed="'+(i===heroIdx?'true':'false')+'">'
+        + '<img src="'+T+h.img+'.svg" alt="" loading="lazy"><span class="t">'+esc(h.p)+'</span></button>';
+    }).join('');
   }
   $('#imgN').addEventListener('input', function(){ $('#imgNv').textContent=this.value; });
   $('#imgGo').addEventListener('click', function(){
@@ -403,9 +430,10 @@ details.adv .inner{padding-top:9px;display:flex;flex-direction:column;gap:9px}
     var n = +$('#imgN').value;
     for (var i=0;i<n;i++) IMGS.unshift({p:$('#imgPrompt').value||'（空提示词）',
       v:$('#imgVendor').value, s:0, w:false, img:imgs[(IMGS.length+i)%imgs.length]});
+    heroIdx = 0;
     renderImg(); FP.toast('已加入 '+n+' 张结果（原型不真调模型、不扣费）');
   });
-  $('#imgClear').addEventListener('click', function(){ IMGS=[]; renderImg(); FP.toast('结果已清空'); });
+  $('#imgClear').addEventListener('click', function(){ IMGS=[]; heroIdx=0; renderImg(); FP.toast('结果已清空'); });
 
   /* ---- 视频：Timeline ---- */
   function renderVid(){
@@ -499,8 +527,11 @@ details.adv .inner{padding-top:9px;display:flex;flex-direction:column;gap:9px}
   }
 
   document.addEventListener('click', function(e){
+    var h = e.target.closest('[data-img-hero]');
+    if (h){ heroIdx = +h.dataset.imgHero; renderImg(); return; }
     var o = e.target.closest('[data-img-open]'); if (o){ openImgDetail(+o.dataset.imgOpen); return; }
-    var d = e.target.closest('[data-img-del]'); if (d){ IMGS.splice(+d.dataset.imgDel,1); renderImg(); return; }
+    var d = e.target.closest('[data-img-del]');
+    if (d){ IMGS.splice(+d.dataset.imgDel,1); if (heroIdx>=IMGS.length) heroIdx=0; renderImg(); return; }
     var c = e.target.closest('[data-img-copy]');
     if (c){
       var x = IMGS[+c.dataset.imgCopy];
