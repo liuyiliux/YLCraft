@@ -15,3 +15,7 @@ web/public/plugins
 plugins/canvas/*/dist
 plugins/canvas/*/node_modules
 web/public/plugins
+
+# 提示词全量数据是生成产物（约 75MB），不入库；需要时跑
+# scripts/build_prompt_dataset.py 重建（原型只留 features/data/prompts.json 的 1,310 条样本）
+web/public/prompt-data/

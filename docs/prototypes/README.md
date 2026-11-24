@@ -697,7 +697,9 @@ python -m http.server 8901 --bind 127.0.0.1 --directory F:\PycharmProjects\YLCra
   0→100 且菜单不弹；全站 `ylcraft_verify_font13.py` OK；`?v` 终值 `202611222200`（50 处）。
 
 
-**11-22 深夜 · canvas-oss：直接跑上游无限画布 + 三主题改造**（用户「你去自己研究他有什么功能怎么改造」）：
+**11-22 深夜 · canvas-oss：直接跑上游无限画布 + 三主题改造**（用户「你去自己研究他有什么功能怎么改造」）
+> ⛔ **2026-11-25 定位：只读参考，已冻结。** 这是 `basketikun/infinite-canvas` 的本地副本，
+> **不是我们的原型、不参与交付**。下面以及 11-24 那些改动都是研究/实验记录，不要在此基础上继续加功能。
 - 新建 `docs/prototypes/canvas-oss/`，放完整 `basketikun/infinite-canvas` 源码（507 文件 / 7.3MB，
   MIT LICENSE 保留），React 19 + Vite 7 原样跑。npm 缓存与依赖都设到 F 盘不碰 C 盘。
 - 三路只读研究（结论见当日工作日志）：上游 6 内置节点（图片/文本/配置/视频/音频/组）+ 插件系统
@@ -878,13 +880,15 @@ python -m http.server 8901 --bind 127.0.0.1 --directory F:\PycharmProjects\YLCra
   切开关会遍历所有源调 `setSourceMode`（有 `onlineUrl` 的切 online，没有的留 local）再 `refreshAllSources()`，
   在线失败仍回落种子。实测：切换后真的去拉 `raw.githubusercontent.com`、按钮变「更新远程源」、条数仍 13,309、0 报错。
 
-**方向共识（11-24 晚，用户明确）**：**不做「回流到 YLCraft 本体前端」**。我们一直是拿原型（canvas-oss 壳）
-把 YLCraft 的功能迁移过来，原型就是目标前端；`frontend/src/pages/prompt-library` 不用照着改。
-所以后续是在原型上补功能 + 把数据层从静态种子切到 YLCraft 后端 API，而不是反向搬代码。
+**11-25 定位纠正（作废 11-24「原型就是目标前端」的说法）**：三个东西必须分清——
+**YLCraft 本体**（`frontend/` + `backend/`，3000，唯一交付物）、**参考项目**（`canvas-oss/`，3100，
+`basketikun/infinite-canvas` 的本地副本，**只读参考、不参与交付**）、
+**我们的原型**（`canvas/` + `features/`，8901，只证明形态）。
 
-**11-24 晚修正**：上面这段把对象叫错了。三个东西要分清——**YLCraft 本体**（`frontend/`+`backend/`，3000）、
-**参考项目**（`canvas-oss/`，3100，开源的，不是我们的）、**我们的原型**（`canvas/` + `features/`，8901）。
-用户要的是**在我们自己的原型里**做功能页（原型才是迁移目标），`canvas-oss` 那边只当参照实现。
+按 `docs/README.md`「原型不是实现事实」与本文开头「不接后端、不迁实现」的边界：提示词库、画布这些
+**真实实现在 `frontend/`**，规格见 `openspec/specs/image-prompt-reference-library/spec.md` 与已归档的
+`creative-project-infinite-canvas`；原型层只补画面覆盖，**不要再在 canvas-oss 里重做一遍**。
+产品要补的能力（多角度 / 蒙版 / 切分等）另开 openspec change，不靠换前端解决。
 
 **11-24 · 提示词库落到我们自己的原型（features/prompts.html，commit bb0387b8）**：
 - 页面：`features/prompts.html`，原生 JS + `shared/theme.css` 令牌，结构照 YLCraft `/prompt-library`
@@ -913,10 +917,11 @@ python -m http.server 8901 --bind 127.0.0.1 --directory F:\PycharmProjects\YLCra
   首页自带的「YLCraft 原型 · 本地预览」标题行去重隐藏。窄屏 900px 以下侧栏收起，顶栏出「≡」抽屉。
 - 验收（8901）：三页侧栏 14 项、当前页高亮与面包屑正确、内容区偏移 224px、窄屏 0px + 抽屉能开、0 报错。
 
-**11-24 · 画布应用收编：外壳换成原型那套左侧栏（commit 6f62117e）**：用户定「canvas-oss 收编成我们的原型，
-第一步先把外壳换成我们的」。原因：画布内核（无限画布 / 生成 / 蒙版 / 切分 / 视频节点）全在 canvas-oss 的
-React 那 31.9k 行里，往原生 JS 原型里"拆"等于重写，所以反过来——**canvas-oss 就是目标前端**，
-外壳换成原型那套视觉，功能页再一页页迁进来。
+**11-24 · canvas-oss 外壳实验（commit 6f62117e，已冻结）**：这次把参考项目的外壳换成了侧栏 + 面包屑。
+**事后定性：只是参考项目上的一次外壳实验，不代表方向**——canvas-oss 不参与交付，功能页也不再往里迁。
+（当时「内核只在 canvas-oss 里」的理由被夸大了：真实画布页 7,087 行、图片编辑页 1,700 行都在，
+缺的是多角度 / 蒙版 / 切分这些 UI，那属于产品要补的功能，走 openspec，不是换前端。）
+技术记录留档：
 - 新增 `constant/navigation-groups.ts`：分组导航的**唯一来源**（工作台 / 素材与提示词 / 原型其他页 / 系统），
   内置项走 react-router，原型其他页用 `PROTO_BASE`（`VITE_PROTO_BASE`，默认 `http://127.0.0.1:8901`）外链。
 - 新增 `components/layout/app-sidebar.tsx`（224px 固定栏：48px 品牌头 + 分组导航（圆点 + 文字）+ 底部预览地址）；
@@ -930,7 +935,7 @@ React 那 31.9k 行里，往原生 JS 原型里"拆"等于重写，所以反过�
 - 验收（3100）：侧栏 224×900 四组 12 项、各页 active 与面包屑正确、画布项目页画布 1216 宽从 x=224 起、
   窄屏侧栏 -224 → 0 抽屉可开、深/浅主题文字都可读、提示词页仍 4 列 318px、0 报错（tsc 只剩上游 antd 老错误）。
 
-**11-24 · 画布页改沉浸模式：两条左栏都收（commit 655b7838）**：用户贴图「这不好看」——具体画布页同时有
+**11-24 · 画布页改沉浸模式（commit 655b7838，已冻结）**：用户贴图「这不好看」——具体画布页同时有
 产品侧栏 224px + 画布节点面板 280px + Agent 面板 240px，中间画布只剩 976px，两条竖栏并排很挤。
 - **具体画布（`/canvas/:id`）判为沉浸**：产品侧栏不占位，左侧垂直居中留 14×44px 贴边把手唤出浮层
   （放在左下角会被画布缩放条挡住、放左上会压画布自带顶栏，实测后改成贴边把手）。
