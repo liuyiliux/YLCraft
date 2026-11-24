@@ -70,9 +70,9 @@ YL_BACKEND_SOURCES = [
 # so the prototype's filter chips rank exactly like the real YLCraft library.
 YL_SERVICE_PY = ROOT.parents[2] / "backend" / "app" / "services" / "image_prompt_reference" / "service.py"
 TAG_STOPWORDS = {
-    "image", "chatgpt", "gpt-4o", "gpt-image-2", "nano banana 2", "nano banana pro",
+    "image", "chatgpt", "gpt-4o", "gpt4o", "gpt-image-2", "nano banana 2", "nano banana pro",
     "nano-banana-pro", "nanobanana2", "nanobananapro", "awesome-gpt-image", "awesome-gpt4o-image-prompts",
-    "所有提示词", "我的提示词",
+    "所有提示词", "我的提示词", "unknown", "freestylefly", "open-design", "official", "prompt", "prompts",
 }
 CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 
@@ -100,6 +100,10 @@ def clean_tags(raw: Any) -> list[str]:
             tag = re.sub(r"\s+", " ", tag)
         key = tag.lower()
         if not tag or key in TAG_STOPWORDS or key in seen or tag.startswith("@") or len(tag) > 28:
+            continue
+        # repo-like tags from the registry ("freestylefly/awesome-gpt-image-2").
+        # Chinese slash tags (3D/手办/潮玩) are real categories, keep them.
+        if "/" in tag and not CJK_RE.search(tag):
             continue
         seen.add(key)
         result.append(tag)

@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<meta name="color-scheme" content="dark">
+<title>生图提示词参考库 · YLCraft 原型</title>
+<link rel="stylesheet" href="../shared/theme.css?v=202611241900">
+<link rel="stylesheet" href="app.css?v=202611241900">
+<style>
+/* 2026-11-24：按 YLCraft 真实页 /prompt-library 的信息结构重做
+   （居中 hero + 760 命令面板 + 整行筛选条 96px 标签列 + 卡片网格）。
+   版式借鉴真实页，视觉仍走原型令牌（--s1/--ln/--ac/--r），不另造设计语言。 */
+.page.wide{max-width:1320px}
+
+/* ---------- hero ---------- */
+.phero{display:grid;gap:18px;margin-bottom:14px}
+.phero-copy{display:grid;justify-items:center;gap:9px;text-align:center}
+.eyebrow{display:inline-flex;align-items:center;gap:6px;font-size:var(--fz);color:var(--tx3)}
+.eyebrow i{width:6px;height:6px;border-radius:50%;background:var(--ac);font-style:normal}
+.phero h1{font-size:clamp(28px,3.2vw,44px);font-weight:700;line-height:1.06;letter-spacing:.005em}
+.phero .sub{font-size:var(--fz);color:var(--tx3);line-height:1.8;max-width:60em}
+.pstats{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:3px}
+.pstat{display:inline-flex;align-items:baseline;gap:5px;height:27px;padding:0 10px;
+  border:1px solid var(--ln);border-radius:8px;background:var(--s1);
+  font-size:var(--fz);color:var(--tx3)}
+.pstat b{color:var(--tx);font-weight:650;font-family:var(--fm),monospace}
+
+.pcmd{width:min(760px,100%);margin:0 auto;display:grid;gap:10px;
+  padding:12px;border:1px solid var(--ln);border-radius:var(--r);
+  background:var(--s1);box-shadow:0 12px 30px -22px #000}
+.psearch{height:40px;font-size:14px;border-radius:9px}
+
+/* ---------- 筛选条：整行卡片 + 96px 标签列 ---------- */
+.pfilter{display:grid;gap:9px;padding:12px 14px;margin-bottom:12px}
+.frow{display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px;align-items:start}
+.flabel{font-size:var(--fz);font-weight:600;color:var(--tx2);padding-top:5px;white-space:nowrap}
+.fwrap{display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-width:0}
+.fwrap .chip{height:26px}
+.lm{font-size:var(--fz);color:var(--ac);padding:0 4px}
+.lm:hover{text-decoration:underline}
+.pfilter .chip.more{color:var(--tx3)}
+
+/* ---------- 结果栏 ---------- */
+.presult{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:0 2px 10px;font-size:var(--fz);color:var(--tx3)}
+.presult .spacer{flex:1}
+.presult b{color:var(--tx);font-weight:600;font-family:var(--fm),monospace}
+.actf{display:inline-flex;align-items:center;gap:5px;height:23px;padding:0 8px;
+  border-radius:999px;border:1px solid var(--ac);background:var(--acbg);
+  color:var(--ac);font-size:var(--fz)}
+.actf button{color:inherit;line-height:1;font-size:14px}
+.actf button:hover{color:var(--er)}
+
+/* ---------- 卡片网格 ---------- */
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:12px}
+.pcard{display:flex;flex-direction:column;min-width:0;text-align:left;
+  background:var(--s1);border:1px solid var(--ln);border-radius:var(--r);
+  overflow:hidden;transition:border-color .18s,transform .18s}
+.pcard:hover{border-color:var(--ac);transform:translateY(-2px)}
+.pcover{position:relative;aspect-ratio:4/4.7;background:var(--s2);overflow:hidden}
+.pcover img{width:100%;height:100%;object-fit:cover;display:block}
+.pcover .ph{position:absolute;inset:0;display:grid;place-items:center;
+  color:var(--tx3);font-size:var(--fz)}
+.pcover .mb{position:absolute;left:8px;bottom:8px;height:20px;padding:0 7px;
+  display:inline-flex;align-items:center;border-radius:6px;
+  background:rgba(0,0,0,.62);color:#fff;font-size:12px;line-height:1}
+.pcover .ic{position:absolute;right:8px;bottom:8px;height:20px;padding:0 7px;
+  display:inline-flex;align-items:center;border-radius:6px;
+  background:rgba(0,0,0,.5);color:#fff;font-size:12px;line-height:1}
+.pbody{display:flex;flex-direction:column;gap:5px;padding:9px 10px 10px;min-width:0}
+.ptitle{font-size:13px;font-weight:650;color:var(--tx);line-height:1.45;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pprompt{font-size:var(--fz);color:var(--tx3);line-height:1.6;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ptags{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px}
+.ptags span{font-size:12px;color:var(--tx2);background:var(--s2);
+  border-radius:5px;padding:1px 6px;line-height:1.6}
+
+.pmore{display:flex;justify-content:center;padding:16px 0 4px}
+
+/* ---------- 详情弹层：图左文右 ---------- */
+dialog.pdetail{width:min(940px,calc(100% - 40px));max-height:calc(100% - 40px)}
+.dbody{display:grid;grid-template-columns:minmax(0,380px) minmax(0,1fr);gap:0}
+@media (max-width:820px){.dbody{grid-template-columns:1fr}}
+.dfig{background:var(--s2);border-right:1px solid var(--ln);
+  display:grid;align-content:start;gap:8px;padding:12px}
+.dfig img{width:100%;border-radius:8px;display:block;background:var(--s3)}
+.dfig .thumbs{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.dfig .thumbs img{aspect-ratio:1;object-fit:cover;border-radius:6px}
+.dside{padding:14px 16px;display:grid;gap:12px;align-content:start;min-width:0}
+.dacts{display:flex;flex-wrap:wrap;gap:7px}
+.dsec{display:grid;gap:6px}
+.dsec .h{display:flex;align-items:center;gap:8px;font-size:var(--fz);
+  font-weight:600;color:var(--tx2)}
+.dsec .h .spacer{flex:1}
+.dtext{font-size:var(--fz);line-height:1.9;color:var(--tx2);white-space:pre-wrap;
+  max-height:260px;overflow:auto;background:var(--s2);border:1px solid var(--ln);
+  border-radius:8px;padding:10px 12px}
+.dmeta{display:grid;grid-template-columns:auto 1fr;gap:5px 12px;font-size:var(--fz);color:var(--tx3)}
+.dmeta b{color:var(--tx2);font-weight:500}
+.dmeta a{color:var(--ac)}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html"><i>◈</i> YLCraft 原型</a>
+  <span class="crumb">提示词库</span>
+  <span class="spacer"></span>
+  <span class="hintbar">结构照真实页 /prompt-library · 数据是本地示例</span>
+</header>
+
+<main class="page wide">
+
+  <!-- ============ hero：居中标题 + 统计 + 命令面板 ============ -->
+  <section class="phero">
+    <div class="phero-copy">
+      <span class="eyebrow"><i></i> Image Prompt References</span>
+      <h1>生图提示词参考库</h1>
+      <p class="sub">先找图感、构图和模型案例，再送进画布或生图链路。支持按模型集合、数据源、风格标签筛选，卡片可直接复制或存成素材。</p>
+      <div class="pstats">
+        <span class="pstat"><b id="statTotal">—</b> 条案例</span>
+        <span class="pstat"><b id="statSources">—</b> 个来源</span>
+        <span class="pstat"><b id="statShown">—</b> 条示例在页</span>
+      </div>
+    </div>
+
+    <div class="pcmd">
+      <div class="row">
+        <button class="btn sm pri" id="tplVideo">视频提示词模板</button>
+        <button class="btn sm" id="tplPlatform">平台/创作模板</button>
+      </div>
+      <input id="kw" class="field psearch" type="search" placeholder="搜索标题、提示词、风格或来源" aria-label="搜索提示词">
+      <div class="row" style="justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <span class="mute" id="sampleNote">—</span>
+        <button class="btn sm ghost" id="resetBtn">清空筛选</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 筛选条 ============ -->
+  <section class="card pfilter" aria-label="筛选">
+    <div class="frow">
+      <span class="flabel">模型集合</span>
+      <div class="fwrap" id="modelChips"></div>
+    </div>
+    <div class="frow">
+      <span class="flabel">数据源</span>
+      <div class="fwrap" id="sourceChips"></div>
+    </div>
+    <div class="frow">
+      <span class="flabel">分类与标签</span>
+      <div class="fwrap" id="tagChips"></div>
+    </div>
+  </section>
+
+  <!-- ============ 结果 + 网格 ============ -->
+  <div class="presult">
+    <span id="resultInfo">加载中…</span>
+    <span class="spacer"></span>
+    <div class="row wrap" id="activeFilters" style="gap:5px"></div>
+  </div>
+  <div class="pgrid" id="grid"></div>
+  <div class="pmore"><button class="btn" id="moreBtn" hidden>加载更多</button></div>
+  <div class="empty" id="emptyBox" hidden>没有匹配的提示词，换个关键词或清空筛选试试。</div>
+
+  <div class="protofoot">
+    数据：<code>features/data/prompts.json</code>（由 <code>canvas-oss/scripts/make_prompt_sample.py</code> 从
+    <code>canvas-oss/web/public/prompt-data/</code> 抽样生成，每源前 <span id="perSource">150</span> 条）·
+    真实库 <b id="realTotal">13,309</b> 条 / 11 个来源，图片全部走远程 URL，不落本地。<br>
+    结构参照 YLCraft <code>frontend/src/pages/prompt-library</code>；视觉沿用
+    <code>shared/theme.css</code> + <code>features/app.css</code>，字号下限 13px。<br>
+    原型只证明信息结构，不接后端：复制走剪贴板，「存素材 / 送画布」只弹提示。
+  </div>
+</main>
+
+<script src="../shared/proto-nav.js?v=202611241900"></script>
+<script src="app.js?v=202611241900"></script>
+<script src="theme-switch.js?v=202611241900"></script>
+<script>
+(function () {
+  var $ = FP.$, $$ = FP.$$, esc = FP.esc, toast = FP.toast;
+  var PAGE = 48;
+  var DATA = null;
+  var DATASET_LABEL = {
+    'reference-project': '参考项目',
+    'ylcraft-imi': 'YLCraft 下载库',
+    'ylcraft-library': 'YLCraft 我的库',
+    merged: '合并补全'
+  };
+  var state = { kw: '', model: '', source: '', tags: [], shown: PAGE, tagOpen: false };
+
+  function byId(id) { return document.getElementById(id); }
+
+  /* ---------- 数据 ---------- */
+  function load() {
+    byId('resultInfo').textContent = '加载示例数据…';
+    fetch('data/prompts.json?v=202611241900')
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (json) {
+        DATA = json;
+        byId('statTotal').textContent = json.totalReal.toLocaleString('zh-CN');
+        byId('statSources').textContent = json.sources.length;
+        byId('statShown').textContent = json.totalSampled.toLocaleString('zh-CN');
+        byId('sampleNote').textContent = '原型示例：每源前 ' + json.perSource + ' 条（' +
+          json.totalSampled.toLocaleString('zh-CN') + ' / 真实 ' + json.totalReal.toLocaleString('zh-CN') + '）';
+        byId('perSource').textContent = json.perSource;
+        byId('realTotal').textContent = json.totalReal.toLocaleString('zh-CN');
+        renderFacets();
+        render();
+      })
+      .catch(function (err) {
+        byId('resultInfo').textContent = '示例数据没加载出来（' + err.message + '）——先确认 8901 服务是从 docs/prototypes 起的。';
+        byId('emptyBox').hidden = false;
+      });
+  }
+
+  /* ---------- 筛选面 ---------- */
+  function unique(arr) {
+    var seen = {}, out = [];
+    arr.forEach(function (v) { if (v && !seen[v]) { seen[v] = 1; out.push(v); } });
+    return out;
+  }
+
+  function renderFacets() {
+    var models = unique(DATA.items.map(function (x) { return x.modelGroup; })).sort();
+    byId('modelChips').innerHTML = chipHtml('model', '', '全部') +
+      models.map(function (m) { return chipHtml('model', m, m); }).join('');
+
+    var srcs = DATA.sources.slice().sort(function (a, b) { return b.total - a.total; });
+    byId('sourceChips').innerHTML = chipHtml('source', '', '全部') +
+      srcs.map(function (s) {
+        return chipHtml('source', s.id, s.name + '（' + s.total.toLocaleString('zh-CN') + '）');
+      }).join('');
+
+    renderTagChips();
+  }
+
+  function chipHtml(kind, value, label) {
+    var on = kind === 'model' ? state.model === value
+      : kind === 'source' ? state.source === value
+      : state.tags.indexOf(value) > -1;
+    return '<button class="chip' + (on ? ' on' : '') + '" data-kind="' + kind +
+      '" data-value="' + esc(value) + '" aria-pressed="' + (on ? 'true' : 'false') + '">' + esc(label) + '</button>';
+  }
+
+  function renderTagChips() {
+    var pool = {};
+    filtered({ ignoreTags: true }).forEach(function (x) {
+      (x.tags || []).forEach(function (t) { pool[t] = (pool[t] || 0) + 1; });
+    });
+    var top = Object.keys(pool).sort(function (a, b) { return pool[b] - pool[a]; });
+    var list = state.tagOpen ? top : top.slice(0, 42);
+    var html = '<button class="chip' + (state.tags.length ? '' : ' on') + '" data-kind="tag" data-value="" aria-pressed="' +
+      (state.tags.length ? 'false' : 'true') + '">全部</button>';
+    html += list.map(function (t) { return chipHtml('tag', t, t + '（' + pool[t] + '）'); }).join('');
+    if (top.length > 42) {
+      html += '<button class="lm" id="tagMore">' + (state.tagOpen ? '收起' : '更多（' + top.length + '）') + '</button>';
+    }
+    byId('tagChips').innerHTML = html;
+  }
+
+  /* ---------- 过滤 ---------- */
+  function filtered(opt) {
+    opt = opt || {};
+    var kw = state.kw.toLowerCase();
+    var tags = opt.ignoreTags ? [] : state.tags;
+    return DATA.items.filter(function (x) {
+      if (state.model && x.modelGroup !== state.model) return false;
+      if (state.source && x.sourceId !== state.source) return false;
+      if (tags.length && !tags.some(function (t) { return (x.tags || []).indexOf(t) > -1; })) return false;
+      if (!kw) return true;
+      return ((x.title || '') + ' ' + (x.prompt || '') + ' ' + (x.tags || []).join(' ') + ' ' + (x.sourceName || '')).toLowerCase().indexOf(kw) > -1;
+    });
+  }
+
+  /* ---------- 渲染 ---------- */
+  function cardHtml(x) {
+    var cover = x.coverUrl
+      ? '<img src="' + esc(x.coverUrl) + '" alt="' + esc(x.title) + ' 示例图" loading="lazy" referrerpolicy="no-referrer" data-cover>'
+      : '<span class="ph">无封面</span>';
+    return '<article class="pcard" data-id="' + esc(x.id) + '" tabindex="0" role="button" aria-label="' + esc(x.title) + '（查看详情）">' +
+      '<div class="pcover">' + cover +
+        (x.modelGroup ? '<span class="mb">' + esc(x.modelGroup) + '</span>' : '') +
+        (x.imageCount ? '<span class="ic">' + x.imageCount + ' 张图</span>' : '') +
+      '</div>' +
+      '<div class="pbody">' +
+        '<div class="ptitle">' + esc(x.title) + '</div>' +
+        '<div class="pprompt">' + esc((x.prompt || '').replace(/\s+/g, ' ').slice(0, 120)) + '</div>' +
+        '<div class="ptags">' + (x.tags || []).slice(0, 3).map(function (t) { return '<span>' + esc(t) + '</span>'; }).join('') + '</div>' +
+      '</div>' +
+    '</article>';
+  }
+
+  function render() {
+    var list = filtered();
+    var slice = list.slice(0, state.shown);
+    byId('grid').innerHTML = slice.map(cardHtml).join('');
+    byId('emptyBox').hidden = list.length > 0;
+    byId('resultInfo').innerHTML = '全部来源 · 共 <b>' + list.length.toLocaleString('zh-CN') +
+      '</b> 条示例（真实库 <b>' + DATA.totalReal.toLocaleString('zh-CN') + '</b> 条）';
+    byId('moreBtn').hidden = list.length <= slice.length;
+    byId('moreBtn').textContent = '加载更多（还有 ' + (list.length - slice.length) + ' 条）';
+    renderActive(list);
+    // 图片挂了就换成占位，避免留一块空白
+    $$('#grid img[data-cover]').forEach(function (img) {
+      img.addEventListener('error', function () {
+        var box = img.parentNode;
+        img.remove();
+        var ph = document.createElement('span');
+        ph.className = 'ph'; ph.textContent = '图片加载失败';
+        box.insertBefore(ph, box.firstChild);
+      });
+    });
+  }
+
+  function renderActive() {
+    var bits = [];
+    if (state.model) bits.push(activeChip('model', state.model, '模型：' + state.model));
+    if (state.source) {
+      var s = DATA.sources.filter(function (x) { return x.id === state.source; })[0];
+      bits.push(activeChip('source', state.source, '来源：' + (s ? s.name : state.source)));
+    }
+    state.tags.forEach(function (t) { bits.push(activeChip('tag', t, t)); });
+    if (state.kw) bits.push(activeChip('kw', '', '关键词：' + state.kw));
+    byId('activeFilters').innerHTML = bits.join('');
+  }
+
+  function activeChip(kind, value, label) {
+    return '<span class="actf">' + esc(label) +
+      '<button type="button" data-clear="' + kind + '" data-value="' + esc(value) + '" aria-label="移除 ' + esc(label) + '">×</button></span>';
+  }
+
+  /* ---------- 详情 ---------- */
+  function openDetail(id) {
+    var x = DATA.items.filter(function (i) { return i.id === id; })[0];
+    if (!x) return;
+    var cover = x.coverUrl ? '<img src="' + esc(x.coverUrl) + '" alt="' + esc(x.title) + ' 示例图" referrerpolicy="no-referrer">'
+      : '<div class="empty">这条没有配图</div>';
+    var html = '<dialog class="modal pdetail" closedby="any" aria-labelledby="d-title">' +
+      '<div class="mh"><span class="t" id="d-title">' + esc(x.title) + '</span>' +
+        '<button class="x" data-close-ov aria-label="关闭">×</button></div>' +
+      '<div class="dbody">' +
+        '<div class="dfig">' + cover + '</div>' +
+        '<div class="dside">' +
+          '<div class="dacts">' +
+            '<button class="btn pri sm" data-act="copy">复制提示词</button>' +
+            '<button class="btn sm" data-act="asset">存为素材</button>' +
+            '<button class="btn sm" data-act="canvas">送进画布</button>' +
+          '</div>' +
+          '<div class="dsec"><div class="h">提示词正文<span class="spacer"></span>' +
+            '<button class="btn ghost sm" data-act="copy">复制</button></div>' +
+            '<div class="dtext">' + esc(x.prompt) + (x.truncated ? '\n\n…（原型里截断到 1,500 字）' : '') + '</div></div>' +
+          '<div class="dsec"><div class="h">风格标签</div>' +
+            '<div class="row wrap" style="gap:5px">' + (x.tags || []).map(function (t) {
+              return '<span class="tag">' + esc(t) + '</span>';
+            }).join('') + '</div></div>' +
+          '<div class="dmeta">' +
+            '<b>来源</b><span>' + esc(x.sourceName) + '</span>' +
+            '<b>模型集合</b><span>' + esc(x.modelGroup || '—') + '</span>' +
+            '<b>数据集</b><span>' + esc(DATASET_LABEL[x.dataset] || x.dataset) + '</span>' +
+            (x.sourceUrl ? '<b>原文链接</b><span><a href="' + esc(x.sourceUrl) + '" target="_blank" rel="noreferrer">打开</a></span>' : '') +
+          '</div>' +
+        '</div>' +
+      '</div></dialog>';
+    var dlg = FP.openDialog(html);
+    if (!dlg) return;
+    dlg.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-act]');
+      if (!b) return;
+      var act = b.dataset.act;
+      if (act === 'copy') {
+        (navigator.clipboard ? navigator.clipboard.writeText(x.prompt) : Promise.reject())
+          .then(function () { toast('提示词已复制'); })
+          .catch(function () { toast('这个浏览器不让直接写剪贴板，手动选中复制吧'); });
+      } else if (act === 'asset') {
+        toast('已存为素材（示例）· 原型不会真的写库');
+      } else {
+        toast('已送进画布（示例）· 真实链路会落到画布节点');
+      }
+    });
+  }
+
+  /* ---------- 交互 ---------- */
+  document.addEventListener('click', function (e) {
+    var chip = e.target.closest('.chip');
+    if (chip && chip.dataset.kind) {
+      var kind = chip.dataset.kind, value = chip.dataset.value;
+      if (kind === 'model') state.model = state.model === value ? '' : value;
+      else if (kind === 'source') state.source = state.source === value ? '' : value;
+      else {
+        if (!value) state.tags = [];
+        else {
+          var i = state.tags.indexOf(value);
+          if (i > -1) state.tags.splice(i, 1); else state.tags.push(value);
+        }
+      }
+      state.shown = PAGE;
+      renderFacets(); render();
+      return;
+    }
+
+    if (e.target.closest('#tagMore')) {
+      state.tagOpen = !state.tagOpen;
+      renderTagChips();
+      return;
+    }
+
+    var clear = e.target.closest('[data-clear]');
+    if (clear) {
+      var k = clear.dataset.clear, v = clear.dataset.value;
+      if (k === 'model') state.model = '';
+      else if (k === 'source') state.source = '';
+      else if (k === 'kw') { state.kw = ''; byId('kw').value = ''; }
+      else state.tags = state.tags.filter(function (t) { return t !== v; });
+      state.shown = PAGE;
+      renderFacets(); render();
+      return;
+    }
+
+    var card = e.target.closest('.pcard');
+    if (card) { openDetail(card.dataset.id); return; }
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var card = e.target.closest && e.target.closest('.pcard');
+    if (!card) return;
+    e.preventDefault();
+    openDetail(card.dataset.id);
+  });
+
+  byId('kw').addEventListener('input', function () {
+    state.kw = this.value.trim();
+    state.shown = PAGE;
+    renderFacets(); render();
+  });
+
+  byId('moreBtn').addEventListener('click', function () {
+    state.shown += PAGE;
+    render();
+  });
+
+  byId('resetBtn').addEventListener('click', function () {
+    state = { kw: '', model: '', source: '', tags: [], shown: PAGE, tagOpen: false };
+    byId('kw').value = '';
+    renderFacets(); render();
+    toast('筛选已清空');
+  });
+
+  byId('tplVideo').addEventListener('click', function () { toast('视频提示词模板（示例）· 真实页会跳到 /platform-templates?scope=video_prompt'); });
+  byId('tplPlatform').addEventListener('click', function () { toast('平台/创作模板（示例）· 真实页会跳到 /platform-templates'); });
+
+  load();
+})();
+</script>
+</body>
+</html>

@@ -882,3 +882,21 @@ python -m http.server 8901 --bind 127.0.0.1 --directory F:\PycharmProjects\YLCra
 把 YLCraft 的功能迁移过来，原型就是目标前端；`frontend/src/pages/prompt-library` 不用照着改。
 所以后续是在原型上补功能 + 把数据层从静态种子切到 YLCraft 后端 API，而不是反向搬代码。
 
+**11-24 晚修正**：上面这段把对象叫错了。三个东西要分清——**YLCraft 本体**（`frontend/`+`backend/`，3000）、
+**参考项目**（`canvas-oss/`，3100，开源的，不是我们的）、**我们的原型**（`canvas/` + `features/`，8901）。
+用户要的是**在我们自己的原型里**做功能页（原型才是迁移目标），`canvas-oss` 那边只当参照实现。
+
+**11-24 · 提示词库落到我们自己的原型（features/prompts.html，commit 待补）**：
+- 页面：`features/prompts.html`，原生 JS + `shared/theme.css` 令牌，结构照 YLCraft `/prompt-library`
+  （居中 hero + 760 命令面板 + 整行筛选条 96px 标签列 + 卡片网格 `minmax(232px,1fr)` + 图左文右详情）。
+  筛选三维：模型集合 / 数据源（带真实条数）/ 风格标签（更多·收起）；搜索、已选条件可单独移除、加载更多、清空。
+  详情里复制走剪贴板，「存素材 / 送画布」只弹 toast（原型不接后端）。
+- 数据：`features/data/prompts.json`（1.95MB，**11 源各取前 150 条 = 1,310 条**，同时带真实条数 13,309 做展示），
+  由 `canvas-oss/scripts/make_prompt_sample.py` 生成——页面不扛 74MB 原始数据，但数字是诚实的。
+  图片全部远程 URL；挂了换「图片加载失败」占位，不留空白。
+- 标签清洗再补一刀：`gpt4o / freestylefly / unknown / open-design / official` 加进停用词，
+  非中文含 `/` 的仓库路径类标签（`freestylefly/awesome-gpt-image-2`）直接丢；中文斜杠标签（`3D/手办/潮玩`）保留。
+- 入口：`features/index.html` 卡片 + 功能域覆盖表新增一行。
+- 验收（8901）：H1 居中偏差 0px、筛选行 `96px + 1148px`、5 列 247px、48→96 张「加载更多」、
+  详情双复制按钮、来源筛选后 150 条、0 JS 报错（只有个别图片 ERR_NO_BUFFER_SPACE）。
+
