@@ -30,6 +30,7 @@
     ['多角度',       'canvas/multi-angle.html'],
     null,
     ['功能地图',     'features/index.html'],
+    ['提示词库',     'features/prompts.html'],
     ['AI 生成结果墙', 'features/gen-wall.html'],
     ['角色工作台',   'features/characters.html'],
     ['创作项目',     'features/story-desk.html'],
