@@ -820,7 +820,7 @@ python -m http.server 8901 --bind 127.0.0.1 --directory F:\PycharmProjects\YLCra
 - 验收（3100）：独立页 13128 条、标签前排是韩国风/手绘感/高细节（YLCraft 顺序）、详情 2 个复制按钮 +
   收藏 + 风格区、生图页弹窗 13128 条，tsc 只剩上游 antd 老错误。
 
-**11-24 · 提示词页按 YLCraft 页面设计 + 在线同步（commit 待补）**：用户「这个页面也用我们的，
+**11-24 · 提示词页按 YLCraft 页面设计 + 在线同步（commit 85616db9）**：用户「这个页面也用我们的，
 脚本改成参考项目那种来源同步」，对齐口径：**原型先行**（真实 YLCraft 页面不动），后期再把参考项目拆进来。
 - 页面：canvas-oss `/prompts` 换成 YLCraft 主前端 `frontend/src/pages/prompt-library` 的页面骨架：
   hero（Image Prompt References + 大标题 + 副标题 + 条数/来源已同步统计）+ 右侧命令面板（模板按钮/搜索/
