@@ -793,3 +793,11 @@ python -m http.server 8901 --bind 127.0.0.1 --directory F:\PycharmProjects\YLCra
   点「使用此提示词」弹窗关闭且输入框填入中文正文，**0 报错**；tsc 只剩上游 antd 老错误。
   坑：antd 6 的 `Spin tip` / `Drawer width` 已弃用，分别改 `description` / `size`。
 
+**11-24 · 端口冲突修复**：YLCraft 主前端 `frontend/vite.config.ts:18` 写死 **3000**，
+参考项目 `npm run dev` 脚本也写死 `--port 3000`，两个同时启动会互相抢、后启动的顶掉前面的
+（用户「访问 YLCraft 启动页面结果变成参考项目」）。修法：参考项目 `web/vite.config.ts` 加
+`server: { port: 3100, strictPort: true }`（支持 `VITE_PORT` 覆盖），并把 `package.json` 的
+`dev` 脚本去掉 `--port 3000`（**关键**：脚本参数会盖掉 vite 配置里的 port，只改配置无效）、
+`start`（preview）改 3100。验证：3000=YLCraft、3100=参考项目，两个并存各返回 200。
+以后原型地址是 **http://127.0.0.1:3100**，8901 是 vanilla 原型（python http.server）。
+

@@ -40,6 +40,12 @@ function localPluginsManifest(): Plugin {
 
 export default defineConfig({
     base: process.env.VITE_BASE || "/",
+    /* YLCraft's main frontend owns port 3000 (frontend/vite.config.ts).
+       Pin the prototype to 3100 so starting either one never steals the other's port. */
+    server: {
+        port: Number(process.env.VITE_PORT) || 3100,
+        strictPort: true,
+    },
     plugins: [react(), localPluginsManifest()],
     resolve: {
         alias: {
