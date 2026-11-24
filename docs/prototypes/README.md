@@ -874,4 +874,11 @@ python -m http.server 8901 --bind 127.0.0.1 --directory F:\PycharmProjects\YLCra
   封面 `aspect-[4/4.7]` + 模型角标 + 「N 张图」角标。
 - **坑**：这个项目的全局 `button` 重置压过 Tailwind 的 `text-*`（`font-size`/`color` 在 button 上不生效，
   `font-weight` 却生效），chip 渲染成白底白字。解法：文字放 `<span>` 里，别再往 button 上加 `text-*`。
+- **「仅本地 / 远程更新」开关原来是假的**：它只改按钮文案，`doRefresh` 根本不看。已接成真实行为——
+  切开关会遍历所有源调 `setSourceMode`（有 `onlineUrl` 的切 online，没有的留 local）再 `refreshAllSources()`，
+  在线失败仍回落种子。实测：切换后真的去拉 `raw.githubusercontent.com`、按钮变「更新远程源」、条数仍 13,309、0 报错。
+
+**方向共识（11-24 晚，用户明确）**：**不做「回流到 YLCraft 本体前端」**。我们一直是拿原型（canvas-oss 壳）
+把 YLCraft 的功能迁移过来，原型就是目标前端；`frontend/src/pages/prompt-library` 不用照着改。
+所以后续是在原型上补功能 + 把数据层从静态种子切到 YLCraft 后端 API，而不是反向搬代码。
 

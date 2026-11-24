@@ -90,6 +90,7 @@ export default {
         remoteUpdate: "Remote update",
         localOnly: "Local only",
         refreshHint: "Re-fetch all sources and rebuild the local index",
+        modeHint: "Local only: read the seed JSON; Remote: re-fetch from each source's online URL, falling back to the seed",
         rebuildIndex: "Rebuild local index",
         updateRemote: "Update remote sources",
         refreshSuccess: "Synced {{count}} prompts",

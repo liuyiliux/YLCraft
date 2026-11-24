@@ -90,6 +90,7 @@ export default {
         remoteUpdate: "远程更新",
         localOnly: "仅本地",
         refreshHint: "从各来源重新拉取并重建本地索引",
+        modeHint: "仅本地：读本地种子 JSON；远程更新：从各源在线地址重新拉取，失败自动回落种子",
         rebuildIndex: "重建本地索引",
         updateRemote: "更新远程源",
         refreshSuccess: "已同步 {{count}} 条提示词",

@@ -32,7 +32,9 @@ export default function PromptsPage() {
     const [tagExpanded, setTagExpanded] = useState(false);
     const [detail, setDetail] = useState<Prompt | null>(null);
     const [refreshing, setRefreshing] = useState(false);
-    const [remoteUpdate, setRemoteUpdate] = useState(false);
+    const setSourceMode = usePromptSourceStore((state) => state.setSourceMode);
+    // 仅本地 = 读 /prompt-data 种子 JSON；远程更新 = 走各源的 onlineUrl（失败自动回落种子）。
+    const onlineMode = sources.some((source) => source.mode === "online");
 
     const { query, items, tags: promptTags, categories, modelGroups, total } = usePromptList({ keyword, tags: selectedTags, category: selectedCategory, modelGroup: selectedModelGroup });
     const statusQuery = useQuery({ queryKey: ["prompt-source-statuses"], queryFn: fetchPromptSourceStatuses });
@@ -56,6 +58,11 @@ export default function PromptsPage() {
         } finally {
             setRefreshing(false);
         }
+    };
+
+    const applyDataMode = (online: boolean) => {
+        for (const source of sources) setSourceMode(source.id, online && source.onlineUrl ? "online" : "local");
+        void doRefresh();
     };
 
     const savePromptAsset = (item: Prompt) => {
@@ -123,11 +130,13 @@ export default function PromptsPage() {
                         />
                         <div className="flex flex-wrap items-center justify-between gap-2.5">
                             <div className="flex items-center gap-1.5">
-                                <Switch size="small" checked={remoteUpdate} onChange={setRemoteUpdate} />
-                                <span className="text-xs text-stone-500 dark:text-stone-400">{remoteUpdate ? t("prompts.remoteUpdate") || "远程更新" : t("prompts.localOnly") || "仅本地"}</span>
+                                <Tooltip title={t("prompts.modeHint") || "仅本地：读本地种子 JSON；远程更新：从各源在线地址重新拉取，失败自动回落种子"}>
+                                    <Switch size="small" checked={onlineMode} onChange={(next) => applyDataMode(next)} />
+                                </Tooltip>
+                                <span className="text-xs text-stone-500 dark:text-stone-400">{onlineMode ? t("prompts.remoteUpdate") || "远程更新" : t("prompts.localOnly") || "仅本地"}</span>
                             </div>
                             <Tooltip title={t("prompts.refreshHint") || "从各来源重新拉取并重建本地索引"}>
-                                <Button icon={<RefreshCw className="size-3.5" />} loading={refreshing} onClick={() => void doRefresh()}>{remoteUpdate ? t("prompts.updateRemote") || "更新远程源" : t("prompts.rebuildIndex") || "重建本地索引"}</Button>
+                                <Button icon={<RefreshCw className="size-3.5" />} loading={refreshing} onClick={() => void doRefresh()}>{onlineMode ? t("prompts.updateRemote") || "更新远程源" : t("prompts.rebuildIndex") || "重建本地索引"}</Button>
                             </Tooltip>
                         </div>
                     </div>
