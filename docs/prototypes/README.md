@@ -735,3 +735,43 @@ python -m http.server 8901 --bind 127.0.0.1 --directory F:\PycharmProjects\YLCra
 - 验收：`npx tsc --noEmit` 仍只剩上游那个 antd 老错；无头 Chrome 打桩模型返回 3 镜，实测
   「浮条出现 → 弹窗 → 预览 3 条可编辑 → 确认 → 节点 1→4 + 3 条连线」全通、AI 调用 1 次、0 报错；
   截图 `ais_dialog.png` / `ais_preview.png` / `ais_done.png`。**未接真实模型密钥**，打桩只验 UI 链路。
+- **11-23 再去上游 landing 页**（用户「后期要嵌入我们自己的项目，开头那个开始使用页面应该…」→ 选「去掉，直接进画布」）：
+  `web/src/router.tsx` 根路径 `/` 从 `<HomePage>` 改成 `<Navigate to="/canvas?mode=recent" replace />`，
+  复用上游内建的 auto-open（`canvas/index.tsx:66-70`：无画布则新建，有则开最近的），删 `pages/home/index.tsx`。
+  实测打开根 URL 跳到 `/canvas/<id>?mode=recent`、页面直接是画布编辑器、landing 0 处、0 报错。
+  i18n 的 `home.*` 文案保留未删（无引用、无害，改动最小）。
+
+**11-23 · 端到端真跑（本地兼容桩）**：按用户选的 A，验证「剧本 → AI 拆 3 镜 → 视频节点 → 生成」。
+- 文本打 `POST {baseUrl}/responses`（OpenAI Responses API，SSE）；视频打 `POST /videos`（multipart：
+  model/prompt/seconds/size/ratio/resolution_name/mode…）→ 轮询 `GET /videos/{id}` → 取 `url` 或 `/{id}/content`。
+- 用 `mock_ai_server.py`（127.0.0.1:8899）替代上游，实测：AI 拆镜 1 次 `/responses` 返回 3 镜 →
+  确认后节点 1→4 且连线到剧本；视频节点「生成」发出 `/videos` + 4 次轮询，0 报错。
+  请求体确认：拆镜 prompt 带完整剧本与 JSON 约束；视频 multipart `prompt=根据这个分镜生成视频`、`seconds=6`、`size=720x720`。
+- 🔴 兼容性结论：**YLCraft 现有 `DOUBAO_API_KEY` / `MINIMAX_API_KEY` 不能直接接**——豆包文本是
+  `chat/completions`、MiniMax 视频是 `/v1/video_generation`，都不是 `/responses` + `/videos` 这套。
+  要真跑需二选一：① 提供兼容渠道；② 写适配层把上游转成这套格式（也是嵌入自己项目的正解）。
+- 坑：persist 的 config store **version 默认 0**（代码没写 version），注入 localStorage 时写 2 会触发
+  「couldn't be migrated」并整份丢弃回默认 `api.openai.com`；必须写 `version: 0`。
+  Playwright 里视频节点发送按钮只有图标、`innerText` 为空，只能用 `button[aria-label="生成"]` 命中。
+- 未验：分镜节点 → 视频节点的**拖拽连线**（端口坐标自动化没命中）；但连上后上游文本会拼进 prompt
+  由 `canvas-node-generation.ts:49,55` 保证（`upstreamText` 拼到 prompt 尾巴）。
+
+**11-24 · 图片编辑入口统一（用参考项目的壳 + 我们的功能）**：用户「用它的壳改造加东西，
+我不懂门禁，主要要原型设计的图片编辑/切分/多角度」。
+- 触发条件先查清（否则又是假阴性）：原型**画布**模式点节点只有 7 项（信息/删除/存资产/生图/缩放/更多），
+  图片编辑 8 项浮条只绑在**镜头墙/素材墙**卡片上（`02-canvas.js:176-183`，且 `status==='todo'` 不弹）；
+  33 项完整清单在**双击大图**里（`06-imageops.js`）。参考项目默认画布是空的，要先上传图才有浮条。
+- 改动（`canvas-oss/web/src/`）：
+  - `canvas-image-toolbar-tools.tsx`：storage key `v7→v8`（老用户 localStorage 存着旧 ids，
+    只改 `defaultVisible` 不生效——同 persist 版本的坑）；`angle`（多角度）改默认可见；
+    新增 `fullEdit` 工具（扳手图标，默认可见）。
+  - 新增 `canvas-node-full-edit-dialog.tsx`：把原型 6 组 33 项清单做成面板，按「全部/本地免费/AI」筛选
+    + 搜索；主题用 `canvasThemes` 摊平成语义字段（它是嵌套 `node/toolbar/canvas` 结构，没有 `theme.text`）。
+  - `canvas-node-hover-toolbar.tsx` / `project.tsx`：接 `onFullEdit` → `fullEditNodeId` → 挂 dialog。
+  - i18n 中英文补 `fullEdit/fullEditTitle/fullEditSearch`。
+- 验收：无头 Chrome 上传图片 → 浮条实测有「生成角度」「打开 33 项图片编辑能力」→ 点开面板
+  6 组 33 个按钮、点「裁剪」有 toast、0 报错；晨曦亮色下面板白底深字可读。
+  类型检查只剩上游自带 antd 老错误（model-script-editor:58，与改造无关）。
+  **未接真实模型**：⚡ 项点击只给 toast，本地项也只演示入口，真实现留到迁实际项目。
+- 这批 `canvas-oss/` 改动**未提交**；`docs/prototypes/canvas/` 的 vanilla 原型一个字没动。
+

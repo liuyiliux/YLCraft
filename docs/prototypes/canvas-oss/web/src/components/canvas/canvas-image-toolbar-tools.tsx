@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
-import { Brush, Camera, Copy, FileText, Grid2x2, Lock, LockOpen, Maximize2, Scissors, Sparkles, Upload, ZoomIn } from "lucide-react";
+import { Brush, Camera, Copy, FileText, Grid2x2, Lock, LockOpen, Maximize2, Scissors, Sparkles, Upload, Wrench, ZoomIn } from "lucide-react";
 
 import type { CanvasNodeData } from "@/types/canvas";
 import i18n from "@/i18n";
 
-export type ImageNodeActionToolId = "copyPrompt" | "reversePrompt" | "replace" | "resize" | "maskEdit" | "crop" | "split" | "upscale" | "superResolve" | "angle" | "view";
+export type ImageNodeActionToolId = "copyPrompt" | "reversePrompt" | "replace" | "resize" | "maskEdit" | "crop" | "split" | "upscale" | "superResolve" | "angle" | "view" | "fullEdit";
 export type ImageQuickToolId = "info" | "delete" | "saveAsset" | "download" | ImageNodeActionToolId;
 
 export type ImageToolHandlers = {
@@ -16,6 +16,7 @@ export type ImageToolHandlers = {
     onUpscale: (node: CanvasNodeData) => void;
     onSuperResolve: (node: CanvasNodeData) => void;
     onAngle: (node: CanvasNodeData) => void;
+    onFullEdit: (node: CanvasNodeData) => void;
     onViewImage: (node: CanvasNodeData) => void;
     onCopyPrompt: (node: CanvasNodeData) => void;
     onReversePrompt: (node: CanvasNodeData) => void;
@@ -36,7 +37,10 @@ export type ImageQuickToolsConfig = {
     showLabels: boolean;
 };
 
-export const IMAGE_QUICK_TOOLS_STORAGE_KEY = "canvas-image-quick-tools-v7";
+/* v8：把「多角度（angle）」和「完整编辑（fullEdit）」设为默认可见。
+   只改 defaultVisible 无效——老用户 localStorage 里存着 v7 的 ids，
+   必须换 key 才能让新默认生效（同源的坑：主题 store 也踩过 persist 版本不匹配）。 */
+export const IMAGE_QUICK_TOOLS_STORAGE_KEY = "canvas-image-quick-tools-v8";
 
 const defaultBaseToolIds: ImageQuickToolId[] = ["info", "delete", "saveAsset", "download"];
 
@@ -116,11 +120,20 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
     },
     {
         id: "angle",
-        defaultVisible: false,
+        defaultVisible: true,
         label: () => i18n.t("canvas.imageTools.angle"),
         title: () => i18n.t("canvas.imageTools.angleTitle"),
         icon: () => <Camera className="size-4" />,
         run: (node, handlers) => handlers.onAngle(node),
+    },
+    {
+        /* 汇总我们原型 06-imageops.js 的 33 项编辑能力，入口统一在浮条上 */
+        id: "fullEdit",
+        defaultVisible: true,
+        label: () => i18n.t("canvas.imageTools.fullEdit"),
+        title: () => i18n.t("canvas.imageTools.fullEditTitle"),
+        icon: () => <Wrench className="size-4" />,
+        run: (node, handlers) => handlers.onFullEdit(node),
     },
     {
         id: "view",
