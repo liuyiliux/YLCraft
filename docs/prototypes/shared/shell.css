@@ -1,0 +1,111 @@
+/* ============================================================
+   YLCraft 原型 · 统一外壳（2026-11-24）
+   ------------------------------------------------------------
+   目标：首页和各功能页看起来是同一个产品，而不是一堆散页。
+     · 左侧固定导航（工作台 / 功能页 / 原型），当前页高亮
+     · 顶部条只留面包屑 + 页面说明 + 主题与跨原型跳转
+     · 画布 / 摄影参考库 / 3D 导演台 是整屏应用，不套外壳（只被导航指过去）
+
+   只由 shared/shell.js 注入，页面不要直接引；脚本会把本文件插到 head 末尾，
+   保证覆盖页面自带样式（index.html 的 body 居中、features 的 .topbar 都在其下）。
+   变量沿用 features/app.css 的三主题令牌；未引入 app.css 的页（index.html）
+   由 shell.js 补一份最小令牌。
+   ============================================================ */
+
+/* ---------- 页面骨架 ---------- */
+body.sh{
+  display:block;
+  padding-left:224px;
+  background:var(--bg);
+}
+body.sh .topbar{
+  position:fixed;left:224px;right:0;top:0;height:48px;
+  display:flex;align-items:center;gap:10px;padding:0 16px;
+  background:color-mix(in srgb,var(--s1) 92%,transparent);
+  backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--ln);z-index:60;
+}
+body.sh .topbar .brand{display:none}
+body.sh .topbar .crumb{
+  padding-left:0;border-left:0;color:var(--tx);
+  font-size:13px;font-weight:600;white-space:nowrap;
+}
+body.sh .topbar .crumb .g{color:var(--tx3);font-weight:400}
+body.sh .topbar .crumb .sep{color:var(--tx3);font-weight:400;margin:0 6px}
+body.sh .page,
+body.sh .wrap{margin-top:48px}
+body.sh .wrap{width:min(1160px,100%);margin-left:auto;margin-right:auto;padding:22px 20px 40px}
+/* 原型首页自带一行「YLCraft 原型 · 本地预览」，外壳里已由侧栏品牌 + 面包屑承担，去掉重复 */
+body.sh .wrap > .hd{display:none}
+/* 外壳自带导航，页面里的「原型 ▾」隐掉，避免两个入口 */
+body.sh .yl-pnav{display:none}
+
+/* ---------- 侧栏 ---------- */
+.yl-side{
+  position:fixed;left:0;top:0;bottom:0;width:224px;z-index:70;
+  display:flex;flex-direction:column;
+  background:var(--s1);border-right:1px solid var(--ln);
+  font-family:var(--fs),system-ui,sans-serif;
+}
+.yl-side-hd{
+  height:48px;flex:0 0 auto;display:flex;align-items:center;gap:8px;
+  padding:0 14px;border-bottom:1px solid var(--ln);
+}
+.yl-side-hd .mk{
+  width:22px;height:22px;border-radius:6px;flex:0 0 auto;
+  display:grid;place-items:center;background:var(--ac);color:var(--onac);
+  font-size:11px;font-weight:800;
+}
+.yl-side-hd .nm{font-size:13px;font-weight:700;letter-spacing:.01em;white-space:nowrap}
+.yl-side-hd .tag{
+  margin-left:auto;font-size:11px;color:var(--tx3);border:1px solid var(--ln2);
+  border-radius:999px;padding:1px 6px;line-height:1.5;white-space:nowrap;
+}
+.yl-side-nav{flex:1;min-height:0;overflow-y:auto;padding:8px 8px 14px;
+  scrollbar-width:thin;scrollbar-color:var(--s4) transparent}
+.yl-side-nav::-webkit-scrollbar{width:8px}
+.yl-side-nav::-webkit-scrollbar-thumb{background:var(--s4);border-radius:8px}
+.yl-grp{
+  padding:12px 8px 5px;font-size:12px;color:var(--tx3);
+  letter-spacing:.06em;display:flex;align-items:center;gap:6px;
+}
+.yl-grp .n{margin-left:auto;font-family:var(--fm),monospace;color:var(--tx3);letter-spacing:0}
+.yl-link{
+  display:flex;align-items:center;gap:8px;height:31px;padding:0 9px;margin-bottom:1px;
+  border-radius:7px;color:var(--tx2);font-size:13px;line-height:1;
+  text-decoration:none;white-space:nowrap;transition:background .15s,color .15s;
+}
+.yl-link:hover{background:var(--s2);color:var(--tx)}
+.yl-link .dot{
+  width:5px;height:5px;border-radius:50%;background:var(--s4);flex:0 0 auto;
+  transition:background .15s;
+}
+.yl-link:hover .dot{background:var(--tx3)}
+.yl-link.on{background:var(--acbg);color:var(--ac);font-weight:600}
+.yl-link.on .dot{background:var(--ac)}
+.yl-link .new{
+  margin-left:auto;font-size:11px;color:var(--onac);background:var(--ac);
+  border-radius:999px;padding:0 5px;line-height:1.6;font-weight:600;
+}
+.yl-side-ft{
+  flex:0 0 auto;border-top:1px solid var(--ln);padding:10px 14px 12px;
+  font-size:12px;color:var(--tx3);line-height:1.7;
+}
+.yl-side-ft b{color:var(--tx2);font-weight:500}
+.yl-side-ft a{color:var(--tx2)}
+.yl-side-ft a:hover{color:var(--ac)}
+
+/* ---------- 窄屏：侧栏收起，顶栏出菜单按钮 ---------- */
+.yl-side-toggle{display:none}
+@media (max-width:900px){
+  body.sh{padding-left:0}
+  body.sh .topbar{left:0;padding-left:12px}
+  .yl-side{transform:translateX(-100%);transition:transform .2s ease}
+  body.sh.nav-open .yl-side{transform:none;box-shadow:0 0 0 100vmax rgba(0,0,0,.45)}
+  .yl-side-toggle{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:28px;height:28px;margin-right:2px;border-radius:7px;
+    border:1px solid var(--ln2);background:var(--s2);color:var(--tx2);font-size:14px;line-height:1;
+  }
+  body.sh .topbar .crumb .g{display:none}
+}
