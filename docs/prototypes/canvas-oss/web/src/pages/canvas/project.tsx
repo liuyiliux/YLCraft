@@ -184,6 +184,13 @@ function InfiniteCanvasPage() {
     const agentPanelOpen = useAgentStore((state) => state.panelOpen);
     const toggleAgentPanel = useAgentStore((state) => state.togglePanel);
     const openAgentPanel = useAgentStore((state) => state.openPanel);
+    const closeAgentPanel = useAgentStore((state) => state.closePanel);
+
+    /** 画布是沉浸式工具态：进来先把右侧 Agent 收起（2026-11-24 定），
+     *  需要时点顶栏 Agent 按钮再开，不常驻占宽度。 */
+    useEffect(() => {
+        closeAgentPanel();
+    }, [closeAgentPanel]);
     const containerRef = useRef<HTMLDivElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
     const uploadTargetRef = useRef<{ nodeId?: string; position?: Position } | null>(null);

@@ -9,11 +9,13 @@ type AppSidebarProps = {
     /** 窄屏抽屉是否展开（≥1024px 时忽略） */
     open: boolean;
     onClose: () => void;
+    /** 沉浸页（具体画布）：不占位，按需以浮层形式唤出 */
+    immersive?: boolean;
 };
 
 /** 224px 固定左栏（对齐 docs/prototypes/shared/shell.css 的视觉）：
  *  顶部 48px 品牌 · 中间分组导航（圆点 + 文字）· 底部预览地址。 */
-export function AppSidebar({ open, onClose }: AppSidebarProps) {
+export function AppSidebar({ open, onClose, immersive = false }: AppSidebarProps) {
     const { t } = useTranslation();
     const { pathname } = useLocation();
     const active = findActiveNav(pathname);
@@ -22,7 +24,7 @@ export function AppSidebar({ open, onClose }: AppSidebarProps) {
         <>
             {open ? (
                 <div
-                    className="fixed inset-0 z-40 bg-black/45 lg:hidden"
+                    className={cn("fixed inset-0 z-[999] bg-black/60", immersive ? "" : "lg:hidden")}
                     onClick={onClose}
                     aria-hidden
                 />
@@ -31,8 +33,14 @@ export function AppSidebar({ open, onClose }: AppSidebarProps) {
             <aside
                 className={cn(
                     "flex w-56 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground",
-                    "max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:z-50 max-lg:transition-transform max-lg:duration-200",
-                    open ? "max-lg:translate-x-0" : "max-lg:-translate-x-full",
+                    immersive
+                        ? open
+                            ? "fixed inset-y-0 left-0 z-[1000] shadow-2xl"
+                            : "hidden"
+                        : cn(
+                              "max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:z-[1000] max-lg:transition-transform max-lg:duration-200",
+                              open ? "max-lg:translate-x-0" : "max-lg:-translate-x-full",
+                          ),
                 )}
                 aria-label={t("navGroups.label")}
             >

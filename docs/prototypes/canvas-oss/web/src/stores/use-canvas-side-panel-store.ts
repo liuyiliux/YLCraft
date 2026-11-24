@@ -18,9 +18,11 @@ function initialWidth() {
     return Math.min(CANVAS_SIDE_PANEL_MAX_WIDTH, Math.max(CANVAS_SIDE_PANEL_MIN_WIDTH, stored));
 }
 
+/** 默认收起（2026-11-24 定）：画布页左侧还有产品侧栏时两条并排太挤，
+ *  节点面板改成按需打开，用户手动开过会记住。 */
 function initialOpen() {
-    if (typeof window === "undefined") return true;
-    return localStorage.getItem(OPEN_KEY) !== "0";
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem(OPEN_KEY) === "1";
 }
 
 function initialNodeView(): CanvasNodeViewMode {
