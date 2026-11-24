@@ -303,9 +303,39 @@
     }, true);
   }
 
+  /* ---------- 顶部合并：把画布子栏的「步骤 / 统计 / 整组重跑」并进顶栏 ---------- */
+  var flowMerged = false;
+  function mergeFlowTools(){
+    if (flowMerged) return;
+    var top = $('.top'), sbar = $('#vFlow .sbar');
+    if (!top || !sbar) return;
+    var sub = sbar.querySelector('.subseg');
+    var meta = sbar.querySelector('#flowCount');
+    var rerun = sbar.querySelector('#rerunBtn');
+    if (!sub && !meta && !rerun) return;
+    var box = document.createElement('div');
+    box.className = 'top-flow';
+    box.id = 'topFlowTools';
+    if (sub) box.appendChild(sub);
+    if (meta) box.appendChild(meta);
+    if (rerun) box.appendChild(rerun);
+    var anchor = $('#mFlow');
+    if (anchor && anchor.parentNode === top) anchor.insertAdjacentElement('afterend', box);
+    else top.appendChild(box);
+    sbar.style.display = 'none';
+    var flow = $('#vFlow');
+    function syncBox(){ box.hidden = !flow || flow.classList.contains('hidden'); }
+    syncBox();
+    if (flow && window.MutationObserver){
+      new MutationObserver(syncBox).observe(flow, { attributes:true, attributeFilter:['class'] });
+    }
+    flowMerged = true;
+  }
+
   /* ---------- 模式同步：只连线图视图挂外壳 ---------- */
   function sync(){
     inject();
+    mergeFlowTools();
     if (INJ && !$('.jm-tabs button').dataset.bound){ initPanel(); initDock(); initCtx(); patchWb();
       $('.jm-tabs button').dataset.bound = '1'; }
     var on = (typeof mode === 'undefined' || mode === 'flow')

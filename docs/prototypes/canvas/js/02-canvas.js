@@ -406,11 +406,11 @@ function buildGraph(keepPos){
     {id:'board',  x:186, y:170, w:136, t:'分镜表',   sub:'镜号 01-'+String(N).padStart(2,'0'), kind:'text', st:'ok', data:true, ins:['text'], outs:['text']}
   ];
   for (let i=0;i<N;i++){
-    /* 列距 176（原来 164）：列间留白，卡片不贴脸。
-       这个间距是 11-07 为避障通道调的；避障已撤，布局沿用不改（不动数据）。*/
+    /* 列距 216 / 行距 296（2026-11-25 放大：150×208 → 184×264）。
+       卡片变大后 3 列仍落在 #ginner 内；端口位置读 n.h，必须和 CSS 高度一致。 */
     const col=i%3, row=Math.floor(i/3);
     nodes.push({
-      id:'g'+i, x:372+col*176, y:16+row*224, w:150,
+      id:'g'+i, x:360+col*216, y:16+row*296, w:184,
       t:String(i+1).padStart(2,'0')+' '+items[i].name,
       /* 底部信息行放真数据（时长 · 分辨率），不放「已生成」——
          状态已经由标题行的点和连线颜色表达，这行字要给尺寸这种数，
@@ -418,10 +418,10 @@ function buildGraph(keepPos){
       sub: items[i].status==='err' ? '失败 · 403'
         : (items[i].duration>0 ? items[i].duration.toFixed(1)+'s' : '—') + ' · 1080×1920',
       kind:'image', st:items[i].status, ins:['text','image'], outs:['image'], shot:i,
-      /* 节点带缩略图 —— 参考图和即梦都是大图卡片，图占主体（2026-11-03 放大）。
-         高度固定 208（竖版 9:16），和 CSS .gnode.hasimg 一致，否则连线端口会错位。
-         缩略图信息直接存进节点数据：渲染节点的函数拿不到 items。 */
-      hasimg:true, h:208,
+      /* 节点带缩略图 —— 参考图和即梦都是大图卡片，图占主体。
+         高度固定 264（2026-11-25 从 208 放大），和 CSS .gnode.hasimg 一致，
+         否则连线端口会错位。缩略图信息直接存进节点数据：渲染节点的函数拿不到 items。 */
+      hasimg:true, h:264,
       thumb: items[i].thumbUrl || '', shotCls: items[i].cls, shotSz: items[i].sz || '',
       cap:'image-gen'
     });
@@ -429,7 +429,7 @@ function buildGraph(keepPos){
   /* 收尾节点错落成两列四行（原来 2×2 挤在同一行）：
      往下错开后汇流线不会全挤在同一行端口上。同为 11-07 避障方案调的布局，
      避障已撤但布局沿用不改。*/
-  const rows=Math.ceil(N/3), yb=16+rows*224+18;
+  const rows=Math.ceil(N/3), yb=16+rows*296+18;
   nodes.push({id:'merge', x:372, y:yb, w:140, t:'合成时间线', kind:'video',
     sub:'总时长 '+fmt(items.reduce((a,s)=>a+(s.duration||0),0)), st:'ok', ins:['image'], outs:['video'],
     cap:'clip'});

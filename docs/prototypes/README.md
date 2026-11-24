@@ -904,6 +904,19 @@ python -m http.server 8901 --bind 127.0.0.1 --directory F:\PycharmProjects\YLCra
 - 验收（8901）：18 节点 / 97 条线、选中浮条 5 图标、角标完整显示、0 报错；
   `canvas/index.html` 全部 `?v` 统一 bump 到 `202611250135`。
 
+**11-25 · 画布视觉打磨第二批：卡片放大 + 顶部并成一条栏**：用户选 A（整体观感）。
+- 节点卡 **150×208 → 184×264**，网格列距 176 → 216、行距 224 → 296，起点 x 372 → 360；
+  `02-canvas.js` 里 `w:184 / h:264`、`yb=16+rows*296+18` 与 `10-polish.css` 的
+  `.gnode.hasimg{height:264px}` 必须同步 —— 端口与连线端点读的是 `n.h`，差 1px 就错位。
+  放大后首屏只见 2 行 + 第 3 行上半（画布可平移，小地图仍在），这是换大卡的代价。
+- **顶部两层栏合并**：`39-jimeng-shell.js` 新增 `mergeFlowTools()`，把 `#vFlow .sbar` 里的
+  `步骤/连线图` 子分段、`#flowCount` 统计、`#rerunBtn` 整组重跑搬进 `.top` 的 `#mFlow` 之后，
+  子栏 `display:none`；用 `MutationObserver` 跟 `#vFlow` 的 hidden 切换，镜头墙模式下自动隐藏。
+  顶部只剩一条 52px 栏：品牌 / 项目 / 保存态 / 镜头墙·素材墙 / 画布 / 步骤·连线图 / 统计 / 重跑 / 用户 / 出片。
+- 子分段换成胶囊（同 `.seg` 样式）；`整组重跑` 从实心主色降为描边按钮，避免和「出片」抢。
+- 验收（8901）：流程 3 种视图（连线图 / 步骤 / 镜头墙）切换正常，`#topFlowTools` 在镜头墙隐藏、
+  回连线图恢复；18 节点 / 97 条线；0 报错。`?v` bump 到 `202611250210`。
+
 **11-24 · 提示词库落到我们自己的原型（features/prompts.html，commit bb0387b8）**：
 - 页面：`features/prompts.html`，原生 JS + `shared/theme.css` 令牌，结构照 YLCraft `/prompt-library`
   （居中 hero + 760 命令面板 + 整行筛选条 96px 标签列 + 卡片网格 `minmax(232px,1fr)` + 图左文右详情）。
