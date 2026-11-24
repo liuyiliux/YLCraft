@@ -607,3 +607,86 @@
     border-radius: 0.6rem;
     font-size: 0.75rem;
 }
+
+/* ============================================================
+   产品外壳 · 左侧导航（2026-11-24 收编画布应用时加）
+   ------------------------------------------------------------
+   上游对 a / button 有全局重置，会把 utilities 的 color 与
+   background 压掉（实测 bg-sidebar-accent 落在 <a> 上是透明，
+   text-* 也不生效）。这里用无层级规则统一接管状态色，
+   组件侧只留结构，视觉对齐 docs/prototypes/shared/shell.css。
+   ============================================================ */
+.yl-nav a {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 31px;
+    margin-bottom: 1px;
+    padding: 0 0.625rem;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--muted-foreground);
+    font-size: 13px;
+    line-height: 1;
+    text-decoration: none;
+    transition: background-color 0.15s, color 0.15s;
+}
+
+.yl-nav a:hover {
+    background: color-mix(in oklch, var(--sidebar-accent) 65%, transparent);
+    color: var(--foreground);
+}
+
+.yl-nav a[aria-current="page"] {
+    background: var(--sidebar-accent);
+    color: var(--sidebar-accent-foreground);
+    font-weight: 600;
+}
+
+.yl-nav a .dot {
+    width: 5px;
+    height: 5px;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: var(--border);
+    transition: background-color 0.15s;
+}
+
+.yl-nav a:hover .dot:not(.badge) {
+    background: var(--muted-foreground);
+}
+
+.yl-nav a[aria-current="page"] .dot:not(.badge) {
+    background: var(--primary);
+}
+
+.yl-nav a .lbl {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.yl-nav a .badge {
+    margin-left: auto;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--primary);
+    color: var(--primary-foreground);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.6;
+}
+
+.yl-nav a .ext {
+    width: 12px;
+    height: 12px;
+    flex: 0 0 auto;
+    margin-left: auto;
+    opacity: 0.45;
+}
+
+.yl-nav a .badge + .ext {
+    margin-left: 0.25rem;
+}

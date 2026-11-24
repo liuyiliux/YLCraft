@@ -913,3 +913,20 @@ python -m http.server 8901 --bind 127.0.0.1 --directory F:\PycharmProjects\YLCra
   首页自带的「YLCraft 原型 · 本地预览」标题行去重隐藏。窄屏 900px 以下侧栏收起，顶栏出「≡」抽屉。
 - 验收（8901）：三页侧栏 14 项、当前页高亮与面包屑正确、内容区偏移 224px、窄屏 0px + 抽屉能开、0 报错。
 
+**11-24 · 画布应用收编：外壳换成原型那套左侧栏（commit 待补）**：用户定「canvas-oss 收编成我们的原型，
+第一步先把外壳换成我们的」。原因：画布内核（无限画布 / 生成 / 蒙版 / 切分 / 视频节点）全在 canvas-oss 的
+React 那 31.9k 行里，往原生 JS 原型里"拆"等于重写，所以反过来——**canvas-oss 就是目标前端**，
+外壳换成原型那套视觉，功能页再一页页迁进来。
+- 新增 `constant/navigation-groups.ts`：分组导航的**唯一来源**（工作台 / 素材与提示词 / 原型其他页 / 系统），
+  内置项走 react-router，原型其他页用 `PROTO_BASE`（`VITE_PROTO_BASE`，默认 `http://127.0.0.1:8901`）外链。
+- 新增 `components/layout/app-sidebar.tsx`（224px 固定栏：48px 品牌头 + 分组导航（圆点 + 文字）+ 底部预览地址）；
+  `user-layout.tsx` 改为「侧栏 + 主区」；`app-top-nav.tsx` 从横导航降级为 48px 面包屑条（只剩面包屑 + Agent + 主题 + 版本）。
+- 画布项目页（`/canvas/:id`）仍是沉浸式：顶栏让位但**侧栏保留**，画布从 x=224 铺满。
+- **坑（第二次踩同源）**：上游对 `a` / `button` 有全局重置，会把 utilities 的 `color` 与 `background` 压掉——
+  `bg-sidebar-accent` 写在 `<a>` 上是透明、`text-*` 也不生效（单独用 `<div>` 测是生效的）。
+  解法：状态色统一收到 `styles/globals.css` 的无层级规则 `.yl-nav a{...}`（含 `:hover` / `[aria-current="page"]`），
+  组件侧只留结构类。新写侧栏导航**不要**再把颜色写在 `<a>` 的 className 上。
+- 删除已无引用的 `mobile-nav-drawer.tsx` / `navigation-tools.ts`（导航配置统一到 navigation-groups）。
+- 验收（3100）：侧栏 224×900 四组 12 项、各页 active 与面包屑正确、画布项目页画布 1216 宽从 x=224 起、
+  窄屏侧栏 -224 → 0 抽屉可开、深/浅主题文字都可读、提示词页仍 4 列 318px、0 报错（tsc 只剩上游 antd 老错误）。
+
