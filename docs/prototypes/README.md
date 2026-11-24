@@ -886,7 +886,7 @@ python -m http.server 8901 --bind 127.0.0.1 --directory F:\PycharmProjects\YLCra
 **参考项目**（`canvas-oss/`，3100，开源的，不是我们的）、**我们的原型**（`canvas/` + `features/`，8901）。
 用户要的是**在我们自己的原型里**做功能页（原型才是迁移目标），`canvas-oss` 那边只当参照实现。
 
-**11-24 · 提示词库落到我们自己的原型（features/prompts.html，commit 待补）**：
+**11-24 · 提示词库落到我们自己的原型（features/prompts.html，commit bb0387b8）**：
 - 页面：`features/prompts.html`，原生 JS + `shared/theme.css` 令牌，结构照 YLCraft `/prompt-library`
   （居中 hero + 760 命令面板 + 整行筛选条 96px 标签列 + 卡片网格 `minmax(232px,1fr)` + 图左文右详情）。
   筛选三维：模型集合 / 数据源（带真实条数）/ 风格标签（更多·收起）；搜索、已选条件可单独移除、加载更多、清空。
