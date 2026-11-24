@@ -858,3 +858,20 @@ python -m http.server 8901 --bind 127.0.0.1 --directory F:\PycharmProjects\YLCra
 - `youmind-gpt-image-2` 的 `onlineUrl` 置空：本地种子已是 305 条超集，切「在线」反而会掉到注册表的 126 条。
 - 验收（3100）：13,309 条 / 11 个来源已同步、四个数据集 chip 中文、滚动加载 20→140、0 报错。
 
+**11-24 · 页面按 YLCraft 真实版式重排 + 封面全部改远程（commit 待补）**：用户「参考项目的数据结构是什么为什么
+比我们少了好多标签的感觉；在原型上面改 YLCraft 的页面结构；拉取提示词包括不本地存图片用参考项目的」。
+- 数据结构实测：参考项目 7 源只有扁平 `tags`（445 个不同值，**没有 category**；25% 是模型名/来源名/作者名，
+  76% 非中文，12 组大小写重复：UI/ui、Poster/poster）。YLCraft 是两层：`category` 49 个中文分类 +
+  `tags` 180 个风格标签 + `model_group`。所以「感觉标签少」不是数量少，是**缺分类维度 + 标签被噪声稀释**。
+- 拉取方式：参考项目 = 每个源一个 JSON URL、运行时 fetch、IndexedDB 缓存、图片**只存 URL 不落盘**；
+  YLCraft = 后端解析入库 + 下载媒体到 `storage/.../media`（647MB）再改写 URL。原型采用前者。
+- **真 bug（本轮修掉）**：`normalise_imi` 把 `images` 当字符串数组处理，实际是 `{url,path,...}` 字典 →
+  参考图全丢、封面回落成站点相对路径 `ChatGPT/14904/14904-1.jpg`（只有 YLCraft 本地缓存能访问，上游 403）。
+  改成取 `images[].url` 后 **13,303/13,309 张封面变成远程地址**（img.opennana.com 实测 200）。
+- 标签清洗补中文内空格：`街 拍`→`街拍`、`人 像`→`人像`（原来只把连续空格压成一个，中文标签仍匹配不上）。
+- 页面按 YLCraft `prompt-library` 的实测版式重排：居中 hero（标题 `clamp(34px,4vw,56px)`、统计 pill）、
+  760px 命令面板、**整行筛选条 + 96px 标签列**、卡片网格 `repeat(auto-fill,minmax(278px,1fr))`、
+  封面 `aspect-[4/4.7]` + 模型角标 + 「N 张图」角标。
+- **坑**：这个项目的全局 `button` 重置压过 Tailwind 的 `text-*`（`font-size`/`color` 在 button 上不生效，
+  `font-weight` 却生效），chip 渲染成白底白字。解法：文字放 `<span>` 里，别再往 button 上加 `text-*`。
+

@@ -63,6 +63,7 @@ export default {
         category: "分类",
         tags: "标签",
         search: "搜索标题、内容或标签",
+        searchPlaceholder: "搜索标题、提示词、风格或分类",
         searchTitle: "按标题查询",
         loadFailed: "获取提示词失败",
         sourceMissing: "提示词来源不存在",

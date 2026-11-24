@@ -63,6 +63,7 @@ export default {
         category: "Category",
         tags: "Tags",
         search: "Search titles, content, or tags",
+        searchPlaceholder: "Search title, prompt, style or category",
         searchTitle: "Search by title",
         loadFailed: "Failed to load prompts",
         sourceMissing: "Prompt source not found",

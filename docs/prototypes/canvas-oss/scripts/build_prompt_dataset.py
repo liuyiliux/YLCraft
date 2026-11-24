@@ -74,6 +74,7 @@ TAG_STOPWORDS = {
     "nano-banana-pro", "nanobanana2", "nanobananapro", "awesome-gpt-image", "awesome-gpt4o-image-prompts",
     "所有提示词", "我的提示词",
 }
+CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 
 
 def load_tag_priority() -> tuple[list[str], set[str]]:
@@ -86,12 +87,17 @@ def load_tag_priority() -> tuple[list[str], set[str]]:
 
 
 def clean_tags(raw: Any) -> list[str]:
-    """Strip stray spaces (IMI tags like '人 像' / ' 人像') and drop model/source tags."""
+    """Normalise IMI/registry tags: collapse inner spaces in Chinese tags
+    ("街 拍" -> "街拍", "人 像" -> "人像") and drop model/source tags."""
     import re
     seen: set[str] = set()
     result: list[str] = []
     for value in raw if isinstance(raw, list) else []:
-        tag = re.sub(r"\s+", " ", as_str(value)).strip()
+        tag = as_str(value).strip()
+        if CJK_RE.search(tag):
+            tag = re.sub(r"\s+", "", tag)
+        else:
+            tag = re.sub(r"\s+", " ", tag)
         key = tag.lower()
         if not tag or key in TAG_STOPWORDS or key in seen or tag.startswith("@") or len(tag) > 28:
             continue
@@ -111,7 +117,13 @@ def as_str(value: Any) -> str:
 
 
 def absolute_imi_image(value: Any) -> str:
-    """IMI cover_image may be a full URL or a path relative to the media host."""
+    """IMI cover_image may be a full URL or a site-relative path.
+
+    Site-relative paths like "ChatGPT/14904/14904-1.jpg" are only reachable
+    through YLCraft's own media cache (the upstream host answers 403), so we
+    drop them: the prototype keeps images remote and shows a placeholder rather
+    than a guaranteed-broken URL.
+    """
     text = as_str(value).strip()
     if not text:
         return ""
@@ -120,10 +132,8 @@ def absolute_imi_image(value: Any) -> str:
     text = text.lstrip("/")
     if text.startswith("prompts/assets/"):
         return "https://img.opennana.com/" + text
-    if re.match(r"^ChatGPT/|^Nano", text):
-        # local cached path from cache_prompt_reference_media.py -> keep as-is,
-        # the UI shows a placeholder when it cannot be loaded offline
-        return text
+    if re.match(r"^ChatGPT/|^Nano Banana", text):
+        return ""
     return IMI_IMG_BASE + text
 
 
@@ -158,14 +168,32 @@ def normalise_oss(item: dict, sid: str, source_name: str, model_group: str) -> d
     }
 
 
+def imi_images(value: Any) -> list[str]:
+    """IMI `images` is a list of {url, image_name, filename, path} dicts where
+    `url` is the real remote asset and `path` is a site-relative path. Older
+    rows may carry plain strings. Take the absolute url when present."""
+    urls: list[str] = []
+    for entry in value if isinstance(value, list) else []:
+        if isinstance(entry, dict):
+            url = as_str(entry.get("url") or entry.get("src"))
+            if not url:
+                url = absolute_imi_image(entry.get("path"))
+        else:
+            url = absolute_imi_image(entry)
+        if url:
+            urls.append(url)
+    return list(dict.fromkeys(urls))
+
+
 def normalise_imi(item: dict, sid: str, source_name: str, model_group: str) -> dict:
     cn = as_str(item.get("chinese_prompt"))
     en = as_str(item.get("english_prompt"))
     prompt = cn or en
-    refs = [absolute_imi_image(u) for u in (item.get("images") or []) if as_str(u)]
-    cover = absolute_imi_image(item.get("cover_image") or item.get("thumbnail"))
-    if not cover and refs:
-        cover = refs[0]
+    refs = imi_images(item.get("images"))
+    # cover_image/thumbnail are site-relative paths ("ChatGPT/14904/14904-1.jpg");
+    # the real remote asset lives in images[].url, so prefer that — the prototype
+    # must not depend on YLCraft's local media cache.
+    cover = refs[0] if refs else absolute_imi_image(item.get("cover_image") or item.get("thumbnail"))
     return {
         "id": f"{sid}:{as_str(item.get('id'))}",
         "sourceId": sid,

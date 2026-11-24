@@ -131,11 +131,21 @@ function FilterGroup({ label, children, action }: { label: string; children: Rea
     );
 }
 
-/** YLCraft-style filter chip (prompt-filter-chip equivalent). */
+/** YLCraft-style filter chip (prompt-filter-chip equivalent): pill, active
+ *  state uses the accent colour. NOTE: this codebase's global button reset wins
+ *  over Tailwind `text-*` on <button>, so the label lives in a <span> — putting
+ *  font-size/colour on the button silently does nothing. */
 export function PromptChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
     return (
-        <button type="button" onClick={onClick} className={cn("rounded-full border px-2.5 py-1 text-xs transition", active ? "border-amber-500 bg-amber-500/15 font-medium text-amber-700 dark:text-amber-300" : "border-stone-200 bg-stone-50 text-stone-600 hover:border-stone-300 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300")}>
-            {children}
+        <button
+            type="button"
+            onClick={onClick}
+            className={cn(
+                "shrink-0 whitespace-nowrap rounded-full border px-2.5 py-1.5 leading-none transition active:scale-[.98]",
+                active ? "border-amber-500 bg-amber-500" : "border-transparent hover:bg-stone-500/10",
+            )}
+        >
+            <span className={cn("text-xs font-semibold", active ? "text-white" : "text-stone-600 dark:text-stone-300")}>{children}</span>
         </button>
     );
 }
@@ -155,15 +165,16 @@ export function PromptLibraryCard({ item, onOpen, onUse, onSaveAsset, onToggleFa
             <div className="relative block w-full overflow-hidden bg-stone-100 dark:bg-stone-800">
                 <button type="button" className="block w-full" onClick={onOpen} aria-label={item.title}>
                     {item.coverUrl && !brokenCover ? (
-                        <img src={item.coverUrl} alt={item.title} className="aspect-[4/3] w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" loading="lazy" onError={() => setBrokenCover(true)} />
+                        <img src={item.coverUrl} alt={item.title} className="aspect-[4/4.7] w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" loading="lazy" onError={() => setBrokenCover(true)} />
                     ) : (
-                        <span className="grid aspect-[4/3] w-full place-items-center gap-1 text-stone-400">
+                        <span className="grid aspect-[4/4.7] w-full place-items-center gap-1 text-stone-400">
                             <FileText className="size-8" />
                             <span className="text-[10px]">{t("prompts.noCover") || "无封面"}</span>
                         </span>
                     )}
                 </button>
                 {item.modelGroup ? <span className="pointer-events-none absolute bottom-1.5 left-1.5 rounded-md bg-black/65 px-1.5 py-0.5 text-[10px] text-white">{item.modelGroup}</span> : null}
+                {item.referenceImages?.length ? <span className="pointer-events-none absolute bottom-1.5 right-1.5 rounded-md bg-black/55 px-1.5 py-0.5 text-[10px] text-white">{item.referenceImages.length} 张图</span> : null}
                 {onToggleFavorite ? (
                     <button type="button" onClick={() => onToggleFavorite(item, !favorite)} className="absolute right-1.5 top-1.5 grid size-7 place-items-center rounded-full bg-black/55 text-white" aria-label={favorite ? "取消收藏" : "收藏"}>
                         {favorite ? <BookmarkCheck className="size-3.5" /> : <Bookmark className="size-3.5" />}
