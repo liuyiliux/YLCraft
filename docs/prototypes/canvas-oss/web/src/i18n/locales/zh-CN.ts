@@ -91,6 +91,8 @@ export default {
         localOnly: "仅本地",
         refreshHint: "从各来源重新拉取并重建本地索引",
         modeHint: "仅本地：读本地种子 JSON；远程更新：从各源在线地址重新拉取，失败自动回落种子",
+        sourceModeHint: "各来源的本地/在线同步方式在「设置 → 提示词来源」里配置",
+        syncSources: "重新同步来源",
         rebuildIndex: "重建本地索引",
         updateRemote: "更新远程源",
         refreshSuccess: "已同步 {{count}} 条提示词",

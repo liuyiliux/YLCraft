@@ -1,5 +1,5 @@
 import { type UIEvent, useEffect, useState } from "react";
-import { App, Button, Empty, Input, Spin, Switch, Tooltip } from "antd";
+import { App, Button, Empty, Input, Spin, Tooltip } from "antd";
 import { Database, RefreshCw, Search } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -32,9 +32,6 @@ export default function PromptsPage() {
     const [tagExpanded, setTagExpanded] = useState(false);
     const [detail, setDetail] = useState<Prompt | null>(null);
     const [refreshing, setRefreshing] = useState(false);
-    const setSourceMode = usePromptSourceStore((state) => state.setSourceMode);
-    // 仅本地 = 读 /prompt-data 种子 JSON；远程更新 = 走各源的 onlineUrl（失败自动回落种子）。
-    const onlineMode = sources.some((source) => source.mode === "online");
 
     const { query, items, tags: promptTags, categories, modelGroups, total } = usePromptList({ keyword, tags: selectedTags, category: selectedCategory, modelGroup: selectedModelGroup });
     const statusQuery = useQuery({ queryKey: ["prompt-source-statuses"], queryFn: fetchPromptSourceStatuses });
@@ -60,10 +57,6 @@ export default function PromptsPage() {
         }
     };
 
-    const applyDataMode = (online: boolean) => {
-        for (const source of sources) setSourceMode(source.id, online && source.onlineUrl ? "online" : "local");
-        void doRefresh();
-    };
 
     const savePromptAsset = (item: Prompt) => {
         addAsset({ kind: "text", title: item.title, coverUrl: item.coverUrl, tags: item.tags, source: item.sourceName, data: { content: item.prompt }, metadata: { source: "prompt-library", promptId: item.id, githubUrl: item.githubUrl } });
@@ -129,14 +122,9 @@ export default function PromptsPage() {
                             onChange={(event) => setKeyword(event.target.value)}
                         />
                         <div className="flex flex-wrap items-center justify-between gap-2.5">
-                            <div className="flex items-center gap-1.5">
-                                <Tooltip title={t("prompts.modeHint") || "仅本地：读本地种子 JSON；远程更新：从各源在线地址重新拉取，失败自动回落种子"}>
-                                    <Switch size="small" checked={onlineMode} onChange={(next) => applyDataMode(next)} />
-                                </Tooltip>
-                                <span className="text-xs text-stone-500 dark:text-stone-400">{onlineMode ? t("prompts.remoteUpdate") || "远程更新" : t("prompts.localOnly") || "仅本地"}</span>
-                            </div>
-                            <Tooltip title={t("prompts.refreshHint") || "从各来源重新拉取并重建本地索引"}>
-                                <Button icon={<RefreshCw className="size-3.5" />} loading={refreshing} onClick={() => void doRefresh()}>{onlineMode ? t("prompts.updateRemote") || "更新远程源" : t("prompts.rebuildIndex") || "重建本地索引"}</Button>
+                            <span className="text-xs text-stone-500 dark:text-stone-400">{t("prompts.sourceModeHint") || "各来源的本地/在线同步方式在「设置 → 提示词来源」里配置"}</span>
+                            <Tooltip title={t("prompts.refreshHint") || "按各来源当前配置重新拉取并刷新缓存"}>
+                                <Button icon={<RefreshCw className="size-3.5" />} loading={refreshing} onClick={() => void doRefresh()}>{t("prompts.syncSources") || "重新同步来源"}</Button>
                             </Tooltip>
                         </div>
                     </div>

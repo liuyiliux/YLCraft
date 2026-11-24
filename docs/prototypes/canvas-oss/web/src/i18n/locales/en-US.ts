@@ -91,6 +91,8 @@ export default {
         localOnly: "Local only",
         refreshHint: "Re-fetch all sources and rebuild the local index",
         modeHint: "Local only: read the seed JSON; Remote: re-fetch from each source's online URL, falling back to the seed",
+        sourceModeHint: "Configure each source's local/online sync under Settings → Prompt sources",
+        syncSources: "Re-sync sources",
         rebuildIndex: "Rebuild local index",
         updateRemote: "Update remote sources",
         refreshSuccess: "Synced {{count}} prompts",
