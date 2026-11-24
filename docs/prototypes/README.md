@@ -773,5 +773,23 @@ python -m http.server 8901 --bind 127.0.0.1 --directory F:\PycharmProjects\YLCra
   6 组 33 个按钮、点「裁剪」有 toast、0 报错；晨曦亮色下面板白底深字可读。
   类型检查只剩上游自带 antd 老错误（model-script-editor:58，与改造无关）。
   **未接真实模型**：⚡ 项点击只给 toast，本地项也只演示入口，真实现留到迁实际项目。
-- 这批 `canvas-oss/` 改动**未提交**；`docs/prototypes/canvas/` 的 vanilla 原型一个字没动。
+- 这批 `canvas-oss/` 改动已在 commit `b2674026` 提交（未推远程）；`docs/prototypes/canvas/` 的 vanilla 原型一个字没动。
+
+**11-24 · 提示词库并集 + 多场景共享组件**：用户「1 原型设计提示词库 2 参考项目和 YLCraft 下载的取并集
+3 打通画布提示词取提示词库」（对齐口径：静态打底+留接口 / 全量字段 / 画布+生图页先接）。
+- 实测两边数据差别（别再猜「同名源数据一样」）：参考项目 7 源共 1742 条（标准化 GitHub JSON，
+  tags/封面 100%，中文 39~100%，内部重复 19%）；YLCraft IMI 3 源共 11386 条（本地缓存 68MB，
+  `chinese_prompt/english_prompt/images/view_count`，中文 95~97%，重复 0.3%）；两边正文完全相同的仅 37 条。
+- 构建脚本 `canvas-oss/scripts/build_prompt_dataset.py`：原始快照存 `canvas-oss/data/prompt-sources/`，
+  输出 `web/public/prompt-data/{manifest.json,<sourceId>.json}`，10 源 13128 条 / 73.6MB，按源懒加载。
+  **IMI 大源剥掉 raw 字段**（>3000 条时）但归一化字段全保留；`D:/Python310/python.exe` 跑，别用系统 python。
+- 数据源：`prompt-source-presets.ts` 7 源→10 源、URL 指向本地 `/prompt-data/`（换后端只改这里）；
+  `prompt-source-runtime.ts` normalize 保留全量字段并映射 `referenceImages→referenceImageUrls`；
+  store 的 merge 会按新 presets 重建内置源，所以老 localStorage 不挡路。
+- 共享组件 `components/prompts/prompt-library-dialog.tsx`：参考 YLCraft `PromptReferencePicker` 的
+  数据集/模型集合/来源/标签四维筛选 + 搜索 + 无限滚动 + 详情抽屉（封面/参考图/双语正文/热度统计），
+  `mode=select|copy|both` 供多场景复用。已接画布节点书本按钮、生图页、视频页；左侧提示词库 tab 读同一份数据。
+- 验收：无头 Chrome（生图页）打开弹窗 → 总数 13128 → 筛「YLCraft 下载库」11386 → 搜「复古」1245 →
+  点「使用此提示词」弹窗关闭且输入框填入中文正文，**0 报错**；tsc 只剩上游 antd 老错误。
+  坑：antd 6 的 `Spin tip` / `Drawer width` 已弃用，分别改 `description` / `size`。
 

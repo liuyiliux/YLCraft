@@ -3,7 +3,7 @@ import { Button, Tooltip } from "antd";
 import { BookOpen } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
+import { PromptLibraryDialog } from "@/components/prompts/prompt-library-dialog";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 
@@ -24,7 +24,7 @@ export function CanvasPromptLibrary({ onSelect }: { onSelect: (prompt: string) =
                     aria-label={t("navigation.prompts")}
                 />
             </Tooltip>
-            <PromptSelectDialog open={open} onOpenChange={setOpen} onSelect={onSelect} />
+            <PromptLibraryDialog open={open} onOpenChange={setOpen} onSelect={(prompt) => onSelect(prompt)} />
         </>
     );
 }

@@ -71,6 +71,11 @@ export default {
         loading: "Loading...",
         loadMore: "Scroll down to load more",
         end: "You've reached the end",
+        dataset: "Dataset",
+        modelGroup: "Model group",
+        promptCopied: "Prompt copied",
+        promptText: "Prompt text",
+        referenceImages: "Reference images",
     },
     assets: {
         title: "My Assets",

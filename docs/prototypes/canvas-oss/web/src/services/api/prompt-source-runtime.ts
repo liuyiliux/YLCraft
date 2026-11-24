@@ -18,6 +18,21 @@ export type RawPrompt = {
     imageModel?: string;
     imageSize?: string;
     imageCount?: number;
+    /* Union dataset extras (reference project + YLCraft IMI). Kept in full so
+       the shared library UI can show model group, stats, bilingual prompts and
+       reference images without a second fetch. */
+    sourceId?: string;
+    sourceName?: string;
+    dataset?: string;
+    chinesePrompt?: string;
+    englishPrompt?: string;
+    model?: string;
+    modelGroup?: string;
+    viewCount?: number | null;
+    likeCount?: number | null;
+    copyCount?: number | null;
+    referenceImages?: string[];
+    raw?: Record<string, unknown>;
 };
 
 type RunOptions = { signal?: AbortSignal };
@@ -59,7 +74,8 @@ function normalizeItems(values: unknown[], source: PromptSource) {
         const id = stringValue(record.id).trim() || `${source.id}-${leftPad(index + 1)}`;
         if (seen.has(id)) return;
         seen.add(id);
-        const referenceImageUrls = stringArray(record.referenceImageUrls).map((url) => absoluteUrl(source.url, url));
+        const refValues = Array.isArray(record.referenceImageUrls) && record.referenceImageUrls.length ? record.referenceImageUrls : record.referenceImages;
+        const referenceImageUrls = stringArray(refValues).map((url) => absoluteUrl(source.url, url));
         const coverUrl = absoluteUrl(source.url, stringValue(record.coverUrl)) || referenceImageUrls[0] || "";
         items.push({
             id,
@@ -69,7 +85,7 @@ function normalizeItems(values: unknown[], source: PromptSource) {
             coverUrl,
             referenceImageUrls,
             tags: stringArray(record.tags),
-            preview: stringValue(record.preview),
+            preview: stringValue(record.preview) || prompt.slice(0, 360),
             createdAt: stringValue(record.createdAt),
             updatedAt: stringValue(record.updatedAt),
             author: stringValue(record.author),
@@ -78,6 +94,18 @@ function normalizeItems(values: unknown[], source: PromptSource) {
             imageModel: optionalString(record.imageModel),
             imageSize: optionalString(record.imageSize),
             imageCount: optionalNumber(record.imageCount),
+            sourceId: stringValue(record.sourceId) || source.id,
+            sourceName: stringValue(record.sourceName) || source.name,
+            dataset: stringValue(record.dataset) || "reference-project",
+            chinesePrompt: optionalString(record.chinesePrompt),
+            englishPrompt: optionalString(record.englishPrompt),
+            model: optionalString(record.model),
+            modelGroup: optionalString(record.modelGroup),
+            viewCount: numberOrNull(record.viewCount),
+            likeCount: numberOrNull(record.likeCount),
+            copyCount: numberOrNull(record.copyCount),
+            referenceImages: stringArray(refValues),
+            raw: asRecord(record.raw),
         });
     });
     return items;
@@ -103,6 +131,11 @@ function optionalString(value: unknown) {
 function optionalNumber(value: unknown) {
     const result = Number(value);
     return Number.isFinite(result) && result > 0 ? result : undefined;
+}
+
+function numberOrNull(value: unknown) {
+    const result = Number(value);
+    return Number.isFinite(result) ? result : null;
 }
 
 function absoluteUrl(baseUrl: string, path: string) {

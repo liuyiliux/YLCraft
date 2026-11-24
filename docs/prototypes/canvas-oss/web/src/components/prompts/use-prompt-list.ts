@@ -5,15 +5,15 @@ import { ALL_PROMPTS_OPTION, fetchPrompts } from "@/services/api/prompts";
 
 export const PROMPT_PAGE_SIZE = 20;
 
-export function usePromptList({ keyword, tags, category, enabled = true }: { keyword: string; tags: string[]; category: string; enabled?: boolean }) {
+export function usePromptList({ keyword, tags, category, modelGroup = ALL_PROMPTS_OPTION, dataset = ALL_PROMPTS_OPTION, enabled = true }: { keyword: string; tags: string[]; category: string; modelGroup?: string; dataset?: string; enabled?: boolean }) {
     const [debouncedKeyword, setDebouncedKeyword] = useState(keyword);
     useEffect(() => {
         const timer = setTimeout(() => setDebouncedKeyword(keyword), 300);
         return () => clearTimeout(timer);
     }, [keyword]);
     const query = useInfiniteQuery({
-        queryKey: ["prompts", debouncedKeyword, tags, category],
-        queryFn: ({ pageParam }) => fetchPrompts({ keyword: debouncedKeyword, tag: tags, category, page: pageParam, pageSize: PROMPT_PAGE_SIZE }),
+        queryKey: ["prompts", debouncedKeyword, tags, category, modelGroup, dataset],
+        queryFn: ({ pageParam }) => fetchPrompts({ keyword: debouncedKeyword, tag: tags, category, modelGroup, dataset, page: pageParam, pageSize: PROMPT_PAGE_SIZE }),
         initialPageParam: 1,
         getNextPageParam: (lastPage, pages) => (pages.reduce((total, page) => total + page.items.length, 0) < lastPage.total ? pages.length + 1 : undefined),
         enabled,
@@ -24,6 +24,8 @@ export function usePromptList({ keyword, tags, category, enabled = true }: { key
         items: useMemo(() => query.data?.pages.flatMap((page) => page.items) || [], [query.data?.pages]),
         tags: useMemo(() => [ALL_PROMPTS_OPTION, ...(firstPage?.tags || [])], [firstPage?.tags]),
         categories: useMemo(() => [ALL_PROMPTS_OPTION, ...(firstPage?.categories || [])], [firstPage?.categories]),
+        modelGroups: useMemo(() => [ALL_PROMPTS_OPTION, ...(firstPage?.modelGroups || [])], [firstPage?.modelGroups]),
+        datasets: useMemo(() => [ALL_PROMPTS_OPTION, ...(firstPage?.datasets || [])], [firstPage?.datasets]),
         total: firstPage?.total || 0,
     };
 }

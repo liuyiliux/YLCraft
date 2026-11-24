@@ -71,6 +71,11 @@ export default {
         loading: "加载中...",
         loadMore: "继续向下滚动加载更多",
         end: "已经到底了",
+        dataset: "数据集",
+        modelGroup: "模型集合",
+        promptCopied: "已复制提示词",
+        promptText: "提示词正文",
+        referenceImages: "参考图",
     },
     assets: {
         title: "我的资产",

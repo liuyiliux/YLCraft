@@ -136,19 +136,23 @@ async function getAllPrompts(): Promise<Prompt[]> {
     return settled.flat();
 }
 
-export async function fetchPrompts({ keyword = "", tag = [], category = ALL_PROMPTS_OPTION, page = 1, pageSize = 20 }: { keyword?: string; tag?: string[]; category?: string; page?: number; pageSize?: number } = {}) {
+export const ALL_MODEL_GROUPS_OPTION = "all";
+
+export async function fetchPrompts({ keyword = "", tag = [], category = ALL_PROMPTS_OPTION, modelGroup = ALL_MODEL_GROUPS_OPTION, dataset = ALL_PROMPTS_OPTION, page = 1, pageSize = 20 }: { keyword?: string; tag?: string[]; category?: string; modelGroup?: string; dataset?: string; page?: number; pageSize?: number } = {}) {
     const items = await getAllPrompts();
     const normalizedKeyword = keyword.trim().toLowerCase();
     const normalizedPage = Math.max(1, page);
     const normalizedPageSize = Math.max(1, Math.min(100, pageSize));
-    const withoutTagFilter = filterPrompts(items, { keyword: normalizedKeyword, category, tags: [] });
-    const filtered = filterPrompts(items, { keyword: normalizedKeyword, category, tags: tag });
+    const withoutTagFilter = filterPrompts(items, { keyword: normalizedKeyword, category, tags: [], modelGroup, dataset });
+    const filtered = filterPrompts(items, { keyword: normalizedKeyword, category, tags: tag, modelGroup, dataset });
     const categories = enabledSources().map((source) => source.name);
 
     return {
         items: filtered.slice((normalizedPage - 1) * normalizedPageSize, normalizedPage * normalizedPageSize),
         tags: collectTags(withoutTagFilter),
         categories,
+        modelGroups: Array.from(new Set(items.map((item) => item.modelGroup).filter((value): value is string => Boolean(value)))).sort(),
+        datasets: Array.from(new Set(items.map((item) => item.dataset).filter((value): value is string => Boolean(value)))).sort(),
         total: filtered.length,
     };
 }
@@ -203,12 +207,14 @@ function summarizeRefresh(results: PromptSourceRefreshResult[]): PromptSourceRef
     };
 }
 
-function filterPrompts(items: Prompt[], options: { keyword: string; category: string; tags: string[] }) {
+function filterPrompts(items: Prompt[], options: { keyword: string; category: string; tags: string[]; modelGroup?: string; dataset?: string }) {
     return items.filter((item) => {
         if (isActiveOption(options.category) && item.category !== options.category) return false;
+        if (options.modelGroup && isActiveOption(options.modelGroup) && item.modelGroup !== options.modelGroup) return false;
+        if (options.dataset && isActiveOption(options.dataset) && item.dataset !== options.dataset) return false;
         if (options.tags.length && !options.tags.some((tag) => item.tags.includes(tag))) return false;
         if (!options.keyword) return true;
-        return [item.title, item.prompt, item.description, item.category, ...item.tags].join(" ").toLowerCase().includes(options.keyword);
+        return [item.title, item.prompt, item.description, item.category, item.modelGroup, ...item.tags].filter(Boolean).join(" ").toLowerCase().includes(options.keyword);
     });
 }
 
