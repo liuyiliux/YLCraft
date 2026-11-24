@@ -132,7 +132,7 @@ function FilterGroup({ label, children, action }: { label: string; children: Rea
 }
 
 /** YLCraft-style filter chip (prompt-filter-chip equivalent). */
-function PromptChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+export function PromptChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
     return (
         <button type="button" onClick={onClick} className={cn("rounded-full border px-2.5 py-1 text-xs transition", active ? "border-amber-500 bg-amber-500/15 font-medium text-amber-700 dark:text-amber-300" : "border-stone-200 bg-stone-50 text-stone-600 hover:border-stone-300 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300")}>
             {children}
@@ -146,7 +146,7 @@ function ActiveFilter({ label, onClear }: { label: string; onClear: () => void }
     );
 }
 
-function PromptLibraryCard({ item, onOpen, onUse, onSaveAsset, onToggleFavorite, isFavorite }: { item: Prompt; onOpen: () => void } & PromptLibraryCallbacks) {
+export function PromptLibraryCard({ item, onOpen, onUse, onSaveAsset, onToggleFavorite, isFavorite }: { item: Prompt; onOpen: () => void } & PromptLibraryCallbacks) {
     const { t } = useTranslation();
     const favorite = isFavorite?.(item) || false;
     return (
@@ -176,7 +176,7 @@ function PromptLibraryCard({ item, onOpen, onUse, onSaveAsset, onToggleFavorite,
 }
 
 /** YLCraft-style detail drawer: image left, bilingual prompt sections right. */
-function PromptDetailDrawer({ item, onClose, onUse, onSaveAsset, onToggleFavorite, isFavorite }: { item: Prompt | null; onClose: () => void } & PromptLibraryCallbacks) {
+export function PromptDetailDrawer({ item, onClose, onUse, onSaveAsset, onToggleFavorite, isFavorite }: { item: Prompt | null; onClose: () => void } & PromptLibraryCallbacks) {
     const { t, i18n } = useTranslation();
     const copyText = useCopyText();
     const [copied, setCopied] = useState<"cn" | "en" | null>(null);

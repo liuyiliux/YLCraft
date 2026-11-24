@@ -37,23 +37,35 @@ export type RawPrompt = {
 
 type RunOptions = { signal?: AbortSignal };
 
-async function fetchSource(source: PromptSource, options?: RunOptions) {
-    const response = await fetch(source.url, { cache: "no-store", signal: options?.signal });
+async function fetchUrl(url: string, options?: RunOptions) {
+    const response = await fetch(url, { cache: "no-store", signal: options?.signal });
     if (!response.ok) throw new Error(i18n.t("config.promptSources.runtime.requestFailed", { status: response.status }));
     return response.json();
 }
 
-export async function runPromptSource(source: PromptSource, options?: RunOptions): Promise<RawPrompt[]> {
-    if (!source.url.trim()) throw new Error(i18n.t("config.promptSources.runtime.urlRequired"));
-    let data: unknown;
-    try {
-        data = await fetchSource(source, options);
-    } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") throw error;
-        throw new Error(i18n.t("config.promptSources.runtime.fetchFailed", { name: source.name, error: error instanceof Error ? error.message : String(error) }));
+/** Resolve which URL to fetch. In online mode the upstream JSON is preferred
+ *  and the local generated seed is the fallback — so a flaky network never
+ *  empties the library. Returns both the data and the URL actually used (the
+ *  latter resolves relative cover/reference image paths). */
+async function fetchSourceWithFallback(source: PromptSource, options?: RunOptions): Promise<{ data: unknown; resolvedUrl: string }> {
+    const useOnline = source.mode === "online" && Boolean(source.onlineUrl.trim());
+    if (useOnline) {
+        try {
+            return { data: await fetchUrl(source.onlineUrl, options), resolvedUrl: source.onlineUrl };
+        } catch (error) {
+            if (error instanceof DOMException && error.name === "AbortError") throw error;
+            // fall through to local seed
+        }
     }
+    if (!source.url.trim()) throw new Error(i18n.t("config.promptSources.runtime.urlRequired"));
+    return { data: await fetchUrl(source.url, options), resolvedUrl: source.url };
+}
 
-    const items = parseJsonSource(data, source);
+export async function runPromptSource(source: PromptSource, options?: RunOptions): Promise<RawPrompt[]> {
+    const { data, resolvedUrl } = await fetchSourceWithFallback(source, options);
+    const activeSource = { ...source, url: resolvedUrl };
+
+    const items = parseJsonSource(data, activeSource);
     if (source.builtIn && !items.length) throw new Error(i18n.t("config.promptSources.runtime.noPrompts", { name: source.name }));
     return items;
 }

@@ -22,6 +22,7 @@ export function ConfigPromptSources() {
     const saveSource = usePromptSourceStore((state) => state.saveSource);
     const removeSource = usePromptSourceStore((state) => state.removeSource);
     const toggleSource = usePromptSourceStore((state) => state.toggleSource);
+    const setSourceMode = usePromptSourceStore((state) => state.setSourceMode);
     const updateSchedule = usePromptSourceStore((state) => state.updateSchedule);
     const statusQuery = useQuery({ queryKey: STATUS_QUERY_KEY, queryFn: fetchPromptSourceStatuses });
 
@@ -111,6 +112,14 @@ export function ConfigPromptSources() {
                                     <a className="max-w-full truncate hover:text-stone-800 hover:underline dark:hover:text-stone-200" href={source.homepage || source.url} target="_blank" rel="noreferrer">
                                         {source.homepage || source.url}
                                     </a>
+                                    <button
+                                        type="button"
+                                        className={source.mode === "online" ? "rounded bg-sky-500/15 px-1.5 py-0.5 text-sky-600 dark:text-sky-400" : "rounded bg-stone-500/15 px-1.5 py-0.5 text-stone-600 dark:text-stone-400"}
+                                        title={t("config.promptSources.modeHint") || "点击切换：本地种子 / 在线同步（在线失败自动回落本地）"}
+                                        onClick={() => { setSourceMode(source.id, source.mode === "online" ? "local" : "online"); void invalidatePrompts(); }}
+                                    >
+                                        {source.mode === "online" ? (t("config.promptSources.modeOnline") || "在线") : (t("config.promptSources.modeLocal") || "本地")}
+                                    </button>
                                     <span className="tabular-nums">{t("config.promptSources.itemCount", { count: status?.count ?? 0 })}</span>
                                     {status?.lastError ? <Tag color="error" className="m-0 text-[10px]" title={status.lastError}>{t("config.promptSources.failed")}</Tag> : status?.lastSuccessAt ? <Tag color="success" className="m-0 text-[10px]">{t("config.promptSources.healthy")}</Tag> : <Tag className="m-0 text-[10px]">{t("config.promptSources.unsynced")}</Tag>}
                                     <span>{status?.lastSuccessAt ? t("config.promptSources.lastSuccess", { time: formatTime(status.lastSuccessAt, i18n.resolvedLanguage) }) : t("config.promptSources.neverFetched")}</span>

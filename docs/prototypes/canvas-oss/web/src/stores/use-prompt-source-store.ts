@@ -24,6 +24,7 @@ type PromptSourceStore = {
     saveSource: (source: PromptSource) => void;
     removeSource: (id: string) => void;
     toggleSource: (id: string, enabled: boolean) => void;
+    setSourceMode: (id: string, mode: PromptSource["mode"]) => void;
     updateSchedule: <K extends keyof PromptSourceSchedule>(key: K, value: PromptSourceSchedule[K]) => void;
 };
 
@@ -41,6 +42,7 @@ export const usePromptSourceStore = create<PromptSourceStore>()(
                 })),
             removeSource: (id) => set((state) => ({ sources: state.sources.filter((item) => item.id !== id || item.builtIn) })),
             toggleSource: (id, enabled) => set((state) => ({ sources: state.sources.map((item) => (item.id === id ? { ...item, enabled } : item)) })),
+            setSourceMode: (id, mode) => set((state) => ({ sources: state.sources.map((item) => (item.id === id ? { ...item, mode } : item)) })),
             updateSchedule: (key, value) => set((state) => ({ schedule: { ...state.schedule, [key]: value } })),
         }),
         {
@@ -49,8 +51,16 @@ export const usePromptSourceStore = create<PromptSourceStore>()(
             merge: (persisted, current) => {
                 const persistedState = (persisted || {}) as Partial<PromptSourceStore>;
                 const savedSources = Array.isArray(persistedState.sources) ? persistedState.sources : [];
-                const enabledById = new Map(savedSources.map((source) => [source.id, source.enabled]));
-                const builtIn = DEFAULT_PROMPT_SOURCES.map((source) => ({ ...source, enabled: enabledById.get(source.id) ?? source.enabled }));
+                const savedById = new Map(savedSources.map((source) => [source.id, source]));
+                const builtIn = DEFAULT_PROMPT_SOURCES.map((source) => {
+                    const saved = savedById.get(source.id);
+                    return {
+                        ...source,
+                        enabled: saved?.enabled ?? source.enabled,
+                        mode: saved?.mode ?? source.mode,
+                        onlineUrl: saved?.onlineUrl ?? source.onlineUrl,
+                    };
+                });
                 const custom = savedSources.filter((source) => !source.builtIn).map((source) => createPromptSource(source));
                 return { ...current, sources: [...builtIn, ...custom], schedule: { ...defaultSchedule, ...(persistedState.schedule || {}) } };
             },

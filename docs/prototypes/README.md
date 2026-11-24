@@ -820,3 +820,23 @@ python -m http.server 8901 --bind 127.0.0.1 --directory F:\PycharmProjects\YLCra
 - 验收（3100）：独立页 13128 条、标签前排是韩国风/手绘感/高细节（YLCraft 顺序）、详情 2 个复制按钮 +
   收藏 + 风格区、生图页弹窗 13128 条，tsc 只剩上游 antd 老错误。
 
+**11-24 · 提示词页按 YLCraft 页面设计 + 在线同步（commit 待补）**：用户「这个页面也用我们的，
+脚本改成参考项目那种来源同步」，对齐口径：**原型先行**（真实 YLCraft 页面不动），后期再把参考项目拆进来。
+- 页面：canvas-oss `/prompts` 换成 YLCraft 主前端 `frontend/src/pages/prompt-library` 的页面骨架：
+  hero（Image Prompt References + 大标题 + 副标题 + 条数/来源已同步统计）+ 右侧命令面板（模板按钮/搜索/
+  仅本地开关/重建本地索引）+ 筛选面板（模型集合/分类标签，更多收起）+ 卡片网格 + 详情抽屉。
+  卡片/详情/chip 从 dialog 文件**导出复用**，独立页不再自己实现一遍。
+- 同步：**参考项目的在线同步机制原型本来就有**（refreshSource/refreshAllSources/refreshDueSources/
+  调度器 60s/缓存/来源开关/新增源/查看内容/立即拉取），上一轮只是 URL 指向本地种子。
+  本轮补齐「在线优先、失败回落本地」：`PromptSource` 加 `onlineUrl` + `mode(local|online)`，
+  `runPromptSource` 按 mode 选 URL，在线失败回落种子 JSON；7 个 OSS 源带 GitHub raw 在线地址，
+  3 个 IMI 源只有本地种子；来源页每个源加「本地/在线」切换按钮（内置源也能切），编辑器加模式/
+  种子地址/在线地址字段，store 的 merge 保留 mode/onlineUrl（否则刷新丢失）。
+- 脚本 `build_prompt_dataset.py` 从一次性 build 变增量同步工具：`--source <id>` 只更新一个源、
+  `--fetch` 从在线拉快照（urllib 需 `ProxyHandler({})` 绕过坏代理）。实测 `--source awesome-gpt-image`
+  后 manifest 仍 10 源 13128 条。
+- 坑：i18n 的键要放进 `config.promptSources.editor.*`，别新建同级 editorExtra；
+  两次加 modeLocal 到 promptSources 造成 TS1117 重复键，删掉 runtime 后面那份。
+- 验收（3100）：新页 hero/统计/重建按钮/20 卡片/0 报错；点「重建本地索引」同步成功；
+  来源页 10 个本地按钮，点第一个切在线变 9 个（生效）；tsc 只剩上游 antd 老错误。
+

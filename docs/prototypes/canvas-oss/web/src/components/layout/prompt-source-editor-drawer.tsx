@@ -1,8 +1,8 @@
-import { App, Button, Drawer, Input, Space, Switch } from "antd";
+import { App, Button, Drawer, Input, Segmented, Space, Switch } from "antd";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { PromptSource } from "@/services/api/prompt-source-presets";
+import type { PromptSource, PromptSourceMode } from "@/services/api/prompt-source-presets";
 
 export function PromptSourceEditorDrawer({ open, source, onSave, onClose }: { open: boolean; source: PromptSource | null; onSave: (source: PromptSource) => void; onClose: () => void }) {
     const { message } = App.useApp();
@@ -20,10 +20,12 @@ export function PromptSourceEditorDrawer({ open, source, onSave, onClose }: { op
     const save = () => {
         const name = draft.name.trim();
         const url = draft.url.trim();
+        const onlineUrl = draft.onlineUrl.trim();
         if (!name) return message.warning(t("config.promptSources.editor.nameRequired"));
-        if (!isHttpUrl(url)) return message.warning(t("config.promptSources.editor.invalidUrl"));
+        if (!isUsableUrl(url)) return message.warning(t("config.promptSources.editor.invalidUrl"));
+        if (onlineUrl && !isHttpUrl(onlineUrl)) return message.warning(t("config.promptSources.editor.invalidOnlineUrl"));
         if (draft.homepage.trim() && !isHttpUrl(draft.homepage.trim())) return message.warning(t("config.promptSources.editor.invalidHomepage"));
-        onSave({ ...draft, name, url, homepage: draft.homepage.trim(), builtIn: false });
+        onSave({ ...draft, name, url, onlineUrl, homepage: draft.homepage.trim(), builtIn: false });
         onClose();
     };
 
@@ -48,9 +50,26 @@ export function PromptSourceEditorDrawer({ open, source, onSave, onClose }: { op
                     <span className="mb-1.5 block text-sm font-medium">{t("config.promptSources.editor.name")}</span>
                     <Input value={draft.name} onChange={(event) => patch({ name: event.target.value })} placeholder={t("config.promptSources.editor.namePlaceholder")} />
                 </label>
+                <div>
+                    <span className="mb-1.5 block text-sm font-medium">{t("config.promptSources.editor.mode") || "同步模式"}</span>
+                    <Segmented
+                        block
+                        value={draft.mode || "local"}
+                        onChange={(value) => patch({ mode: value as PromptSourceMode })}
+                        options={[
+                            { label: t("config.promptSources.editor.modeLocal") || "本地种子", value: "local" },
+                            { label: t("config.promptSources.editor.modeOnline") || "在线同步", value: "online" },
+                        ]}
+                    />
+                    <p className="mt-1.5 text-xs text-stone-500 dark:text-stone-400">{t("config.promptSources.editor.modeHint") || "在线同步优先拉取在线地址，失败自动回落到本地种子。"}</p>
+                </div>
                 <label className="block">
-                    <span className="mb-1.5 block text-sm font-medium">JSON URL</span>
-                    <Input value={draft.url} onChange={(event) => patch({ url: event.target.value })} placeholder="https://example.com/prompts.json" />
+                    <span className="mb-1.5 block text-sm font-medium">{t("config.promptSources.editor.seedUrl") || "种子 JSON 地址（本地）"}</span>
+                    <Input value={draft.url} onChange={(event) => patch({ url: event.target.value })} placeholder="/prompt-data/example.json" />
+                </label>
+                <label className="block">
+                    <span className="mb-1.5 block text-sm font-medium">{t("config.promptSources.editor.onlineUrl") || "在线 JSON 地址"}</span>
+                    <Input value={draft.onlineUrl || ""} onChange={(event) => patch({ onlineUrl: event.target.value })} placeholder="https://example.com/prompts.json" />
                 </label>
                 <label className="block">
                     <span className="mb-1.5 block text-sm font-medium">{t("config.promptSources.editor.homepage")}</span>
@@ -85,4 +104,8 @@ function isHttpUrl(value: string) {
     } catch {
         return false;
     }
+}
+
+function isUsableUrl(value: string) {
+    return value.startsWith("/") || isHttpUrl(value);
 }

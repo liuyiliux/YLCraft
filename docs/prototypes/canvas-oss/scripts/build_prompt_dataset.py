@@ -173,11 +173,35 @@ def normalise_imi(item: dict, sid: str, source_name: str, model_group: str) -> d
     }
 
 
+ONLINE_BASE = "https://raw.githubusercontent.com/yukkcat/image-prompts/main/dist/sources"
+
+
+def fetch_online_snapshot(sid: str, dest: Path) -> bool:
+    """Refresh one OSS source's raw snapshot from upstream. Returns success."""
+    import urllib.request
+    url = f"{ONLINE_BASE}/{sid}.json"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        # urlopen honours HTTP_PROXY; clear it so a broken proxy cannot block us.
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(req, timeout=90) as response:
+            payload = response.read()
+        json.loads(payload)  # validate before writing
+        dest.write_bytes(payload)
+        print(f"  [fetch] {sid}: {len(payload)} bytes from upstream")
+        return True
+    except Exception as error:  # noqa: BLE001 - CLI tool, report and continue
+        print(f"  [fetch] {sid}: FAILED ({error}); keeping existing snapshot")
+        return False
+
+
 def build() -> None:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Build or incrementally sync the unified prompt dataset.")
     parser.add_argument("--oss-data", type=Path, default=OSS_DATA)
     parser.add_argument("--yl-data", type=Path, default=YL_DATA)
     parser.add_argument("--out", type=Path, default=OUT_DIR)
+    parser.add_argument("--source", default="", help="Only sync this source id (incremental; keeps other sources in manifest).")
+    parser.add_argument("--fetch", action="store_true", help="Re-fetch the raw snapshot from upstream before building (OSS sources only).")
     args = parser.parse_args()
 
     args.out.mkdir(parents=True, exist_ok=True)
@@ -186,11 +210,25 @@ def build() -> None:
         json.dumps({"version": 1, "tags": priority, "stopwords": sorted(TAG_STOPWORDS)}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    print(f"Tag priority: {len(priority)} tags exported from {YL_SERVICE_PY.name}")
-    manifest: list[dict] = []
+    if not args.source:
+        print(f"Tag priority: {len(priority)} tags exported from {YL_SERVICE_PY.name}")
+
+    # Incremental mode: preserve existing manifest entries for untouched sources.
+    manifest_path = args.out / "manifest.json"
+    existing: list[dict] = []
+    if args.source and manifest_path.exists():
+        existing = [entry for entry in json.loads(manifest_path.read_text(encoding="utf-8")).get("sources", []) if entry.get("id") != args.source]
+
+    manifest: list[dict] = list(existing)
+    only = args.source
 
     for sid, name, homepage, group in OSS_SOURCES:
+        if only and sid != only:
+            continue
         src = args.oss_data / f"{sid}.json"
+        if args.fetch and fetch_online_snapshot(sid, src) is False:
+            # keep the existing snapshot on failure; still rebuild from it
+            pass
         if not src.exists():
             print(f"[skip] missing OSS source: {src}")
             continue
@@ -199,6 +237,8 @@ def build() -> None:
         _write_source(args.out, sid, name, homepage, group, "reference-project", items, manifest)
 
     for sid, name, homepage, group in YL_SOURCES:
+        if only and sid != only:
+            continue
         src = args.yl_data / f"{sid}.json"
         if not src.exists():
             print(f"[skip] missing YL source: {src}")
@@ -212,8 +252,12 @@ def build() -> None:
                 item.pop("raw", None)
         _write_source(args.out, sid, name, homepage, group, "ylcraft-imi", items, manifest)
 
+    if only and not any(entry.get("id") == only for entry in manifest):
+        print(f"[error] source '{only}' not found in known sources")
+        return
+
     manifest.sort(key=lambda s: (s["dataset"] != "reference-project", s["id"]))
-    (args.out / "manifest.json").write_text(
+    (manifest_path).write_text(
         json.dumps(
             {
                 "version": 1,
@@ -227,7 +271,8 @@ def build() -> None:
         encoding="utf-8",
     )
     total = sum(s["count"] for s in manifest)
-    print(f"Built {len(manifest)} sources / {total} prompts into {args.out}")
+    scope = f"source={only}" if only else "all sources"
+    print(f"Built {len(manifest)} sources / {total} prompts into {args.out} ({scope})")
 
 
 def _write_source(out: Path, sid: str, name: str, homepage: str, group: str, dataset: str, items: list[dict], manifest: list[dict]) -> None:
