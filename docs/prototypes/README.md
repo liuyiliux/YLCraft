@@ -900,7 +900,7 @@ python -m http.server 8901 --bind 127.0.0.1 --directory F:\PycharmProjects\YLCra
 - 验收（8901）：H1 居中偏差 0px、筛选行 `96px + 1148px`、5 列 247px、48→96 张「加载更多」、
   详情双复制按钮、来源筛选后 150 条、0 JS 报错（只有个别图片 ERR_NO_BUFFER_SPACE）。
 
-**11-24 · 原型统一外壳（shared/shell.js + shell.css，commit 待补）**：用户「我们原型该整理下了，好像还没融合」。
+**11-24 · 原型统一外壳（shared/shell.js + shell.css，commit 5133140d）**：用户「我们原型该整理下了，好像还没融合」。
 - 问题：首页是居中列表、功能页各有顶栏、画布/摄影库各自一套壳 —— 看起来像四个产品。
 - 做法：`shared/shell.js` 在页面 `</body>` 前引一行即可，脚本负责
   ①把 `shell.css` 插到 head 末尾（压过页面自带样式）②注入左侧导航 ③没有 `.topbar` 的页补一条面包屑栏。
