@@ -13,6 +13,19 @@ export type Prompt = RawPrompt & {
 
 export const ALL_PROMPTS_OPTION = "all";
 
+/** Human labels for the dataset buckets produced by build_prompt_dataset.py.
+ *  Keeps raw ids like "ylcraft-imi" out of the UI. */
+export const DATASET_LABELS: Record<string, string> = {
+    "reference-project": "参考项目",
+    "ylcraft-imi": "YLCraft 下载库",
+    "ylcraft-library": "YLCraft 我的库",
+    merged: "合并补全",
+};
+
+export function datasetLabel(value: string) {
+    return DATASET_LABELS[value] ?? value;
+}
+
 export type PromptListResponse = {
     items: Prompt[];
     tags: string[];

@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
 """Build unified prompt-library static JSON for the canvas-oss prototype.
 
-Inputs (two datasets, merged as a union — not deduplicated across sources):
+Inputs (three datasets, merged as a union — sources are kept side by side, with
+only the YouMind source merged item-by-item because the two copies of it hold
+disjoint content):
   1. reference-project source snapshots : canvas-oss/data/prompt-sources/*.json
   2. YLCraft IMI cached sources         : backend/storage/image_prompt_references/sources/imi-*.json
+  3. YLCraft backend-only sources       : canvas-oss/data/prompt-sources/ylcraft-backend/*.json
+     (dumped from /api/v1/image-prompts/references by fetch_ylcraft_prompt_sources.py;
+     sources the registry lacks, or holds a partial set of)
+
+Both snapshot directories live under data/ which is git-ignored; regenerate them
+with `--fetch` (registry) and fetch_ylcraft_prompt_sources.py (YLCraft backend).
 
 Output (canvas-oss/web/public/prompt-data/):
   manifest.json          source list for the UI
@@ -27,6 +35,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]  # docs/prototypes/canvas-oss
 OSS_DATA = ROOT / "data" / "prompt-sources"
 YL_DATA = ROOT.parents[2] / "backend" / "storage" / "image_prompt_references" / "sources"
+YL_BACKEND_DATA = ROOT / "data" / "prompt-sources" / "ylcraft-backend"
 OUT_DIR = ROOT / "web" / "public" / "prompt-data"
 
 OSS_SOURCES = [
@@ -47,6 +56,15 @@ YL_SOURCES = [
 
 IMI_IMG_BASE = "https://img.opennana.com/pthumbs/prompts/assets/"
 
+# Sources that exist in YLCraft's own library but not in the reference registry
+# snapshot. mode="merge" folds the extra prompts into the registry source with
+# the same id (YouMind: registry carries the English README, YLCraft parses
+# README_zh.md, and the two share exactly one prompt — neither alone is whole).
+YL_BACKEND_SOURCES = [
+    ("youmind-gpt-image-2", "YouMind GPT Image 2", "https://github.com/YouMind-OpenLab/awesome-gpt-image-2", "ChatGPT", "merge"),
+    ("ylcraft-my-image-prompts", "我的生图提示词", "", "ChatGPT", "own"),
+]
+
 # Mirrors YLCraft's PROMPT_TAG_PRIORITY from
 # backend/app/services/image_prompt_reference/service.py — parsed at build time
 # so the prototype's filter chips rank exactly like the real YLCraft library.
@@ -54,6 +72,7 @@ YL_SERVICE_PY = ROOT.parents[2] / "backend" / "app" / "services" / "image_prompt
 TAG_STOPWORDS = {
     "image", "chatgpt", "gpt-4o", "gpt-image-2", "nano banana 2", "nano banana pro",
     "nano-banana-pro", "nanobanana2", "nanobananapro", "awesome-gpt-image", "awesome-gpt4o-image-prompts",
+    "所有提示词", "我的提示词",
 }
 
 
@@ -176,6 +195,89 @@ def normalise_imi(item: dict, sid: str, source_name: str, model_group: str) -> d
 ONLINE_BASE = "https://raw.githubusercontent.com/yukkcat/image-prompts/main/dist/sources"
 
 
+def prompt_key(text: str) -> str:
+    """Whitespace/case-insensitive key used to dedupe merged prompt bodies."""
+    return re.sub(r"\s+", " ", text or "").strip().lower()
+
+
+def usable_cover(url: str) -> str:
+    """Drop shields.io badges — README-derived rows point their cover at one."""
+    if not url or "img.shields.io" in url:
+        return ""
+    return url
+
+
+def backend_images(value: Any) -> list[str]:
+    urls: list[str] = []
+    for entry in value if isinstance(value, list) else []:
+        if isinstance(entry, dict):
+            url = as_str(entry.get("url") or entry.get("image_url") or entry.get("src"))
+        else:
+            url = as_str(entry)
+        if url:
+            urls.append(url)
+    return urls
+
+
+def normalise_backend(item: dict, sid: str, source_name: str, model_group: str) -> dict:
+    """YLCraft backend rows (/api/v1/image-prompts/references) -> shared schema."""
+    cn = as_str(item.get("chinese_prompt"))
+    en = as_str(item.get("english_prompt"))
+    prompt = as_str(item.get("prompt")) or cn or en
+    refs = backend_images(item.get("image_items"))
+    cover = usable_cover(as_str(item.get("cover_url"))) or (refs[0] if refs else "")
+    return {
+        "id": as_str(item.get("external_id")) or as_str(item.get("id")) or f"{sid}-{prompt_key(prompt)[:24]}",
+        "sourceId": sid,
+        "sourceName": source_name,
+        "dataset": "ylcraft-library",
+        "title": as_str(item.get("title")) or prompt[:48],
+        "prompt": prompt,
+        "description": as_str(item.get("description")),
+        "tags": clean_tags(item.get("tags")),
+        "coverUrl": cover,
+        "referenceImages": refs,
+        "sourceUrl": as_str(item.get("source_url") or item.get("detail_url")),
+        "chinesePrompt": cn,
+        "englishPrompt": en,
+        "model": as_str(item.get("model_hint")),
+        "modelGroup": as_str(item.get("model_group")) or model_group,
+        "language": as_str(item.get("language")),
+        "viewCount": item.get("view_count"),
+        "likeCount": item.get("like_count"),
+        "copyCount": item.get("copy_count"),
+        "createdAt": as_str(item.get("remote_created_at") or item.get("created_at")),
+        "updatedAt": as_str(item.get("remote_updated_at") or item.get("updated_at")),
+        "preview": prompt[:360],
+        "raw": item,
+    }
+
+
+def merge_items(base: list[dict], extra: list[dict]) -> tuple[list[dict], int, int]:
+    """Append prompts not already present (dedupes `extra` internally too).
+
+    Returns (merged, added, skipped_duplicates).
+    """
+    seen = {prompt_key(item.get("prompt", "")) for item in base}
+    seen.discard("")
+    merged = list(base)
+    added = 0
+    skipped = 0
+    for item in extra:
+        key = prompt_key(item.get("prompt", ""))
+        if not key:
+            skipped += 1
+            continue
+        if key in seen:
+            skipped += 1
+            continue
+        seen.add(key)
+        merged.append(item)
+        added += 1
+    return merged, added, skipped
+
+
+
 def fetch_online_snapshot(sid: str, dest: Path) -> bool:
     """Refresh one OSS source's raw snapshot from upstream. Returns success."""
     import urllib.request
@@ -251,6 +353,32 @@ def build() -> None:
             for item in items:
                 item.pop("raw", None)
         _write_source(args.out, sid, name, homepage, group, "ylcraft-imi", items, manifest)
+
+    # YLCraft-backend sources: either fold into the registry source (merge) or
+    # publish as their own source (own).
+    for sid, name, homepage, group, mode in YL_BACKEND_SOURCES:
+        if only and sid != only:
+            continue
+        src = YL_BACKEND_DATA / f"{sid}.json"
+        if not src.exists():
+            print(f"[skip] missing YLCraft backend source: {src}")
+            continue
+        rows = [row for row in json.loads(src.read_text(encoding="utf-8")) if isinstance(row, dict)]
+        extra = [normalise_backend(row, sid, name, group) for row in rows]
+        if mode == "merge":
+            base_path = args.out / f"{sid}.json"
+            if not base_path.exists():
+                print(f"[skip] no registry snapshot to merge into for {sid}")
+                continue
+            base = json.loads(base_path.read_text(encoding="utf-8"))
+            merged, added, skipped = merge_items(base, extra)
+            for item in merged:
+                item["dataset"] = "merged"
+            manifest = [entry for entry in manifest if entry.get("id") != sid]
+            _write_source(args.out, sid, name, homepage, group, "merged", merged, manifest)
+            print(f"    merge: registry {len(base)} + YLCraft {len(extra)} rows -> +{added} new, {skipped} duplicate skipped")
+        else:
+            _write_source(args.out, sid, name, homepage, group, "ylcraft-library", extra, manifest)
 
     if only and not any(entry.get("id") == only for entry in manifest):
         print(f"[error] source '{only}' not found in known sources")

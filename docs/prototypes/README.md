@@ -780,7 +780,8 @@ python -m http.server 8901 --bind 127.0.0.1 --directory F:\PycharmProjects\YLCra
 - 实测两边数据差别（别再猜「同名源数据一样」）：参考项目 7 源共 1742 条（标准化 GitHub JSON，
   tags/封面 100%，中文 39~100%，内部重复 19%）；YLCraft IMI 3 源共 11386 条（本地缓存 68MB，
   `chinese_prompt/english_prompt/images/view_count`，中文 95~97%，重复 0.3%）；两边正文完全相同的仅 37 条。
-- 构建脚本 `canvas-oss/scripts/build_prompt_dataset.py`：原始快照存 `canvas-oss/data/prompt-sources/`，
+- 构建脚本 `canvas-oss/scripts/build_prompt_dataset.py`：原始快照存 `canvas-oss/data/prompt-sources/`
+  （该目录在 `canvas-oss/.gitignore` 里，**不进 git**，用 `--fetch` 或抓取脚本重建），
   输出 `web/public/prompt-data/{manifest.json,<sourceId>.json}`，10 源 13128 条 / 73.6MB，按源懒加载。
   **IMI 大源剥掉 raw 字段**（>3000 条时）但归一化字段全保留；`D:/Python310/python.exe` 跑，别用系统 python。
 - 数据源：`prompt-source-presets.ts` 7 源→10 源、URL 指向本地 `/prompt-data/`（换后端只改这里）；
@@ -839,4 +840,21 @@ python -m http.server 8901 --bind 127.0.0.1 --directory F:\PycharmProjects\YLCra
   两次加 modeLocal 到 promptSources 造成 TS1117 重复键，删掉 runtime 后面那份。
 - 验收（3100）：新页 hero/统计/重建按钮/20 卡片/0 报错；点「重建本地索引」同步成功；
   来源页 10 个本地按钮，点第一个切在线变 9 个（生效）；tsc 只剩上游 antd 老错误。
+
+**11-24 · 补「我的生图提示词」+ youmind 真并集（10 源 13,128 → 11 源 13,309）**：用户「现在哪个提示词库是全的
+合并时候怎么合并的」，并纠正叫法——**YLCraft 才是我们的项目**，canvas-oss 是参考开源项目的本地副本。
+- 实测 YLCraft 后端 `/api/v1/image-prompts/sources` 9 源，并集缺两块：`ylcraft-my-image-prompts`（我的生图提示词 2 条）
+  完全没进；`youmind-gpt-image-2` 注册表 126 条 vs YLCraft 247 条。查证后确认**两边内容几乎不重叠**
+  （正文交集只有 1 条、标题零交集）——因为注册表快照来自英文 README，YLCraft 解析的是 `README_zh.md`，
+  所以谁都不全，真并集 **305 条**；且 YLCraft 那 247 行里有 67 行内部重复。
+- 做法：新增 `data/prompt-sources/ylcraft-backend/*.json` 快照（抓取脚本 `scripts/fetch_ylcraft_prompt_sources.py`
+  走后端 `/references` 分页；快照目录不进 git，需后端在 8000 跑着重建），
+  构建脚本加第三数据集 `YL_BACKEND_SOURCES`——`mode=merge` 把补到的条目按正文去重后折进同名源
+  （youmind 126+247 行 → +179 新增、68 重复丢弃 = 305），`mode=own` 独立成源（我的生图提示词 2 条）。
+- 数据集标签不再露英文 id：`DATASET_LABELS` 映射 参考项目 / YLCraft 下载库 / YLCraft 我的库 / 合并补全。
+- 页面文案对齐 YLCraft 真实页：H1「生图提示词参考库」；卡片改 3 列（原来 4 列太密）。
+- 修两个真 bug：独立页 `onScroll` 挂在不可滚动的网格上（**加载更多永远不触发**），移到外层滚动容器，
+  实测 20 → 140 张；封面 `onError` 只把 img 隐藏、留一块灰，改成显示「无封面」占位。
+- `youmind-gpt-image-2` 的 `onlineUrl` 置空：本地种子已是 305 条超集，切「在线」反而会掉到注册表的 126 条。
+- 验收（3100）：13,309 条 / 11 个来源已同步、四个数据集 chip 中文、滚动加载 20→140、0 报错。
 

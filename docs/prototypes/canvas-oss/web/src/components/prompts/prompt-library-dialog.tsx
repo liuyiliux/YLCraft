@@ -3,7 +3,7 @@ import { type UIEvent, useEffect, useState } from "react";
 import { App, Button, Drawer, Empty, Input, Modal, Spin, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { ALL_MODEL_GROUPS_OPTION, ALL_PROMPTS_OPTION, type Prompt } from "@/services/api/prompts";
+import { ALL_MODEL_GROUPS_OPTION, ALL_PROMPTS_OPTION, datasetLabel, type Prompt } from "@/services/api/prompts";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { cn } from "@/lib/utils";
 import { usePromptList } from "./use-prompt-list";
@@ -59,7 +59,7 @@ export function PromptLibraryDialog({ open, onOpenChange, title, embedded = fals
                 <FilterGroup label={t("prompts.dataset") || "数据集"}>
                     {datasets.map((value) => (
                         <PromptChip key={value} active={selectedDataset === value} onClick={() => setSelectedDataset(value)}>
-                            {value === ALL_PROMPTS_OPTION ? t("common.all") : value === "ylcraft-imi" ? "YLCraft 下载库" : value === "reference-project" ? "参考项目" : value}
+                            {value === ALL_PROMPTS_OPTION ? t("common.all") : datasetLabel(value)}
                         </PromptChip>
                     ))}
                 </FilterGroup>
@@ -91,7 +91,7 @@ export function PromptLibraryDialog({ open, onOpenChange, title, embedded = fals
                 </div>
                 {selectedTags.length || (selectedCategory !== ALL_PROMPTS_OPTION) || (selectedModelGroup !== ALL_MODEL_GROUPS_OPTION) || (selectedDataset !== ALL_PROMPTS_OPTION) ? (
                     <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-stone-500">
-                        {selectedDataset !== ALL_PROMPTS_OPTION ? <ActiveFilter label={selectedDataset} onClear={() => setSelectedDataset(ALL_PROMPTS_OPTION)} /> : null}
+                        {selectedDataset !== ALL_PROMPTS_OPTION ? <ActiveFilter label={datasetLabel(selectedDataset)} onClear={() => setSelectedDataset(ALL_PROMPTS_OPTION)} /> : null}
                         {selectedModelGroup !== ALL_MODEL_GROUPS_OPTION ? <ActiveFilter label={selectedModelGroup} onClear={() => setSelectedModelGroup(ALL_MODEL_GROUPS_OPTION)} /> : null}
                         {selectedCategory !== ALL_PROMPTS_OPTION ? <ActiveFilter label={selectedCategory} onClear={() => setSelectedCategory(ALL_PROMPTS_OPTION)} /> : null}
                         {selectedTags.map((tag) => <ActiveFilter key={tag} label={tag} onClear={() => toggleTag(tag)} />)}
@@ -149,11 +149,19 @@ function ActiveFilter({ label, onClear }: { label: string; onClear: () => void }
 export function PromptLibraryCard({ item, onOpen, onUse, onSaveAsset, onToggleFavorite, isFavorite }: { item: Prompt; onOpen: () => void } & PromptLibraryCallbacks) {
     const { t } = useTranslation();
     const favorite = isFavorite?.(item) || false;
+    const [brokenCover, setBrokenCover] = useState(false);
     return (
         <div className="group flex min-w-0 flex-col overflow-hidden rounded-xl border border-stone-200 bg-white transition hover:border-stone-300 hover:shadow-md dark:border-stone-700 dark:bg-stone-900">
             <div className="relative block w-full overflow-hidden bg-stone-100 dark:bg-stone-800">
                 <button type="button" className="block w-full" onClick={onOpen} aria-label={item.title}>
-                    {item.coverUrl ? <img src={item.coverUrl} alt={item.title} className="aspect-[4/3] w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" loading="lazy" onError={(event) => { event.currentTarget.style.display = "none"; }} /> : <span className="grid aspect-[4/3] w-full place-items-center text-stone-400"><FileText className="size-9" /></span>}
+                    {item.coverUrl && !brokenCover ? (
+                        <img src={item.coverUrl} alt={item.title} className="aspect-[4/3] w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" loading="lazy" onError={() => setBrokenCover(true)} />
+                    ) : (
+                        <span className="grid aspect-[4/3] w-full place-items-center gap-1 text-stone-400">
+                            <FileText className="size-8" />
+                            <span className="text-[10px]">{t("prompts.noCover") || "无封面"}</span>
+                        </span>
+                    )}
                 </button>
                 {item.modelGroup ? <span className="pointer-events-none absolute bottom-1.5 left-1.5 rounded-md bg-black/65 px-1.5 py-0.5 text-[10px] text-white">{item.modelGroup}</span> : null}
                 {onToggleFavorite ? (

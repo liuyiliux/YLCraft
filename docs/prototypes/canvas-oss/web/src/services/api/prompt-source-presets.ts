@@ -34,16 +34,19 @@ export function createPromptSource(source?: Partial<PromptSource>): PromptSource
     };
 }
 
-/** Online JSON URL for a source id, or "" when no public online source exists
- *  (the 3 IMI sources only ship as a local seed). */
+/** Online JSON URL for a source id, or "" when no public online source exists.
+ *  Empty for the 3 IMI libraries (local seed only) and for youmind-gpt-image-2:
+ *  its local seed is now the merged 305-prompt union, a superset of the 126-
+ *  item upstream snapshot, so "online" would actually lose data. */
 function onlineUrlFor(id: string): string {
-    const ossIds = new Set(["banana-prompt-quicker", "davidwu-gpt-image2-prompts", "freestylefly-gpt-image-2", "awesome-gpt-image", "awesome-gpt4o-image-prompts", "youmind-gpt-image-2", "youmind-nano-banana-pro"]);
+    const ossIds = new Set(["banana-prompt-quicker", "davidwu-gpt-image2-prompts", "freestylefly-gpt-image-2", "awesome-gpt-image", "awesome-gpt4o-image-prompts", "youmind-nano-banana-pro"]);
     return ossIds.has(id) ? `${PROMPT_ONLINE_BASE}/${id}.json` : "";
 }
 
-/** 10 sources: 7 from the reference project (with online URL) + 3 YLCraft IMI
- *  libraries (local seed only). Default mode is local so the prototype boots
- *  offline; switch a source to online in the source settings to re-sync from upstream. */
+/** 11 sources: 7 reference-project sources + 3 YLCraft IMI libraries +
+ *  1 YLCraft user library. youmind-gpt-image-2 is the merged union (305).
+ *  Default mode is local so the prototype boots offline; switch a source to
+ *  online in the source settings to re-sync from upstream. */
 export const DEFAULT_PROMPT_SOURCES: PromptSource[] = [
     source("banana-prompt-quicker", "Banana Prompt Quicker", "https://glidea.github.io/banana-prompt-quicker/"),
     source("davidwu-gpt-image2-prompts", "DavidWu GPT Image 2", "https://github.com/davidwuw0811-boop/awesome-gpt-image2-prompts"),
@@ -55,6 +58,7 @@ export const DEFAULT_PROMPT_SOURCES: PromptSource[] = [
     source("imi-chatgpt-prompts", "IMI ChatGPT Prompt Gallery", "https://prompt.imi.ccwu.cc/ChatGPT"),
     source("imi-nano-banana-2-prompts", "IMI Nano Banana 2", "https://prompt.imi.ccwu.cc/Nano%20Banana%202"),
     source("imi-nano-banana-pro-prompts", "IMI Nano Banana Pro", "https://prompt.imi.ccwu.cc/Nano%20Banana%20Pro"),
+    source("ylcraft-my-image-prompts", "我的生图提示词", ""),
 ];
 
 function source(id: string, name: string, homepage: string): PromptSource {

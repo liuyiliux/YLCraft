@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-11-24T07:51:27.282308+00:00",
+  "generatedAt": "2026-11-24T09:40:20.644453+00:00",
   "note": "Union of reference-project prompt sources and YLCraft downloaded IMI libraries. Fields preserved from both schemas.",
   "sources": [
     {
@@ -49,15 +49,6 @@
       "count": 541
     },
     {
-      "id": "youmind-gpt-image-2",
-      "name": "YouMind GPT Image 2",
-      "url": "/prompt-data/youmind-gpt-image-2.json",
-      "homepage": "https://github.com/YouMind-OpenLab/awesome-gpt-image-2",
-      "modelGroup": "ChatGPT",
-      "dataset": "reference-project",
-      "count": 126
-    },
-    {
       "id": "youmind-nano-banana-pro",
       "name": "YouMind Nano Banana Pro",
       "url": "/prompt-data/youmind-nano-banana-pro.json",
@@ -92,6 +83,24 @@
       "modelGroup": "NanoBananaPro",
       "dataset": "ylcraft-imi",
       "count": 7405
+    },
+    {
+      "id": "ylcraft-my-image-prompts",
+      "name": "我的生图提示词",
+      "url": "/prompt-data/ylcraft-my-image-prompts.json",
+      "homepage": "",
+      "modelGroup": "ChatGPT",
+      "dataset": "ylcraft-library",
+      "count": 2
+    },
+    {
+      "id": "youmind-gpt-image-2",
+      "name": "YouMind GPT Image 2",
+      "url": "/prompt-data/youmind-gpt-image-2.json",
+      "homepage": "https://github.com/YouMind-OpenLab/awesome-gpt-image-2",
+      "modelGroup": "ChatGPT",
+      "dataset": "merged",
+      "count": 305
     }
   ]
 }

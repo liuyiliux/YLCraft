@@ -87,7 +87,7 @@ export default function PromptsPage() {
     };
 
     return (
-        <div className="thin-scrollbar h-full overflow-y-auto bg-background text-stone-800 dark:text-stone-100">
+        <div className="thin-scrollbar h-full overflow-y-auto bg-background text-stone-800 dark:text-stone-100" onScroll={handleScroll}>
             <div className="mx-auto max-w-[1560px] space-y-4 px-4 py-6 sm:px-6 lg:py-8">
                 {/* Hero */}
                 <section className="flex flex-col gap-6 rounded-2xl border border-stone-200 bg-gradient-to-br from-amber-50/60 via-white to-stone-50 p-6 dark:border-stone-800 dark:from-amber-950/20 dark:via-stone-900 dark:to-stone-900 lg:flex-row lg:items-end lg:justify-between">
@@ -146,7 +146,7 @@ export default function PromptsPage() {
 
                 {/* Card grid */}
                 {query.isLoading ? <div className="flex h-60 items-center justify-center"><Spin description={t("prompts.loading")} /></div> : null}
-                <div className="grid gap-4 grid-cols-2 md:grid-cols-3 xl:grid-cols-4" onScroll={handleScroll} data-canvas-no-zoom>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" data-canvas-no-zoom>
                     {items.map((item) => <PromptLibraryCard key={item.id} item={item} onOpen={() => setDetail(item)} onUse={(prompt) => copyText(prompt, t("prompts.promptCopied") || t("prompts.use"))} onSaveAsset={savePromptAsset} onToggleFavorite={toggleFavorite} isFavorite={(item) => favorites.has(item.id)} />)}
                 </div>
                 {!query.isLoading && items.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("prompts.empty")} className="py-16" /> : null}
