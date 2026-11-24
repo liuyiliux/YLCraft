@@ -890,6 +890,20 @@ python -m http.server 8901 --bind 127.0.0.1 --directory F:\PycharmProjects\YLCra
 `creative-project-infinite-canvas`；原型层只补画面覆盖，**不要再在 canvas-oss 里重做一遍**。
 产品要补的能力（多角度 / 蒙版 / 切分等）另开 openspec change，不靠换前端解决。
 
+**11-25 · 画布视觉打磨第一批（只改 `canvas/` 渲染层）**：用户「主要是交互样式不好看，不是无限画布，还有 agent 加技能」。
+- 新增 `canvas/css/10-polish.css`（加载在 `09-jimeng.css` 之后）。**只覆盖视觉，不动坐标 / 宽高 / 连线端点**：
+  节点卡 12px 圆角 + 细边 + 深阴影，标题 600 字重；图内角标改半透明胶囊并去掉省略号
+  （原来是等宽字体 + `max-width` 把 `4.2s · 1080×1920` 截成 `1080×19…`）；
+  选中态从蓝色粗框改成青色细环（1.5px + 7px 淡光）；连线默认 `rgba(255,255,255,.07)`、选中 1.8px 青色；
+  端口 9px 带环；左侧节点库 / 右侧 Agent 竖条 / 底部 dock / 步骤条统一暗色玻璃。
+- 选中浮条（`39-jimeng-shell.js` 的 `restyleWb`）从「浅色胶囊 + 7 个文字按钮」改成
+  **深色玻璃 + 5 个图标按钮**（参数 / 存资产 / 生成 / 删除 / 关闭），去掉与左下缩放条重复的「缩小 / 放大」；
+  提示框改 400px 深色卡、聚焦青色描边、发送按钮圆形主色。
+- **没做**：节点卡尺寸与网格（150×208 / 176×224 未变，改尺寸会牵动 `n.h` 与端口计算）、
+  顶部双层栏合并、Agent 面板与技能（第二批）。
+- 验收（8901）：18 节点 / 97 条线、选中浮条 5 图标、角标完整显示、0 报错；
+  `canvas/index.html` 全部 `?v` 统一 bump 到 `202611250135`。
+
 **11-24 · 提示词库落到我们自己的原型（features/prompts.html，commit bb0387b8）**：
 - 页面：`features/prompts.html`，原生 JS + `shared/theme.css` 令牌，结构照 YLCraft `/prompt-library`
   （居中 hero + 760 命令面板 + 整行筛选条 96px 标签列 + 卡片网格 `minmax(232px,1fr)` + 图左文右详情）。

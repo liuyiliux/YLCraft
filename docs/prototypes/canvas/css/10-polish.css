@@ -1,0 +1,369 @@
+/* ============================================================
+   画布视觉打磨层（2026-11-25）
+   ------------------------------------------------------------
+   只改「看起来」：节点卡 / 连线 / 端口 / 选中浮条 / 输入框 /
+   左侧节点库 / 右侧 Agent 条 / 底部 dock。
+   不动：节点坐标、宽高、连线端点、视口与缩放逻辑。
+   加载顺序必须在 09-jimeng.css 之后（见 index.html）。
+   ============================================================ */
+
+/* ---------- 节点卡 ---------- */
+body.jm-on #gnodes .gnode{
+  border-radius:12px;
+  background:#1b1917;
+  border:1px solid rgba(255,255,255,.08);
+  box-shadow:0 14px 30px -18px rgba(0,0,0,.95), 0 0 0 1px rgba(0,0,0,.35);
+  transition:border-color .16s var(--ez), box-shadow .16s var(--ez);
+}
+body.jm-on #gnodes .gnode:hover{
+  border-color:rgba(255,255,255,.15);
+}
+body.jm-on #gnodes .gnode .ghd{
+  /* 纵向 padding 保持 6/5：文字节点高度参与端口计算（n.h||54），改高会让连线错位 */
+  padding:6px 10px 5px;
+  border-bottom:1px solid rgba(255,255,255,.055);
+  gap:6px;
+}
+body.jm-on #gnodes .gnode .ghd .gt{
+  font-size:var(--fz);
+  font-weight:600;
+  letter-spacing:.01em;
+  color:rgba(255,255,255,.86);
+}
+body.jm-on #gnodes .gnode .ghd .gd{
+  width:6px;height:6px;
+  box-shadow:0 0 0 3px rgba(255,255,255,.045);
+}
+body.jm-on #gnodes .gnode.hasimg .gimg{
+  margin:0 8px 8px;
+  border-radius:8px;
+  outline:1px solid rgba(255,255,255,.07);
+  outline-offset:-1px;
+}
+body.jm-on #gnodes .gnode.hasimg .gbd{
+  padding:0 10px 9px;
+  color:rgba(255,255,255,.46);
+}
+
+/* 图内角标：半透明胶囊，别用实心黑块 */
+body.jm-on #gnodes .gnode .sz,
+body.jm-on #gnodes .gnode .gmeta{
+  background:rgba(10,9,8,.62);
+  -webkit-backdrop-filter:blur(8px);
+  backdrop-filter:blur(8px);
+  border:1px solid rgba(255,255,255,.10);
+  border-radius:6px;
+  padding:1px 5px;
+  color:rgba(255,255,255,.86);
+  font-size:var(--fz);
+  font-family:var(--fs);
+  font-variant-numeric:tabular-nums;
+  letter-spacing:-.01em;
+  line-height:1.45;
+  /* 原来的「等宽 + max-width」会把 4.2s · 1080×1920 截成省略号，这里放开 */
+  max-width:none;
+}
+body.jm-on #gnodes .gnode .gmeta{
+  right:5px;
+  top:5px;
+}
+body.jm-on #gnodes .gnode .gmeta.err{
+  color:#fca5a5;
+  border-color:rgba(248,113,113,.45);
+  background:rgba(60,12,12,.72);
+}
+
+/* ---------- 选中态：青色细环，不要蓝色粗框 ---------- */
+body.jm-on #gnodes .gnode.sel{
+  border-color:var(--ac)!important;
+  box-shadow:
+    0 0 0 1.5px var(--ac),
+    0 0 0 7px rgba(34,211,238,.09),
+    0 20px 44px -20px rgba(0,0,0,.98)!important;
+}
+body.jm-on #gnodes .gnode.sel::before,
+body.jm-on #gnodes .gnode.sel::after{
+  width:8px;height:8px;
+  background:#100f0d;
+  border:1.5px solid var(--ac);
+  box-shadow:0 0 0 3px rgba(34,211,238,.10);
+}
+body.jm-on #gnodes .gnode.multi{
+  border-color:var(--ac);
+  box-shadow:0 0 0 1.5px var(--ac), 0 0 0 7px rgba(34,211,238,.08);
+}
+
+/* ---------- 连线与端口 ---------- */
+body.jm-on .gedge{
+  stroke:rgba(255,255,255,.07);
+  stroke-width:1.2;
+  transition:stroke .16s var(--ez), stroke-width .16s var(--ez);
+}
+body.jm-on .gedge[data-ei]:hover{
+  stroke:rgba(255,255,255,.26);
+  stroke-width:1.6;
+}
+body.jm-on .gedge.hi{
+  stroke:var(--ac);
+  stroke-width:1.8;
+  filter:drop-shadow(0 0 5px rgba(34,211,238,.35));
+}
+body.jm-on #gnodes .gnode .gport{
+  width:9px;height:9px;
+  background:#141210;
+  border:1.5px solid rgba(255,255,255,.34);
+  box-shadow:0 0 0 3px rgba(0,0,0,.40);
+}
+body.jm-on #gnodes .gnode .gport:hover{
+  background:var(--ac);
+  border-color:var(--ac);
+  box-shadow:0 0 0 4px rgba(34,211,238,.16);
+  transform:translateY(-50%) scale(1.12);
+}
+
+/* ---------- 选中浮条：深色玻璃、图标按钮 ---------- */
+body.jm-on #nodeWb .nwb-tools{
+  background:rgba(22,20,18,.92)!important;
+  -webkit-backdrop-filter:blur(20px) saturate(1.15);
+  backdrop-filter:blur(20px) saturate(1.15);
+  border:1px solid rgba(255,255,255,.10)!important;
+  border-radius:999px!important;
+  padding:4px!important;
+  gap:2px!important;
+  box-shadow:0 20px 44px -20px rgba(0,0,0,.98), 0 0 0 1px rgba(0,0,0,.45)!important;
+}
+body.jm-on #nodeWb .nwb-tb{
+  width:30px;
+  height:30px;
+  padding:0!important;
+  border-radius:999px!important;
+  display:inline-grid;
+  place-items:center;
+  color:rgba(255,255,255,.72)!important;
+  background:transparent;
+  transition:background .16s var(--ez), color .16s var(--ez);
+}
+body.jm-on #nodeWb .nwb-tb:hover{
+  background:rgba(255,255,255,.085)!important;
+  color:#fff!important;
+}
+body.jm-on #nodeWb .nwb-tb svg{
+  width:16px;height:16px;
+  stroke:currentColor!important;
+  fill:none;
+  stroke-width:1.7;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+body.jm-on #nodeWb .nwb-tb.run svg{
+  fill:#04222a!important;
+  stroke:none!important;
+}
+body.jm-on #nodeWb .nwb-tb.run{
+  background:var(--ac)!important;
+  color:#04222a!important;
+  box-shadow:0 0 0 1px rgba(34,211,238,.35), 0 6px 16px -6px rgba(34,211,238,.55);
+}
+body.jm-on #nodeWb .nwb-tb.run:hover{
+  background:#67e8f9!important;
+  color:#04222a!important;
+}
+body.jm-on #nodeWb .nwb-tb.danger:hover{
+  background:rgba(248,113,113,.16)!important;
+  color:var(--dg)!important;
+}
+body.jm-on #nodeWb .nwb-tb.close{
+  color:rgba(255,255,255,.42)!important;
+}
+body.jm-on #nodeWb .nwb-tb.close:hover{
+  background:rgba(255,255,255,.085)!important;
+  color:#fff!important;
+}
+body.jm-on #nodeWb .nwb-sep{
+  width:1px;
+  height:16px;
+  background:rgba(255,255,255,.10)!important;
+  margin:0 3px!important;
+}
+
+/* ---------- 节点下方输入框 ---------- */
+body.jm-on #nodeWb .nwb-chat{
+  width:400px!important;
+  max-width:calc(100vw - 32px);
+  background:rgba(22,20,18,.94)!important;
+  -webkit-backdrop-filter:blur(20px);
+  backdrop-filter:blur(20px);
+  border:1px solid rgba(255,255,255,.10)!important;
+  border-radius:14px!important;
+  padding:12px!important;
+  box-shadow:0 28px 64px -26px rgba(0,0,0,.98), 0 0 0 1px rgba(0,0,0,.45)!important;
+}
+body.jm-on #nodeWb .nwb-hd .t{
+  font-size:var(--fz);
+  color:rgba(255,255,255,.52);
+  font-weight:500;
+}
+body.jm-on #nodeWb .nwb-hd .t b{
+  color:rgba(255,255,255,.90);
+  font-weight:600;
+}
+body.jm-on #nodeWb .nwb-hd .cost{
+  color:var(--ac);
+  font-size:var(--fz);
+  opacity:.85;
+}
+body.jm-on #nodeWb .nwb-chat textarea{
+  min-height:56px!important;
+  background:rgba(255,255,255,.035);
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:10px;
+  padding:9px 10px;
+  color:var(--tx);
+  font-size:var(--fz);
+  line-height:1.55;
+  resize:none;
+}
+body.jm-on #nodeWb .nwb-chat textarea::placeholder{
+  color:rgba(255,255,255,.30);
+}
+body.jm-on #nodeWb .nwb-chat textarea:focus{
+  outline:none;
+  border-color:rgba(34,211,238,.45);
+  box-shadow:0 0 0 3px rgba(34,211,238,.10);
+  background:rgba(255,255,255,.05);
+}
+body.jm-on #nodeWb .nwb-chips .nwb-chip{
+  background:rgba(255,255,255,.04);
+  border-color:rgba(255,255,255,.08);
+  color:rgba(255,255,255,.60);
+}
+body.jm-on #nodeWb .nwb-chips .nwb-chip:hover{
+  background:rgba(255,255,255,.07);
+  border-color:rgba(255,255,255,.14);
+  color:#fff;
+}
+body.jm-on #nodeWb .nwb-send{
+  width:32px!important;
+  height:32px!important;
+  border-radius:50%;
+  background:var(--ac)!important;
+  color:#04222a!important;
+  border:0;
+  display:grid;
+  place-items:center;
+  box-shadow:0 8px 18px -8px rgba(34,211,238,.6);
+}
+body.jm-on #nodeWb .nwb-send:hover{
+  background:#67e8f9!important;
+}
+
+/* ---------- 左侧节点库 ---------- */
+body.jm-on .nodelib{
+  background:#141210;
+  border-right:1px solid rgba(255,255,255,.06);
+}
+body.jm-on .nlh{
+  height:40px;
+  border-bottom:1px solid rgba(255,255,255,.06);
+  color:rgba(255,255,255,.70);
+}
+body.jm-on .nlg{
+  font-size:var(--fz);
+  font-weight:600;
+  letter-spacing:.06em;
+  color:rgba(255,255,255,.36);
+  padding:12px 8px 5px;
+}
+body.jm-on .nli{
+  height:32px;
+  padding:0 8px;
+  border-radius:8px;
+  color:rgba(255,255,255,.72);
+}
+body.jm-on .nli:hover{
+  background:rgba(255,255,255,.055);
+  color:#fff;
+}
+body.jm-on .nldot{
+  width:6px;height:6px;flex:0 0 6px;
+  box-shadow:0 0 0 3px rgba(255,255,255,.035);
+}
+
+/* ---------- 右侧 Agent 收起条 ---------- */
+body.jm-on #agPeek{
+  width:38px;
+  background:rgba(20,18,16,.92);
+  border-left:1px solid rgba(255,255,255,.07);
+  color:rgba(255,255,255,.46);
+  -webkit-backdrop-filter:blur(14px);
+  backdrop-filter:blur(14px);
+}
+body.jm-on #agPeek:hover{
+  background:rgba(28,25,22,.96);
+  color:var(--ac);
+}
+body.jm-on #agPeek .pk-t{
+  letter-spacing:.16em;
+  font-size:var(--fz);
+}
+
+/* ---------- 顶部步骤条 ---------- */
+body.jm-on .seg{
+  background:rgba(255,255,255,.045);
+  border:1px solid rgba(255,255,255,.075);
+  border-radius:999px;
+  padding:2px;
+  gap:1px;
+}
+body.jm-on .seg button{
+  border-radius:999px;
+  color:rgba(255,255,255,.55);
+  font-size:var(--fz);
+  padding:0 11px;
+  height:26px;
+}
+body.jm-on .seg button.on{
+  background:rgba(255,255,255,.12);
+  color:#fff;
+  box-shadow:0 1px 0 rgba(255,255,255,.06) inset;
+}
+
+/* ---------- 底部 dock / 缩放条 ---------- */
+body.jm-on .jm-dock,
+body.jm-on .jm-zoom{
+  background:rgba(22,20,18,.94);
+  border:1px solid rgba(255,255,255,.09);
+  -webkit-backdrop-filter:blur(20px);
+  backdrop-filter:blur(20px);
+  box-shadow:0 20px 44px -20px rgba(0,0,0,.98);
+}
+body.jm-on .jm-dock{
+  border-radius:14px;
+  padding:5px;
+  gap:2px;
+}
+body.jm-on .jm-dock button{
+  width:32px;height:32px;
+  border-radius:9px;
+  color:rgba(255,255,255,.68);
+  transition:background .16s var(--ez), color .16s var(--ez);
+}
+body.jm-on .jm-dock button:hover{
+  background:rgba(255,255,255,.085);
+  color:#fff;
+}
+body.jm-on .jm-zoom{
+  border-radius:12px;
+}
+
+/* ---------- 底部常驻提示：降噪，别和 dock 抢注意力 ---------- */
+body.jm-on #flowGraphView .ghint{
+  color:rgba(255,255,255,.30);
+  background:transparent;
+  border-color:transparent;
+  font-weight:400;
+}
+body.jm-on #flowGraphView .ghint b{
+  color:rgba(255,255,255,.46);
+  font-weight:500;
+}

@@ -255,21 +255,29 @@
     if (r) r.value = pct;
   }
 
-  /* ---------- 把选中浮条换成参考的浅色胶囊 + 紧凑输入框 ---------- */
+  /* ---------- 选中浮条：深色玻璃 + 图标按钮（2026-11-25 视觉打磨） ---------- */
+  var WB_ICON = {
+    info:  '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>',
+    gen:   '<svg viewBox="0 0 24 24"><path d="M12 2.6l2.15 5.95L20.1 10.7l-5.95 2.15L12 18.8l-2.15-5.95L3.9 10.7l5.95-2.15z"/></svg>',
+    asset: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M4.5 18l4.6-4.4a1.6 1.6 0 0 1 2.2 0L20 20"/></svg>',
+    del:   '<svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7"/><path d="M6.5 7l.8 12.1A1.6 1.6 0 0 0 8.9 20h6.2a1.6 1.6 0 0 0 1.6-1.9L17.5 7"/><path d="M10 11v5M14 11v5"/></svg>',
+    close: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>'
+  };
   function restyleWb(){
     var t = $('#nwbTools'); if (!t) return;
     var hasRun = !!t.querySelector('[data-wb="run"]');
-    t.innerHTML = '<button class="nwb-tb" data-wb="params" title="完整参数">ⓘ 信息</button>'
-      + '<button class="nwb-tb" data-wb="delnode" title="删除这个节点">✕ 删除</button>'
-      + '<button class="nwb-tb" data-wb="asset" title="存进素材库（原型占位）">▣ 存资产</button>'
-      + '<button class="nwb-tb" data-wb="'+(hasRun?'run':'gen')+'" title="按这个节点的设定生成">✦ 生图</button>'
-      + '<button class="nwb-tb" data-wb="zo" title="缩小画布">－ 缩小</button>'
-      + '<button class="nwb-tb" data-wb="zi" title="放大画布">＋ 放大</button>'
-      + '<button class="nwb-tb close" data-wb="close" title="关闭浮层">✕</button>';
-    var hd = $('.nwb-hd .t'); if (hd) hd.textContent = '参考内容';
-    var ta = $('#nwbTa'); if (ta) ta.placeholder = '请输入你想要生成的文本内容';
-    var md = $('#nwbModel'); if (md) md.textContent = 'gpt-5.5 ▾';
-    var rt = $('#nwbRatio'); if (rt) rt.textContent = '模型 · 自动 · 1 次';
+    t.innerHTML =
+      '<button class="nwb-tb" data-wb="params" title="完整参数" aria-label="完整参数">' + WB_ICON.info + '</button>'
+      + '<span class="nwb-sep"></span>'
+      + '<button class="nwb-tb" data-wb="asset" title="存进素材库（原型占位）" aria-label="存进素材库">' + WB_ICON.asset + '</button>'
+      + '<button class="nwb-tb run" data-wb="' + (hasRun ? 'run' : 'gen') + '" title="按这个节点生成" aria-label="生成">' + WB_ICON.gen + '</button>'
+      + '<span class="nwb-sep"></span>'
+      + '<button class="nwb-tb danger" data-wb="delnode" title="删除这个节点" aria-label="删除节点">' + WB_ICON.del + '</button>'
+      + '<button class="nwb-tb close" data-wb="close" title="关闭（点空白 / Esc 同效）" aria-label="关闭">' + WB_ICON.close + '</button>';
+    var ta = $('#nwbTa');
+    if (ta) ta.placeholder = '说一句想怎么改这一镜，例如：逆光、人物居中…';
+    var md = $('#nwbModel'); if (md) md.textContent = '自动';
+    var rt = $('#nwbRatio'); if (rt) rt.textContent = '1 次';
     var sd = $('.nwb-send'); if (sd) sd.textContent = '↑';
   }
 
