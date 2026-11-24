@@ -801,3 +801,22 @@ python -m http.server 8901 --bind 127.0.0.1 --directory F:\PycharmProjects\YLCra
 `start`（preview）改 3100。验证：3000=YLCraft、3100=参考项目，两个并存各返回 200。
 以后原型地址是 **http://127.0.0.1:3100**，8901 是 vanilla 原型（python http.server）。
 
+**11-24 · 提示词库按 YLCraft 原设计重做 + 标签排序**：用户贴 YLCraft `3000/prompt-library`
+截图「我们以前是这样设计的」——对照发现上一轮只对齐了筛选维度，详情/样式还是参考项目的。
+- 标签真相：不是「标签少」，是**没排序**。YLCraft 后端 `PROMPT_TAG_PRIORITY` 有 **102 个精选中文标签**
+  用于筛选栏排序；我们并集数据有 9664 个标签（更多），但没排序→前几个是 `gpt-image-2/Tech/photography`
+  这种英文/来源名，还带 `人 像`/` 人像` 空格重复。实测 102 个精选里我们有 97 个，缺 5 个低频。
+- 构建脚本：`load_tag_priority()` 从 `backend/.../service.py` **解析真实 102 标签**（不手写、不造假），
+  导出 `web/public/prompt-data/tag-priority.json`；`clean_tags()` 去空格/大小写统一/去模型名与 @ 作者标签。
+  前端 `prompts.ts` 读该 JSON，`collectTags` 按「优先级 → 频次」排，停用词同 YLCraft。
+- 共享组件 `prompt-library-dialog.tsx` 按 YLCraft 重做：详情**左右分栏**（图左、文字右）、
+  中英提示词**各自带复制按钮**、顶部操作栏（收藏/复制/加入我的资产/使用）、**风格**标签区、
+  参考图组；筛选 chip 从 antd Tag 换成 YLCraft 式圆角 chip + 「更多/收起」+ 已选筛选标签展示。
+  新增 `embedded` 模式供独立页复用，`onSaveAsset/onToggleFavorite/isFavorite` 回调给多场景。
+- **独立页 `/prompts` 也换了**（之前漏了）：从上游旧页（两维筛选 + 旧详情弹窗）改成内嵌共享组件。
+  画布 / 生图 / 视频三处调用改 `onSelect`→`onUse`，生图/视频接 `onSaveAsset`。
+- 坑：卡片封面 `<button>` 里嵌收藏 `<button>` 触发 React hydration 报错 → 外层改 `<div>`、内层按钮。
+  外链封面 `ERR_CONNECTION_RESET` 是网络问题（raw.githubusercontent 时通时断），图片有 onError 兜底。
+- 验收（3100）：独立页 13128 条、标签前排是韩国风/手绘感/高细节（YLCraft 顺序）、详情 2 个复制按钮 +
+  收藏 + 风格区、生图页弹窗 13128 条，tsc 只剩上游 antd 老错误。
+

@@ -47,6 +47,39 @@ YL_SOURCES = [
 
 IMI_IMG_BASE = "https://img.opennana.com/pthumbs/prompts/assets/"
 
+# Mirrors YLCraft's PROMPT_TAG_PRIORITY from
+# backend/app/services/image_prompt_reference/service.py — parsed at build time
+# so the prototype's filter chips rank exactly like the real YLCraft library.
+YL_SERVICE_PY = ROOT.parents[2] / "backend" / "app" / "services" / "image_prompt_reference" / "service.py"
+TAG_STOPWORDS = {
+    "image", "chatgpt", "gpt-4o", "gpt-image-2", "nano banana 2", "nano banana pro",
+    "nano-banana-pro", "nanobanana2", "nanobananapro", "awesome-gpt-image", "awesome-gpt4o-image-prompts",
+}
+
+
+def load_tag_priority() -> tuple[list[str], set[str]]:
+    """Parse the real PROMPT_TAG_PRIORITY tuple and its index from YLCraft source."""
+    import re
+    text = YL_SERVICE_PY.read_text(encoding="utf-8")
+    match = re.search(r"PROMPT_TAG_PRIORITY:\s*tuple\[str,\s*\.\.\.\]\s*=\s*\((.*?)\n\)", text, re.S)
+    priority = re.findall(r'"([^"]+)"', match.group(1)) if match else []
+    return priority, {tag.lower(): i for i, tag in enumerate(priority)}
+
+
+def clean_tags(raw: Any) -> list[str]:
+    """Strip stray spaces (IMI tags like '人 像' / ' 人像') and drop model/source tags."""
+    import re
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in raw if isinstance(raw, list) else []:
+        tag = re.sub(r"\s+", " ", as_str(value)).strip()
+        key = tag.lower()
+        if not tag or key in TAG_STOPWORDS or key in seen or tag.startswith("@") or len(tag) > 28:
+            continue
+        seen.add(key)
+        result.append(tag)
+    return result
+
 
 def as_str(value: Any) -> str:
     if value is None:
@@ -88,7 +121,7 @@ def normalise_oss(item: dict, sid: str, source_name: str, model_group: str) -> d
         "title": as_str(item.get("title")),
         "prompt": prompt,
         "description": description,
-        "tags": [as_str(t) for t in (item.get("tags") or []) if as_str(t)],
+        "tags": clean_tags(item.get("tags")),
         "coverUrl": cover,
         "referenceImages": refs,
         "author": as_str(item.get("author")),
@@ -122,7 +155,7 @@ def normalise_imi(item: dict, sid: str, source_name: str, model_group: str) -> d
         "title": as_str(item.get("title")),
         "prompt": prompt,
         "description": as_str(item.get("description")),
-        "tags": [as_str(t) for t in (item.get("tags") or []) if as_str(t)],
+        "tags": clean_tags(item.get("tags")),
         "coverUrl": cover,
         "referenceImages": refs,
         "sourceUrl": as_str(item.get("source_url") or item.get("detail_url")),
@@ -148,6 +181,12 @@ def build() -> None:
     args = parser.parse_args()
 
     args.out.mkdir(parents=True, exist_ok=True)
+    priority, _ = load_tag_priority()
+    (args.out / "tag-priority.json").write_text(
+        json.dumps({"version": 1, "tags": priority, "stopwords": sorted(TAG_STOPWORDS)}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    print(f"Tag priority: {len(priority)} tags exported from {YL_SERVICE_PY.name}")
     manifest: list[dict] = []
 
     for sid, name, homepage, group in OSS_SOURCES:

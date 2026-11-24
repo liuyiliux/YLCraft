@@ -138,6 +138,19 @@ async function getAllPrompts(): Promise<Prompt[]> {
 
 export const ALL_MODEL_GROUPS_OPTION = "all";
 
+/** Real YLCraft tag ranking, exported by scripts/build_prompt_dataset.py from
+ *  backend service.py (single source of truth — never hard-code it here). */
+type TagPriorityData = { tags: string[]; stopwords: string[] };
+let tagPriorityCache: Promise<TagPriorityData> | null = null;
+function loadTagPriority(): Promise<TagPriorityData> {
+    if (!tagPriorityCache) {
+        tagPriorityCache = fetch("/prompt-data/tag-priority.json")
+            .then((response) => (response.ok ? response.json() : Promise.reject(new Error("tag-priority"))))
+            .catch(() => ({ tags: [], stopwords: [] }) as TagPriorityData);
+    }
+    return tagPriorityCache;
+}
+
 export async function fetchPrompts({ keyword = "", tag = [], category = ALL_PROMPTS_OPTION, modelGroup = ALL_MODEL_GROUPS_OPTION, dataset = ALL_PROMPTS_OPTION, page = 1, pageSize = 20 }: { keyword?: string; tag?: string[]; category?: string; modelGroup?: string; dataset?: string; page?: number; pageSize?: number } = {}) {
     const items = await getAllPrompts();
     const normalizedKeyword = keyword.trim().toLowerCase();
@@ -149,7 +162,7 @@ export async function fetchPrompts({ keyword = "", tag = [], category = ALL_PROM
 
     return {
         items: filtered.slice((normalizedPage - 1) * normalizedPageSize, normalizedPage * normalizedPageSize),
-        tags: collectTags(withoutTagFilter),
+        tags: await collectTags(withoutTagFilter),
         categories,
         modelGroups: Array.from(new Set(items.map((item) => item.modelGroup).filter((value): value is string => Boolean(value)))).sort(),
         datasets: Array.from(new Set(items.map((item) => item.dataset).filter((value): value is string => Boolean(value)))).sort(),
@@ -218,8 +231,34 @@ function filterPrompts(items: Prompt[], options: { keyword: string; category: st
     });
 }
 
-function collectTags(items: Prompt[]) {
-    return Array.from(new Set(items.flatMap((item) => item.tags).filter(Boolean)));
+async function collectTags(items: Prompt[]) {
+    const { tags: priority, stopwords } = await loadTagPriority();
+    const rank = new Map(priority.map((tag, index) => [tag.toLowerCase(), index]));
+    const blocked = new Set(stopwords.map((tag) => tag.toLowerCase()));
+    const counts = new Map<string, { label: string; count: number }>();
+    for (const item of items) {
+        for (const raw of item.tags) {
+            if (!raw) continue;
+            const key = raw.trim().toLowerCase();
+            if (!key || key.startsWith("@") || blocked.has(key)) continue;
+            const entry = counts.get(key);
+            if (entry) entry.count += 1;
+            else counts.set(key, { label: raw.trim(), count: 1 });
+        }
+    }
+    return Array.from(counts.values())
+        .sort((a, b) => {
+            const ai = rank.get(a.label.toLowerCase());
+            const bi = rank.get(b.label.toLowerCase());
+            if (ai !== undefined || bi !== undefined) {
+                if (ai === undefined) return 1;
+                if (bi === undefined) return -1;
+                if (ai !== bi) return ai - bi;
+            }
+            return b.count - a.count || a.label.localeCompare(b.label);
+        })
+        .slice(0, 180)
+        .map((entry) => entry.label);
 }
 
 function isActiveOption(value: string) {

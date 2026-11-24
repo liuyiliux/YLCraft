@@ -76,6 +76,9 @@ export default {
         promptCopied: "已复制提示词",
         promptText: "提示词正文",
         referenceImages: "参考图",
+        style: "风格",
+        more: "更多",
+        collapse: "收起",
     },
     assets: {
         title: "我的资产",

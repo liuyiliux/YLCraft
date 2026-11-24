@@ -545,7 +545,12 @@ export default function ImagePage() {
                     <GenerationSettings config={effectiveConfig} model={model} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
                 </div>
             </Drawer>
-            <PromptLibraryDialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen} onSelect={(prompt) => setPrompt(prompt)} mode="both" />
+            <PromptLibraryDialog
+                open={promptDialogOpen}
+                onOpenChange={setPromptDialogOpen}
+                onUse={(prompt) => setPrompt(prompt)}
+                onSaveAsset={(item) => addAsset({ kind: "text", title: item.title, coverUrl: item.coverUrl, tags: item.tags, source: item.sourceName, data: { content: item.prompt }, metadata: { source: "prompt-library", promptId: item.id, githubUrl: item.githubUrl } })}
+            />
             <AssetPickerModal open={assetPickerOpen} defaultTab="my-assets" onInsert={(payload) => void insertPickedAsset(payload)} onClose={() => setAssetPickerOpen(false)} />
             <Modal title={t("workbench.deleteLogs")} open={deleteConfirmOpen} onCancel={() => setDeleteConfirmOpen(false)} onOk={deleteSelectedLogs} okText={t("common.delete")} okButtonProps={{ danger: true }} cancelText={t("common.cancel")}>
                 {t("workbench.deleteLogsConfirm", { count: selectedLogIds.length })}

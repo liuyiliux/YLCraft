@@ -76,6 +76,9 @@ export default {
         promptCopied: "Prompt copied",
         promptText: "Prompt text",
         referenceImages: "Reference images",
+        style: "Style",
+        more: "More",
+        collapse: "Collapse",
     },
     assets: {
         title: "My Assets",
