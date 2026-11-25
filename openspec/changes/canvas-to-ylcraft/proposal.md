@@ -1,5 +1,10 @@
 # Proposal: 画布形态迁移到本体（canvas-to-ylcraft）
 
+> **实施状态（2026-11-25 收口）**：Phase 0/1 完成（10 批 16 commit，全本地未推）。
+> 设计定版：「只留一个图片节点」（image_model/image_batch 退役，生成内联）+
+> Agent 双运行时（内置 + 外置 Codex 桥）。Phase 2/3 spec 就绪、代码未动。
+> 交接见 `docs/devlog/2026-11-25_canvas-skin-handoff.md`，进度见 `tasks.md`。
+
 ## What
 
 把原型（`docs/prototypes/canvas/`，8901）与参考项目（`docs/prototypes/canvas-oss/`，3100）**证明过的画布形态**落到 YLCraft 本体（3000，React 18 + TS + antd 5）：
