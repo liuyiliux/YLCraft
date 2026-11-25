@@ -153,15 +153,18 @@
   opacity: .38;
 }
 
-/* ---------- 选中配置面板：翻译参考项目节点下方 counter-scale panel ----------
-   本体第一版不反向缩放（固定 600px），内容 = 原卡内变量表格/契约/输出/操作行。 */
+/* ---------- 选中配置面板：翻译参考项目节点下方 counter-scale panel ---------- */
 .yl-nodecfg {
   position: absolute;
   top: calc(100% + 14px);
   left: 50%;
-  transform: translateX(-50%);
+  /* counter-scale：画布缩放 k 时反向 1/k，面板屏幕尺寸恒定（参考项目同构） */
+  transform: translateX(-50%) scale(var(--yl-panel-scale, 1));
+  transform-origin: top center;
   width: 600px;
   max-width: calc(100vw - 64px);
+  max-height: calc(560px / var(--yl-panel-scale, 1));
+  overflow-y: auto;
   background: rgba(31, 29, 26, .96);
   border: 1px solid var(--yl-node-stroke, #44403c);
   border-radius: 16px;

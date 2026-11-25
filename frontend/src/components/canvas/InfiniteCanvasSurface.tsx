@@ -48,6 +48,8 @@ type InfiniteCanvasSurfaceProps = {
     selected: boolean
     dragging: boolean
     connectionDrag: CanvasConnectionDragState | null
+    /** 当前视口缩放（供节点下方面板做 counter-scale） */
+    scale: number
   }) => React.ReactNode
   height?: number | string
   immersive?: boolean
@@ -851,6 +853,7 @@ export default function InfiniteCanvasSurface({
               {renderNode(node, {
                 selected: selectedSet.has(node.id),
                 dragging: draggingNodeId === node.id,
+                scale: viewport.k,
                 connectionDrag: connectionDrag
                   ? {
                     fromNodeId: connectionDrag.fromNodeId,

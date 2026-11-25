@@ -3715,6 +3715,7 @@ export default function CanvasPage() {
             selected={state.selected}
             connectionDrag={state.connectionDrag}
             onDelete={(target) => deleteSelectedNode([target.id])}
+            viewportScale={state.scale}
             llmConnectors={llmConnectors}
             imageConnectors={imageConnectors}
             platforms={platforms}
@@ -4417,6 +4418,7 @@ function CanvasNodeCard({
   selected,
   connectionDrag,
   onDelete,
+  viewportScale = 1,
   llmConnectors,
   imageConnectors,
   platforms,
@@ -4438,6 +4440,8 @@ function CanvasNodeCard({
   selected: boolean
   connectionDrag: CanvasConnectionDragState | null
   onDelete: (node: CanvasNode) => void
+  /** 视口缩放（配置面板 counter-scale 用） */
+  viewportScale?: number
   llmConnectors: ConnectorOption[]
   imageConnectors: ConnectorOption[]
   platforms: PlatformOption[]
@@ -4469,9 +4473,14 @@ function CanvasNodeCard({
   const llmConnectorOptions = connectorSelectOptions(llmConnectors)
   const platformOptions = platformSelectOptions(platforms)
   /* accent 顶部色条已随卡壳翻译移除（参考项目无色条，类型色保留在检查器 Tag） */
-  /* 选中配置面板：卡内表格（变量/输出/操作）翻译为参考项目「节点下方浮层」，功能不丢 */
+  /* 选中配置面板：卡内表格（变量/输出/操作）翻译为参考项目「节点下方浮层」，功能不丢；
+     counter-scale 反向补偿画布缩放，面板屏幕尺寸恒定 */
   const configPanel = selected ? (
-    <div className="yl-nodecfg" data-canvas-no-drag>
+    <div
+      className="yl-nodecfg"
+      data-canvas-no-drag
+      style={{ '--yl-panel-scale': Math.max(0.35, 1 / Math.max(viewportScale, 0.001)) } as CSSProperties}
+    >
       <Space direction="vertical" size={8} style={{ width: '100%' }}>
         {variableStrip}
         <NodeOutputInline node={node} />
@@ -4586,7 +4595,6 @@ function CanvasNodeCard({
         <GenerationComposerCard
           node={node}
           inputs={activeInputs}
-          variableStrip={null}
           imageConnectors={imageConnectors}
           onRunNode={onRunNode}
           onRunWorkflow={onRunWorkflow}
@@ -4994,7 +5002,6 @@ function ImageTransformCard({
 function GenerationComposerCard({
   node,
   inputs,
-  variableStrip,
   imageConnectors,
   onRunNode,
   onRunWorkflow,
@@ -5003,7 +5010,6 @@ function GenerationComposerCard({
 }: {
   node: CanvasNode
   inputs: CanvasResourceInput[]
-  variableStrip: ReactNode
   imageConnectors: ConnectorOption[]
   onRunNode: (node: CanvasNode) => void
   onRunWorkflow: (node: CanvasNode) => void
@@ -5039,34 +5045,50 @@ function GenerationComposerCard({
     const selected = option as { label?: string; supportedSizes?: string[] } | undefined
     onUpdateMetadata(node.id, imageBackendMetadataPatch(value, selected, imageConnectors))
   }
+  /* 翻译参考项目 Config 卡：标题+描述小字 → 无边框大输入区 → 单行控制条 → 圆形运行钮。
+     去掉旧表格感（PROMPT/MODEL & SIZE/RUN 英文标签行、契约行、大 Header）。 */
   return (
     <div style={generationComposerStyle} data-canvas-composer={node.id}>
-      <NodeCardHeader
-        node={node}
-        subtitle={`${mode} · ${textInputCount} 个提示词输入 · ${imageInputCount} 张参考图`}
-      />
-      {variableStrip}
-      <NodeContractSummary node={node} inputs={inputs} compact />
-      <NodeContentSection label="PROMPT">
-      <div data-canvas-no-drag style={generationPromptBoxStyle}>
-        <Input.TextArea
-          value={prompt}
-          autoSize={{ minRows: 3, maxRows: 6 }}
-          disabled={isBatch && batchPromptMode === 'indexed'}
-          onChange={(event) => onUpdateMetadata(node.id, { prompt: event.target.value })}
-          placeholder={promptPlaceholder}
-          style={generationPromptInputStyle}
-        />
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, minWidth: 0 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: '#f5f5f4', flex: '0 0 auto' }}>
+          {isBatch ? '逐图批处理' : '生图'}
+        </span>
+        <span style={{ fontSize: 11, color: 'rgba(245,245,244,.55)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {mode} · {textInputCount} 个提示词输入 · {imageInputCount} 张参考图
+        </span>
       </div>
-      {promptGuide ? <span style={generationPromptGuideStyle}>{promptGuide}</span> : null}
-      </NodeContentSection>
-      <NodeContentSection label="MODEL & SIZE">
       {isBatch ? (
-        <div data-canvas-no-drag style={generationBatchModeControlStyle}>
+        <span style={{ fontSize: 11, color: 'rgba(245,245,244,.65)' }}>
+          {batchReady
+            ? `已选择 ${imageInputCount} 张图片${batchProgress?.total ? ` · 已完成 ${batchProgress.completed || 0}/${batchProgress.total}` : ''}`
+            : '先运行搜索并在「选择参考图」中确认图片。'}
+        </span>
+      ) : null}
+      <Input.TextArea
+        value={prompt}
+        autoSize={{ minRows: 3, maxRows: 9 }}
+        disabled={isBatch && batchPromptMode === 'indexed'}
+        onChange={(event) => onUpdateMetadata(node.id, { prompt: event.target.value })}
+        placeholder={promptPlaceholder}
+        style={{
+          background: 'transparent',
+          border: 'none',
+          boxShadow: 'none',
+          resize: 'none',
+          padding: '4px 2px',
+          fontSize: 13,
+          lineHeight: 1.65,
+          color: '#f5f5f4',
+        }}
+        variant="borderless"
+      />
+      {promptGuide ? <span style={{ fontSize: 11, color: 'rgba(245,245,244,.6)' }}>{promptGuide}</span> : null}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }} data-canvas-no-drag>
+        {isBatch ? (
           <Select
             size="small"
             value={batchPromptMode}
-            style={generationBatchModeSelectStyle}
+            style={{ minWidth: 118 }}
             onChange={(value) => onUpdateMetadata(node.id, { batchPromptMode: value })}
             options={[
               { value: 'fixed', label: '固定 Prompt', title: '每张图共用上方 Prompt' },
@@ -5074,60 +5096,54 @@ function GenerationComposerCard({
               { value: 'indexed', label: '逐项 Prompt', title: '按顺序连接 text[] 与图片[]' },
             ]}
           />
-        </div>
-      ) : null}
-      <div style={generationControlGridStyle} data-canvas-no-drag>
-        <div style={generationModelControlStyle}>
-          <InlineImageBackendPicker
-            meta={meta}
-            backends={imageConnectors}
-            capability={requiredImageCapability}
-            onSelect={applyBackendSelection}
-          />
-          <Select
-            size="small"
-            value={String(meta.size || '1024x1024')}
-            style={generationSizeSelectStyle}
-            onChange={(value) => onUpdateMetadata(node.id, { size: value })}
-            options={[
-              { value: '1024x1024', label: '1:1 · 1K' },
-              { value: '1024x1536', label: '2:3 · 1K' },
-              { value: '1536x1024', label: '3:2 · 1K' },
-              { value: '1152x896', label: '4:3 · 1K' },
-              { value: '896x1152', label: '3:4 · 1K' },
-            ]}
-          />
-        </div>
-        <Button size="small" icon={<FileTextOutlined />} style={generationPromptLibraryButtonStyle} onClick={() => onOpenPromptReference(node)}>
-          Prompt库
-        </Button>
-      </div>
-      </NodeContentSection>
-      <NodeContentSection label="RUN">
-      {isBatch ? <span style={generationBatchHintStyle}>{batchPromptMode === 'template' ? '模板会在每张图开始生成前单独渲染。' : batchPromptMode === 'indexed' ? '逐项文本缺失时会指出对应的图片序号。' : '每张输入图片单独调用一次模型。'}</span> : null}
-      {isBatch ? <span style={generationBatchStateStyle}>{batchReady ? `已选择 ${imageInputCount} 张图片${batchProgress?.total ? ` · 已完成 ${batchProgress.completed || 0}/${batchProgress.total}` : ''}` : '先运行搜索并在“选择参考图”中确认图片。'}</span> : null}
-      <div style={generationRunActionRowStyle} data-canvas-no-drag>
-        <Button
-          type="primary"
-          icon={<ThunderboltOutlined />}
-          data-canvas-run-generation={node.id}
-          onClick={() => isBatch ? (batchReady ? onRunNode(node) : onRunWorkflow(node)) : hasUpstreamInputs ? onRunWorkflow(node) : onRunNode(node)}
-          style={generationRunButtonStyle}
+        ) : null}
+        <InlineImageBackendPicker
+          meta={meta}
+          backends={imageConnectors}
+          capability={requiredImageCapability}
+          onSelect={applyBackendSelection}
+        />
+        <Select
+          size="small"
+          value={String(meta.size || '1024x1024')}
+          style={{ width: 106 }}
+          onChange={(value) => onUpdateMetadata(node.id, { size: value })}
+          options={[
+            { value: '1024x1024', label: '1:1 · 1K' },
+            { value: '1024x1536', label: '2:3 · 1K' },
+            { value: '1536x1024', label: '3:2 · 1K' },
+            { value: '1152x896', label: '4:3 · 1K' },
+            { value: '896x1152', label: '3:4 · 1K' },
+          ]}
+        />
+        <Tooltip title="从 Prompt 库挑选参考">
+          <Button size="small" icon={<FileTextOutlined />} onClick={() => onOpenPromptReference(node)} />
+        </Tooltip>
+        <span style={{ flex: 1 }} />
+        <Tooltip title={isBatch
+          ? (batchReady ? `生成 ${imageInputCount} 张` : '运行到媒体选择')
+          : (hasUpstreamInputs ? '运行链路' : '开始生成')}
         >
-          {isBatch ? (batchReady ? `生成 ${imageInputCount} 张` : '运行到媒体选择') : hasUpstreamInputs ? '运行链路' : '开始生成'}
-        </Button>
+          <Button
+            type="primary"
+            shape="circle"
+            icon={<ThunderboltOutlined />}
+            data-canvas-run-generation={node.id}
+            onClick={() => isBatch ? (batchReady ? onRunNode(node) : onRunWorkflow(node)) : hasUpstreamInputs ? onRunWorkflow(node) : onRunNode(node)}
+            style={{ width: 34, height: 34, boxShadow: '0 6px 16px -6px rgba(34,211,238,.55)' }}
+          />
+        </Tooltip>
         {hasUpstreamInputs ? (
           <Tooltip title={isBatch && batchReady ? '重新运行搜索和媒体选择，再更新当前图片集' : '只运行当前生图节点，不重跑上游'}>
             <Button
+              shape="circle"
               icon={isBatch && batchReady ? <SearchOutlined /> : <PictureOutlined />}
               aria-label="只运行当前生图节点"
               onClick={() => isBatch && batchReady ? onRunWorkflow(node) : onRunNode(node)}
-              style={generationDirectRunButtonStyle}
             />
           </Tooltip>
         ) : null}
       </div>
-      </NodeContentSection>
       <NodeOutputInline node={node} />
       <GenerationResultRail node={node} />
     </div>
