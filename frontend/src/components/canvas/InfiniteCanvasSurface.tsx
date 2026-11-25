@@ -637,6 +637,7 @@ export default function InfiniteCanvasSurface({
           viewport={viewport}
           containerRef={containerRef}
           onViewportChange={onViewportChange}
+          selectedNodeIds={selectedNodeIds}
         />
       ) : null}
       <svg
@@ -651,11 +652,6 @@ export default function InfiniteCanvasSurface({
           overflow: 'visible',
         }}
       >
-        <defs>
-          <marker id="canvas-arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
-            <path d="M 0 0 L 10 5 L 0 10 z" fill={immersive ? 'rgba(232,226,216,0.58)' : 'var(--textTertiary, var(--textSecondary))'} />
-          </marker>
-        </defs>
         {connections.map((connection) => {
           const path = connectionPath(connection)
           const labelPosition = connectionLabelPosition(connection)
@@ -666,13 +662,12 @@ export default function InfiniteCanvasSurface({
           const labelWidth = Math.max(48, Math.min(180, label.length * 5.8 + 14))
           return (
             <g key={connection.id}>
+              {/* 连线降噪：翻译参考项目 gedge——基线低不透明度，选中相关才增强（青色） */}
               <path
                 d={path}
-                stroke={immersive ? 'rgba(232,226,216,0.58)' : 'var(--primary)'}
-                strokeWidth={immersive ? 1.6 : 2}
+                stroke={relatedToSelection ? 'rgba(34,211,238,.9)' : 'rgba(245,245,244,.10)'}
+                strokeWidth={relatedToSelection ? 1.6 : 1.2}
                 fill="none"
-                markerEnd="url(#canvas-arrow)"
-                opacity={immersive ? 0.82 : 0.72}
               />
               {showLabel ? (
                 <g transform={`translate(${labelPosition.x} ${labelPosition.y})`} opacity={relatedToSelection ? 1 : 0.46}>
@@ -715,11 +710,10 @@ export default function InfiniteCanvasSurface({
           return (
             <path
               d={bezierPath(fromPoint.x, fromPoint.y, pointer.x, pointer.y)}
-              stroke={connectionDrag.targetNodeId ? '#78d4c7' : 'rgba(242,238,230,0.62)'}
-              strokeWidth={2}
+              stroke={connectionDrag.targetNodeId ? 'rgba(34,211,238,.9)' : 'rgba(245,245,244,.45)'}
+              strokeWidth={1.6}
               strokeDasharray={connectionDrag.targetNodeId ? undefined : '5 5'}
               fill={'none'}
-              markerEnd={'url(#canvas-arrow)'}
             />
           )
         })() : null}
@@ -892,12 +886,15 @@ function CanvasMinimap({
   viewport,
   containerRef,
   onViewportChange,
+  selectedNodeIds = [],
 }: {
   nodes: CanvasNode[]
   viewport: CanvasViewport
   containerRef: React.RefObject<HTMLDivElement>
   onViewportChange: (viewport: CanvasViewport) => void
+  selectedNodeIds?: string[]
 }) {
+  const selectedSet = new Set(selectedNodeIds)
   if (!nodes.length) return null
 
   const minX = Math.min(...nodes.map((node) => node.position.x))
@@ -939,7 +936,7 @@ function CanvasMinimap({
   }
 
   return (
-    <div style={minimapStyle} data-canvas-no-zoom onPointerDown={jumpTo}>
+    <div style={{ ...minimapStyle, borderRadius: 10, border: '1px solid rgba(255,255,255,.09)', background: 'rgba(22,20,18,.92)' }} data-canvas-no-zoom onPointerDown={jumpTo}>
       <svg width={width} height={height}>
         {nodes.map((node) => (
           <rect
@@ -948,9 +945,9 @@ function CanvasMinimap({
             y={(node.position.y - world.y) * scale + offsetY}
             width={Math.max(2, node.width * scale)}
             height={Math.max(2, node.height * scale)}
-            rx={2}
-            fill="var(--primary)"
-            opacity={0.54}
+            rx={1.5}
+            fill={minimapNodeColor(node.type)}
+            opacity={selectedSet.has(node.id) ? 0.95 : 0.6}
           />
         ))}
         {viewWorld ? (
@@ -960,9 +957,9 @@ function CanvasMinimap({
             width={Math.max(8, viewWorld.width * scale)}
             height={Math.max(8, viewWorld.height * scale)}
             fill="none"
-            stroke="var(--textPrimary)"
-            strokeWidth={1.5}
-            opacity={0.72}
+            stroke="#22d3ee"
+            strokeWidth={1.2}
+            opacity={0.8}
           />
         ) : null}
       </svg>
@@ -1076,6 +1073,28 @@ const minimapStyle: React.CSSProperties = {
   background: 'rgba(27,25,22,0.88)',
   boxShadow: '0 10px 26px rgba(0,0,0,0.22)',
   cursor: 'crosshair',
+}
+
+/** 小地图节点类型色块（翻译参考项目 minimapColor：image 绿 / video 橙 / audio 紫） */
+function minimapNodeColor(type: CanvasNode['type']) {
+  const map: Record<string, string> = {
+    image: '#10b981',
+    video: '#f97316',
+    audio: '#a855f7',
+    image_model: '#22d3ee',
+    image_batch: '#22d3ee',
+    image_transform: '#5eead4',
+    media_picker: '#fbbf24',
+    platform_search: '#60a5fa',
+    llm: '#f5f5f4',
+    text: 'rgba(245,245,244,.55)',
+    content: 'rgba(245,245,244,.55)',
+    prompt: 'rgba(245,245,244,.55)',
+    note: 'rgba(245,245,244,.55)',
+    asset: '#c084fc',
+    config: '#60a5fa',
+  }
+  return map[type] || 'rgba(245,245,244,.45)'
 }
 
 const resizeHandleStyle: React.CSSProperties = {

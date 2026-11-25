@@ -3687,7 +3687,7 @@ export default function CanvasPage() {
         <div style={canvasSurfacePaneStyle}>
           <InfiniteCanvasSurface
         immersive
-        showMinimap={false}
+        showMinimap
         viewport={activeDocument.viewport}
         nodes={activeDocument.nodes}
         connections={activeDocument.connections}
