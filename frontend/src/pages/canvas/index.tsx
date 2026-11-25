@@ -4292,33 +4292,84 @@ function CanvasEdgePort({
   active?: boolean
   targeted?: boolean
 }) {
+  /* 翻译参考项目 ConnectionHandleDot：12px 圆点压卡边，label 收进 title。
+     连线端点由 Surface 实测本元素的 data-canvas-port-*（几何自动跟随）。 */
   const kind = String(port.dataType || 'any') as CanvasResourceInput['type']
   const isInput = direction === 'input'
   const offset = total > 1 ? `${((index + 1) / (total + 1)) * 100}%` : '50%'
   return (
     <span
+      className="yl-port"
       data-canvas-no-drag
       data-canvas-port-direction={direction}
       data-canvas-node-id={node.id}
       data-canvas-port-id={port.id}
       title={`${isInput ? '接收' : '拖动'} ${port.label} (${kind})`}
       style={{
-        ...canvasEdgePortStyle,
-        ...(isInput ? canvasEdgePortInputStyle : canvasEdgePortOutputStyle),
         top: offset,
-        borderColor: dataTypeHandleColor(kind),
-        background: targeted || active ? dataTypeHandleColor(kind) : '#151411',
+        ...(isInput ? { left: -7 } : { right: -7 }),
+        borderColor: targeted || active ? dataTypeHandleColor(kind) : dataTypeAccent(kind),
+        background: targeted || active ? dataTypeHandleColor(kind) : 'var(--yl-node-panel, #1f1d1a)',
         boxShadow: targeted
           ? `0 0 0 4px ${dataTypeAccent(kind)}, 0 0 16px ${dataTypeAccent(kind)}`
           : active
             ? `0 0 0 3px ${dataTypeAccent(kind)}`
-            : `0 0 0 2px rgba(21,20,17,0.92), 0 0 0 3px ${dataTypeAccent(kind)}`,
+            : undefined,
       }}
-    >
-      <span style={{ ...canvasEdgePortLabelStyle, ...(isInput ? canvasEdgePortInputLabelStyle : canvasEdgePortOutputLabelStyle) }}>
-        {port.label}{port.multiple ? '[]' : ''}
-      </span>
-    </span>
+    />
+  )
+}
+
+/** 卡壳左右边缘统一端口轨：input 靠左、output 靠右（替代原表格行/图片 overlay 里的端口）。 */
+function CanvasEdgePortsRail({
+  node,
+  document,
+  inputs,
+  connectionDrag,
+}: {
+  node: CanvasNode
+  document: CanvasDocument
+  inputs: CanvasResourceInput[]
+  connectionDrag: CanvasConnectionDragState | null
+}) {
+  const declaredInputs = node.inputs || []
+  const declaredOutputs = node.outputs || []
+  const sourceDataType = String(connectionDrag?.sourceDataType || 'any').replace(/\[\]$/, '')
+  const accepts = (port: CanvasPort) => {
+    if (!connectionDrag || connectionDrag.fromNodeId === node.id) return false
+    const target = String(port.dataType || 'any').replace(/\[\]$/, '')
+    return sourceDataType === 'any' || target === 'any' || sourceDataType === target
+  }
+  return (
+    <>
+      {declaredInputs.map((port, index) => (
+        <CanvasEdgePort
+          key={port.id}
+          node={node}
+          port={port}
+          direction="input"
+          index={index}
+          total={declaredInputs.length}
+          active={inputs.some((input) => input.targetPortId === port.id)}
+          targeted={Boolean(
+            accepts(port)
+            && connectionDrag?.targetNodeId === node.id
+            && connectionDrag.targetPortId === port.id,
+          )}
+        />
+      ))}
+      {declaredOutputs.map((port, index) => (
+        <CanvasEdgePort
+          key={port.id}
+          node={node}
+          port={port}
+          direction="output"
+          index={index}
+          total={declaredOutputs.length}
+          active={document.connections.some((connection) => connection.fromNodeId === node.id && connection.fromPortId === port.id)}
+        />
+      ))}
+    </>
   )
 }
 
@@ -4378,7 +4429,28 @@ function CanvasNodeCard({
   const llmConnectorOptions = connectorSelectOptions(llmConnectors)
   const platformOptions = platformSelectOptions(platforms)
   /* accent 顶部色条已随卡壳翻译移除（参考项目无色条，类型色保留在检查器 Tag） */
+  /* 选中配置面板：卡内表格（变量/契约/输出/操作）翻译为参考项目「节点下方浮层」，功能不丢 */
+  const configPanel = selected ? (
+    <div className="yl-nodecfg" data-canvas-no-drag>
+      <Space direction="vertical" size={8} style={{ width: '100%' }}>
+        {variableStrip}
+        <NodeContractSummary node={node} inputs={activeInputs} compact />
+        <NodeOutputInline node={node} />
+        <div style={nodeActionRowStyle}>
+          <NodeInputPills inputs={inputs} />
+          {node.type === 'text' || node.type === 'prompt' ? (
+            <Button size="small" icon={<PictureOutlined />} style={nodeSecondaryActionButtonStyle} data-canvas-create-generation={node.id} onClick={() => onCreateGeneration(node)}>生图</Button>
+          ) : null}
+          {node.type === 'prompt' || node.type === 'llm' ? (
+            <Button size="small" icon={<FileTextOutlined />} style={nodeSecondaryActionButtonStyle} onClick={() => onOpenPromptReference(node)}>Prompt库</Button>
+          ) : null}
+          <Button size="small" data-canvas-no-drag style={nodeSecondaryActionButtonStyle} onClick={() => onOpenNode(node)}>高级</Button>
+        </div>
+      </Space>
+    </div>
+  ) : null
   return (
+    <>
     <div
       /* 卡壳视觉翻译自参考项目 canvas-oss（24px 大圆角 + 2px 边 + 品牌色选中环），
          见 components/canvas/canvas-skin.css；有图节点常态透明直出。 */
@@ -4392,6 +4464,12 @@ function CanvasNodeCard({
         overflow: 'visible',
       }}
     >
+      {/* 悬浮标题（参考项目卡上方 -28px，hover/选中显现）+ 统一边缘端口轨 */}
+      <div className="yl-nodetitle" data-canvas-no-drag>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{node.title}</span>
+        <span className="yl-nodetitle-kind">{nodeLabel(node.type)}</span>
+      </div>
+      <CanvasEdgePortsRail node={node} document={document} inputs={inputs} connectionDrag={connectionDrag} />
       {isImageNode ? (
         <div style={{ display: 'grid', minHeight: node.height }}>
           {imageUrl ? (
@@ -4402,31 +4480,6 @@ function CanvasNodeCard({
                 draggable={false}
                 style={{ width: '100%', height: node.height, objectFit: 'cover', display: 'block', borderRadius: 22 }}
               />
-              <div style={imageNodePortOverlayStyle}>
-                {(node.inputs || []).map((port, index, ports) => (
-                  <CanvasEdgePort
-                    key={port.id}
-                    node={node}
-                    port={port}
-                    direction="input"
-                    index={index}
-                    total={ports.length}
-                    active={inputs.some((input) => input.targetPortId === port.id)}
-                    targeted={Boolean(connectionDrag && connectionDrag.fromNodeId !== node.id && connectionDrag.targetNodeId === node.id && connectionDrag.targetPortId === port.id)}
-                  />
-                ))}
-                {(node.outputs || []).map((port, index, ports) => (
-                  <CanvasEdgePort
-                    key={port.id}
-                    node={node}
-                    port={port}
-                    direction="output"
-                    index={index}
-                    total={ports.length}
-                    active={document.connections.some((connection) => connection.fromNodeId === node.id && connection.fromPortId === port.id)}
-                  />
-                ))}
-              </div>
               <div style={imageNodeMediaBadgeStyle}>
                 <PictureOutlined />
                 <span>image</span>
@@ -4458,7 +4511,6 @@ function CanvasNodeCard({
             </div>
           ) : (
             <div style={{ position: 'relative', minHeight: node.height, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 10 }}>
-              <NodeCardHeader node={node} subtitle="图片容器 / 可挂 Prompt 参考" />
               <ImageProvenanceStrip node={node} document={document} />
               <div style={imageNodeEmptyBodyStyle}>
                 <div style={imageNodeEmptyContentStyle}>
@@ -4466,31 +4518,6 @@ function CanvasNodeCard({
                   {meta.promptReferenceTitle ? (
                     <Tag color="purple" style={{ marginInlineEnd: 0 }}>{String(meta.promptReferenceTitle)}</Tag>
                   ) : null}
-                  <div style={imageNodeEmptyPortRailStyle}>
-                    {(node.inputs || []).map((port, index, ports) => (
-                      <CanvasEdgePort
-                        key={port.id}
-                        node={node}
-                        port={port}
-                        direction="input"
-                        index={index}
-                        total={ports.length}
-                        active={inputs.some((input) => input.targetPortId === port.id)}
-                        targeted={Boolean(connectionDrag && connectionDrag.fromNodeId !== node.id && connectionDrag.targetNodeId === node.id && connectionDrag.targetPortId === port.id)}
-                      />
-                    ))}
-                    {(node.outputs || []).map((port, index, ports) => (
-                      <CanvasEdgePort
-                        key={port.id}
-                        node={node}
-                        port={port}
-                        direction="output"
-                        index={index}
-                        total={ports.length}
-                        active={document.connections.some((connection) => connection.fromNodeId === node.id && connection.fromPortId === port.id)}
-                      />
-                    ))}
-                  </div>
                   <div data-canvas-no-drag style={{ width: '100%', minWidth: 0 }}>
                     <Input.TextArea
                       value={String(meta.prompt || '')}
@@ -4523,7 +4550,7 @@ function CanvasNodeCard({
         <GenerationComposerCard
           node={node}
           inputs={activeInputs}
-          variableStrip={variableStrip}
+          variableStrip={null}
           imageConnectors={imageConnectors}
           onRunNode={onRunNode}
           onRunWorkflow={onRunWorkflow}
@@ -4534,14 +4561,13 @@ function CanvasNodeCard({
         <MediaPickerCard
           node={node}
           inputs={activeInputs}
-          variableStrip={variableStrip}
+          variableStrip={null}
           onUpdateMetadata={onUpdateMetadata}
           onMaterialize={onMaterializeMediaSelection}
           onImportToAssetHub={onImportMediaSelection}
         />
       ) : isVideoAsset ? (
         <div style={{ display: 'grid', gap: 10 }}>
-          <NodeCardHeader node={node} assetKind={assetKind} />
           <div style={{
             height: Math.max(92, Math.min(150, node.height - 86)),
             borderRadius: 6,
@@ -4561,40 +4587,37 @@ function CanvasNodeCard({
               <VideoCameraOutlined style={{ fontSize: 30, color: 'var(--textSecondary)' }} />
             )}
           </div>
-          <Space direction="vertical" size={6} style={{ width: '100%' }}>
-            <Text type="secondary" style={{ fontSize: 12 }} ellipsis={{ tooltip: String(meta.assetId || '') }}>
-              {String(meta.assetId || meta.assetTitle || '')}
-            </Text>
-            {variableStrip}
-            <NodeContractSummary node={node} inputs={activeInputs} compact />
-            <NodeOutputInline node={node} />
-            <div style={nodeActionRowStyle}>
-              <NodeInputPills inputs={inputs} />
-              <Button size="small" data-canvas-no-drag style={nodeSecondaryActionButtonStyle} onClick={() => onOpenNode(node)}>高级</Button>
-            </div>
-          </Space>
+          <Text type="secondary" style={{ fontSize: 12 }} ellipsis={{ tooltip: String(meta.assetId || '') }}>
+            {String(meta.assetId || meta.assetTitle || '')}
+          </Text>
         </div>
       ) : (
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
-          <NodeCardHeader node={node} assetKind={assetKind} />
-          {variableStrip}
-          <NodeContractSummary node={node} inputs={activeInputs} compact />
           {node.type === 'text' || node.type === 'content' || node.type === 'note' ? (
-            <div data-canvas-no-drag style={inlineNodeEditorShellStyle}>
-              <Input.TextArea
-                value={String(meta.content || '')}
-                autoSize={{ minRows: 4, maxRows: 9 }}
-                onChange={(event) => onUpdateMetadata(node.id, { content: event.target.value })}
-                placeholder="直接在节点里写内容"
-                style={inlineNodeTextAreaStyle}
-              />
-            </div>
+            /* 文本卡直出：翻译参考项目 TextContent（无边框 textarea，内容即卡片） */
+            <Input.TextArea
+              value={String(meta.content || '')}
+              autoSize={{ minRows: 3, maxRows: 12 }}
+              onChange={(event) => onUpdateMetadata(node.id, { content: event.target.value })}
+              placeholder="点击编辑文字"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                padding: '4px 2px',
+                fontSize: 14,
+                lineHeight: 1.65,
+                color: '#f5f5f4',
+                resize: 'none',
+                boxShadow: 'none',
+              }}
+              variant="borderless"
+            />
           ) : null}
           {node.type === 'prompt' || node.type === 'llm' ? (
             <div data-canvas-no-drag style={inlineNodeEditorShellStyle}>
               <Input.TextArea
                 value={String(meta.prompt || '')}
-                autoSize={{ minRows: 4, maxRows: 9 }}
+                autoSize={{ minRows: 3, maxRows: 10 }}
                 onChange={(event) => onUpdateMetadata(node.id, { prompt: event.target.value })}
                 placeholder="直接在节点里写 Prompt"
                 style={inlineNodeTextAreaStyle}
@@ -4642,19 +4665,11 @@ function CanvasNodeCard({
               {nodeSummary(node)}
             </Text>
           ) : null}
-          <NodeOutputInline node={node} />
-          <div style={nodeActionRowStyle}>
-            <NodeInputPills inputs={inputs} />
-            {node.type === 'text' || node.type === 'prompt' ? (
-              <Button size="small" icon={<PictureOutlined />} style={nodeSecondaryActionButtonStyle} data-canvas-no-drag data-canvas-create-generation={node.id} onClick={() => onCreateGeneration(node)}>生图</Button>
-            ) : null}
-            {node.type === 'prompt' || node.type === 'llm' ? (
-              <Button size="small" icon={<FileTextOutlined />} style={nodeSecondaryActionButtonStyle} data-canvas-no-drag onClick={() => onOpenPromptReference(node)}>Prompt库</Button>
-            ) : null}
-          </div>
         </Space>
       )}
     </div>
+    {configPanel}
+    </>
   )
 }
 
@@ -5312,10 +5327,8 @@ function NodeVariableStrip({
   connectionDrag?: CanvasConnectionDragState | null
   floating?: boolean
 }) {
-  // The handle center is measured by the surface for SVG paths. Normal rails
-  // add 8px of strip padding, so their 12px dot needs a 14px offset to meet
-  // the card edge; image-overlay rails have no padding and use 6px.
-  const edgePortOffset = floating ? -6 : -14
+  // 端口 anchor 统一由卡壳边缘的 CanvasEdgePortsRail 提供（2026-11-25 表格行 dot 已移除），
+  // 本条只负责变量 chips 的状态展示，不再参与连线几何。
   const declaredInputs = node.inputs || []
   const declaredOutputs = node.outputs || []
   const sourceDataType = String(connectionDrag?.sourceDataType || 'any').replace(/\[\]$/, '')
@@ -5374,51 +5387,33 @@ function NodeVariableStrip({
             <div key={item.key} style={nodeVariableRowStyle}>
               <span style={nodeVariableDirectionStyle}>{index === 0 ? 'IN' : ''}</span>
               <div style={nodeVariableChipWrapStyle}>
-              <span
-                data-canvas-no-drag
-                style={{
-                  ...nodeVariableChipStyle,
-                  ...nodeVariableInputChipStyle,
-                  borderColor: item.targeted
-                    ? dataTypeAccent(item.kind)
-                    : item.hovered && !item.compatible
-                      ? 'rgba(240,166,106,0.7)'
-                    : item.active
+                <span
+                  data-canvas-no-drag
+                  style={{
+                    ...nodeVariableChipStyle,
+                    ...nodeVariableInputChipStyle,
+                    borderColor: item.targeted
                       ? dataTypeAccent(item.kind)
-                      : item.compatible
-                        ? 'rgba(242,238,230,0.32)'
-                        : 'rgba(255,255,255,0.12)',
-                  color: item.targeted || item.active ? '#f2eee6' : item.hovered && !item.compatible ? '#f0a66a' : item.compatible ? 'rgba(242,238,230,0.76)' : 'rgba(242,238,230,0.52)',
-                  boxShadow: item.targeted
-                    ? `inset 3px 0 0 ${dataTypeAccent(item.kind)}, 0 0 0 1px ${dataTypeAccent(item.kind)}`
-                    : item.hovered && !item.compatible
-                      ? 'inset 3px 0 0 rgba(240,166,106,0.72), 0 0 0 1px rgba(240,166,106,0.32)'
-                    : item.active
-                      ? `inset 3px 0 0 ${dataTypeAccent(item.kind)}`
-                      : item.compatible
-                        ? `inset 2px 0 0 rgba(242,238,230,0.32)`
-                        : undefined,
+                      : item.hovered && !item.compatible
+                        ? 'rgba(240,166,106,0.7)'
+                      : item.active
+                        ? dataTypeAccent(item.kind)
+                        : item.compatible
+                          ? 'rgba(242,238,230,0.32)'
+                          : 'rgba(255,255,255,0.12)',
+                    color: item.targeted || item.active ? '#f2eee6' : item.hovered && !item.compatible ? '#f0a66a' : item.compatible ? 'rgba(242,238,230,0.76)' : 'rgba(242,238,230,0.52)',
+                    boxShadow: item.targeted
+                      ? `inset 3px 0 0 ${dataTypeAccent(item.kind)}, 0 0 0 1px ${dataTypeAccent(item.kind)}`
+                      : item.hovered && !item.compatible
+                        ? 'inset 3px 0 0 rgba(240,166,106,0.72), 0 0 0 1px rgba(240,166,106,0.32)'
+                      : item.active
+                        ? `inset 3px 0 0 ${dataTypeAccent(item.kind)}`
+                        : item.compatible
+                          ? `inset 2px 0 0 rgba(242,238,230,0.32)`
+                          : undefined,
                 }}
                 title={`${item.port.label} (${item.kind})${item.linkedTitles ? ` - ${item.linkedTitles}` : ''}`}
               >
-                <span
-                  data-canvas-no-drag
-                  data-canvas-port-direction={'input'}
-                  data-canvas-node-id={node.id}
-                  data-canvas-port-id={item.port.id}
-                  title={`接收 ${item.port.label} (${item.kind})`}
-                  style={{
-                    ...nodeVariablePortDotStyle,
-                    left: edgePortOffset,
-                    borderColor: dataTypeHandleColor(item.kind),
-                    background: item.targeted || item.active ? dataTypeHandleColor(item.kind) : '#151411',
-                    boxShadow: item.targeted
-                      ? `0 0 0 4px ${dataTypeAccent(item.kind)}, 0 0 16px ${dataTypeAccent(item.kind)}`
-                      : item.compatible
-                        ? `0 0 0 3px rgba(242,238,230,0.14)`
-                        : `0 0 0 2px rgba(21,20,17,0.92), 0 0 0 3px ${dataTypeAccent(item.kind)}`,
-                  }}
-                />
                 <span style={nodeVariableChipContentStyle}>
                   <span style={nodeVariableLabelStyle}>{item.label}</span>
                   <span style={{
@@ -5469,22 +5464,6 @@ function NodeVariableStrip({
                 }}
                 title={`拖动输出 ${item.port.label} (${item.kind})`}
               >
-                <span
-                  data-canvas-no-drag
-                  data-canvas-port-direction={'output'}
-                  data-canvas-node-id={node.id}
-                  data-canvas-port-id={item.port.id}
-                  title={`拖动 ${item.port.label} (${item.kind})`}
-                  style={{
-                    ...nodeVariablePortDotStyle,
-                    right: edgePortOffset,
-                    borderColor: dataTypeHandleColor(item.kind),
-                    background: item.dragging || item.active ? dataTypeHandleColor(item.kind) : '#151411',
-                    boxShadow: item.dragging
-                      ? `0 0 0 4px ${dataTypeAccent(item.kind)}, 0 0 16px ${dataTypeAccent(item.kind)}`
-                      : `0 0 0 2px rgba(21,20,17,0.92), 0 0 0 3px ${dataTypeAccent(item.kind)}`,
-                  }}
-                />
                 <span style={nodeVariableChipContentStyle}>
                   <span style={nodeVariableLabelStyle}>{item.label}</span>
                   <span style={{

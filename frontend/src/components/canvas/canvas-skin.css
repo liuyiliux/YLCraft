@@ -44,3 +44,78 @@
     0 0 0 1px rgba(214, 211, 209, .33),
     0 18px 48px rgba(0, 0, 0, .14);
 }
+
+/* ---------- 端口圆点：翻译参考项目 ConnectionHandleDot ----------
+   12px 圆点压在卡边框线上，默认弱化、卡 hover/选中时显现；
+   连线端点由 Surface 实测 data-canvas-port-*（无需 JS 计算）。 */
+.yl-port {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--yl-node-muted, #d6d3d1);
+  background: var(--yl-node-panel, #1f1d1a);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, .4);
+  opacity: .5;
+  z-index: 30;
+  transition: opacity 150ms ease, transform 150ms ease, background 150ms ease;
+  cursor: crosshair;
+}
+.yl-cnode:hover .yl-port,
+.yl-cnode.yl-cnode-sel .yl-port {
+  opacity: 1;
+}
+.yl-port:hover {
+  transform: scale(1.25);
+}
+
+/* ---------- 悬浮标题：翻译参考项目卡上方 -28px 标题条 ---------- */
+.yl-nodetitle {
+  position: absolute;
+  left: 10px;
+  top: -26px;
+  max-width: calc(100% - 20px);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--yl-node-text, #f5f5f4);
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 40;
+  transition: opacity 150ms ease;
+}
+.yl-cnode:hover .yl-nodetitle,
+.yl-cnode.yl-cnode-sel .yl-nodetitle {
+  opacity: .85;
+}
+.yl-nodetitle .yl-nodetitle-kind {
+  color: var(--yl-node-faint, #78716c);
+  font-size: 11px;
+  font-weight: 400;
+  flex: 0 0 auto;
+}
+
+/* ---------- 选中配置面板：翻译参考项目节点下方 counter-scale panel ----------
+   本体第一版不反向缩放（固定 600px），内容 = 原卡内变量表格/契约/输出/操作行。 */
+.yl-nodecfg {
+  position: absolute;
+  top: calc(100% + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 600px;
+  max-width: calc(100vw - 64px);
+  background: rgba(31, 29, 26, .96);
+  border: 1px solid var(--yl-node-stroke, #44403c);
+  border-radius: 16px;
+  padding: 12px;
+  box-shadow: 0 28px 64px -26px rgba(0, 0, 0, .98), 0 0 0 1px rgba(0, 0, 0, .45);
+  -webkit-backdrop-filter: blur(20px) saturate(1.15);
+  backdrop-filter: blur(20px) saturate(1.15);
+  color: var(--yl-node-text, #f5f5f4);
+  z-index: 70;
+}
