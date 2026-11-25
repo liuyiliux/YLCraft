@@ -183,6 +183,32 @@
   color: #fff;
 }
 
+/* ---------- 图片节点左上角放大镜：hover 查看，翻译参考项目图片查看钮 ---------- */
+.yl-img-zoom {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 9px;
+  background: rgba(15, 14, 12, .72);
+  color: rgba(255, 255, 255, .82);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 150ms ease, background 150ms ease;
+}
+.yl-cnode:hover .yl-img-zoom,
+.yl-cnode.yl-cnode-sel .yl-img-zoom {
+  opacity: 1;
+}
+.yl-img-zoom:hover {
+  background: rgba(15, 14, 12, .92);
+  color: #fff;
+}
+
 /* ---------- 选中配置面板：翻译参考项目节点下方 counter-scale panel ---------- */
 .yl-nodecfg {
   position: absolute;

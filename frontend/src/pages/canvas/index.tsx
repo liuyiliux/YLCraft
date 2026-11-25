@@ -20,6 +20,8 @@ import {
 } from 'antd'
 import {
   DeleteOutlined,
+  DownloadOutlined,
+  ZoomInOutlined,
   EditOutlined,
   ExportOutlined,
   FileTextOutlined,
@@ -2154,6 +2156,33 @@ export default function CanvasPage() {
     }
   }
 
+  /* 图片节点「下载」：远程图走代理转 blob，dataURL 直下（工具条钮） */
+  const downloadImageNode = async (node: CanvasNode) => {
+    const url = canvasNodeImageUrl(node)
+    if (!url) {
+      message.warning('节点还没有图片')
+      return
+    }
+    const name = `${String(node.metadata?.fileName || node.title || 'image').replace(/[\\/:*?"<>|]/g, '_').replace(/\.[^.]+$/, '')}.png`
+    try {
+      let href = url
+      if (!url.startsWith('data:')) {
+        const resp = await fetch(`/api/v1/proxy/image?url=${encodeURIComponent(url)}`)
+        if (!resp.ok) throw new Error('proxy failed')
+        href = URL.createObjectURL(await resp.blob())
+      }
+      const a = document.createElement('a')
+      a.href = href
+      a.download = name
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      if (href !== url) URL.revokeObjectURL(href)
+    } catch {
+      message.error('下载失败')
+    }
+  }
+
   const insertAssetNode = (asset: AssetOption) => {
     if (!activeDocument) return
     const assetId = assetIdOf(asset)
@@ -3802,6 +3831,7 @@ export default function CanvasPage() {
             onDelete={(target) => deleteSelectedNode([target.id])}
             onClose={() => setSelectedNodeIds([])}
             onSaveAsset={(target) => { void saveImageNodeToAsset(target) }}
+            onDownloadImage={(target) => { void downloadImageNode(target) }}
             viewportScale={state.scale}
             llmConnectors={llmConnectors}
             imageConnectors={imageConnectors}
@@ -4506,6 +4536,7 @@ function CanvasNodeCard({
   onDelete,
   onClose,
   onSaveAsset,
+  onDownloadImage,
   viewportScale = 1,
   llmConnectors,
   imageConnectors,
@@ -4530,6 +4561,7 @@ function CanvasNodeCard({
   onDelete: (node: CanvasNode) => void
   onClose: (node: CanvasNode) => void
   onSaveAsset: (node: CanvasNode) => void
+  onDownloadImage: (node: CanvasNode) => void
   /** 视口缩放（配置面板 counter-scale 用） */
   viewportScale?: number
   llmConnectors: ConnectorOption[]
@@ -4550,6 +4582,7 @@ function CanvasNodeCard({
 }) {
   const meta = node.metadata || {}
   const inputs = buildCanvasNodeInputs(node.id, document)
+  const [previewOpen, setPreviewOpen] = useState(false)
   const basePrompt = String(meta.prompt || meta.content || meta.searchKeyword || '').trim()
   const activeInputs = selectedInputsForNode(node, inputs, basePrompt)
   const imageUrl = canvasNodeImageUrl(node)
@@ -4589,7 +4622,7 @@ function CanvasNodeCard({
             value={String(meta.prompt || '')}
             autoSize={{ minRows: 5, maxRows: 10 }}
             onChange={(event) => onUpdateMetadata(node.id, { prompt: event.target.value })}
-            placeholder="描述要生成的图片内容"
+            placeholder={imageUrl ? '请输入你想把这张图修改成什么' : '描述要生成的图片内容'}
             style={{
               background: 'transparent',
               border: 'none',
@@ -4644,7 +4677,6 @@ function CanvasNodeCard({
               />
             </Tooltip>
           </div>
-          <NodeOutputInline node={node} />
         </Space>
       ) : (
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
@@ -4680,11 +4712,14 @@ function CanvasNodeCard({
     >
       {/* 悬浮标题（参考项目卡上方 -28px，hover/选中显现）+ 统一边缘端口轨 */}
       <div className="yl-nodetitle" data-canvas-no-drag>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{node.title}</span>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {/* 纯 hex 长 ID 的 title（历史链路产物）显示为类型名，别把 ID 糊用户脸上 */}
+          {/^[0-9a-f]{16,}$/i.test(node.title) ? nodeLabel(node.type) : node.title}
+        </span>
         <span className="yl-nodetitle-kind">{nodeLabel(node.type)}</span>
       </div>
       {selected ? (
-        /* 工具条五钮：翻译原型 39-jimeng-shell restyleWb（参数/存素材/生成/删除/关闭） */
+        /* 工具条（原型 restyleWb 形态）：参数/存素材/编辑/下载/删除/关闭 */
         <div className="yl-nodetools" data-canvas-no-drag>
           <button type="button" title="完整参数（编辑）" onClick={() => onOpenNode(node)}>
             <InfoOutlined />
@@ -4694,9 +4729,14 @@ function CanvasNodeCard({
               <SaveOutlined />
             </button>
           ) : null}
-          {isImageNode ? (
-            <button type="button" className="yl-run" title="按当前配置生成" onClick={() => { void onRunNode(node) }}>
-              <ThunderboltOutlined />
+          {isImageNode && imageUrl ? (
+            <button type="button" title="图片编辑器" onClick={() => onOpenImageEditor(node)}>
+              <EditOutlined />
+            </button>
+          ) : null}
+          {isImageNode && imageUrl ? (
+            <button type="button" title="下载图片" onClick={() => onDownloadImage(node)}>
+              <DownloadOutlined />
             </button>
           ) : null}
           <button type="button" className="yl-danger" title="删除（Delete）" onClick={() => onDelete(node)}>
@@ -4712,40 +4752,32 @@ function CanvasNodeCard({
         <div style={{ display: 'grid', minHeight: node.height }}>
           {imageUrl ? (
             <div style={{ position: 'relative', minHeight: node.height }}>
+              {/* 纯图直出（参考项目同款）：badge/按钮组/prompt 叠层全部移除，
+                  功能收敛到工具条与下方 composer；左上放大镜 hover 查看大图 */}
               <img
                 src={imageUrl}
                 alt={node.title}
                 draggable={false}
                 style={{ width: '100%', height: node.height, objectFit: 'cover', display: 'block', borderRadius: 22 }}
               />
-              <div style={imageNodeMediaBadgeStyle}>
-                <PictureOutlined />
-                <span>image</span>
-              </div>
-              <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 6 }}>
-                <Button size="small" icon={<FileTextOutlined />} style={nodeSecondaryActionButtonStyle} data-canvas-no-drag data-canvas-image-prompt-reference={node.id} onClick={() => onOpenPromptReference(node)}>Prompt库</Button>
-                <Button size="small" icon={<EditOutlined />} style={nodeSecondaryActionButtonStyle} data-canvas-no-drag onClick={() => onOpenImageEditor(node)}>编辑</Button>
-                <Button size="small" icon={<PictureOutlined />} style={nodeSecondaryActionButtonStyle} data-canvas-no-drag data-canvas-create-generation={node.id} onClick={() => onCreateGeneration(node)}>生图</Button>
-              </div>
-              <div style={imagePromptOverlayStackStyle}>
-                <ImageProvenanceStrip node={node} document={document} />
-                {meta.promptReferenceTitle ? (
-                  <div style={imagePromptReferenceBadgeStyle}>
-                    <span>{String(meta.promptReferenceTitle)}</span>
-                    {meta.promptReferenceModelGroup ? <span>{String(meta.promptReferenceModelGroup)}</span> : null}
-                    {promptReferenceImageCount ? <span>{promptReferenceImageCount} 图</span> : null}
-                  </div>
-                ) : null}
-                <div data-canvas-no-drag style={imagePromptEditorOverlayStyle}>
-                  <Input.TextArea
-                    value={String(meta.prompt || '')}
-                    autoSize={{ minRows: 1, maxRows: 3 }}
-                    onChange={(event) => onUpdateMetadata(node.id, { prompt: event.target.value })}
-                    placeholder="给这张图写提示词"
-                    style={imagePromptInlineTextAreaStyle}
-                  />
-                </div>
-              </div>
+              <button
+                type="button"
+                className="yl-img-zoom"
+                data-canvas-no-drag
+                title="查看大图"
+                onClick={() => setPreviewOpen(true)}
+              >
+                <ZoomInOutlined />
+              </button>
+              <Image
+                style={{ display: 'none' }}
+                src={imageUrl}
+                preview={{
+                  visible: previewOpen,
+                  src: imageUrl,
+                  onVisibleChange: (visible) => setPreviewOpen(visible),
+                }}
+              />
             </div>
           ) : (
             <div style={{ position: 'relative', minHeight: node.height, display: 'grid' }}>
