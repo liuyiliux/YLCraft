@@ -6,12 +6,15 @@
 ## Phase 0: 基线
 
 - [ ] 1. 截图基线：3000 画布页当前样子（空画布 / 有图节点 / 选中态 / 连线）存 `docs/prototypes/canvas-baseline/`，作为 Phase 1 前后对比。
+  - _2026-11-25 简化：皮肤第一批已直接落地（commit 8830397e），基线以无头 Chrome 实测记录替代（背景 #181715 / 卡 #292524 / 24px 圆角 / 零报错）。_
 - [ ] 2. 视觉 tokens 落点确认：定 `yl-` 前缀 CSS 文件（如 `components/canvas/node-card/node-card.css`）与 antd theme 的边界，写进本文件备注。
+  - _2026-11-25 定：`components/canvas/canvas-skin.css`（卡壳）+ `canvas-theme.ts`（主题令牌，inline 注入 CSS 变量）；antd ConfigProvider 边界留 Phase 1 内部排版批次再定。_
 
 ## Phase 1: canvas-node-card 视觉层 + 编辑弹窗族
 
 - [ ] 3. 类型对齐：`types.ts` 补 Video/Audio/Group 节点类型与插件开放类型（照 canvas-oss `types/canvas.ts`）。
 - [ ] 4. 节点卡视觉组件：12px 圆角、细边、深阴影；图片卡「有图态」高度走共享常量（卡片渲染与端口/连线几何同一来源）。
+  - _2026-11-25 第一批落地（commit 8830397e）：卡壳翻译自 canvas-oss（**24px** 大圆角 + 2px 边，非 12px——以参考项目为准，原 12px 口径作废）；选中青细环；`canvas-theme.ts` 三主题 + `canvas-skin.css`；有图节点常态透明直出。待续：内部排版/字号统一。_
 - [ ] 5. 选中态：青色细环，无 glow；多选框选样式同步。
 - [ ] 6. 连线降噪：基线低不透明度、悬停/选中增强；端口圆点样式对齐参考项目。
 - [ ] 7. 节点工具条（深色玻璃胶囊）：参数 / 存为素材 / 生成 / 删除 / 关闭五动作，接现有 API。
