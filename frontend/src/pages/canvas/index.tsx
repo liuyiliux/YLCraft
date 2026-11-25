@@ -4605,7 +4605,6 @@ function CanvasNodeCard({
         <MediaPickerCard
           node={node}
           inputs={activeInputs}
-          variableStrip={null}
           onUpdateMetadata={onUpdateMetadata}
           onMaterialize={onMaterializeMediaSelection}
           onImportToAssetHub={onImportMediaSelection}
@@ -4720,14 +4719,12 @@ function CanvasNodeCard({
 function MediaPickerCard({
   node,
   inputs,
-  variableStrip,
   onUpdateMetadata,
   onMaterialize,
   onImportToAssetHub,
 }: {
   node: CanvasNode
   inputs: CanvasResourceInput[]
-  variableStrip: ReactNode
   onUpdateMetadata: (nodeId: string, metadataPatch: Record<string, unknown>) => void
   onMaterialize: (node: CanvasNode) => void
   onImportToAssetHub: (node: CanvasNode) => Promise<boolean>
@@ -4764,15 +4761,19 @@ function MediaPickerCard({
       lastRunAt: nowIso(),
     })
   }
+  /* 翻译参考项目形态：标题+小字 → 选择控制行 → 选中预览 → 操作行；
+     去掉大 Header / 契约行 / SELECT·SELECTED 英文标签行 */
   return (
-    <div style={mediaPickerCardStyle}>
-      <NodeCardHeader node={node} subtitle={items.length ? '可选一项或多项；图片集可直接连到生图参考图' : '连接搜索图片、视频或图文结果'} />
-      {variableStrip}
-      <NodeContractSummary node={node} inputs={inputs} compact />
+    <div style={mediaPickerCardStyle} data-canvas-media-picker={node.id}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, minWidth: 0 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: '#f5f5f4', flex: '0 0 auto' }}>选择参考图</span>
+        <span style={{ fontSize: 11, color: 'rgba(245,245,244,.55)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {items.length ? '可选一项或多项，图片集直连生图参考' : '连接搜索结果后在此挑选'}
+        </span>
+      </div>
       {items.length ? (
         <>
-          <NodeContentSection label="SELECT">
-          <div style={mediaPickerControlStyle} data-canvas-no-drag>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }} data-canvas-no-drag>
             <Select
               size="small"
               mode="multiple"
@@ -4786,51 +4787,45 @@ function MediaPickerCard({
                 label: `${input.type === 'image' ? '图片' : String((input.value as any)?.kind || '素材')} · ${input.title}`,
               }))}
             />
-            <Button size="small" type="primary" onClick={() => selected && applySelection(selected.key)}>选择</Button>
+            {selectedKeys.length > 1 ? (
+              <span style={{ fontSize: 11, color: 'rgba(245,245,244,.6)', flex: '0 0 auto' }}>{selectedKeys.length} 已选</span>
+            ) : null}
+            {selectedImageCount ? (
+              <span style={{ fontSize: 11, color: '#67e8f9', flex: '0 0 auto' }}>{selectedImageCount} 张参考图</span>
+            ) : null}
           </div>
-          {selectedKeys.length > 1 ? (
-            <Tag style={{ marginInlineEnd: 0, width: 'fit-content' }}>{selectedKeys.length} {'\u5df2\u9009'}</Tag>
-          ) : null}
-          {selectedImageCount ? (
-            <Tag color="cyan" style={{ marginInlineEnd: 0, width: 'fit-content' }}>{selectedImageCount} 张参考图</Tag>
-          ) : null}
-          </NodeContentSection>
           {selectedOutput?.selection ? (
-            <NodeContentSection label="SELECTED" tone="result">
-              <div style={mediaPickerPreviewStyle}>
-                {selectedOutput.selection.kind === 'image' && selectedOutput.selection.url ? (
-                  <img src={selectedOutput.selection.url} alt={selectedOutput.selection.title} style={mediaPickerImageStyle} />
-                ) : (
-                  <span style={mediaPickerKindStyle}>{selectedOutput.selection.kind === 'video' ? 'VIDEO' : 'ARTICLE'}</span>
-                )}
-                <div style={mediaPickerMetaStyle}>
-                  <span style={mediaPickerTitleStyle}>{selectedOutput.selection.title}</span>
-                  <span style={mediaPickerUrlStyle}>{selectedOutput.selection.url || selectedOutput.selection.text}</span>
-                </div>
+            <div style={{ ...mediaPickerPreviewStyle, alignItems: 'center' }} data-canvas-no-drag>
+              {selectedOutput.selection.kind === 'image' && selectedOutput.selection.url ? (
+                <img src={selectedOutput.selection.url} alt={selectedOutput.selection.title} style={mediaPickerImageStyle} />
+              ) : (
+                <span style={mediaPickerKindStyle}>{selectedOutput.selection.kind === 'video' ? 'VIDEO' : 'ARTICLE'}</span>
+              )}
+              <div style={mediaPickerMetaStyle}>
+                <span style={mediaPickerTitleStyle}>{selectedOutput.selection.title}</span>
+                <span style={mediaPickerUrlStyle}>{selectedOutput.selection.url || selectedOutput.selection.text}</span>
               </div>
-              <div style={mediaPickerActionRowStyle} data-canvas-no-drag>
-                <Button size="small" onClick={() => onMaterialize(node)}>放入画布</Button>
-                <Button
-                  size="small"
-                  type="primary"
-                  loading={importing}
-                  onClick={async () => {
-                    setImporting(true)
-                    try {
-                      await onImportToAssetHub(node)
-                    } finally {
-                      setImporting(false)
-                    }
-                  }}
-                >
-                  入素材库
-                </Button>
-              </div>
-            </NodeContentSection>
+              <Button size="small" onClick={() => onMaterialize(node)}>放入画布</Button>
+              <Button
+                size="small"
+                type="primary"
+                loading={importing}
+                onClick={async () => {
+                  setImporting(true)
+                  try {
+                    await onImportToAssetHub(node)
+                  } finally {
+                    setImporting(false)
+                  }
+                }}
+              >
+                入素材库
+              </Button>
+            </div>
           ) : null}
         </>
       ) : (
-        <Text type="secondary" style={{ fontSize: 12 }}>把搜索节点的图片、视频或图文端口拖到左侧输入。</Text>
+        <span style={{ fontSize: 12, color: 'rgba(245,245,244,.6)' }}>把搜索节点的图片、视频或图文端口拖到左侧输入。</span>
       )}
       <NodeOutputInline node={node} />
     </div>
