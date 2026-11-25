@@ -110,8 +110,8 @@ const CANVAS_NODE_CREATION_MENU: NonNullable<MenuProps['items']> = [
     label: '生成与处理',
     children: [
       { key: 'llm', icon: <RobotOutlined />, label: 'LLM' },
-      { key: 'image_model', icon: <PictureOutlined />, label: '生图' },
-      { key: 'image_batch', icon: <PictureOutlined />, label: '逐图生图' },
+      /* image_model / image_batch 节点已退役（2026-11-25）：生成能力内联进图片节点，
+         旧文档里的存量节点仍可渲染与运行，仅不再提供新建入口 */
       { key: 'image_transform', icon: <EditOutlined />, label: '图片处理' },
     ],
   },
@@ -3074,6 +3074,53 @@ export default function CanvasPage() {
     })
 
     try {
+      /* 图片节点就地生成（2026-11-25 设计：只留一个图片节点，生图/逐图生图节点退役）：
+         有 prompt 即生成，结果就地写回本节点；无 prompt 走原资产输出。 */
+      if (runtimeNode.type === 'image' && String(meta.prompt || '').trim()) {
+        const imageBackendName = resolveImageBackendName(meta, imageConnectors)
+        const imageBackend = imageConnectors.find((item) => item.name === imageBackendName)
+        const referenceImages = activeInputs.filter((input) => input.type === 'image' && input.url)
+        patchNodeMetadata(runtimeNode.id, { status: 'running', error: '', lastRunAt: nowIso() })
+        try {
+          const res = await generateImageApi({
+            prompt: String(meta.prompt),
+            provider: imageBackendName,
+            model: meta.model || imageBackend?.model || imageBackend?.default_model || undefined,
+            size: meta.size || '1024x1024',
+            n: 1,
+            reference_images: referenceImages.map((input) => input.url).filter(Boolean),
+            reference_asset_ids: referenceImages.map((input) => input.assetId).filter(Boolean),
+            reference_image_collection: referenceImages.map((input) => ({ url: input.url || '', asset_id: input.assetId || '', source_node_id: input.nodeId })),
+            prompt_reference_id: meta.promptReferenceId || undefined,
+            prompt_reference_title: meta.promptReferenceTitle || undefined,
+            source_type: 'creative_canvas_image_node',
+            source_title: runtimeNode.title,
+          }) as CanvasImageTaskResult
+          const url = res?.urls?.[0] || res?.url || ''
+          if (!res?.success || !url) throw new Error(res?.error || '生图失败')
+          patchNodeMetadata(runtimeNode.id, {
+            status: 'success',
+            imageUrl: url,
+            previewUrl: url,
+            source: 'canvas_generation',
+            model: String(meta.model || imageBackend?.model || imageBackend?.default_model || ''),
+            modelLabel: meta.modelLabel || '',
+            size: meta.size || '1024x1024',
+            output: { url, prompt: String(meta.prompt), model: res.model || '', provider: res.provider || '' },
+            generatedPrompt: String(meta.prompt),
+            error: '',
+            lastRunAt: nowIso(),
+          }, { history: true })
+          message.success('图片已生成')
+          return true
+        } catch (error) {
+          const genError = error instanceof Error ? error.message : '生图失败'
+          patchNodeMetadata(runtimeNode.id, { status: 'error', error: genError, lastRunAt: nowIso() })
+          message.warning(genError)
+          return false
+        }
+      }
+
       if (runtimeNode.type === 'text' || runtimeNode.type === 'content' || runtimeNode.type === 'asset' || runtimeNode.type === 'prompt' || runtimeNode.type === 'image') {
         const output = runtimeNode.type === 'asset'
           ? {
@@ -3781,7 +3828,6 @@ export default function CanvasPage() {
           <div style={canvasDockStyle}>
         <Tooltip title="文本节点"><Button type="text" icon={<FileTextOutlined />} style={canvasDockButtonStyle} onClick={() => addNode('text')} /></Tooltip>
         <Tooltip title="图片节点"><Button type="text" icon={<PictureOutlined />} style={canvasDockButtonStyle} onClick={() => addNode('image')} /></Tooltip>
-        <Tooltip title="生图节点"><Button type="text" icon={<ThunderboltOutlined />} style={canvasDockButtonStyle} onClick={() => addNode('image_model')} /></Tooltip>
         <Tooltip title="平台搜索"><Button type="text" icon={<SearchOutlined />} style={canvasDockButtonStyle} onClick={() => addNode('platform_search')} /></Tooltip>
         <Dropdown
           trigger={['click']}
@@ -4537,7 +4583,13 @@ function CanvasNodeCard({
         />
       ) : isImageNode ? (
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: '#f5f5f4' }}>参考内容</div>
+          {/* 参考内容：翻译参考项目 ReferenceBar（+ = 上传图片写入本节点） */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#f5f5f4' }}>参考内容</span>
+            <Tooltip title="上传图片写入本节点">
+              <Button size="small" shape="circle" icon={<PlusOutlined />} onClick={() => onUploadImage(node.id)} />
+            </Tooltip>
+          </div>
           <CanvasReferenceChips inputs={inputs} />
           <Input.TextArea
             value={String(meta.prompt || '')}
@@ -4556,19 +4608,40 @@ function CanvasNodeCard({
             }}
             variant="borderless"
           />
+          {/* 模型行：翻译参考项目底部控制条（模型下拉 + 尺寸/张数） */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }} data-canvas-no-drag>
-            <Button size="small" icon={<UploadOutlined />} style={nodeSecondaryActionButtonStyle} data-canvas-upload-image={node.id} onClick={() => onUploadImage(node.id)}>选图片</Button>
+            <InlineImageBackendPicker
+              meta={meta}
+              backends={imageConnectors}
+              capability={activeInputs.some((input) => input.type === 'image' && input.url) ? 'image_to_image' : 'text_to_image'}
+              onSelect={(value, option) => onUpdateMetadata(node.id, imageBackendMetadataPatch(value, option, imageConnectors))}
+            />
+            <Select
+              size="small"
+              value={String(meta.size || '1024x1024')}
+              style={{ width: 106 }}
+              onChange={(value) => onUpdateMetadata(node.id, { size: value })}
+              options={[
+                { value: '1024x1024', label: '1:1 · 1K' },
+                { value: '1024x1536', label: '2:3 · 1K' },
+                { value: '1536x1024', label: '3:2 · 1K' },
+                { value: '1152x896', label: '4:3 · 1K' },
+                { value: '896x1152', label: '3:4 · 1K' },
+              ]}
+            />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }} data-canvas-no-drag>
             <Button size="small" icon={<EditOutlined />} style={nodeSecondaryActionButtonStyle} onClick={() => onCreateImageTransform(node)}>处理</Button>
             <Tooltip title="从 Prompt 库挑选参考">
               <Button size="small" icon={<FileTextOutlined />} style={nodeSecondaryActionButtonStyle} onClick={() => onOpenPromptReference(node)} />
             </Tooltip>
             <span style={{ flex: 1 }} />
-            <Tooltip title="从这个节点生成">
+            <Tooltip title="按当前配置生成，结果写入本节点">
               <Button
                 type="primary"
                 shape="circle"
                 icon={<ThunderboltOutlined />}
-                onClick={() => onCreateGeneration(node)}
+                onClick={() => { void onRunNode(node) }}
                 style={{ width: 34, height: 34, boxShadow: '0 6px 16px -6px rgba(34,211,238,.55)' }}
               />
             </Tooltip>
@@ -4624,7 +4697,7 @@ function CanvasNodeCard({
             </button>
           ) : null}
           {isImageNode ? (
-            <button type="button" className="yl-run" title="从这个节点生成" onClick={() => onCreateGeneration(node)}>
+            <button type="button" className="yl-run" title="按当前配置生成" onClick={() => { void onRunNode(node) }}>
               <ThunderboltOutlined />
             </button>
           ) : null}
