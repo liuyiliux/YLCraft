@@ -1597,6 +1597,8 @@ export default function CanvasPage() {
   const [documents, setDocuments] = useState<CanvasDocument[]>(() => loadDocuments())
   const [activeId, setActiveId] = useState(() => documents[0]?.id || '')
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
+  /* 双击空白弹创建菜单（翻译参考项目）：记录双击的屏幕/世界坐标 */
+  const [quickCreate, setQuickCreate] = useState<{ screenX: number; screenY: number; worldX: number; worldY: number } | null>(null)
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [llmConnectors, setLlmConnectors] = useState<ConnectorOption[]>([])
   const [imageConnectors, setImageConnectors] = useState<ConnectorOption[]>([])
@@ -2085,7 +2087,7 @@ export default function CanvasPage() {
     }
   }
 
-  const addNode = (type: CanvasNodeType) => {
+  const addNode = (type: CanvasNodeType, at?: { x: number; y: number }) => {
     if (!activeDocument) return
     const template = NODE_TEMPLATES.find((item) => item.type === type) || NODE_TEMPLATES[0]
     const count = activeDocument.nodes.filter((node) => node.type === type).length
@@ -2093,14 +2095,17 @@ export default function CanvasPage() {
       id: `node-${type}-${Date.now()}`,
       type,
       title: count ? `${template.title} ${count + 1}` : template.title,
-      position: suggestCanvasNodePosition(
-        activeDocument.nodes,
-        template,
-        {
-          x: Math.round((180 - activeDocument.viewport.x) / activeDocument.viewport.k + count * 32),
-          y: Math.round((140 - activeDocument.viewport.y) / activeDocument.viewport.k + count * 32),
-        },
-      ),
+      position: at
+        ? /* 双击创建：节点中心对准双击点（翻译参考项目行为） */
+          { x: Math.round(at.x - template.width / 2), y: Math.round(at.y - template.height / 2) }
+        : suggestCanvasNodePosition(
+          activeDocument.nodes,
+          template,
+          {
+            x: Math.round((180 - activeDocument.viewport.x) / activeDocument.viewport.k + count * 32),
+            y: Math.round((140 - activeDocument.viewport.y) / activeDocument.viewport.k + count * 32),
+          },
+        ),
       width: template.width,
       height: template.height,
       inputs: template.inputs ? clonePorts(template.inputs) : undefined,
@@ -2450,12 +2455,13 @@ export default function CanvasPage() {
     }
   }
 
-  const deleteSelectedNode = () => {
-    if (!activeDocument || !selectedNodeIds.length) return
+  const deleteSelectedNode = (ids?: string[]) => {
+    const target = ids && ids.length ? ids : selectedNodeIds
+    if (!activeDocument || !target.length) return
     patchActiveDocument({
-      nodes: activeDocument.nodes.filter((node) => !selectedNodeIds.includes(node.id)),
+      nodes: activeDocument.nodes.filter((node) => !target.includes(node.id)),
       connections: activeDocument.connections.filter(
-        (connection) => !selectedNodeIds.includes(connection.fromNodeId) && !selectedNodeIds.includes(connection.toNodeId),
+        (connection) => !target.includes(connection.fromNodeId) && !target.includes(connection.toNodeId),
       ),
     }, { history: true })
     setSelectedNodeIds([])
@@ -3693,12 +3699,22 @@ export default function CanvasPage() {
         onDeleteSelected={deleteSelectedNode}
         onOpenNode={(node) => setEditingNodeId(node.id)}
         onConnect={connectCanvasPorts}
+        onCanvasDoubleClick={(point) => {
+          if (!activeDocument) return
+          setQuickCreate({
+            worldX: point.x,
+            worldY: point.y,
+            screenX: point.x * activeDocument.viewport.k + activeDocument.viewport.x,
+            screenY: point.y * activeDocument.viewport.k + activeDocument.viewport.y,
+          })
+        }}
         renderNode={(node, state) => (
           <CanvasNodeCard
             node={node}
             document={activeDocument}
             selected={state.selected}
             connectionDrag={state.connectionDrag}
+            onDelete={(target) => deleteSelectedNode([target.id])}
             llmConnectors={llmConnectors}
             imageConnectors={imageConnectors}
             platforms={platforms}
@@ -3742,9 +3758,31 @@ export default function CanvasPage() {
         <div style={canvasDockDividerStyle} />
         <Tooltip title="撤销"><Button type="text" icon={<UndoOutlined />} disabled={!historyPast.length} style={canvasDockButtonStyle} onClick={undo} /></Tooltip>
         <Tooltip title="重做"><Button type="text" icon={<RedoOutlined />} disabled={!historyFuture.length} style={canvasDockButtonStyle} onClick={redo} /></Tooltip>
-        <Tooltip title="删除选中节点"><Button type="text" danger icon={<DeleteOutlined />} disabled={!selectedNodeIds.length} style={canvasDockButtonStyle} onClick={deleteSelectedNode} /></Tooltip>
+        <Tooltip title="删除选中节点"><Button type="text" danger icon={<DeleteOutlined />} disabled={!selectedNodeIds.length} style={canvasDockButtonStyle} onClick={() => deleteSelectedNode()} /></Tooltip>
           </div>
         </div>
+        {/* 双击空白创建菜单（翻译参考项目） */}
+        {quickCreate ? (
+          <Dropdown
+            open
+            trigger={[]}
+            menu={{
+              items: CANVAS_NODE_CREATION_MENU,
+              onClick: ({ key, domEvent }) => {
+                domEvent.stopPropagation()
+                addNode(key as CanvasNodeType, { x: quickCreate.worldX, y: quickCreate.worldY })
+                setQuickCreate(null)
+              },
+            }}
+            onOpenChange={(open) => { if (!open) setQuickCreate(null) }}
+          >
+            <div
+              data-canvas-no-drag
+              data-canvas-no-zoom
+              style={{ position: 'absolute', left: quickCreate.screenX, top: quickCreate.screenY, width: 1, height: 1, pointerEvents: 'none' }}
+            />
+          </Dropdown>
+        ) : null}
         {selectedNode ? (
           <aside
             style={{
@@ -4378,6 +4416,7 @@ function CanvasNodeCard({
   document,
   selected,
   connectionDrag,
+  onDelete,
   llmConnectors,
   imageConnectors,
   platforms,
@@ -4398,6 +4437,7 @@ function CanvasNodeCard({
   document: CanvasDocument
   selected: boolean
   connectionDrag: CanvasConnectionDragState | null
+  onDelete: (node: CanvasNode) => void
   llmConnectors: ConnectorOption[]
   imageConnectors: ConnectorOption[]
   platforms: PlatformOption[]
@@ -4429,22 +4469,26 @@ function CanvasNodeCard({
   const llmConnectorOptions = connectorSelectOptions(llmConnectors)
   const platformOptions = platformSelectOptions(platforms)
   /* accent 顶部色条已随卡壳翻译移除（参考项目无色条，类型色保留在检查器 Tag） */
-  /* 选中配置面板：卡内表格（变量/契约/输出/操作）翻译为参考项目「节点下方浮层」，功能不丢 */
+  /* 选中配置面板：卡内表格（变量/输出/操作）翻译为参考项目「节点下方浮层」，功能不丢 */
   const configPanel = selected ? (
     <div className="yl-nodecfg" data-canvas-no-drag>
       <Space direction="vertical" size={8} style={{ width: '100%' }}>
         {variableStrip}
-        <NodeContractSummary node={node} inputs={activeInputs} compact />
         <NodeOutputInline node={node} />
         <div style={nodeActionRowStyle}>
-          <NodeInputPills inputs={inputs} />
+          {isImageNode ? (
+            <>
+              <Button size="small" icon={<UploadOutlined />} style={nodeSecondaryActionButtonStyle} data-canvas-upload-image={node.id} onClick={() => onUploadImage(node.id)}>选图片</Button>
+              <Button size="small" icon={<EditOutlined />} style={nodeSecondaryActionButtonStyle} onClick={() => onCreateImageTransform(node)}>处理</Button>
+            </>
+          ) : null}
           {node.type === 'text' || node.type === 'prompt' ? (
             <Button size="small" icon={<PictureOutlined />} style={nodeSecondaryActionButtonStyle} data-canvas-create-generation={node.id} onClick={() => onCreateGeneration(node)}>生图</Button>
           ) : null}
           {node.type === 'prompt' || node.type === 'llm' ? (
             <Button size="small" icon={<FileTextOutlined />} style={nodeSecondaryActionButtonStyle} onClick={() => onOpenPromptReference(node)}>Prompt库</Button>
           ) : null}
-          <Button size="small" data-canvas-no-drag style={nodeSecondaryActionButtonStyle} onClick={() => onOpenNode(node)}>高级</Button>
+          <Button size="small" style={nodeSecondaryActionButtonStyle} onClick={() => onOpenNode(node)}>高级</Button>
         </div>
       </Space>
     </div>
@@ -4469,6 +4513,16 @@ function CanvasNodeCard({
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{node.title}</span>
         <span className="yl-nodetitle-kind">{nodeLabel(node.type)}</span>
       </div>
+      {selected ? (
+        <div className="yl-nodetools" data-canvas-no-drag>
+          <button type="button" title="打开节点编辑（Enter）" onClick={() => onOpenNode(node)}>
+            <EditOutlined />
+          </button>
+          <button type="button" className="yl-danger" title="删除（Delete）" onClick={() => onDelete(node)}>
+            <DeleteOutlined />
+          </button>
+        </div>
+      ) : null}
       <CanvasEdgePortsRail node={node} document={document} inputs={inputs} connectionDrag={connectionDrag} />
       {isImageNode ? (
         <div style={{ display: 'grid', minHeight: node.height }}>
@@ -4510,30 +4564,12 @@ function CanvasNodeCard({
               </div>
             </div>
           ) : (
-            <div style={{ position: 'relative', minHeight: node.height, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 10 }}>
-              <ImageProvenanceStrip node={node} document={document} />
-              <div style={imageNodeEmptyBodyStyle}>
-                <div style={imageNodeEmptyContentStyle}>
-                  <PictureOutlined style={{ fontSize: 26, opacity: 0.38 }} />
-                  {meta.promptReferenceTitle ? (
-                    <Tag color="purple" style={{ marginInlineEnd: 0 }}>{String(meta.promptReferenceTitle)}</Tag>
-                  ) : null}
-                  <div data-canvas-no-drag style={{ width: '100%', minWidth: 0 }}>
-                    <Input.TextArea
-                      value={String(meta.prompt || '')}
-                      autoSize={{ minRows: 2, maxRows: 5 }}
-                      onChange={(event) => onUpdateMetadata(node.id, { prompt: event.target.value })}
-                      placeholder="先写提示词，也可以稍后选图"
-                      style={inlineNodeTextAreaStyle}
-                    />
-                  </div>
-                  <div style={nodeActionRowStyle}>
-                    <Button size="small" icon={<UploadOutlined />} style={nodeSecondaryActionButtonStyle} data-canvas-no-drag data-canvas-upload-image={node.id} onClick={() => onUploadImage(node.id)}>选图片</Button>
-                    <Button size="small" icon={<FileTextOutlined />} style={nodeSecondaryActionButtonStyle} data-canvas-no-drag data-canvas-image-prompt-reference={node.id} onClick={() => onOpenPromptReference(node)}>Prompt库</Button>
-                    <Button size="small" icon={<EditOutlined />} style={nodeSecondaryActionButtonStyle} data-canvas-no-drag onClick={() => onCreateImageTransform(node)}>处理</Button>
-                    <Button size="small" icon={<PictureOutlined />} style={nodeSecondaryActionButtonStyle} data-canvas-no-drag data-canvas-create-generation={node.id} onClick={() => onCreateGeneration(node)}>生图</Button>
-                  </div>
-                </div>
+            <div style={{ position: 'relative', minHeight: node.height, display: 'grid' }}>
+              {/* 空图片卡占位：翻译参考项目（居中图标 + 小字），按钮收进选中配置面板 */}
+              <div className="yl-img-empty" data-canvas-no-drag>
+                <PictureOutlined />
+                <span>设置图片素材</span>
+                <span style={{ fontSize: 11, opacity: .7 }}>上传、从素材库插入或先写提示词生图</span>
               </div>
             </div>
           )}

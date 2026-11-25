@@ -100,6 +100,59 @@
   flex: 0 0 auto;
 }
 
+/* ---------- 选中浮动工具条：翻译参考项目卡上方胶囊（打开/删除） ---------- */
+.yl-nodetools {
+  position: absolute;
+  right: 4px;
+  top: -34px;
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(22, 20, 18, .94);
+  border: 1px solid rgba(255, 255, 255, .10);
+  -webkit-backdrop-filter: blur(20px) saturate(1.15);
+  backdrop-filter: blur(20px) saturate(1.15);
+  box-shadow: 0 16px 36px -18px rgba(0, 0, 0, .98);
+  z-index: 45;
+}
+.yl-nodetools button {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: rgba(255, 255, 255, .72);
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+.yl-nodetools button:hover {
+  background: rgba(255, 255, 255, .09);
+  color: #fff;
+}
+.yl-nodetools button.yl-danger:hover {
+  background: rgba(248, 113, 113, .16);
+  color: #f87171;
+}
+
+/* ---------- 空图片卡占位：翻译参考项目（居中图标 + 小字） ---------- */
+.yl-img-empty {
+  height: 100%;
+  min-height: 120px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  color: var(--yl-node-faint, #78716c);
+  font-size: 12px;
+}
+.yl-img-empty .anticon {
+  font-size: 26px;
+  opacity: .38;
+}
+
 /* ---------- 选中配置面板：翻译参考项目节点下方 counter-scale panel ----------
    本体第一版不反向缩放（固定 600px），内容 = 原卡内变量表格/契约/输出/操作行。 */
 .yl-nodecfg {

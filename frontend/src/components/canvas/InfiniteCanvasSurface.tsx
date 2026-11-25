@@ -41,6 +41,8 @@ type InfiniteCanvasSurfaceProps = {
   onSelectNodes?: (nodeIds: string[]) => void
   onDeleteSelected?: () => void
   onOpenNode?: (node: CanvasNode) => void
+  /** 双击空白处（翻译参考项目 handleDoubleClick：弹出节点创建菜单），参数为画布世界坐标 */
+  onCanvasDoubleClick?: (worldPoint: { x: number; y: number }) => void
   onConnect?: (connection: Pick<CanvasConnection, 'fromNodeId' | 'fromPortId' | 'toNodeId' | 'toPortId'>) => void
   renderNode: (node: CanvasNode, state: {
     selected: boolean
@@ -117,6 +119,7 @@ export default function InfiniteCanvasSurface({
   onSelectNodes,
   onDeleteSelected,
   onOpenNode,
+  onCanvasDoubleClick,
   onConnect,
   renderNode,
   height = '100%',
@@ -569,6 +572,13 @@ export default function InfiniteCanvasSurface({
       data-canvas-surface
       onWheel={handleWheel}
       onPointerDown={handleCanvasPointerDown}
+      onDoubleClick={(event) => {
+        /* 翻译参考项目：双击空白处弹节点创建菜单（节点/缩放条/面板上双击不触发） */
+        const target = event.target instanceof Element ? event.target : null
+        if (target?.closest('[data-canvas-node-id],[data-canvas-no-zoom],[data-canvas-no-drag]')) return
+        const world = toWorld(event.clientX, event.clientY)
+        onCanvasDoubleClick?.({ x: world.x, y: world.y })
+      }}
       style={{
         ...skinVars,
         position: 'relative',
