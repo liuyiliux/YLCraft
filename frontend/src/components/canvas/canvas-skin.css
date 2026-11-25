@@ -163,6 +163,26 @@
   opacity: .38;
 }
 
+/* ---------- 参考内容「+」大方块：翻译参考项目引用添加钮 ---------- */
+.yl-ref-add {
+  width: 52px;
+  height: 44px;
+  border: 1px solid rgba(255, 255, 255, .13);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .04);
+  color: rgba(255, 255, 255, .62);
+  font-size: 16px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
+}
+.yl-ref-add:hover {
+  border-color: rgba(255, 255, 255, .28);
+  background: rgba(255, 255, 255, .08);
+  color: #fff;
+}
+
 /* ---------- 选中配置面板：翻译参考项目节点下方 counter-scale panel ---------- */
 .yl-nodecfg {
   position: absolute;

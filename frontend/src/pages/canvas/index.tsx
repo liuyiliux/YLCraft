@@ -4583,17 +4583,11 @@ function CanvasNodeCard({
         />
       ) : isImageNode ? (
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
-          {/* 参考内容：翻译参考项目 ReferenceBar（+ = 上传图片写入本节点） */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#f5f5f4' }}>参考内容</span>
-            <Tooltip title="上传图片写入本节点">
-              <Button size="small" shape="circle" icon={<PlusOutlined />} onClick={() => onUploadImage(node.id)} />
-            </Tooltip>
-          </div>
-          <CanvasReferenceChips inputs={inputs} />
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#f5f5f4' }}>参考内容</div>
+          <CanvasReferenceChips inputs={inputs} onAdd={() => onUploadImage(node.id)} />
           <Input.TextArea
             value={String(meta.prompt || '')}
-            autoSize={{ minRows: 3, maxRows: 9 }}
+            autoSize={{ minRows: 5, maxRows: 10 }}
             onChange={(event) => onUpdateMetadata(node.id, { prompt: event.target.value })}
             placeholder="描述要生成的图片内容"
             style={{
@@ -4604,12 +4598,22 @@ function CanvasNodeCard({
               padding: '4px 2px',
               fontSize: 13,
               lineHeight: 1.65,
+              minHeight: 112,
               color: '#f5f5f4',
             }}
             variant="borderless"
           />
-          {/* 模型行：翻译参考项目底部控制条（模型下拉 + 尺寸/张数） */}
+          {/* 底部控制条：翻译参考项目单行（库按钮 | 模型下拉 | 尺寸·张数 | 生成圆钮） */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }} data-canvas-no-drag>
+            <Tooltip title="上传图片写入本节点">
+              <Button size="small" icon={<UploadOutlined />} onClick={() => onUploadImage(node.id)} />
+            </Tooltip>
+            <Tooltip title="图片处理">
+              <Button size="small" icon={<EditOutlined />} onClick={() => onCreateImageTransform(node)} />
+            </Tooltip>
+            <Tooltip title="从 Prompt 库挑选参考">
+              <Button size="small" icon={<FileTextOutlined />} onClick={() => onOpenPromptReference(node)} />
+            </Tooltip>
             <InlineImageBackendPicker
               meta={meta}
               backends={imageConnectors}
@@ -4629,12 +4633,6 @@ function CanvasNodeCard({
                 { value: '896x1152', label: '3:4 · 1K' },
               ]}
             />
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }} data-canvas-no-drag>
-            <Button size="small" icon={<EditOutlined />} style={nodeSecondaryActionButtonStyle} onClick={() => onCreateImageTransform(node)}>处理</Button>
-            <Tooltip title="从 Prompt 库挑选参考">
-              <Button size="small" icon={<FileTextOutlined />} style={nodeSecondaryActionButtonStyle} onClick={() => onOpenPromptReference(node)} />
-            </Tooltip>
             <span style={{ flex: 1 }} />
             <Tooltip title="按当前配置生成，结果写入本节点">
               <Button
@@ -4897,14 +4895,11 @@ function CanvasNodeCard({
   )
 }
 
-/** 参考内容 chips：翻译参考项目 ReferenceBar——上游引用一览（图缩略/文标题）。 */
-function CanvasReferenceChips({ inputs }: { inputs: CanvasResourceInput[] }) {
+/** 参考内容区：翻译参考项目 ReferenceBar——引用 chips + 尾部「+」大方块（一直显示，继续添加）。 */
+function CanvasReferenceChips({ inputs, onAdd }: { inputs: CanvasResourceInput[]; onAdd: () => void }) {
   const items = inputs.filter((input) => input.nodeId && input.nodeId !== '')
-  if (!items.length) {
-    return <span style={{ fontSize: 11, color: 'rgba(245,245,244,.45)' }}>暂无引用；从上游节点连线进来后会显示在这里</span>
-  }
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
       {items.map((input, index) => (
         <span
           key={`${input.nodeId}-${index}`}
@@ -4913,10 +4908,10 @@ function CanvasReferenceChips({ inputs }: { inputs: CanvasResourceInput[] }) {
             display: 'inline-flex',
             alignItems: 'center',
             gap: 5,
-            height: 26,
+            height: 44,
             maxWidth: 160,
-            padding: '0 7px 0 3px',
-            borderRadius: 7,
+            padding: '0 9px 0 4px',
+            borderRadius: 12,
             border: '1px solid rgba(255,255,255,.12)',
             background: 'rgba(255,255,255,.04)',
             color: 'rgba(245,245,244,.78)',
@@ -4924,9 +4919,9 @@ function CanvasReferenceChips({ inputs }: { inputs: CanvasResourceInput[] }) {
           }}
         >
           {input.type === 'image' && input.url ? (
-            <img src={input.url} alt="" style={{ width: 20, height: 20, borderRadius: 4, objectFit: 'cover', display: 'block' }} />
+            <img src={input.url} alt="" style={{ width: 34, height: 34, borderRadius: 8, objectFit: 'cover', display: 'block' }} />
           ) : (
-            <span style={{ width: 20, height: 20, borderRadius: 4, background: 'rgba(255,255,255,.08)', display: 'grid', placeItems: 'center', fontSize: 10 }}>
+            <span style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(255,255,255,.08)', display: 'grid', placeItems: 'center', fontSize: 11 }}>
               {input.type === 'text' || input.type === 'json' ? '文' : input.type === 'asset' ? '素' : 'Ref'}
             </span>
           )}
@@ -4935,6 +4930,9 @@ function CanvasReferenceChips({ inputs }: { inputs: CanvasResourceInput[] }) {
           </span>
         </span>
       ))}
+      <button type="button" className="yl-ref-add" title="上传参考图片" onClick={onAdd}>
+        <PlusOutlined />
+      </button>
     </div>
   )
 }
