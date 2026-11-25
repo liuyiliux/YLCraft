@@ -18,6 +18,7 @@
   - _2026-11-25 第二批落地（commit 98fce0ce）：卡内「内容即卡片」——端口边缘化（CanvasEdgePortsRail，表格行/overlay 端口移除防双 anchor）、变量表格/契约/输出移入选中时卡下 `.yl-nodecfg` 面板（功能不丢）、文本卡无边框直出、标题改卡上悬浮 `.yl-nodetitle`。待续：GenerationComposerCard 内部翻译、面板 counter-scale。_
   - _2026-11-25 第四批落地（commit 01ab7943）：GenerationComposerCard 翻译为参考 Config 卡形态（标题小字/无边框输入/单行控制条/圆形运行钮，旧英文标签行清零）；面板 counter-scale（scale 1/k + max-height 内滚）。剩余遗留：MediaPickerCard 内部未翻译、面板贴视口右缘会出屏。_
   - _2026-11-25 第五批落地（commit b51663b8）：MediaPickerCard 翻译完成（标题小字/单行选择控制/预览+操作同排）——**Phase 1 全部节点类型的参考形态翻译完成**；遗留仅「面板贴视口右缘出屏」（需 fixed 层，参考项目同样存在）。_
+  - _🔴 2026-11-25 用户实测 bug（commit ef3f8a7d）：空图占位层误用 `data-canvas-no-drag` 吃掉整卡点击——**教训：`data-canvas-no-drag` 是画布交互白名单，任何铺面的展示层都不能带**。同轮清理了 smoke 误建的反向连线（反向贝塞尔控制点交叉成环，参考项目同公式同样如此）。_
 - [ ] 5. 选中态：青色细环，无 glow；多选框选样式同步。
 - [ ] 6. 连线降噪：基线低不透明度、悬停/选中增强；端口圆点样式对齐参考项目。
   - _2026-11-25 落地（commit 2591a521）：基线 .10/1.2px、选中相关青 1.6px、箭头 marker 移除；端口边缘点已在第二批落地。_
