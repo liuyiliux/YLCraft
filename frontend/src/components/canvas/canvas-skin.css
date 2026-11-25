@@ -136,6 +136,16 @@
   background: rgba(248, 113, 113, .16);
   color: #f87171;
 }
+/* 生成钮：原型 run 态——青底深字 */
+.yl-nodetools button.yl-run {
+  background: #22d3ee;
+  color: #04222a;
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, .35), 0 6px 16px -6px rgba(34, 211, 238, .55);
+}
+.yl-nodetools button.yl-run:hover {
+  background: #67e8f9;
+  color: #04222a;
+}
 
 /* ---------- 空图片卡占位：翻译参考项目（居中图标 + 小字） ---------- */
 .yl-img-empty {

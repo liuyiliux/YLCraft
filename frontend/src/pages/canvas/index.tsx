@@ -24,6 +24,9 @@ import {
   ExportOutlined,
   FileTextOutlined,
   FolderOpenOutlined,
+  InfoOutlined,
+  CloseOutlined,
+  SaveOutlined,
   LeftOutlined,
   LinkOutlined,
   PictureOutlined,
@@ -2116,6 +2119,41 @@ export default function CanvasPage() {
     setSelectedNodeIds([node.id])
   }
 
+  /* 图片节点「存进素材库」：远程图走代理转 dataURL，本地 dataURL 直存（工具条五钮之一） */
+  const saveImageNodeToAsset = async (node: CanvasNode) => {
+    if (!activeDocument) return
+    const url = canvasNodeImageUrl(node)
+    if (!url) {
+      message.warning('节点还没有图片')
+      return
+    }
+    try {
+      let dataUrl = url
+      if (!url.startsWith('data:')) {
+        const resp = await fetch(`/api/v1/proxy/image?url=${encodeURIComponent(url)}`)
+        if (!resp.ok) throw new Error('proxy failed')
+        const blob = await resp.blob()
+        dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(String(reader.result))
+          reader.onerror = () => reject(new Error('read failed'))
+          reader.readAsDataURL(blob)
+        })
+      }
+      const response = await saveCanvasImageAsset({
+        image_data_url: dataUrl,
+        title: node.title,
+        canvas_document_id: activeDocument.id,
+        canvas_node_id: node.id,
+      }) as { data?: { asset_id?: string } }
+      const assetId = String(response?.data?.asset_id || '')
+      patchNodeMetadata(node.id, { assetId })
+      message.success('已存入素材库')
+    } catch {
+      message.error('存入素材库失败')
+    }
+  }
+
   const insertAssetNode = (asset: AssetOption) => {
     if (!activeDocument) return
     const assetId = assetIdOf(asset)
@@ -3715,6 +3753,8 @@ export default function CanvasPage() {
             selected={state.selected}
             connectionDrag={state.connectionDrag}
             onDelete={(target) => deleteSelectedNode([target.id])}
+            onClose={() => setSelectedNodeIds([])}
+            onSaveAsset={(target) => { void saveImageNodeToAsset(target) }}
             viewportScale={state.scale}
             llmConnectors={llmConnectors}
             imageConnectors={imageConnectors}
@@ -4418,6 +4458,8 @@ function CanvasNodeCard({
   selected,
   connectionDrag,
   onDelete,
+  onClose,
+  onSaveAsset,
   viewportScale = 1,
   llmConnectors,
   imageConnectors,
@@ -4440,6 +4482,8 @@ function CanvasNodeCard({
   selected: boolean
   connectionDrag: CanvasConnectionDragState | null
   onDelete: (node: CanvasNode) => void
+  onClose: (node: CanvasNode) => void
+  onSaveAsset: (node: CanvasNode) => void
   /** 视口缩放（配置面板 counter-scale 用） */
   viewportScale?: number
   llmConnectors: ConnectorOption[]
@@ -4473,33 +4517,79 @@ function CanvasNodeCard({
   const llmConnectorOptions = connectorSelectOptions(llmConnectors)
   const platformOptions = platformSelectOptions(platforms)
   /* accent 顶部色条已随卡壳翻译移除（参考项目无色条，类型色保留在检查器 Tag） */
-  /* 选中配置面板：卡内表格（变量/输出/操作）翻译为参考项目「节点下方浮层」，功能不丢；
-     counter-scale 反向补偿画布缩放，面板屏幕尺寸恒定 */
+  /* 选中配置面板：翻译参考项目「节点下方浮层」（Config 卡本体极简，composer 在浮层里），
+     counter-scale 反向补偿画布缩放。图片/生图/逐图生图 = composer 形态，其余 = 变量面板。 */
   const configPanel = selected ? (
     <div
       className="yl-nodecfg"
       data-canvas-no-drag
       style={{ '--yl-panel-scale': Math.max(0.35, 1 / Math.max(viewportScale, 0.001)) } as CSSProperties}
     >
-      <Space direction="vertical" size={8} style={{ width: '100%' }}>
-        {variableStrip}
-        <NodeOutputInline node={node} />
-        <div style={nodeActionRowStyle}>
-          {isImageNode ? (
-            <>
-              <Button size="small" icon={<UploadOutlined />} style={nodeSecondaryActionButtonStyle} data-canvas-upload-image={node.id} onClick={() => onUploadImage(node.id)}>选图片</Button>
-              <Button size="small" icon={<EditOutlined />} style={nodeSecondaryActionButtonStyle} onClick={() => onCreateImageTransform(node)}>处理</Button>
-            </>
-          ) : null}
-          {node.type === 'text' || node.type === 'prompt' ? (
-            <Button size="small" icon={<PictureOutlined />} style={nodeSecondaryActionButtonStyle} data-canvas-create-generation={node.id} onClick={() => onCreateGeneration(node)}>生图</Button>
-          ) : null}
-          {node.type === 'prompt' || node.type === 'llm' ? (
-            <Button size="small" icon={<FileTextOutlined />} style={nodeSecondaryActionButtonStyle} onClick={() => onOpenPromptReference(node)}>Prompt库</Button>
-          ) : null}
-          <Button size="small" style={nodeSecondaryActionButtonStyle} onClick={() => onOpenNode(node)}>高级</Button>
-        </div>
-      </Space>
+      {isGenerationNode ? (
+        <GenerationComposerCard
+          node={node}
+          inputs={activeInputs}
+          imageConnectors={imageConnectors}
+          onRunNode={onRunNode}
+          onRunWorkflow={onRunWorkflow}
+          onOpenPromptReference={onOpenPromptReference}
+          onUpdateMetadata={onUpdateMetadata}
+        />
+      ) : isImageNode ? (
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#f5f5f4' }}>参考内容</div>
+          <CanvasReferenceChips inputs={inputs} />
+          <Input.TextArea
+            value={String(meta.prompt || '')}
+            autoSize={{ minRows: 3, maxRows: 9 }}
+            onChange={(event) => onUpdateMetadata(node.id, { prompt: event.target.value })}
+            placeholder="描述要生成的图片内容"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              boxShadow: 'none',
+              resize: 'none',
+              padding: '4px 2px',
+              fontSize: 13,
+              lineHeight: 1.65,
+              color: '#f5f5f4',
+            }}
+            variant="borderless"
+          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }} data-canvas-no-drag>
+            <Button size="small" icon={<UploadOutlined />} style={nodeSecondaryActionButtonStyle} data-canvas-upload-image={node.id} onClick={() => onUploadImage(node.id)}>选图片</Button>
+            <Button size="small" icon={<EditOutlined />} style={nodeSecondaryActionButtonStyle} onClick={() => onCreateImageTransform(node)}>处理</Button>
+            <Tooltip title="从 Prompt 库挑选参考">
+              <Button size="small" icon={<FileTextOutlined />} style={nodeSecondaryActionButtonStyle} onClick={() => onOpenPromptReference(node)} />
+            </Tooltip>
+            <span style={{ flex: 1 }} />
+            <Tooltip title="从这个节点生成">
+              <Button
+                type="primary"
+                shape="circle"
+                icon={<ThunderboltOutlined />}
+                onClick={() => onCreateGeneration(node)}
+                style={{ width: 34, height: 34, boxShadow: '0 6px 16px -6px rgba(34,211,238,.55)' }}
+              />
+            </Tooltip>
+          </div>
+          <NodeOutputInline node={node} />
+        </Space>
+      ) : (
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          {variableStrip}
+          <NodeOutputInline node={node} />
+          <div style={nodeActionRowStyle}>
+            {node.type === 'text' || node.type === 'prompt' ? (
+              <Button size="small" icon={<PictureOutlined />} style={nodeSecondaryActionButtonStyle} data-canvas-create-generation={node.id} onClick={() => onCreateGeneration(node)}>生图</Button>
+            ) : null}
+            {node.type === 'prompt' || node.type === 'llm' ? (
+              <Button size="small" icon={<FileTextOutlined />} style={nodeSecondaryActionButtonStyle} onClick={() => onOpenPromptReference(node)}>Prompt库</Button>
+            ) : null}
+            <Button size="small" style={nodeSecondaryActionButtonStyle} onClick={() => onOpenNode(node)}>高级</Button>
+          </div>
+        </Space>
+      )}
     </div>
   ) : null
   return (
@@ -4523,12 +4613,26 @@ function CanvasNodeCard({
         <span className="yl-nodetitle-kind">{nodeLabel(node.type)}</span>
       </div>
       {selected ? (
+        /* 工具条五钮：翻译原型 39-jimeng-shell restyleWb（参数/存素材/生成/删除/关闭） */
         <div className="yl-nodetools" data-canvas-no-drag>
-          <button type="button" title="打开节点编辑（Enter）" onClick={() => onOpenNode(node)}>
-            <EditOutlined />
+          <button type="button" title="完整参数（编辑）" onClick={() => onOpenNode(node)}>
+            <InfoOutlined />
           </button>
+          {isImageNode && imageUrl ? (
+            <button type="button" title="存进素材库" onClick={() => onSaveAsset(node)}>
+              <SaveOutlined />
+            </button>
+          ) : null}
+          {isImageNode ? (
+            <button type="button" className="yl-run" title="从这个节点生成" onClick={() => onCreateGeneration(node)}>
+              <ThunderboltOutlined />
+            </button>
+          ) : null}
           <button type="button" className="yl-danger" title="删除（Delete）" onClick={() => onDelete(node)}>
             <DeleteOutlined />
+          </button>
+          <button type="button" title="关闭（点空白 / Esc 同效）" onClick={() => onClose(node)}>
+            <CloseOutlined />
           </button>
         </div>
       ) : null}
@@ -4593,15 +4697,18 @@ function CanvasNodeCard({
           onUpdateMetadata={onUpdateMetadata}
         />
       ) : isGenerationNode ? (
-        <GenerationComposerCard
-          node={node}
-          inputs={activeInputs}
-          imageConnectors={imageConnectors}
-          onRunNode={onRunNode}
-          onRunWorkflow={onRunWorkflow}
-          onOpenPromptReference={onOpenPromptReference}
-          onUpdateMetadata={onUpdateMetadata}
-        />
+        /* 卡本体轻状态：翻译参考 Config 卡（composer 在选中浮层里，见 configPanel） */
+        <div style={{ display: 'grid', gap: 8, minHeight: node.height, alignContent: 'start' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, minWidth: 0 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#f5f5f4', flex: '0 0 auto' }}>
+              {node.type === 'image_batch' ? '逐图批处理' : '生图'}
+            </span>
+            <span style={{ fontSize: 11, color: 'rgba(245,245,244,.55)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {String(meta.mode || '').includes('image') ? '图生图' : '文生图'} · {String(meta.modelLabel || meta.model || '模型待选')}
+            </span>
+          </div>
+          <GenerationResultRail node={node} />
+        </div>
       ) : node.type === 'media_picker' ? (
         <MediaPickerCard
           node={node}
@@ -4714,6 +4821,48 @@ function CanvasNodeCard({
     </div>
     {configPanel}
     </>
+  )
+}
+
+/** 参考内容 chips：翻译参考项目 ReferenceBar——上游引用一览（图缩略/文标题）。 */
+function CanvasReferenceChips({ inputs }: { inputs: CanvasResourceInput[] }) {
+  const items = inputs.filter((input) => input.nodeId && input.nodeId !== '')
+  if (!items.length) {
+    return <span style={{ fontSize: 11, color: 'rgba(245,245,244,.45)' }}>暂无引用；从上游节点连线进来后会显示在这里</span>
+  }
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+      {items.map((input, index) => (
+        <span
+          key={`${input.nodeId}-${index}`}
+          title={input.title || input.type}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            height: 26,
+            maxWidth: 160,
+            padding: '0 7px 0 3px',
+            borderRadius: 7,
+            border: '1px solid rgba(255,255,255,.12)',
+            background: 'rgba(255,255,255,.04)',
+            color: 'rgba(245,245,244,.78)',
+            fontSize: 11,
+          }}
+        >
+          {input.type === 'image' && input.url ? (
+            <img src={input.url} alt="" style={{ width: 20, height: 20, borderRadius: 4, objectFit: 'cover', display: 'block' }} />
+          ) : (
+            <span style={{ width: 20, height: 20, borderRadius: 4, background: 'rgba(255,255,255,.08)', display: 'grid', placeItems: 'center', fontSize: 10 }}>
+              {input.type === 'text' || input.type === 'json' ? '文' : input.type === 'asset' ? '素' : 'Ref'}
+            </span>
+          )}
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {input.title || input.type}
+          </span>
+        </span>
+      ))}
+    </div>
   )
 }
 
