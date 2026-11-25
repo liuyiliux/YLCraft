@@ -4574,8 +4574,9 @@ function CanvasNodeCard({
             </div>
           ) : (
             <div style={{ position: 'relative', minHeight: node.height, display: 'grid' }}>
-              {/* 空图片卡占位：翻译参考项目（居中图标 + 小字），按钮收进选中配置面板 */}
-              <div className="yl-img-empty" data-canvas-no-drag>
+              {/* 空图片卡占位：翻译参考项目（居中图标 + 小字），按钮收进选中配置面板。
+                  🔴 占位层不能带 data-canvas-no-drag——它会吃掉整张卡的点击（2026-11-25 用户实测） */}
+              <div className="yl-img-empty">
                 <PictureOutlined />
                 <span>设置图片素材</span>
                 <span style={{ fontSize: 11, opacity: .7 }}>上传、从素材库插入或先写提示词生图</span>
