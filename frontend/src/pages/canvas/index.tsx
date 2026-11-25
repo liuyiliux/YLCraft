@@ -4377,24 +4377,19 @@ function CanvasNodeCard({
   const promptReferenceImageCount = Array.isArray(meta.promptReferenceImages) ? meta.promptReferenceImages.length : 0
   const llmConnectorOptions = connectorSelectOptions(llmConnectors)
   const platformOptions = platformSelectOptions(platforms)
-  const accent = canvasNodeAccent(node.type, assetKind)
+  /* accent 顶部色条已随卡壳翻译移除（参考项目无色条，类型色保留在检查器 Tag） */
   return (
     <div
+      /* 卡壳视觉翻译自参考项目 canvas-oss（24px 大圆角 + 2px 边 + 品牌色选中环），
+         见 components/canvas/canvas-skin.css；有图节点常态透明直出。 */
+      className={`yl-cnode${selected ? ' yl-cnode-sel' : ''}${isImageNode && imageUrl ? ' yl-cnode-img' : ''}`}
       style={{
         minWidth: 0,
         minHeight: node.height,
         boxSizing: 'border-box',
         padding: isImageNode && imageUrl ? 0 : 12,
-        borderRadius: 8,
-        border: selected ? `1px solid ${accent}` : '1px solid rgba(255,255,255,0.11)',
-        borderTop: `2px solid ${accent}`,
-        background: isImageNode && imageUrl ? '#171817' : '#24221f',
-        boxShadow: selected
-          ? '0 16px 38px rgba(0,0,0,0.3), 0 0 0 2px rgba(232,226,216,0.1), inset 0 1px 0 rgba(255,255,255,0.07)'
-          : '0 10px 26px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.045)',
         color: '#f2eee6',
         overflow: 'visible',
-        transition: 'border-color 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1), transform 180ms cubic-bezier(0.16, 1, 0.3, 1)',
       }}
     >
       {isImageNode ? (
@@ -4405,7 +4400,7 @@ function CanvasNodeCard({
                 src={imageUrl}
                 alt={node.title}
                 draggable={false}
-                style={{ width: '100%', height: node.height, objectFit: 'cover', display: 'block', borderRadius: 7 }}
+                style={{ width: '100%', height: node.height, objectFit: 'cover', display: 'block', borderRadius: 22 }}
               />
               <div style={imageNodePortOverlayStyle}>
                 {(node.inputs || []).map((port, index, ports) => (

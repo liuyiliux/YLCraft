@@ -8,7 +8,10 @@
  * See NOTICE.md in this directory for what is derived vs. YLCraft's own work.
  */
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import type { CanvasConnection, CanvasNode, CanvasPort, CanvasViewport } from './types'
+import { resolveCanvasTheme, type CanvasBackgroundMode, type CanvasColorTheme } from './canvas-theme'
+import './canvas-skin.css'
 
 export type CanvasConnectionDragState = {
   fromNodeId: string
@@ -48,6 +51,10 @@ type InfiniteCanvasSurfaceProps = {
   immersive?: boolean
   showMinimap?: boolean
   showStatusToolbar?: boolean
+  /** 画布主题（翻译自参考项目三主题，默认 deep 暖灰） */
+  canvasTheme?: CanvasColorTheme
+  /** 背景网格模式：dots 点阵 / lines 线网格 / blank 纯色（参考项目同名能力） */
+  backgroundMode?: CanvasBackgroundMode
 }
 
 const MIN_SCALE = 0.08
@@ -116,7 +123,23 @@ export default function InfiniteCanvasSurface({
   immersive = false,
   showMinimap = true,
   showStatusToolbar = true,
+  canvasTheme = 'deep',
+  backgroundMode = 'lines',
 }: InfiniteCanvasSurfaceProps) {
+  const theme = resolveCanvasTheme(canvasTheme)
+  /* 节点卡 CSS 变量（canvas-skin.css 的 .yl-cnode 系列消费），
+     与参考项目同构：主题值从 canvas-theme.ts 读，inline 注入。 */
+  const skinVars = {
+    '--yl-canvas-bg': theme.canvas.background,
+    '--yl-canvas-sel': theme.canvas.selectionStroke,
+    '--yl-node-fill': theme.node.fill,
+    '--yl-node-panel': theme.node.panel,
+    '--yl-node-stroke': theme.node.stroke,
+    '--yl-node-active': theme.node.activeStroke,
+    '--yl-node-text': theme.node.text,
+    '--yl-node-muted': theme.node.muted,
+    '--yl-node-faint': theme.node.faint,
+  } as CSSProperties
   const containerRef = useRef<HTMLDivElement | null>(null)
   const viewportRef = useRef(viewport)
   const nodesRef = useRef(nodes)
@@ -547,20 +570,20 @@ export default function InfiniteCanvasSurface({
       onWheel={handleWheel}
       onPointerDown={handleCanvasPointerDown}
       style={{
+        ...skinVars,
         position: 'relative',
         height,
         minHeight: 520,
         overflow: 'hidden',
         border: immersive ? 'none' : '1px solid var(--border)',
         borderRadius: immersive ? 0 : 8,
-        background: immersive
-          ? '#151411'
-          : 'var(--bgPage)',
+        /* 参考项目同构：画布底色走 canvas-theme（deep=#181715 暖灰） */
+        background: theme.canvas.background,
         cursor: panRef.current || spacePressed ? 'grab' : 'default',
         userSelect: 'none',
       }}
     >
-      <CanvasGrid viewport={viewport} immersive={immersive} />
+      <CanvasGrid viewport={viewport} mode={backgroundMode} theme={theme} />
       {showStatusToolbar ? (
         <div
           style={immersive ? immersiveStatusStyle : statusToolbarStyle}
@@ -934,21 +957,33 @@ function CanvasMinimap({
   )
 }
 
-function CanvasGrid({ viewport, immersive = false }: { viewport: CanvasViewport; immersive?: boolean }) {
+function CanvasGrid({
+  viewport,
+  mode,
+  theme,
+}: {
+  viewport: CanvasViewport
+  mode: CanvasBackgroundMode
+  theme: ReturnType<typeof resolveCanvasTheme>
+}) {
+  /* 翻译参考项目 CanvasGrid：48px 网格随视口平移缩放，dots/lines/blank 三模式 */
+  if (mode === 'blank') return null
   const size = GRID_SIZE * viewport.k
   const x = viewport.x % size
   const y = viewport.y % size
+  const dotSize = viewport.k < 0.12 ? 0.8 : 1.15
+  const backgroundImage =
+    mode === 'dots'
+      ? `radial-gradient(circle, ${theme.canvas.dot} ${dotSize}px, transparent ${dotSize + 0.2}px)`
+      : `linear-gradient(${theme.canvas.line} 1px, transparent 1px), linear-gradient(90deg, ${theme.canvas.line} 1px, transparent 1px)`
   return (
     <div
       style={{
         position: 'absolute',
         inset: 0,
         pointerEvents: 'none',
-        opacity: immersive ? 1 : 0.45,
-        backgroundImage:
-          immersive
-            ? 'linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px)'
-            : 'linear-gradient(var(--borderLight) 1px, transparent 1px), linear-gradient(90deg, var(--borderLight) 1px, transparent 1px)',
+        opacity: 0.4,
+        backgroundImage,
         backgroundSize: `${size}px ${size}px`,
         backgroundPosition: `${x}px ${y}px`,
       }}
