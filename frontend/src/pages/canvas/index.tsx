@@ -36,6 +36,7 @@ import {
   RightOutlined,
   RedoOutlined,
   RobotOutlined,
+  ScissorOutlined,
   SearchOutlined,
   ThunderboltOutlined,
   UndoOutlined,
@@ -61,6 +62,9 @@ import {
   type ImagePromptReference,
 } from '../../api'
 import InfiniteCanvasSurface, { type CanvasConnectionDragState } from '../../components/canvas/InfiniteCanvasSurface'
+import CanvasImageModelPicker from '../../components/canvas/CanvasImageModelPicker'
+import CanvasImageReferenceBar from '../../components/canvas/CanvasImageReferenceBar'
+import { canvasNodeImageUrl, imageReferenceInputs, isImageLikeCanvasNode } from '../../components/canvas/imageReferences'
 import PromptReferencePicker, { type PromptReferenceAction } from '../../components/prompt-library/PromptReferencePicker'
 import { resolveModelCandidates } from '../../utils/modelSelection'
 import {
@@ -1370,19 +1374,6 @@ function referenceImageCollectionFromInputs(inputs: CanvasResourceInput[], promp
       text: input.text || '',
       source: 'creative_canvas',
     }))
-}
-
-function isImageLikeCanvasNode(node: CanvasNode) {
-  const meta = node.metadata || {}
-  const mediaKind = String(meta.mediaKind || meta.assetKind || '').toLowerCase()
-  const assetType = String(meta.assetType || '').toLowerCase()
-  return node.type === 'image' || node.type === 'image_transform' || mediaKind === 'image' || assetType.includes('image')
-}
-
-function canvasNodeImageUrl(node: CanvasNode) {
-  const meta = node.metadata || {}
-  const output = meta.output && typeof meta.output === 'object' ? meta.output as Record<string, any> : {}
-  return String(meta.imageUrl || meta.previewUrl || output.urls?.[0] || output.url || '')
 }
 
 const PROMPT_REFERENCE_METADATA_KEYS = [
@@ -2865,6 +2856,23 @@ export default function CanvasPage() {
     })
   }
 
+  const removeNodeInput = (input: CanvasResourceInput) => {
+    if (!input.connectionId) return
+    const runtimeDocument = activeDocumentRef.current
+    if (!runtimeDocument) return
+    const nextDocument = {
+      ...runtimeDocument,
+      connections: runtimeDocument.connections.filter((connection) => connection.id !== input.connectionId),
+      updatedAt: nowIso(),
+    }
+    setHistoryPast((history) => [...history.slice(-39), cloneDocument(runtimeDocument)])
+    setHistoryFuture([])
+    const next = documentsRef.current.map((document) => document.id === nextDocument.id ? nextDocument : document)
+    documentsRef.current = next
+    activeDocumentRef.current = nextDocument
+    setDocuments(next)
+  }
+
   const patchConnectionMetadata = (
     connectionId: string,
     metadataPatch: Record<string, unknown>,
@@ -3081,6 +3089,15 @@ export default function CanvasPage() {
     const meta = runtimeNode.metadata || {}
     const basePrompt = String(meta.prompt || meta.content || meta.searchKeyword || '').trim()
     const activeInputs = selectedInputsForNode(runtimeNode, inputs, basePrompt)
+    const referenceInputs = runtimeNode.type === 'image' ? imageReferenceInputs(runtimeNode, activeInputs) : []
+    const tracedInputs = [...activeInputs]
+    referenceInputs.forEach((reference) => {
+      if (!tracedInputs.some((input) => (
+        reference.assetId && input.assetId
+          ? reference.assetId === input.assetId
+          : Boolean(reference.url && reference.url === input.url)
+      ))) tracedInputs.push(reference)
+    })
     const promptTargetPort = runtimeNode.type === 'llm'
       ? 'prompt'
       : runtimeNode.type === 'image_model' || runtimeNode.type === 'image_batch'
@@ -3096,8 +3113,8 @@ export default function CanvasPage() {
     patchNodeMetadata(runtimeNode.id, {
       status: 'running',
       error: '',
-      inputSummary: summarizeInputs(activeInputs),
-      inputSnapshot: inputSnapshot(activeInputs),
+      inputSummary: summarizeInputs(tracedInputs),
+      inputSnapshot: inputSnapshot(tracedInputs),
       runStartedAt: nowIso(),
       lastRunAt: '',
     })
@@ -3106,9 +3123,10 @@ export default function CanvasPage() {
       /* 图片节点就地生成（2026-11-25 设计：只留一个图片节点，生图/逐图生图节点退役）：
          有 prompt 即生成，结果就地写回本节点；无 prompt 走原资产输出。 */
       if (runtimeNode.type === 'image' && String(meta.prompt || '').trim()) {
-        const imageBackendName = resolveImageBackendName(meta, imageConnectors)
+        const imageBackendName = resolveImageBackendName(meta, imageConnectors, referenceInputs.length ? 'image_to_image' : 'text_to_image')
         const imageBackend = imageConnectors.find((item) => item.name === imageBackendName)
-        const referenceImages = activeInputs.filter((input) => input.type === 'image' && input.url)
+        const referenceImages = referenceInputs
+        const genCount = Math.max(1, Math.min(4, Number(meta.count) || 1))
         patchNodeMetadata(runtimeNode.id, { status: 'running', error: '', lastRunAt: nowIso() })
         try {
           const res = await generateImageApi({
@@ -3116,7 +3134,7 @@ export default function CanvasPage() {
             provider: imageBackendName,
             model: meta.model || imageBackend?.model || imageBackend?.default_model || undefined,
             size: meta.size || '1024x1024',
-            n: 1,
+            n: genCount,
             reference_images: referenceImages.map((input) => input.url).filter(Boolean),
             reference_asset_ids: referenceImages.map((input) => input.assetId).filter(Boolean),
             reference_image_collection: referenceImages.map((input) => ({ url: input.url || '', asset_id: input.assetId || '', source_node_id: input.nodeId })),
@@ -3125,22 +3143,45 @@ export default function CanvasPage() {
             source_type: 'creative_canvas_image_node',
             source_title: runtimeNode.title,
           }) as CanvasImageTaskResult
-          const url = res?.urls?.[0] || res?.url || ''
-          if (!res?.success || !url) throw new Error(res?.error || '生图失败')
-          patchNodeMetadata(runtimeNode.id, {
-            status: 'success',
-            imageUrl: url,
-            previewUrl: url,
-            source: 'canvas_generation',
-            model: String(meta.model || imageBackend?.model || imageBackend?.default_model || ''),
-            modelLabel: meta.modelLabel || '',
-            size: meta.size || '1024x1024',
-            output: { url, prompt: String(meta.prompt), model: res.model || '', provider: res.provider || '' },
-            generatedPrompt: String(meta.prompt),
-            error: '',
-            lastRunAt: nowIso(),
+          const genUrls = (res?.urls || (res?.url ? [res.url] : [])).filter(Boolean)
+          if (!res?.success || !genUrls.length) throw new Error(res?.error || '生图失败')
+          const mainUrl = genUrls[0]
+          const updatedSelf: CanvasNode = {
+            ...runtimeNode,
+            metadata: {
+              ...meta,
+              status: 'success',
+              imageUrl: mainUrl,
+              previewUrl: mainUrl,
+              source: 'canvas_generation',
+              model: String(meta.model || imageBackend?.model || imageBackend?.default_model || ''),
+              modelLabel: meta.modelLabel || '',
+              size: meta.size || '1024x1024',
+              output: { url: mainUrl, prompt: String(meta.prompt), model: res.model || '', provider: res.provider || '' },
+              generatedPrompt: String(meta.prompt),
+              error: '',
+              lastRunAt: nowIso(),
+            },
+          }
+          let extraNodes: CanvasNode[] = []
+          let extraConnections: CanvasConnection[] = []
+          if (genUrls.length > 1) {
+            const materialized = materializeGenerationResult(runtimeDocument, runtimeNode, { ...res, urls: genUrls.slice(1) } as CanvasImageTaskResult, {
+              prompt: String(meta.prompt),
+              inputSnapshot: inputSnapshot(activeInputs),
+              provider: imageBackendName || '',
+              model: String(meta.model || imageBackend?.model || imageBackend?.default_model || ''),
+              generationMode: 'text_to_image',
+              promptReferenceMetadata: pickPromptReferenceMetadata(meta),
+            })
+            extraNodes = materialized.resultImageNodes
+            extraConnections = materialized.resultConnections
+          }
+          patchActiveDocument({
+            nodes: [...runtimeDocument.nodes.map((item) => item.id === runtimeNode.id ? updatedSelf : item), ...extraNodes],
+            connections: [...runtimeDocument.connections, ...extraConnections],
           }, { history: true })
-          message.success('图片已生成')
+          message.success(genUrls.length > 1 ? `已生成 ${genUrls.length} 张` : '图片已生成')
           return true
         } catch (error) {
           const genError = error instanceof Error ? error.message : '生图失败'
@@ -3848,7 +3889,8 @@ export default function CanvasPage() {
               setEditingNodeId(target.id)
               setPromptReferencePickerOpen(true)
             }}
-            onUpdateMetadata={(nodeId, metadataPatch) => patchNodeMetadata(nodeId, metadataPatch)}
+            onUpdateMetadata={(nodeId, metadataPatch, options) => patchNodeMetadata(nodeId, metadataPatch, options)}
+            onRemoveInput={removeNodeInput}
             onMaterializeMediaSelection={materializeMediaPickerSelections}
             onImportMediaSelection={importMediaPickerSelections}
           />
@@ -4551,6 +4593,7 @@ function CanvasNodeCard({
   onOpenNode,
   onOpenPromptReference,
   onUpdateMetadata,
+  onRemoveInput,
   onMaterializeMediaSelection,
   onImportMediaSelection,
 }: {
@@ -4576,7 +4619,8 @@ function CanvasNodeCard({
   onSaveImageTransformAsset: (node: CanvasNode) => void
   onOpenNode: (node: CanvasNode) => void
   onOpenPromptReference: (node: CanvasNode) => void
-  onUpdateMetadata: (nodeId: string, metadataPatch: Record<string, unknown>) => void
+  onUpdateMetadata: (nodeId: string, metadataPatch: Record<string, unknown>, options?: { history?: boolean }) => void
+  onRemoveInput: (input: CanvasResourceInput) => void
   onMaterializeMediaSelection: (node: CanvasNode) => void
   onImportMediaSelection: (node: CanvasNode) => Promise<boolean>
 }) {
@@ -4586,6 +4630,9 @@ function CanvasNodeCard({
   const basePrompt = String(meta.prompt || meta.content || meta.searchKeyword || '').trim()
   const activeInputs = selectedInputsForNode(node, inputs, basePrompt)
   const imageUrl = canvasNodeImageUrl(node)
+  const imageCapability = imageReferenceInputs(node, activeInputs).length ? 'image_to_image' as const : 'text_to_image' as const
+  const imageModelOptions = imageBackendSelectOptions(imageConnectors, imageCapability)
+  const imageModelValue = imageBackendSelectValue(meta, imageConnectors, imageCapability) || imageModelOptions[0]?.value
   const isImageNode = node.type === 'image'
   const isGenerationNode = node.type === 'image_model' || node.type === 'image_batch'
   const assetKind = String(meta.mediaKind || meta.assetKind || '').toLowerCase() as CanvasAssetKind
@@ -4617,7 +4664,13 @@ function CanvasNodeCard({
       ) : isImageNode ? (
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: '#f5f5f4' }}>参考内容</div>
-          <CanvasReferenceChips inputs={inputs} onAdd={() => onUploadImage(node.id)} />
+          <CanvasImageReferenceBar
+            node={node}
+            nodes={document.nodes}
+            inputs={activeInputs}
+            onUpdateMetadata={onUpdateMetadata}
+            onRemoveInput={onRemoveInput}
+          />
           <Input.TextArea
             value={String(meta.prompt || '')}
             autoSize={{ minRows: 5, maxRows: 10 }}
@@ -4647,11 +4700,10 @@ function CanvasNodeCard({
             <Tooltip title="从 Prompt 库挑选参考">
               <Button size="small" icon={<FileTextOutlined />} onClick={() => onOpenPromptReference(node)} />
             </Tooltip>
-            <InlineImageBackendPicker
-              meta={meta}
-              backends={imageConnectors}
-              capability={activeInputs.some((input) => input.type === 'image' && input.url) ? 'image_to_image' : 'text_to_image'}
-              onSelect={(value, option) => onUpdateMetadata(node.id, imageBackendMetadataPatch(value, option, imageConnectors))}
+            <CanvasImageModelPicker
+              options={imageModelOptions}
+              value={imageModelValue}
+              onChange={(value, option) => onUpdateMetadata(node.id, imageBackendMetadataPatch(value, option, imageConnectors))}
             />
             <Select
               size="small"
@@ -4666,8 +4718,19 @@ function CanvasNodeCard({
                 { value: '896x1152', label: '3:4 · 1K' },
               ]}
             />
+            <Select
+              size="small"
+              value={String(Number(meta.count) || 1)}
+              style={{ width: 72 }}
+              onChange={(value) => onUpdateMetadata(node.id, { count: value })}
+              options={[
+                { value: '1', label: '1张' },
+                { value: '2', label: '2张' },
+                { value: '4', label: '4张' },
+              ]}
+            />
             <span style={{ flex: 1 }} />
-            <Tooltip title="按当前配置生成，结果写入本节点">
+            <Tooltip title="生成">
               <Button
                 type="primary"
                 shape="circle"
@@ -4719,14 +4782,32 @@ function CanvasNodeCard({
         <span className="yl-nodetitle-kind">{nodeLabel(node.type)}</span>
       </div>
       {selected ? (
-        /* 工具条（原型 restyleWb 形态）：参数/存素材/编辑/下载/删除/关闭 */
+        /* 工具条只放已接通的动作，顺序对齐参考项目 */
         <div className="yl-nodetools" data-canvas-no-drag>
           <button type="button" title="完整参数（编辑）" onClick={() => onOpenNode(node)}>
             <InfoOutlined />
           </button>
+          <button type="button" className="yl-danger" title="删除（Delete）" onClick={() => onDelete(node)}>
+            <DeleteOutlined />
+          </button>
           {isImageNode && imageUrl ? (
             <button type="button" title="存进素材库" onClick={() => onSaveAsset(node)}>
               <SaveOutlined />
+            </button>
+          ) : null}
+          {isImageNode && imageUrl ? (
+            <button type="button" title="下载图片" onClick={() => onDownloadImage(node)}>
+              <DownloadOutlined />
+            </button>
+          ) : null}
+          {isImageNode ? (
+            <button type="button" title="上传图片写入本节点" onClick={() => onUploadImage(node.id)}>
+              <UploadOutlined />
+            </button>
+          ) : null}
+          {isImageNode ? (
+            <button type="button" title="从 Prompt 库挑选参考" onClick={() => onOpenPromptReference(node)}>
+              <FileTextOutlined />
             </button>
           ) : null}
           {isImageNode && imageUrl ? (
@@ -4735,13 +4816,15 @@ function CanvasNodeCard({
             </button>
           ) : null}
           {isImageNode && imageUrl ? (
-            <button type="button" title="下载图片" onClick={() => onDownloadImage(node)}>
-              <DownloadOutlined />
+            <button type="button" title="创建图片处理节点" onClick={() => onCreateImageTransform(node)}>
+              <ScissorOutlined />
             </button>
           ) : null}
-          <button type="button" className="yl-danger" title="删除（Delete）" onClick={() => onDelete(node)}>
-            <DeleteOutlined />
-          </button>
+          {isImageNode && imageUrl ? (
+            <button type="button" title="查看大图" onClick={() => setPreviewOpen(true)}>
+              <ZoomInOutlined />
+            </button>
+          ) : null}
           <button type="button" title="关闭（点空白 / Esc 同效）" onClick={() => onClose(node)}>
             <CloseOutlined />
           </button>
@@ -4749,7 +4832,7 @@ function CanvasNodeCard({
       ) : null}
       <CanvasEdgePortsRail node={node} document={document} inputs={inputs} connectionDrag={connectionDrag} />
       {isImageNode ? (
-        <div style={{ display: 'grid', minHeight: node.height }}>
+        <div style={{ display: 'grid', minHeight: node.height, position: 'relative' }}>
           {imageUrl ? (
             <div style={{ position: 'relative', minHeight: node.height }}>
               {/* 纯图直出（参考项目同款）：badge/按钮组/prompt 叠层全部移除，
@@ -4790,6 +4873,13 @@ function CanvasNodeCard({
               </div>
             </div>
           )}
+          {/* 生成中动画：翻译参考项目 LoadingContent（有图/无图都覆盖），status 恢复后消失 */}
+          {String(meta.status || '') === 'running' ? (
+            <div className="yl-node-loading" data-canvas-no-drag>
+              <span className="yl-node-loading-ring" />
+              <span>生成中…</span>
+            </div>
+          ) : null}
         </div>
       ) : node.type === 'image_transform' ? (
         <ImageTransformCard
@@ -4924,48 +5014,6 @@ function CanvasNodeCard({
     </div>
     {configPanel}
     </>
-  )
-}
-
-/** 参考内容区：翻译参考项目 ReferenceBar——引用 chips + 尾部「+」大方块（一直显示，继续添加）。 */
-function CanvasReferenceChips({ inputs, onAdd }: { inputs: CanvasResourceInput[]; onAdd: () => void }) {
-  const items = inputs.filter((input) => input.nodeId && input.nodeId !== '')
-  return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-      {items.map((input, index) => (
-        <span
-          key={`${input.nodeId}-${index}`}
-          title={input.title || input.type}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 5,
-            height: 44,
-            maxWidth: 160,
-            padding: '0 9px 0 4px',
-            borderRadius: 12,
-            border: '1px solid rgba(255,255,255,.12)',
-            background: 'rgba(255,255,255,.04)',
-            color: 'rgba(245,245,244,.78)',
-            fontSize: 11,
-          }}
-        >
-          {input.type === 'image' && input.url ? (
-            <img src={input.url} alt="" style={{ width: 34, height: 34, borderRadius: 8, objectFit: 'cover', display: 'block' }} />
-          ) : (
-            <span style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(255,255,255,.08)', display: 'grid', placeItems: 'center', fontSize: 11 }}>
-              {input.type === 'text' || input.type === 'json' ? '文' : input.type === 'asset' ? '素' : 'Ref'}
-            </span>
-          )}
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {input.title || input.type}
-          </span>
-        </span>
-      ))}
-      <button type="button" className="yl-ref-add" title="上传参考图片" onClick={onAdd}>
-        <PlusOutlined />
-      </button>
-    </div>
   )
 }
 
@@ -6374,7 +6422,11 @@ function imageBackendSelectValue(
   return firstForBackend?.value
 }
 
-function resolveImageBackendName(meta: Record<string, unknown>, backends: ConnectorOption[]) {
+function resolveImageBackendName(
+  meta: Record<string, unknown>,
+  backends: ConnectorOption[],
+  capability?: 'text_to_image' | 'image_to_image',
+) {
   const candidates = [
     String(meta.backendName || ''),
     String(meta.connectorId || ''),
@@ -6382,8 +6434,14 @@ function resolveImageBackendName(meta: Record<string, unknown>, backends: Connec
     String(meta.provider || ''),
   ].filter(Boolean)
   for (const candidate of candidates) {
-    const matched = backends.find((item) => item.name === candidate || item.id === candidate || item.model === candidate)
+    const matched = backends.find((item) => (
+      (item.name === candidate || item.id === candidate || item.model === candidate)
+      && (!capability || !item.capabilities?.length || item.capabilities.includes(capability))
+    ))
     if (matched?.name) return matched.name
+  }
+  if (capability) {
+    return backends.find((item) => item.name && (!item.capabilities?.length || item.capabilities.includes(capability)))?.name
   }
   return candidates[0] || undefined
 }
