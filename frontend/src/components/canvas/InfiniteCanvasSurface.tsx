@@ -61,6 +61,8 @@ type InfiniteCanvasSurfaceProps = {
   canvasTheme?: CanvasColorTheme
   /** 背景网格模式：dots 点阵 / lines 线网格 / blank 纯色（参考项目同名能力） */
   backgroundMode?: CanvasBackgroundMode
+  /** 图片节点按原图宽高比算出的显示宽度（只影响显示，不改持久化的 node.width） */
+  nodeDisplayWidths?: Record<string, number>
 }
 
 const MIN_SCALE = 0.08
@@ -133,6 +135,7 @@ export default function InfiniteCanvasSurface({
   showStatusToolbar = true,
   canvasTheme = 'deep',
   backgroundMode = 'lines',
+  nodeDisplayWidths,
 }: InfiniteCanvasSurfaceProps) {
   const theme = resolveCanvasTheme(canvasTheme)
   /* 节点卡 CSS 变量（canvas-skin.css 的 .yl-cnode 系列消费），
@@ -917,9 +920,11 @@ export default function InfiniteCanvasSurface({
               position: 'absolute',
               left: node.position.x,
               top: node.position.y,
-              width: node.width,
+              width: nodeDisplayWidths?.[node.id] ?? node.width,
               minHeight: node.height,
               cursor: draggingNodeId === node.id ? 'grabbing' : 'grab',
+              /* 选中节点置顶：避免后渲染的节点盖住选中卡及其上下浮层；拖拽中次之 */
+              zIndex: selectedSet.has(node.id) ? 6 : draggingNodeId === node.id ? 5 : 1,
             }}
             >
               {renderNode(node, {

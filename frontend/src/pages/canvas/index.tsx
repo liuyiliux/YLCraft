@@ -26,6 +26,7 @@ import {
   ExportOutlined,
   FileTextOutlined,
   FolderOpenOutlined,
+  HighlightOutlined,
   InfoOutlined,
   CloseOutlined,
   SaveOutlined,
@@ -1648,6 +1649,46 @@ export default function CanvasPage() {
   const activeDocument = documents.find((doc) => doc.id === activeId) || documents[0]
   const activeDocumentRef = useRef<CanvasDocument | undefined>(activeDocument)
   const editingNode = activeDocument?.nodes.find((node) => node.id === editingNodeId) || null
+
+  /* 图片节点显示宽度：按图片自然宽高比 × 节点高度（参考项目 naturalWidth/naturalHeight 口径），
+     img 用 contain 完整显示。只改显示、不改持久化的 node.width/height；
+     连线锚点由 Surface 的 DOM 实测自动跟随，避免硬算。 */
+  const [imageNodeDisplayWidths, setImageNodeDisplayWidths] = useState<Record<string, number>>({})
+  const imageRatioCacheRef = useRef<Map<string, number>>(new Map())
+  useEffect(() => {
+    const nodes = activeDocument?.nodes || []
+    const validIds = new Set<string>()
+    nodes.forEach((node) => {
+      if (node.type !== 'image' && node.type !== 'image_transform') return
+      const url = canvasNodeImageUrl(node) || String(node.metadata?.previewUrl || (node.metadata?.output as any)?.url || '')
+      if (!url) return
+      validIds.add(node.id)
+      const apply = (ratio: number) => {
+        if (!Number.isFinite(ratio) || ratio <= 0) return
+        const width = Math.max(80, Math.round((node.height || 220) * ratio))
+        setImageNodeDisplayWidths((prev) => (prev[node.id] === width ? prev : { ...prev, [node.id]: width }))
+      }
+      const cached = imageRatioCacheRef.current.get(url)
+      if (cached) { apply(cached); return }
+      const probe = document.createElement('img')
+      probe.onload = () => {
+        if (!probe.naturalWidth || !probe.naturalHeight) return
+        const ratio = probe.naturalWidth / probe.naturalHeight
+        imageRatioCacheRef.current.set(url, ratio)
+        apply(ratio)
+      }
+      probe.src = url
+    })
+    setImageNodeDisplayWidths((prev) => {
+      const next: Record<string, number> = {}
+      let changed = false
+      Object.keys(prev).forEach((id) => {
+        if (validIds.has(id)) next[id] = prev[id]
+        else changed = true
+      })
+      return changed ? next : prev
+    })
+  }, [activeDocument?.nodes])
 
   useEffect(() => {
     documentsRef.current = documents
@@ -3988,6 +4029,7 @@ export default function CanvasPage() {
         nodes={activeDocument.nodes}
         connections={activeDocument.connections}
         selectedNodeIds={selectedNodeIds}
+        nodeDisplayWidths={imageNodeDisplayWidths}
         onViewportChange={updateViewport}
         onNodesChange={updateNodes}
         onNodesCommit={commitNodes}
@@ -4851,9 +4893,15 @@ function CanvasNodeCard({
             <Tooltip title="上传图片写入本节点">
               <Button size="small" icon={<UploadOutlined />} onClick={() => onUploadImage(node.id)} />
             </Tooltip>
-            <Tooltip title="图片处理">
-              <Button size="small" icon={<EditOutlined />} onClick={() => onCreateImageTransform(node)} />
+            {/* 剪刀＝另建图片处理节点；画笔＝在图片编辑器里打开原图。两个入口画风区分，别再用同一个编辑图标 */}
+            <Tooltip title="创建图片处理节点">
+              <Button size="small" icon={<ScissorOutlined />} onClick={() => onCreateImageTransform(node)} />
             </Tooltip>
+            {imageUrl ? (
+              <Tooltip title="在图片编辑器中打开">
+                <Button size="small" icon={<HighlightOutlined />} onClick={() => onOpenImageEditor(node)} />
+              </Tooltip>
+            ) : null}
             <Tooltip title="从 Prompt 库挑选参考">
               <Button size="small" icon={<FileTextOutlined />} onClick={() => onOpenPromptReference(node)} />
             </Tooltip>
@@ -5064,7 +5112,8 @@ function CanvasNodeCard({
         <span className="yl-nodetitle-kind">{nodeLabel(node.type)}</span>
       </div>
       {selected ? (
-        /* 工具条只放已接通的动作，顺序对齐参考项目 */
+        /* 上方只留「节点级」操作；上传/编辑器/处理/Prompt 库/模型/尺寸/张数/生成统一收进下方 composer，
+           避免同一动作在上下两条工具条里各出现一次（2026-11-26 用户反馈） */
         <div className="yl-nodetools" data-canvas-no-drag>
           <button type="button" title="完整参数（编辑）" onClick={() => onOpenNode(node)}>
             <InfoOutlined />
@@ -5080,26 +5129,6 @@ function CanvasNodeCard({
           {isImageNode && imageUrl ? (
             <button type="button" title="下载图片" onClick={() => onDownloadImage(node)}>
               <DownloadOutlined />
-            </button>
-          ) : null}
-          {isImageNode ? (
-            <button type="button" title="上传图片写入本节点" onClick={() => onUploadImage(node.id)}>
-              <UploadOutlined />
-            </button>
-          ) : null}
-          {isImageNode ? (
-            <button type="button" title="从 Prompt 库挑选参考" onClick={() => onOpenPromptReference(node)}>
-              <FileTextOutlined />
-            </button>
-          ) : null}
-          {isImageNode && imageUrl ? (
-            <button type="button" title="图片编辑器" onClick={() => onOpenImageEditor(node)}>
-              <EditOutlined />
-            </button>
-          ) : null}
-          {isImageNode && imageUrl ? (
-            <button type="button" title="创建图片处理节点" onClick={() => onCreateImageTransform(node)}>
-              <ScissorOutlined />
             </button>
           ) : null}
           {cardImageUrl ? (
@@ -5125,7 +5154,7 @@ function CanvasNodeCard({
                 src={cardImageUrl}
                 alt={node.title}
                 draggable={false}
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block', borderRadius: 22, opacity: isTransformNode && !imageUrl ? 0.62 : 1 }}
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', display: 'block', borderRadius: 22, opacity: isTransformNode && !imageUrl ? 0.62 : 1 }}
               />
               <button
                 type="button"
