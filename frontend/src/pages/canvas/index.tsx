@@ -64,7 +64,7 @@ import {
 import InfiniteCanvasSurface, { type CanvasConnectionDragState } from '../../components/canvas/InfiniteCanvasSurface'
 import CanvasImageModelPicker from '../../components/canvas/CanvasImageModelPicker'
 import CanvasImageReferenceBar from '../../components/canvas/CanvasImageReferenceBar'
-import { canvasNodeImageUrl, imageReferenceInputs, isImageLikeCanvasNode } from '../../components/canvas/imageReferences'
+import { canvasNodeImageUrl, imageReferenceInputs, isImageLikeCanvasNode, readCanvasImageReferences } from '../../components/canvas/imageReferences'
 import PromptReferencePicker, { type PromptReferenceAction } from '../../components/prompt-library/PromptReferencePicker'
 import { resolveModelCandidates } from '../../utils/modelSelection'
 import {
@@ -2196,6 +2196,62 @@ export default function CanvasPage() {
     }
   }
 
+  /* 从引用图反推提示词：视觉 LLM（content 多模态数组）→ 写入文本节点内容 */
+  const reversePromptFromImage = async (node: CanvasNode) => {
+    if (!activeDocument) return
+    const runtimeDocument = activeDocumentRef.current || activeDocument
+    const runtimeNode = runtimeDocument.nodes.find((item) => item.id === node.id) || node
+    const inputs = buildCanvasNodeInputs(runtimeNode.id, runtimeDocument)
+    const imageInputs = inputs.filter((input) => input.type === 'image' && input.url)
+    /* 显式引用（参考内容栏）也参与 */
+    readCanvasImageReferences(runtimeNode.metadata).forEach((reference) => {
+      if (reference.url && !imageInputs.some((input) => input.url === reference.url)) {
+        imageInputs.push({ nodeId: reference.sourceNodeId || reference.id, type: 'image', title: reference.title, url: reference.url, assetId: reference.assetId })
+      }
+    })
+    const imageUrl = imageInputs[0]?.url || ''
+    if (!imageUrl) {
+      message.warning('先引用一张图片，再反推提示词')
+      return
+    }
+    const visionConnector = llmConnectors.find((item) => (item.capabilities || []).includes('vision'))
+      || llmConnectors.find((item) => item.is_default)
+      || llmConnectors[0]
+    try {
+      const res = await chatApi({
+        messages: [{
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: '你是图像提示词专家。请为这张图片反推一段可以直接用于文生图的中文提示词：依次描述主体、风格、构图、光线、色彩、材质与画面质感；只输出提示词本身，不要解释、不要分点编号。',
+            },
+            { type: 'image_url', image_url: { url: imageUrl } },
+          ],
+        }],
+        provider: visionConnector?.name || visionConnector?.id || undefined,
+        model: visionConnector?.model || visionConnector?.default_model || undefined,
+        temperature: 0.4,
+        log_scene: 'creative_canvas',
+        log_ref_id: runtimeDocument.id,
+        log_stage: 'reverse_prompt',
+        log_request: { canvas_id: runtimeDocument.id, node_id: runtimeNode.id, image_url: imageUrl.slice(0, 120) },
+      }) as { success?: boolean; content?: string; error?: string }
+      const text = String(res?.content || '').trim()
+      if (!res?.success || !text) throw new Error(res?.error || '反推失败')
+      patchNodeMetadata(runtimeNode.id, {
+        content: text,
+        reversePromptSource: imageUrl,
+        status: 'success',
+        error: '',
+        lastRunAt: nowIso(),
+      }, { history: true })
+      message.success('已反推提示词，写入节点内容')
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '反推提示词失败')
+    }
+  }
+
   const insertAssetNode = (asset: AssetOption) => {
     if (!activeDocument) return
     const assetId = assetIdOf(asset)
@@ -3898,6 +3954,7 @@ export default function CanvasPage() {
             onClose={() => setSelectedNodeIds([])}
             onSaveAsset={(target) => { void saveImageNodeToAsset(target) }}
             onDownloadImage={(target) => { void downloadImageNode(target) }}
+            onReversePrompt={reversePromptFromImage}
             viewportScale={state.scale}
             llmConnectors={llmConnectors}
             imageConnectors={imageConnectors}
@@ -4604,6 +4661,7 @@ function CanvasNodeCard({
   onClose,
   onSaveAsset,
   onDownloadImage,
+  onReversePrompt,
   viewportScale = 1,
   llmConnectors,
   imageConnectors,
@@ -4630,6 +4688,7 @@ function CanvasNodeCard({
   onClose: (node: CanvasNode) => void
   onSaveAsset: (node: CanvasNode) => void
   onDownloadImage: (node: CanvasNode) => void
+  onReversePrompt: (node: CanvasNode) => Promise<void>
   /** 视口缩放（配置面板 counter-scale 用） */
   viewportScale?: number
   llmConnectors: ConnectorOption[]
@@ -4652,6 +4711,8 @@ function CanvasNodeCard({
   const meta = node.metadata || {}
   const inputs = buildCanvasNodeInputs(node.id, document)
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [reversingPrompt, setReversingPrompt] = useState(false)
+  const [editingText, setEditingText] = useState(false)
   const basePrompt = String(meta.prompt || meta.content || meta.searchKeyword || '').trim()
   const activeInputs = selectedInputsForNode(node, inputs, basePrompt)
   const imageUrl = canvasNodeImageUrl(node)
@@ -4766,12 +4827,65 @@ function CanvasNodeCard({
             </Tooltip>
           </div>
         </Space>
+      ) : node.type === 'text' || node.type === 'content' || node.type === 'note' ? (
+        /* 文本节点面板：参考项目 PromptPanel 形态——参考内容（引用图）+ 大输入 + 反推/生图 */
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#f5f5f4' }}>参考内容</div>
+          <CanvasImageReferenceBar
+            node={node}
+            nodes={document.nodes}
+            inputs={activeInputs}
+            onUpdateMetadata={onUpdateMetadata}
+            onRemoveInput={(input) => onRemoveInput(input)}
+          />
+          <Input.TextArea
+            value={String(meta.content || '')}
+            autoSize={{ minRows: 5, maxRows: 12 }}
+            onChange={(event) => onUpdateMetadata(node.id, { content: event.target.value })}
+            placeholder="写下文案；或引用一张图后点「反推提示词」"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              boxShadow: 'none',
+              resize: 'none',
+              padding: '4px 2px',
+              fontSize: 13,
+              lineHeight: 1.65,
+              minHeight: 112,
+              color: '#f5f5f4',
+            }}
+            variant="borderless"
+          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }} data-canvas-no-drag>
+            <Tooltip title={activeInputs.some((input) => input.type === 'image' && input.url) ? '用引用图反推一段文生图提示词' : '先引用一张图片'}>
+              <Button
+                size="small"
+                icon={<PictureOutlined />}
+                loading={reversingPrompt}
+                disabled={!activeInputs.some((input) => input.type === 'image' && input.url)}
+                onClick={async () => {
+                  setReversingPrompt(true)
+                  try {
+                    await onReversePrompt(node)
+                  } finally {
+                    setReversingPrompt(false)
+                  }
+                }}
+              >
+                反推提示词
+              </Button>
+            </Tooltip>
+            <Button size="small" icon={<PictureOutlined />} style={nodeSecondaryActionButtonStyle} data-canvas-create-generation={node.id} onClick={() => onCreateGeneration(node)}>生图</Button>
+            <span style={{ flex: 1 }} />
+            <Button size="small" style={nodeSecondaryActionButtonStyle} onClick={() => onOpenNode(node)}>高级</Button>
+          </div>
+        </Space>
       ) : (
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
           {variableStrip}
           <NodeOutputInline node={node} />
           <div style={nodeActionRowStyle}>
-            {node.type === 'text' || node.type === 'prompt' ? (
+            {node.type === 'prompt' ? (
               <Button size="small" icon={<PictureOutlined />} style={nodeSecondaryActionButtonStyle} data-canvas-create-generation={node.id} onClick={() => onCreateGeneration(node)}>生图</Button>
             ) : null}
             {node.type === 'prompt' || node.type === 'llm' ? (
@@ -4964,24 +5078,44 @@ function CanvasNodeCard({
       ) : (
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
           {node.type === 'text' || node.type === 'content' || node.type === 'note' ? (
-            /* 文本卡直出：翻译参考项目 TextContent（无边框 textarea，内容即卡片） */
-            <Input.TextArea
-              value={String(meta.content || '')}
-              autoSize={{ minRows: 3, maxRows: 12 }}
-              onChange={(event) => onUpdateMetadata(node.id, { content: event.target.value })}
-              placeholder="点击编辑文字"
-              style={{
-                background: 'transparent',
-                border: 'none',
-                padding: '4px 2px',
-                fontSize: 14,
-                lineHeight: 1.65,
-                color: '#f5f5f4',
-                resize: 'none',
-                boxShadow: 'none',
-              }}
-              variant="borderless"
-            />
+            /* 文本卡：翻译参考项目 TextContent——非编辑态是纯文本 div（点击可选中/拖拽），
+               双击就地进编辑（textarea），blur/Esc 退出。等宽字体 14px/1.65。 */
+            editingText ? (
+              <Input.TextArea
+                autoFocus
+                value={String(meta.content || '')}
+                autoSize={{ minRows: 3, maxRows: 14 }}
+                onChange={(event) => onUpdateMetadata(node.id, { content: event.target.value })}
+                onBlur={() => setEditingText(false)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') setEditingText(false)
+                }}
+                data-canvas-no-drag
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  padding: '2px 4px',
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                  fontSize: Number(meta.fontSize) || 14,
+                  lineHeight: 1.65,
+                  color: '#f5f5f4',
+                  resize: 'none',
+                  boxShadow: 'none',
+                }}
+                variant="borderless"
+              />
+            ) : (
+              <div
+                className="yl-text-content"
+                onDoubleClick={(event) => {
+                  event.stopPropagation()
+                  setEditingText(true)
+                }}
+                style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: Number(meta.fontSize) || 14 }}
+              >
+                {String(meta.content || '') || <span style={{ color: 'rgba(245,245,244,.38)' }}>双击写点什么…</span>}
+              </div>
+            )
           ) : null}
           {node.type === 'prompt' || node.type === 'llm' ? (
             <div data-canvas-no-drag style={inlineNodeEditorShellStyle}>
