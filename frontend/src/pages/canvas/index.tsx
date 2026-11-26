@@ -2151,13 +2151,17 @@ export default function CanvasPage() {
     try {
       let dataUrl = url
       if (!url.startsWith('data:')) {
-        const resp = await fetch(`/api/v1/proxy/image?url=${encodeURIComponent(url)}`)
-        if (!resp.ok) throw new Error('proxy failed')
+        /* 生图结果是平台内部相对地址（/api/v1/assets/download?path=...），同源直取；
+           只有第三方 CDN 才走代理——把内部地址塞给代理会 502（用户 2026-11-26 实测「存入素材库失败」）。 */
+        const resp = url.startsWith('/')
+          ? await fetch(url)
+          : await fetch(`/api/v1/proxy/image?url=${encodeURIComponent(url)}`)
+        if (!resp.ok) throw new Error(`图片读取失败 (${resp.status})`)
         const blob = await resp.blob()
         dataUrl = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader()
           reader.onload = () => resolve(String(reader.result))
-          reader.onerror = () => reject(new Error('read failed'))
+          reader.onerror = () => reject(new Error('图片转码失败'))
           reader.readAsDataURL(blob)
         })
       }
@@ -2170,8 +2174,9 @@ export default function CanvasPage() {
       const assetId = String(response?.data?.asset_id || '')
       patchNodeMetadata(node.id, { assetId })
       message.success('已存入素材库')
-    } catch {
-      message.error('存入素材库失败')
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : ''
+      message.error(detail ? `存入素材库失败：${detail.slice(0, 120)}` : '存入素材库失败')
     }
   }
 
@@ -2186,8 +2191,10 @@ export default function CanvasPage() {
     try {
       let href = url
       if (!url.startsWith('data:')) {
-        const resp = await fetch(`/api/v1/proxy/image?url=${encodeURIComponent(url)}`)
-        if (!resp.ok) throw new Error('proxy failed')
+        const resp = url.startsWith('/')
+          ? await fetch(url)
+          : await fetch(`/api/v1/proxy/image?url=${encodeURIComponent(url)}`)
+        if (!resp.ok) throw new Error(`图片读取失败 (${resp.status})`)
         href = URL.createObjectURL(await resp.blob())
       }
       const a = document.createElement('a')
@@ -4776,6 +4783,14 @@ function CanvasNodeCard({
   const imageModelOptions = imageBackendSelectOptions(imageConnectors, imageCapability)
   const imageModelValue = imageBackendSelectValue(meta, imageConnectors, imageCapability) || imageModelOptions[0]?.value
   const isImageNode = node.type === 'image'
+  const isTransformNode = node.type === 'image_transform'
+  const transformSourceInput = isTransformNode
+    ? inputsForTargetPort(activeInputs, 'source').find((input) => input.type === 'image' && input.url)
+    : undefined
+  /* 图片处理节点也走新卡风：纯图直出（有结果显结果，无结果显输入预览），配置收进下方 composer */
+  const transformPreviewUrl = isTransformNode ? (imageUrl || transformSourceInput?.url || '') : ''
+  const cardImageUrl = isImageNode ? imageUrl : transformPreviewUrl
+  const transformOperation = String(meta.operation || 'resize') as ImageTransformOperation
   const isGenerationNode = node.type === 'image_model' || node.type === 'image_batch'
   const assetKind = String(meta.mediaKind || meta.assetKind || '').toLowerCase() as CanvasAssetKind
   const assetPreviewUrl = String(meta.previewUrl || (meta.output as any)?.url || '')
@@ -4883,6 +4898,78 @@ function CanvasNodeCard({
             </Tooltip>
           </div>
         </Space>
+      ) : isTransformNode ? (
+        /* 图片处理节点 composer：与图片节点同画风（标题小字 + 控制行 + 青色圆钮），
+           旧卡内 IN/OUT/PREVIEW/CONFIG 表格全部收进这里 */
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, minWidth: 0 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#f5f5f4', flex: '0 0 auto' }}>图片处理</span>
+            <span style={{ fontSize: 11, color: 'rgba(245,245,244,.55)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {transformSourceInput ? `输入：${transformSourceInput.title}` : '连接图片到输入端'}
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }} data-canvas-no-drag>
+            <Select
+              size="small"
+              value={transformOperation}
+              style={{ width: 138 }}
+              onChange={(value) => onUpdateMetadata(node.id, { operation: value })}
+              options={[
+                { value: 'resize', label: '缩放尺寸' },
+                { value: 'rotate_right', label: '顺时针旋转' },
+                { value: 'flip_horizontal', label: '水平翻转' },
+                { value: 'grayscale', label: '灰度' },
+                { value: 'enhance', label: '亮度 / 对比度' },
+              ]}
+            />
+            <Select
+              size="small"
+              value={String(meta.format || 'png')}
+              style={{ width: 88 }}
+              onChange={(value) => onUpdateMetadata(node.id, { format: value })}
+              options={[
+                { value: 'png', label: 'PNG' },
+                { value: 'jpeg', label: 'JPEG' },
+                { value: 'webp', label: 'WebP' },
+              ]}
+            />
+          </div>
+          {transformOperation === 'resize' ? (
+            <div style={{ display: 'flex', gap: 8 }} data-canvas-no-drag>
+              <Input size="small" value={String(meta.width || '')} placeholder="宽度" onChange={(event) => onUpdateMetadata(node.id, { width: event.target.value })} />
+              <Input size="small" value={String(meta.height || '')} placeholder="高度" onChange={(event) => onUpdateMetadata(node.id, { height: event.target.value })} />
+            </div>
+          ) : transformOperation === 'enhance' ? (
+            <div style={{ display: 'flex', gap: 8 }} data-canvas-no-drag>
+              <Input size="small" value={String(meta.brightness || '1')} placeholder="亮度 0.2 - 2" onChange={(event) => onUpdateMetadata(node.id, { brightness: event.target.value })} />
+              <Input size="small" value={String(meta.contrast || '1')} placeholder="对比度 0.2 - 2" onChange={(event) => onUpdateMetadata(node.id, { contrast: event.target.value })} />
+            </div>
+          ) : null}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }} data-canvas-no-drag>
+            <Tooltip title="把处理结果存入素材库">
+              <Button
+                size="small"
+                icon={<FolderOpenOutlined />}
+                disabled={!imageUrl || Boolean((meta.output as Record<string, unknown> | undefined)?.assetId || meta.assetId)}
+                onClick={() => onSaveImageTransformAsset(node)}
+              >
+                存素材
+              </Button>
+            </Tooltip>
+            <Button size="small" style={nodeSecondaryActionButtonStyle} onClick={() => onOpenNode(node)}>高级</Button>
+            <span style={{ flex: 1 }} />
+            <Tooltip title="处理图片">
+              <Button
+                type="primary"
+                shape="circle"
+                icon={<ThunderboltOutlined />}
+                disabled={!transformSourceInput?.url}
+                onClick={() => { void onRunNode(node) }}
+                style={{ width: 34, height: 34, boxShadow: '0 6px 16px -6px rgba(34,211,238,.55)' }}
+              />
+            </Tooltip>
+          </div>
+        </Space>
       ) : node.type === 'text' || node.type === 'content' || node.type === 'note' ? (
         /* 文本节点面板：参考项目 PromptPanel 形态——参考内容（引用图）+ 大输入 + 反推/生图 */
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
@@ -4958,12 +5045,12 @@ function CanvasNodeCard({
     <div
       /* 卡壳视觉翻译自参考项目 canvas-oss（24px 大圆角 + 2px 边 + 品牌色选中环），
          见 components/canvas/canvas-skin.css；有图节点常态透明直出。 */
-      className={`yl-cnode${selected ? ' yl-cnode-sel' : ''}${isImageNode && imageUrl ? ' yl-cnode-img' : ''}`}
+      className={`yl-cnode${selected ? ' yl-cnode-sel' : ''}${cardImageUrl ? ' yl-cnode-img' : ''}`}
       style={{
         minWidth: 0,
         minHeight: node.height,
         boxSizing: 'border-box',
-        padding: isImageNode && imageUrl ? 0 : 12,
+        padding: cardImageUrl ? 0 : 12,
         color: '#f2eee6',
         overflow: 'visible',
       }}
@@ -4985,8 +5072,8 @@ function CanvasNodeCard({
           <button type="button" className="yl-danger" title="删除（Delete）" onClick={() => onDelete(node)}>
             <DeleteOutlined />
           </button>
-          {isImageNode && imageUrl ? (
-            <button type="button" title="存进素材库" onClick={() => onSaveAsset(node)}>
+          {imageUrl && (isImageNode || isTransformNode) ? (
+            <button type="button" title="存进素材库" onClick={() => isTransformNode ? onSaveImageTransformAsset(node) : onSaveAsset(node)}>
               <SaveOutlined />
             </button>
           ) : null}
@@ -5015,7 +5102,7 @@ function CanvasNodeCard({
               <ScissorOutlined />
             </button>
           ) : null}
-          {isImageNode && imageUrl ? (
+          {cardImageUrl ? (
             <button type="button" title="查看大图" onClick={() => setPreviewOpen(true)}>
               <ZoomInOutlined />
             </button>
@@ -5026,18 +5113,19 @@ function CanvasNodeCard({
         </div>
       ) : null}
       <CanvasEdgePortsRail node={node} document={document} inputs={inputs} connectionDrag={connectionDrag} />
-      {isImageNode ? (
+      {isImageNode || isTransformNode ? (
+        /* 图片节点与图片处理节点共用新卡风：纯图直出 + 选中浮层 composer（画风一致） */
         <div style={{ display: 'grid', minHeight: node.height, height: node.height, position: 'relative' }}>
-          {imageUrl ? (
+          {cardImageUrl ? (
             <div style={{ position: 'relative', height: node.height }}>
               {/* 纯图直出（参考项目同款）：badge/按钮组/prompt 叠层全部移除，
                   功能收敛到工具条与下方 composer；左上放大镜 hover 查看大图。
                   图片绝对定位铺满卡面——否则 img 渲染高与卡高不齐，图下方露空带（用户 2026-11-26 红框反馈） */}
               <img
-                src={imageUrl}
+                src={cardImageUrl}
                 alt={node.title}
                 draggable={false}
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block', borderRadius: 22 }}
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block', borderRadius: 22, opacity: isTransformNode && !imageUrl ? 0.62 : 1 }}
               />
               <button
                 type="button"
@@ -5050,10 +5138,10 @@ function CanvasNodeCard({
               </button>
               <Image
                 style={{ display: 'none' }}
-                src={imageUrl}
+                src={cardImageUrl}
                 preview={{
                   visible: previewOpen,
-                  src: imageUrl,
+                  src: cardImageUrl,
                   onVisibleChange: (visible) => setPreviewOpen(visible),
                 }}
               />
@@ -5064,8 +5152,10 @@ function CanvasNodeCard({
                   🔴 占位层不能带 data-canvas-no-drag——它会吃掉整张卡的点击（2026-11-25 用户实测） */}
               <div className="yl-img-empty">
                 <PictureOutlined />
-                <span>设置图片素材</span>
-                <span style={{ fontSize: 11, opacity: .7 }}>上传、从素材库插入或先写提示词生图</span>
+                <span>{isTransformNode ? '等待输入图片' : '设置图片素材'}</span>
+                <span style={{ fontSize: 11, opacity: .7 }}>
+                  {isTransformNode ? '连接图片到输入端，选中后在下方选处理动作' : '上传、从素材库插入或先写提示词生图'}
+                </span>
               </div>
             </div>
           )}
@@ -5073,18 +5163,10 @@ function CanvasNodeCard({
           {String(meta.status || '') === 'running' ? (
             <div className="yl-node-loading" data-canvas-no-drag>
               <span className="yl-node-loading-ring" />
-              <span>生成中…</span>
+              <span>{isTransformNode ? '处理中…' : '生成中…'}</span>
             </div>
           ) : null}
         </div>
-      ) : node.type === 'image_transform' ? (
-        <ImageTransformCard
-          node={node}
-          inputs={activeInputs}
-          onRunNode={onRunNode}
-          onSaveAsset={onSaveImageTransformAsset}
-          onUpdateMetadata={onUpdateMetadata}
-        />
       ) : isGenerationNode ? (
         /* 卡本体轻状态：翻译参考 Config 卡（composer 在选中浮层里，见 configPanel） */
         <div style={{ display: 'grid', gap: 8, minHeight: node.height, alignContent: 'start' }}>
@@ -5412,105 +5494,6 @@ function InlineImageBackendPicker({
   )
 }
 
-function ImageTransformCard({
-  node,
-  inputs,
-  onRunNode,
-  onSaveAsset,
-  onUpdateMetadata,
-}: {
-  node: CanvasNode
-  inputs: CanvasResourceInput[]
-  onRunNode: (node: CanvasNode) => void
-  onSaveAsset: (node: CanvasNode) => void
-  onUpdateMetadata: (nodeId: string, metadataPatch: Record<string, unknown>) => void
-}) {
-  const meta = node.metadata || {}
-  const outputUrl = canvasNodeImageUrl(node)
-  const operation = String(meta.operation || 'resize') as ImageTransformOperation
-  const sourceInput = inputsForTargetPort(inputs, 'source').find((input) => input.type === 'image')
-  return (
-    <div style={imageTransformCardStyle}>
-      <NodeCardHeader
-        node={node}
-        subtitle={sourceInput ? `输入：${sourceInput.title}` : '连接图片到输入端后运行'}
-      />
-      <NodeVariableStrip node={node} inputs={inputs} />
-      <NodeContractSummary node={node} inputs={inputs} compact />
-      <NodeContentSection label="PREVIEW" tone="result">
-      <div style={imageTransformPreviewStyle}>
-        {outputUrl ? (
-          <img src={outputUrl} alt={node.title} draggable={false} style={imageTransformPreviewImageStyle} />
-        ) : sourceInput?.url ? (
-          <img src={sourceInput.url} alt={sourceInput.title} draggable={false} style={{ ...imageTransformPreviewImageStyle, opacity: 0.52 }} />
-        ) : (
-          <PictureOutlined style={{ fontSize: 24, color: 'rgba(242,238,230,0.32)' }} />
-        )}
-      </div>
-      </NodeContentSection>
-      <NodeContentSection label="CONFIG">
-      <div style={imageTransformControlGridStyle} data-canvas-no-drag>
-        <Select
-          size="small"
-          value={operation}
-          onChange={(value) => onUpdateMetadata(node.id, { operation: value })}
-          options={[
-            { value: 'resize', label: '缩放尺寸' },
-            { value: 'rotate_right', label: '顺时针旋转' },
-            { value: 'flip_horizontal', label: '水平翻转' },
-            { value: 'grayscale', label: '灰度' },
-            { value: 'enhance', label: '亮度 / 对比度' },
-          ]}
-        />
-        <Select
-          size="small"
-          value={String(meta.format || 'png')}
-          onChange={(value) => onUpdateMetadata(node.id, { format: value })}
-          options={[
-            { value: 'png', label: 'PNG' },
-            { value: 'jpeg', label: 'JPEG' },
-            { value: 'webp', label: 'WebP' },
-          ]}
-        />
-      </div>
-      {operation === 'resize' ? (
-        <div style={imageTransformControlGridStyle} data-canvas-no-drag>
-          <Input size="small" value={String(meta.width || '')} placeholder="宽度" onChange={(event) => onUpdateMetadata(node.id, { width: event.target.value })} />
-          <Input size="small" value={String(meta.height || '')} placeholder="高度" onChange={(event) => onUpdateMetadata(node.id, { height: event.target.value })} />
-        </div>
-      ) : operation === 'enhance' ? (
-        <div style={imageTransformControlGridStyle} data-canvas-no-drag>
-          <Input size="small" value={String(meta.brightness || '1')} placeholder="亮度 0.2 - 2" onChange={(event) => onUpdateMetadata(node.id, { brightness: event.target.value })} />
-          <Input size="small" value={String(meta.contrast || '1')} placeholder="对比度 0.2 - 2" onChange={(event) => onUpdateMetadata(node.id, { contrast: event.target.value })} />
-        </div>
-      ) : null}
-      <div style={imageTransformActionRowStyle} data-canvas-no-drag>
-        <Button
-          size="small"
-          type="primary"
-          icon={<EditOutlined />}
-          disabled={!sourceInput?.url}
-          style={imageTransformRunButtonStyle}
-          onClick={() => onRunNode(node)}
-        >
-          处理图片
-        </Button>
-        <Tooltip title="Save the latest processed result to the asset library">
-          <Button
-            size="small"
-            icon={<FolderOpenOutlined />}
-            disabled={!outputUrl || Boolean((meta.output as Record<string, unknown> | undefined)?.assetId || meta.assetId)}
-            onClick={() => onSaveAsset(node)}
-          >
-            保存素材
-          </Button>
-        </Tooltip>
-      </div>
-      </NodeContentSection>
-      <NodeOutputInline node={node} />
-    </div>
-  )
-}
 function GenerationComposerCard({
   node,
   inputs,
@@ -7526,47 +7509,6 @@ const mediaPickerUrlStyle: CSSProperties = {
   whiteSpace: 'nowrap',
   color: 'rgba(242,238,230,0.48)',
   fontSize: 10,
-}
-const imageTransformCardStyle: CSSProperties = {
-  display: 'grid',
-  gap: 8,
-}
-
-const imageTransformPreviewStyle: CSSProperties = {
-  height: 92,
-  overflow: 'hidden',
-  display: 'grid',
-  placeItems: 'center',
-  borderRadius: 6,
-  border: '1px solid rgba(255,255,255,0.1)',
-  background: 'rgba(12,11,10,0.48)',
-}
-
-const imageTransformPreviewImageStyle: CSSProperties = {
-  width: '100%',
-  height: '100%',
-  display: 'block',
-  objectFit: 'contain',
-}
-
-const imageTransformControlGridStyle: CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
-  gap: 6,
-}
-
-const imageTransformRunButtonStyle: CSSProperties = {
-  flex: 1,
-  borderRadius: 6,
-  border: 0,
-  color: '#171512',
-  background: '#d8c9b3',
-}
-
-const imageTransformActionRowStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
 }
 const generationComposerStyle: CSSProperties = {
   display: 'grid',
