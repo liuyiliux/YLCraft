@@ -67,6 +67,7 @@ import type { CanvasColorTheme } from '../../components/canvas/canvas-theme'
 import { useTheme } from '../../constants/theme'
 import CanvasImageModelPicker from '../../components/canvas/CanvasImageModelPicker'
 import CanvasImageReferenceBar from '../../components/canvas/CanvasImageReferenceBar'
+import CanvasNodeAiSplitDialog, { type AiShot } from '../../components/canvas/CanvasNodeAiSplitDialog'
 import { canvasNodeImageUrl, imageReferenceInputs, isImageLikeCanvasNode, readCanvasImageReferences } from '../../components/canvas/imageReferences'
 import PromptReferencePicker, { type PromptReferenceAction } from '../../components/prompt-library/PromptReferencePicker'
 import { resolveModelCandidates } from '../../utils/modelSelection'
@@ -93,6 +94,31 @@ const { Text } = Typography
 type CanvasPortDirection = 'input' | 'output'
 
 type CanvasStarterTemplateId = 'idea_to_image' | 'search_reference' | 'image_transform' | 'batch_character' | 'batch_scene' | 'batch_prop'
+
+/* 参考项目 toolbar 的「信息」图标是 lucide Info（16px 线框圆 + 无衬线 i），
+   antd InfoOutlined 的 i 有衬线、圆也偏粗；内联 SVG 精确复刻，别再用近似图标。 */
+const CanvasToolbarInfoIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="10" />
+    <path d="M12 16v-4" />
+    <path d="M12 8h.01" />
+  </svg>
+)
+
+/* AI 拆镜图标：参考项目 lucide WandSparkles（魔法棒 + 星），antd 无对应，内联复刻 */
+const CanvasAiSplitIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="m3 21 9-9" />
+    <path d="m15 4.5 4.5 4.5" />
+    <path d="M18.5 1.5 22 5" />
+    <path d="M2 12h4" />
+    <path d="M12 2v4" />
+    <path d="M20 14h2" />
+    <path d="M14 20h2" />
+    <path d="M19 9c0 2.5-2 4.5-4.5 4.5" />
+    <path d="M15 4c0 1.1-.9 2-2 2" />
+  </svg>
+)
 
 const CANVAS_STARTER_TEMPLATE_MENU: NonNullable<MenuProps['items']> = [
   { key: 'idea_to_image', icon: <ThunderboltOutlined />, label: '创意到生图' },
@@ -1605,6 +1631,8 @@ export default function CanvasPage() {
   /* 双击空白弹创建菜单（翻译参考项目）：记录双击的屏幕/世界坐标 */
   const [quickCreate, setQuickCreate] = useState<{ screenX: number; screenY: number; worldX: number; worldY: number } | null>(null)
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
+  /* AI 拆镜：文本节点浮条「AI 拆镜」→ 弹窗预览 → 确认建分镜节点 */
+  const [aiSplitNodeId, setAiSplitNodeId] = useState<string | null>(null)
   const [llmConnectors, setLlmConnectors] = useState<ConnectorOption[]>([])
   const [imageConnectors, setImageConnectors] = useState<ConnectorOption[]>([])
   const [platforms, setPlatforms] = useState<PlatformOption[]>([])
@@ -2179,6 +2207,51 @@ export default function CanvasPage() {
     patchActiveDocument({ nodes: [...activeDocument.nodes, node], connections: nextConnections }, { history: true })
     setSelectedNodeIds([node.id])
     return node.id
+  }
+
+  /* AI 拆镜：把确认后的分镜写成一串文本节点，排在剧本节点右侧并自动连线。
+     翻译参考项目 createAiSplitNodes：不引入新节点类型，连线沿用 relation=reference。 */
+  const createAiSplitNodes = (sourceNode: CanvasNode, shots: AiShot[]) => {
+    if (!activeDocument || !shots.length) return
+    const template = NODE_TEMPLATES.find((item) => item.type === 'text')
+    const width = template?.width || 340
+    const height = 120
+    const gap = 16
+    const gapX = 96
+    const startX = sourceNode.position.x + sourceNode.width + gapX
+    const startY = sourceNode.position.y
+    const children: CanvasNode[] = shots.map((shot, index) => ({
+      id: `node-text-${Date.now()}-${index}`,
+      type: 'text',
+      title: shot.title || `镜 ${index + 1}`,
+      position: { x: startX, y: Math.round(startY + index * (height + gap)) },
+      width,
+      height,
+      inputs: template?.inputs ? clonePorts(template.inputs) : undefined,
+      outputs: template?.outputs ? clonePorts(template.outputs) : undefined,
+      metadata: { content: shot.content, prompt: shot.content, status: 'success', fontSize: 14 },
+    }))
+    const sourceOutput = (sourceNode.outputs || [])[0]
+    const targetInput = (children[0].inputs || [])[0]
+    const connections: CanvasConnection[] = sourceOutput && targetInput
+      ? children.map((child) => ({
+        id: `conn-${sourceNode.id}-${child.id}-${Date.now()}`,
+        fromNodeId: sourceNode.id,
+        fromPortId: sourceOutput.id,
+        toNodeId: child.id,
+        toPortId: targetInput.id,
+        relation: 'reference',
+        type: 'references',
+        label: `${sourceNode.title} -> ${child.title}`,
+      }))
+      : []
+    patchActiveDocument(
+      { nodes: [...activeDocument.nodes, ...children], connections: [...activeDocument.connections, ...connections] },
+      { history: true },
+    )
+    setSelectedNodeIds(children.map((child) => child.id))
+    setAiSplitNodeId(null)
+    message.success(`已拆出 ${children.length} 个分镜节点并连线到剧本`)
   }
 
   /* 图片节点「存进素材库」：远程图走代理转 dataURL，本地 dataURL 直存（工具条五钮之一） */
@@ -4060,6 +4133,7 @@ export default function CanvasPage() {
             onSaveAsset={(target) => { void saveImageNodeToAsset(target) }}
             onDownloadImage={(target) => { void downloadImageNode(target) }}
             onReversePrompt={reversePromptFromImage}
+            onAiSplit={(target) => setAiSplitNodeId(target.id)}
             viewportScale={state.scale}
             llmConnectors={llmConnectors}
             imageConnectors={imageConnectors}
@@ -4508,6 +4582,18 @@ export default function CanvasPage() {
         onCancel={() => setPromptReferencePickerOpen(false)}
         onApply={applyPromptReferenceToEditingNode}
       />
+      <CanvasNodeAiSplitDialog
+        open={Boolean(aiSplitNodeId)}
+        sourceText={String(activeDocument?.nodes.find((item) => item.id === aiSplitNodeId)?.metadata?.content || '')}
+        connectors={llmConnectors}
+        canvasId={activeDocument?.id}
+        nodeId={aiSplitNodeId || undefined}
+        onClose={() => setAiSplitNodeId(null)}
+        onConfirm={(shots) => {
+          const sourceNode = activeDocument?.nodes.find((item) => item.id === aiSplitNodeId)
+          if (sourceNode) createAiSplitNodes(sourceNode, shots)
+        }}
+      />
     </div>
   )
 }
@@ -4767,6 +4853,7 @@ function CanvasNodeCard({
   onSaveAsset,
   onDownloadImage,
   onReversePrompt,
+  onAiSplit,
   viewportScale = 1,
   llmConnectors,
   imageConnectors,
@@ -4794,6 +4881,7 @@ function CanvasNodeCard({
   onSaveAsset: (node: CanvasNode) => void
   onDownloadImage: (node: CanvasNode) => void
   onReversePrompt: (node: CanvasNode) => Promise<void>
+  onAiSplit: (node: CanvasNode) => void
   /** 视口缩放（配置面板 counter-scale 用） */
   viewportScale?: number
   llmConnectors: ConnectorOption[]
@@ -5116,7 +5204,7 @@ function CanvasNodeCard({
            避免同一动作在上下两条工具条里各出现一次（2026-11-26 用户反馈） */
         <div className="yl-nodetools" data-canvas-no-drag>
           <button type="button" title="完整参数（编辑）" onClick={() => onOpenNode(node)}>
-            <InfoOutlined />
+            <CanvasToolbarInfoIcon />
           </button>
           <button type="button" className="yl-danger" title="删除（Delete）" onClick={() => onDelete(node)}>
             <DeleteOutlined />
@@ -5129,6 +5217,11 @@ function CanvasNodeCard({
           {isImageNode && imageUrl ? (
             <button type="button" title="下载图片" onClick={() => onDownloadImage(node)}>
               <DownloadOutlined />
+            </button>
+          ) : null}
+          {(node.type === 'text' || node.type === 'content' || node.type === 'note') && String(meta.content || '').trim() ? (
+            <button type="button" title="AI 拆镜（把这段剧本拆成分镜节点）" onClick={() => onAiSplit(node)}>
+              <CanvasAiSplitIcon />
             </button>
           ) : null}
           {cardImageUrl ? (

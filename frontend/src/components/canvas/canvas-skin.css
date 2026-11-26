@@ -104,14 +104,15 @@
 .yl-nodetools {
   position: absolute;
   left: 50%;
-  top: -56px;
+  /* 参考项目 toolbar：h-12(48px) + 顶距 14px；我们按钮 36px 视觉块，胶囊 48px 更舒展 */
+  top: -62px;
   transform: translateX(-50%);
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  min-height: 44px;
-  padding: 4px 6px;
-  border-radius: 16px;
+  min-height: 48px;
+  padding: 6px 8px;
+  border-radius: 18px;
   background: #f5f5f4;
   border: 1px solid rgba(15, 23, 42, .12);
   box-shadow: 0 10px 30px rgba(15, 23, 42, .18), inset 0 1px 0 rgba(255, 255, 255, .9);
@@ -120,8 +121,8 @@
   z-index: 45;
 }
 .yl-nodetools button {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   border: 0;
   border-radius: 9px;
