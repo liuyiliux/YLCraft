@@ -157,6 +157,7 @@ export default function InfiniteCanvasSurface({
     startY: number
     startNodes: CanvasNode[]
     latestNodes: CanvasNode[]
+    moved: boolean
   } | null>(null)
   const resizeRef = useRef<{
     nodeId: string
@@ -184,6 +185,7 @@ export default function InfiniteCanvasSurface({
   } | null>(null)
   const frameRef = useRef<number | null>(null)
   const nextViewportRef = useRef<CanvasViewport | null>(null)
+  const suppressNodeClickRef = useRef(false)
   const [spacePressed, setSpacePressed] = useState(false)
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null)
   const [connectionDrag, setConnectionDrag] = useState<(CanvasConnectionDragState & {
@@ -354,6 +356,7 @@ export default function InfiniteCanvasSurface({
   }
 
   const handleNodePointerDown = (event: React.PointerEvent<HTMLDivElement>, node: CanvasNode) => {
+    suppressNodeClickRef.current = false
     if (event.button !== 0) return
     if (isCanvasInteractiveTarget(event.target)) return
     event.stopPropagation()
@@ -369,13 +372,17 @@ export default function InfiniteCanvasSurface({
       startY: node.position.y,
       startNodes: nodesRef.current,
       latestNodes: nodesRef.current,
+      moved: false,
     }
     setDraggingNodeId(node.id)
   }
 
   const handleNodeClick = (event: React.MouseEvent<HTMLDivElement>, node: CanvasNode) => {
-    if (isCanvasInteractiveTarget(event.target)) return
+    const suppressClick = suppressNodeClickRef.current
+    suppressNodeClickRef.current = false
+    if (suppressClick || isCanvasInteractiveTarget(event.target)) return
     event.stopPropagation()
+    /* 2026-11-26 用户反馈：点击后的「居中到节点」造成视图跳帧；参考项目点击只选中不移动视口，已移除 */
     onSelectNodes?.(event.shiftKey ? Array.from(new Set([...selectedNodeIds, node.id])) : [node.id])
   }
 
@@ -440,6 +447,7 @@ export default function InfiniteCanvasSurface({
         const current = viewportRef.current
         const dx = (event.clientX - drag.startClientX) / current.k
         const dy = (event.clientY - drag.startClientY) / current.k
+        if (Math.abs(event.clientX - drag.startClientX) > 3 || Math.abs(event.clientY - drag.startClientY) > 3) drag.moved = true
         const nextNodes = drag.startNodes.map((node) => (
           node.id === drag.nodeId
             ? { ...node, position: { x: drag.startX + dx, y: drag.startY + dy } }
@@ -502,6 +510,7 @@ export default function InfiniteCanvasSurface({
         setConnectionDrag(null)
       }
       if (nodeDragRef.current) {
+        suppressNodeClickRef.current = nodeDragRef.current.moved
         onNodesCommit?.(nodeDragRef.current.startNodes, nodeDragRef.current.latestNodes)
         nodeDragRef.current = null
         setDraggingNodeId(null)
@@ -840,8 +849,6 @@ export default function InfiniteCanvasSurface({
               width: node.width,
               minHeight: node.height,
               cursor: draggingNodeId === node.id ? 'grabbing' : 'grab',
-              transform: selectedSet.has(node.id) ? 'translateY(-1px)' : undefined,
-              transition: 'transform 180ms cubic-bezier(0.16, 1, 0.3, 1)',
             }}
             >
               {renderNode(node, {
