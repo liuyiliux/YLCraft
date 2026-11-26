@@ -4832,16 +4832,17 @@ function CanvasNodeCard({
       ) : null}
       <CanvasEdgePortsRail node={node} document={document} inputs={inputs} connectionDrag={connectionDrag} />
       {isImageNode ? (
-        <div style={{ display: 'grid', minHeight: node.height, position: 'relative' }}>
+        <div style={{ display: 'grid', minHeight: node.height, height: node.height, position: 'relative' }}>
           {imageUrl ? (
-            <div style={{ position: 'relative', minHeight: node.height }}>
+            <div style={{ position: 'relative', height: node.height }}>
               {/* 纯图直出（参考项目同款）：badge/按钮组/prompt 叠层全部移除，
-                  功能收敛到工具条与下方 composer；左上放大镜 hover 查看大图 */}
+                  功能收敛到工具条与下方 composer；左上放大镜 hover 查看大图。
+                  图片绝对定位铺满卡面——否则 img 渲染高与卡高不齐，图下方露空带（用户 2026-11-26 红框反馈） */}
               <img
                 src={imageUrl}
                 alt={node.title}
                 draggable={false}
-                style={{ width: '100%', height: node.height, objectFit: 'cover', display: 'block', borderRadius: 22 }}
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block', borderRadius: 22 }}
               />
               <button
                 type="button"

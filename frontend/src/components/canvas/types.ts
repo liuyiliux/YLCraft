@@ -22,6 +22,15 @@ export type CanvasNodeType =
 
 export type CanvasNodeStatus = 'idle' | 'ready' | 'running' | 'success' | 'error'
 
+export type CanvasImageReference = {
+  id: string
+  title: string
+  url: string
+  assetId?: string
+  sourceNodeId?: string
+  source: 'asset' | 'canvas'
+}
+
 export type CanvasNodeMetadata = {
   content?: string
   prompt?: string
@@ -31,6 +40,7 @@ export type CanvasNodeMetadata = {
   connectorId?: string
   connectorName?: string
   model?: string
+  imageReferences?: CanvasImageReference[]
   platform?: string
   searchKeyword?: string
   status?: CanvasNodeStatus
