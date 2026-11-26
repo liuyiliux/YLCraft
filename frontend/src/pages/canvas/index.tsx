@@ -62,6 +62,8 @@ import {
   type ImagePromptReference,
 } from '../../api'
 import InfiniteCanvasSurface, { type CanvasConnectionDragState } from '../../components/canvas/InfiniteCanvasSurface'
+import type { CanvasColorTheme } from '../../components/canvas/canvas-theme'
+import { useTheme } from '../../constants/theme'
 import CanvasImageModelPicker from '../../components/canvas/CanvasImageModelPicker'
 import CanvasImageReferenceBar from '../../components/canvas/CanvasImageReferenceBar'
 import { canvasNodeImageUrl, imageReferenceInputs, isImageLikeCanvasNode, readCanvasImageReferences } from '../../components/canvas/imageReferences'
@@ -1591,6 +1593,9 @@ function buildWorkflowExecutionPlan(document: CanvasDocument | undefined, target
 
 export default function CanvasPage() {
   const { message } = App.useApp()
+  /* 画布主题跟随全局主题（deep / moonlight / dawn 三主题与 constants/theme 同名） */
+  const { themeId: appThemeId } = useTheme()
+  const canvasColorTheme: CanvasColorTheme = appThemeId === 'moonlight' || appThemeId === 'dawn' ? appThemeId : 'deep'
   const navigate = useNavigate()
   const [documents, setDocuments] = useState<CanvasDocument[]>(() => loadDocuments())
   const [activeId, setActiveId] = useState(() => documents[0]?.id || '')
@@ -3241,8 +3246,15 @@ export default function CanvasPage() {
 
     try {
       /* 图片节点就地生成（2026-11-25 设计：只留一个图片节点，生图/逐图生图节点退役）：
-         有 prompt 即生成，结果就地写回本节点；无 prompt 走原资产输出。 */
-      if (runtimeNode.type === 'image' && String(meta.prompt || '').trim()) {
+         有 prompt 即生成，结果就地写回本节点；无 prompt 走原资产输出。
+         2026-11-26：拼接上游文本输入（文本节点的文案/反推提示词连进来即参与生成）。 */
+      const upstreamTextPrompt = activeInputs
+        .filter((input) => (input.type === 'text' || input.type === 'json') && String(input.text || '').trim())
+        .map((input) => String(input.text || '').trim())
+        .filter(Boolean)
+        .join('\n\n')
+      const imageGenPrompt = [String(meta.prompt || '').trim(), upstreamTextPrompt].filter(Boolean).join('\n\n')
+      if (runtimeNode.type === 'image' && imageGenPrompt) {
         const imageBackendName = resolveImageBackendName(meta, imageConnectors, referenceInputs.length ? 'image_to_image' : 'text_to_image')
         const imageBackend = imageConnectors.find((item) => item.name === imageBackendName)
         const referenceImages = referenceInputs
@@ -3250,7 +3262,7 @@ export default function CanvasPage() {
         patchNodeMetadata(runtimeNode.id, { status: 'running', error: '', lastRunAt: nowIso() })
         try {
           const res = await generateImageApi({
-            prompt: String(meta.prompt),
+            prompt: imageGenPrompt,
             provider: imageBackendName,
             model: meta.model || imageBackend?.model || imageBackend?.default_model || undefined,
             size: meta.size || '1024x1024',
@@ -3277,8 +3289,8 @@ export default function CanvasPage() {
               model: String(meta.model || imageBackend?.model || imageBackend?.default_model || ''),
               modelLabel: meta.modelLabel || '',
               size: meta.size || '1024x1024',
-              output: { url: mainUrl, prompt: String(meta.prompt), model: res.model || '', provider: res.provider || '' },
-              generatedPrompt: String(meta.prompt),
+              output: { url: mainUrl, prompt: imageGenPrompt, model: res.model || '', provider: res.provider || '' },
+              generatedPrompt: imageGenPrompt,
               error: '',
               lastRunAt: nowIso(),
             },
@@ -3287,7 +3299,7 @@ export default function CanvasPage() {
           let extraConnections: CanvasConnection[] = []
           if (genUrls.length > 1) {
             const materialized = materializeGenerationResult(runtimeDocument, runtimeNode, { ...res, urls: genUrls.slice(1) } as CanvasImageTaskResult, {
-              prompt: String(meta.prompt),
+              prompt: imageGenPrompt,
               inputSnapshot: inputSnapshot(activeInputs),
               provider: imageBackendName || '',
               model: String(meta.model || imageBackend?.model || imageBackend?.default_model || ''),
@@ -3962,6 +3974,7 @@ export default function CanvasPage() {
         <div style={canvasSurfacePaneStyle}>
           <InfiniteCanvasSurface
         immersive
+        canvasTheme={canvasColorTheme}
         showMinimap
         viewport={activeDocument.viewport}
         nodes={activeDocument.nodes}
