@@ -253,8 +253,9 @@ const NODE_TEMPLATES: NodeTemplate[] = [
     type: 'text',
     title: '文本便签',
     icon: <FileTextOutlined />,
-    width: 248,
-    height: 136,
+    /* 初始尺寸对齐参考项目 NODE_DEFAULT_SIZE.Text = 340×240（2026-11-26，原 248×136 偏小） */
+    width: 340,
+    height: 240,
     /* 上下文入端口（2026-11-26）：拖线「引用该节点生成 → 文本生成」时新节点有口可接 */
     inputs: [{ id: 'context', label: '上下文', dataType: 'any', multiple: true }],
     outputs: [{ id: 'text', label: '文本', dataType: 'text' }],
