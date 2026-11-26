@@ -253,6 +253,8 @@ const NODE_TEMPLATES: NodeTemplate[] = [
     icon: <FileTextOutlined />,
     width: 248,
     height: 136,
+    /* 上下文入端口（2026-11-26）：拖线「引用该节点生成 → 文本生成」时新节点有口可接 */
+    inputs: [{ id: 'context', label: '上下文', dataType: 'any', multiple: true }],
     outputs: [{ id: 'text', label: '文本', dataType: 'text' }],
     metadata: { content: '记录灵感、设定、拆解结论或待办。' },
   },
@@ -2083,8 +2085,9 @@ export default function CanvasPage() {
     }
   }
 
-  const addNode = (type: CanvasNodeType, at?: { x: number; y: number }) => {
-    if (!activeDocument) return
+  /* connectFrom：拖线松开在空白处「引用该节点生成」——新节点就地创建并自动连线 */
+  const addNode = (type: CanvasNodeType, at?: { x: number; y: number }, connectFrom?: { nodeId: string; portId: string }): string | null => {
+    if (!activeDocument) return null
     const template = NODE_TEMPLATES.find((item) => item.type === type) || NODE_TEMPLATES[0]
     const count = activeDocument.nodes.filter((node) => node.type === type).length
     const node: CanvasNode = {
@@ -2108,8 +2111,27 @@ export default function CanvasPage() {
       outputs: template.outputs ? clonePorts(template.outputs) : undefined,
       metadata: { ...template.metadata },
     }
-    patchActiveDocument({ nodes: [...activeDocument.nodes, node] }, { history: true })
+    const nextConnections = [...activeDocument.connections]
+    if (connectFrom) {
+      const sourceNode = activeDocument.nodes.find((item) => item.id === connectFrom.nodeId)
+      const targetPort = (node.inputs || [])[0]
+      if (sourceNode && targetPort) {
+        /* 「引用该节点生成」允许跨类型连线（image→text 等引用语义），不走严格 dataType 校验 */
+        nextConnections.push({
+          id: `conn-${node.id}-${targetPort.id}-${Date.now()}`,
+          fromNodeId: sourceNode.id,
+          fromPortId: connectFrom.portId,
+          toNodeId: node.id,
+          toPortId: targetPort.id,
+          relation: 'reference',
+          type: 'references',
+          label: `${sourceNode.title} -> ${node.title}`,
+        })
+      }
+    }
+    patchActiveDocument({ nodes: [...activeDocument.nodes, node], connections: nextConnections }, { history: true })
     setSelectedNodeIds([node.id])
+    return node.id
   }
 
   /* 图片节点「存进素材库」：远程图走代理转 dataURL，本地 dataURL 直存（工具条五钮之一） */
@@ -3862,6 +3884,9 @@ export default function CanvasPage() {
             screenX: point.x * activeDocument.viewport.k + activeDocument.viewport.x,
             screenY: point.y * activeDocument.viewport.k + activeDocument.viewport.y,
           })
+        }}
+        onCreateLinkedNode={(sourceNodeId, fromPortId, type, point) => {
+          addNode(type as CanvasNodeType, point, { nodeId: sourceNodeId, portId: fromPortId })
         }}
         renderNode={(node, state) => (
           <CanvasNodeCard

@@ -423,6 +423,95 @@
   to { transform: rotate(360deg); }
 }
 
+/* ---------- 「引用该节点生成」菜单：翻译参考项目 ConnectionCreateMenu ---------- */
+.yl-create-menu {
+  position: absolute;
+  z-index: 120;
+  width: 240px;
+  padding: 8px;
+  border-radius: 16px;
+  border: 1px solid var(--yl-node-stroke, #44403c);
+  background: rgba(31, 29, 26, .97);
+  box-shadow: 0 28px 64px -24px rgba(0, 0, 0, .98), 0 0 0 1px rgba(0, 0, 0, .4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.15);
+  backdrop-filter: blur(20px) saturate(1.15);
+  color: var(--yl-node-text, #f5f5f4);
+}
+.yl-create-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 4px 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--yl-node-faint, #78716c);
+}
+.yl-create-menu-head button {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, .55);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.yl-create-menu-head button:hover {
+  background: rgba(255, 255, 255, .09);
+  color: #fff;
+}
+.yl-create-menu-list {
+  display: grid;
+  gap: 2px;
+}
+.yl-create-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 48px;
+  width: 100%;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--yl-node-text, #f5f5f4);
+  text-align: left;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.yl-create-menu-item:hover {
+  background: rgba(255, 255, 255, .06);
+}
+.yl-create-menu-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .05);
+  color: rgba(245, 245, 244, .72);
+  display: grid;
+  place-items: center;
+}
+.yl-create-menu-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.yl-create-menu-text b {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+.yl-create-menu-text i {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--yl-node-faint, #78716c);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---------- 选中配置面板：翻译参考项目节点下方 counter-scale panel ---------- */
 .yl-nodecfg {
   position: absolute;

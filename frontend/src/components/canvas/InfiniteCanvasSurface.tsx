@@ -43,6 +43,8 @@ type InfiniteCanvasSurfaceProps = {
   onOpenNode?: (node: CanvasNode) => void
   /** 双击空白处（翻译参考项目 handleDoubleClick：弹出节点创建菜单），参数为画布世界坐标 */
   onCanvasDoubleClick?: (worldPoint: { x: number; y: number }) => void
+  /** 拖线松开在空白处「引用该节点生成」（翻译参考项目 ConnectionCreateMenu） */
+  onCreateLinkedNode?: (sourceNodeId: string, fromPortId: string, type: string, worldPoint: { x: number; y: number }) => void
   onConnect?: (connection: Pick<CanvasConnection, 'fromNodeId' | 'fromPortId' | 'toNodeId' | 'toPortId'>) => void
   renderNode: (node: CanvasNode, state: {
     selected: boolean
@@ -122,6 +124,7 @@ export default function InfiniteCanvasSurface({
   onDeleteSelected,
   onOpenNode,
   onCanvasDoubleClick,
+  onCreateLinkedNode,
   onConnect,
   renderNode,
   height = '100%',
@@ -188,6 +191,15 @@ export default function InfiniteCanvasSurface({
   const suppressNodeClickRef = useRef(false)
   const [spacePressed, setSpacePressed] = useState(false)
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null)
+  /* 拖线松开在空白 →「引用该节点生成」菜单（屏幕/世界双坐标） */
+  const [pendingCreate, setPendingCreate] = useState<{
+    fromNodeId: string
+    fromPortId: string
+    screenX: number
+    screenY: number
+    worldX: number
+    worldY: number
+  } | null>(null)
   const [connectionDrag, setConnectionDrag] = useState<(CanvasConnectionDragState & {
     clientX: number
     clientY: number
@@ -220,6 +232,7 @@ export default function InfiniteCanvasSurface({
         event.preventDefault()
         onDeleteSelected?.()
       }
+      if (event.key === 'Escape') setPendingCreate(null)
     }
     const up = (event: KeyboardEvent) => {
       if (event.code === 'Space') setSpacePressed(false)
@@ -308,6 +321,7 @@ export default function InfiniteCanvasSurface({
 
   const handleCanvasPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     const target = event.target instanceof Element ? event.target : null
+    if (pendingCreate && !target?.closest('.yl-create-menu')) setPendingCreate(null)
     const outputPortElement = target?.closest<HTMLElement>('[data-canvas-port-direction=output]')
     if (outputPortElement) {
       const node = nodesRef.current.find((item) => item.id === outputPortElement.dataset.canvasNodeId)
@@ -505,6 +519,20 @@ export default function InfiniteCanvasSurface({
             toNodeId: targetNode.id,
             toPortId: targetPort.id,
           })
+        } else {
+          /* 松在空白：不取消，改弹「引用该节点生成」（翻译参考项目 ConnectionCreateMenu） */
+          const rect = containerRef.current?.getBoundingClientRect()
+          if (rect) {
+            const current = viewportRef.current
+            setPendingCreate({
+              fromNodeId: drag.fromNodeId,
+              fromPortId: drag.fromPortId,
+              screenX: event.clientX - rect.left,
+              screenY: event.clientY - rect.top,
+              worldX: (event.clientX - rect.left - current.x) / current.k,
+              worldY: (event.clientY - rect.top - current.y) / current.k,
+            })
+          }
         }
         connectionDragRef.current = null
         setConnectionDrag(null)
@@ -826,6 +854,49 @@ export default function InfiniteCanvasSurface({
           </div>
         )
       })() : null}
+      {/* 「引用该节点生成」菜单：翻译参考项目 ConnectionCreateMenu（拖线松开在空白处弹出） */}
+      {pendingCreate ? (
+        <div
+          className="yl-create-menu"
+          data-canvas-no-drag
+          data-canvas-no-zoom
+          style={{
+            left: pendingCreate.screenX,
+            top: pendingCreate.screenY,
+            transform: `scale(${1 / Math.max(viewport.k, 0.001)})`,
+            transformOrigin: 'top left',
+          }}
+        >
+          <div className="yl-create-menu-head">
+            <span>引用该节点生成</span>
+            <button type="button" aria-label="关闭" onClick={() => setPendingCreate(null)}>×</button>
+          </div>
+          <div className="yl-create-menu-list">
+            {LINKED_CREATE_OPTIONS.map((option) => (
+              <button
+                key={option.type}
+                type="button"
+                className="yl-create-menu-item"
+                onClick={() => {
+                  onCreateLinkedNode?.(
+                    pendingCreate.fromNodeId,
+                    pendingCreate.fromPortId,
+                    option.type,
+                    { x: pendingCreate.worldX, y: pendingCreate.worldY },
+                  )
+                  setPendingCreate(null)
+                }}
+              >
+                <span className="yl-create-menu-icon">{option.icon}</span>
+                <span className="yl-create-menu-text">
+                  <b>{option.title}</b>
+                  {option.description ? <i>{option.description}</i> : null}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <div
         style={{
           position: 'absolute',
@@ -1066,6 +1137,65 @@ const zoomRangeStyle: React.CSSProperties = {
   width: 92,
   accentColor: '#f2eee6',
 }
+
+/** 「引用该节点生成」选项：本体真实可用节点（退役的生图/逐图不在列） */
+const LINKED_CREATE_OPTIONS: Array<{ type: string; title: string; description?: string; icon: React.ReactNode }> = [
+  {
+    type: 'text',
+    title: '文本生成',
+    description: '脚本、广告词、品牌文案',
+    icon: (
+      <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+        <path d="M2.5 3.5h11M2.5 6.5h11M2.5 9.5h7M2.5 12.5h5" />
+      </svg>
+    ),
+  },
+  {
+    type: 'image',
+    title: '图片生成',
+    description: '写提示词生成，或上传图片',
+    icon: (
+      <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="2" y="2.6" width="12" height="10.8" rx="2.2" />
+        <circle cx="5.6" cy="6" r="1.1" />
+        <path d="M3 12.4l3.4-3.2 2.4 2.2 2-1.8 2.2 2.2" />
+      </svg>
+    ),
+  },
+  {
+    type: 'image_transform',
+    title: '图片处理',
+    description: '裁剪、缩放、水印、格式',
+    icon: (
+      <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4.5 1.8v9.7h9.7" />
+        <path d="M1.8 4.5h9.7v9.7" />
+      </svg>
+    ),
+  },
+  {
+    type: 'platform_search',
+    title: '平台搜索',
+    description: '按关键词搜图片 / 视频素材',
+    icon: (
+      <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+        <circle cx="7" cy="7" r="4.4" />
+        <path d="M10.4 10.4l3.2 3.2" />
+      </svg>
+    ),
+  },
+  {
+    type: 'media_picker',
+    title: '媒体选择',
+    description: '从搜索结果里挑选参考图',
+    icon: (
+      <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="2" y="2.6" width="12" height="10.8" rx="2.2" />
+        <path d="M6.4 8l1.6 1.6 2.4-2.8" />
+      </svg>
+    ),
+  },
+]
 
 const minimapStyle: React.CSSProperties = {
   position: 'absolute',
